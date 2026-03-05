@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 // --- Auth (Guest) ---
 Route::middleware('guest')->group(function () {
@@ -19,9 +18,23 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
-        Route::get('/dashboard', function () {
-            return Inertia::render('Owner/Dashboard');
-        })->name('dashboard');
+        // Dashboard
+        Route::get('/dashboard', [\App\Http\Controllers\Owner\DashboardController::class, 'index'])
+            ->name('dashboard');
+
+        // Reports
+        Route::get('reports/daily', [\App\Http\Controllers\Owner\ReportController::class, 'daily'])
+            ->name('reports.daily');
+
+        // Transaction History
+        Route::get('transactions', [\App\Http\Controllers\Owner\ReportController::class, 'transactions'])
+            ->name('transactions.index');
+        Route::get('transactions/{transaction}', [\App\Http\Controllers\Owner\ReportController::class, 'transactionDetail'])
+            ->name('transactions.show');
+
+        // Cash Drawer History
+        Route::get('cash-drawers', [\App\Http\Controllers\Owner\ReportController::class, 'cashDrawers'])
+            ->name('cash-drawers.index');
 
         // Categories
         Route::resource('categories', \App\Http\Controllers\Owner\CategoryController::class)
@@ -46,6 +59,18 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         // Payment Methods
         Route::resource('payment-methods', \App\Http\Controllers\Owner\PaymentMethodController::class)
             ->only(['index', 'store', 'update', 'destroy']);
+
+        // Stock Management
+        Route::get('stock', [\App\Http\Controllers\Owner\StockController::class, 'index'])
+            ->name('stock.index');
+        Route::post('stock/{variant}/restock', [\App\Http\Controllers\Owner\StockController::class, 'restock'])
+            ->name('stock.restock');
+        Route::post('stock/{variant}/adjust', [\App\Http\Controllers\Owner\StockController::class, 'adjust'])
+            ->name('stock.adjust');
+        Route::get('stock/{variant}/history', [\App\Http\Controllers\Owner\StockController::class, 'history'])
+            ->name('stock.history');
+        Route::get('stock/movements', [\App\Http\Controllers\Owner\StockController::class, 'movements'])
+            ->name('stock.movements');
     });
 
 // --- Cashier Routes (owner juga bisa akses) ---
@@ -53,11 +78,27 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
     ->prefix('cashier')
     ->name('cashier.')
     ->group(function () {
-        Route::get('/pos', function () {
-            return Inertia::render('Cashier/POS');
-        })->name('pos');
-        // Diisi lebih lanjut di Phase 3
+        // POS
+        Route::get('/pos', [\App\Http\Controllers\Cashier\POSController::class, 'index'])
+            ->name('pos');
+        Route::post('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'store'])
+            ->name('transactions.store');
+
+        // Cash Drawer
+        Route::get('/cash-drawer', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'index'])
+            ->name('cash-drawer.index');
+        Route::post('/cash-drawer/open', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'open'])
+            ->name('cash-drawer.open');
+        Route::post('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'close'])
+            ->name('cash-drawer.close');
+        Route::get('/cash-drawer/{cashDrawer}/summary', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'summary'])
+            ->name('cash-drawer.summary');
     });
+
+// --- Void Transaction (owner only) ---
+Route::middleware(['auth', 'tenant', 'role:owner'])
+    ->post('/owner/transactions/{transaction}/void', [\App\Http\Controllers\Cashier\POSController::class, 'void'])
+    ->name('owner.transactions.void');
 
 // Redirect root ke login atau dashboard
 Route::get('/', function () {
