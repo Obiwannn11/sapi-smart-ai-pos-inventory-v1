@@ -162,6 +162,68 @@
 
 ---
 
+### [ADDITION] Flash `lastTransaction` via Inertia untuk Receipt Modal
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Middleware | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan `flash.lastTransaction` di `HandleInertiaRequests` middleware agar data transaksi terakhir yang berhasil bisa dikirim ke frontend untuk ditampilkan di ReceiptModal (struk). Phase 3 doc tidak secara eksplisit mendefinisikan mekanisme passing data transaksi ke receipt.
+- **Alasan:** Inertia redirect-back tidak bisa mengirim data object secara langsung. Flash session digunakan sebagai bridge untuk menampilkan struk setelah checkout sukses.
+- **File Terdampak:**
+  - `app/Http/Middleware/HandleInertiaRequests.php` — tambah `lastTransaction` di flash share
+  - `app/Http/Controllers/Cashier/POSController.php` — `->with('lastTransaction', ...)` di store method
+
+---
+
+### [ADDITION] Redirect Tutup Kas ke Summary Page
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Controller | Route
+- **Breaking Change:** Tidak
+- **Deskripsi:** Setelah tutup kas, kasir langsung di-redirect ke halaman `CashDrawerSummary` (rekap sesi), bukan kembali ke halaman `CashDrawer.index`. Phase 3 doc menunjukkan redirect ke `cash-drawer.index`.
+- **Alasan:** UX lebih baik — kasir langsung melihat rekap sesi lengkap (per payment method, selisih) setelah tutup kas.
+- **File Terdampak:**
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — `close()` redirect ke `cash-drawer.summary`
+
+---
+
+### [ADDITION] Transaction Count di Cash Drawer Summary
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan `transactionCount` (jumlah transaksi completed dalam sesi) ke data yang dikirim ke `CashDrawerSummary.vue`. Tidak ada di Phase 3 doc.
+- **Alasan:** Informasi tambahan yang berguna untuk rekap shift kasir.
+- **File Terdampak:**
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — `summary()` menghitung dan mengirim `transactionCount`
+
+---
+
+### [ADDITION] Dependency chart.js + vue-chartjs untuk Dashboard Chart
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-5 Dashboard, Laporan & Badge Helper
+- **Dampak:** Frontend | Config
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan `chart.js` dan `vue-chartjs` sebagai dependency npm untuk menampilkan bar chart trend pendapatan 7 hari di halaman Dashboard owner. Phase 5 doc menyebutkan chart sebagai "opsional, bisa pakai chart.js" tanpa mendefinisikan dependency secara eksplisit.
+- **Alasan:** Dipilih atas permintaan user. Chart.js + vue-chartjs ringan dan memberikan visualisasi data yang interaktif.
+- **File Terdampak:**
+  - `package.json` — tambah dependency `chart.js`, `vue-chartjs`
+  - `resources/js/Components/DailyChart.vue` — komponen chart baru
+
+---
+
+### [ADDITION] Navigasi Sidebar Owner Ditambah Menu Phase 5
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-5 Dashboard, Laporan & Badge Helper
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan 3 menu navigasi baru di sidebar OwnerLayout: Laporan Harian, Transaksi, Sesi Kas. Serta menambahkan 3 ikon SVG baru (report, receipt, cash) untuk navigasi tersebut. Phase 5 doc tidak secara eksplisit mendefinisikan perubahan pada layout/navigasi.
+- **Alasan:** Halaman-halaman baru Phase 5 perlu bisa diakses via navigasi sidebar agar UX konsisten dengan halaman owner lainnya.
+- **File Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue` — tambah navigation items + ikon SVG
+
+---
+
 ## Template Entry Kosong (Copy-Paste)
 
 ```markdown
