@@ -70,8 +70,9 @@ class BadgeHelperService
         // --- Badge 3: Dead Stock (0 penjualan dalam 30 hari, stok > 0) ---
         $deadStock = (clone $variantScope)
             ->where('stock', '>', 0)
-            ->whereDoesntHave('transactionItems', function ($q) {
-                $q->where('created_at', '>=', now()->subDays(30));
+            ->whereDoesntHave('transactionItems.transaction', function ($q) {
+                $q->where('transactions.created_at', '>=', now()->subDays(30))
+                    ->where('transactions.status', 'completed');
             })
             ->with('product:id,name')
             ->get();
