@@ -224,9 +224,7 @@ const close = () => {
                                             <input
                                                 type="checkbox"
                                                 :checked="(selectedModifiers[group.id] || []).includes(mod.id)"
-                                                class="text-indigo-600 focus:ring-indigo-500 rounded"
-                                                @click.stop
-                                                @change="toggleMultiModifier(group.id, mod.id)"
+                                                class="text-indigo-600 focus:ring-indigo-500 rounded pointer-events-none"
                                             />
                                             <span class="text-sm text-gray-700">{{ mod.name }}</span>
                                         </div>

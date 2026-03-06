@@ -10,6 +10,7 @@ use App\Models\ModifierGroup;
 use App\Models\Product;
 use App\Services\ImageService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Arr;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -99,7 +100,7 @@ class ProductController extends Controller
             $data['image'] = $this->imageService->upload($request->file('image'));
         }
 
-        $product->update($data);
+        $product->update(Arr::only($data, ['name', 'category_id', 'image', 'is_active']));
 
         // Sync modifier groups
         if (isset($data['modifier_group_ids'])) {

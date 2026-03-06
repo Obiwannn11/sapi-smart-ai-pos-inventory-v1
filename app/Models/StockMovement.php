@@ -10,15 +10,13 @@ class StockMovement extends Model
 {
     use BelongsToTenant;
 
-    public $timestamps = false;
-
-    const CREATED_AT = 'created_at';
     const UPDATED_AT = null;
 
     // Type constants
     const TYPE_SALE = 'sale';
     const TYPE_RESTOCK = 'restock';
     const TYPE_ADJUSTMENT = 'adjustment';
+    const TYPE_VOID = 'void';
 
     protected $fillable = [
         'tenant_id', 'product_variant_id', 'type', 'qty', 'notes', 'reference_id',

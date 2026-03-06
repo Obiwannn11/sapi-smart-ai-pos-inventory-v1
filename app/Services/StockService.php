@@ -14,7 +14,17 @@ class StockService
      */
     public function deduct(ProductVariant $variant, int $qty, int $transactionId): void
     {
-        $variant->decrement('stock', $qty);
+        // Atomic decrement with negative stock prevention
+        $affected = ProductVariant::where('id', $variant->id)
+            ->where('stock', '>=', $qty)
+            ->update(['stock' => DB::raw("stock - {$qty}")]);
+
+        if (!$affected) {
+            $variant->refresh();
+            throw new \Exception(
+                "Stok {$variant->name} tidak cukup. Tersedia: {$variant->stock}, diminta: {$qty}"
+            );
+        }
 
         StockMovement::create([
             'tenant_id' => $variant->product->tenant_id,
@@ -37,7 +47,7 @@ class StockService
         StockMovement::create([
             'tenant_id' => $variant->product->tenant_id,
             'product_variant_id' => $variant->id,
-            'type' => StockMovement::TYPE_ADJUSTMENT,
+            'type' => StockMovement::TYPE_VOID,
             'qty' => $qty,
             'notes' => "Void transaksi #{$transactionId} — stok dikembalikan",
             'reference_id' => $transactionId,
@@ -73,17 +83,19 @@ class StockService
     public function adjust(ProductVariant $variant, int $qty, ?string $notes = null): void
     {
         DB::transaction(function () use ($variant, $qty, $notes) {
+            // Lock row to prevent race condition
+            $variant = ProductVariant::lockForUpdate()->find($variant->id);
+
+            if ($qty < 0 && $variant->stock < abs($qty)) {
+                throw new \Exception(
+                    "Adjustment gagal: stok {$variant->name} akan menjadi negatif. Tersedia: {$variant->stock}"
+                );
+            }
+
             if ($qty > 0) {
                 $variant->increment('stock', $qty);
             } else {
                 $variant->decrement('stock', abs($qty));
-            }
-
-            // Safety: cegah stok negatif
-            if ($variant->fresh()->stock < 0) {
-                throw new \Exception(
-                    "Adjustment gagal: stok {$variant->name} akan menjadi negatif."
-                );
             }
 
             StockMovement::create([

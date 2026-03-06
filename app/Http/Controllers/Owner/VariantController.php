@@ -19,6 +19,10 @@ class VariantController extends Controller
 
     public function update(StoreVariantRequest $request, Product $product, ProductVariant $variant): RedirectResponse
     {
+        if ($variant->product_id !== $product->id) {
+            abort(404);
+        }
+
         $variant->update($request->validated());
 
         return back()->with('success', 'Varian berhasil diperbarui.');
@@ -26,6 +30,10 @@ class VariantController extends Controller
 
     public function destroy(Product $product, ProductVariant $variant): RedirectResponse
     {
+        if ($variant->product_id !== $product->id) {
+            abort(404);
+        }
+
         $variant->delete(); // soft delete
 
         return back()->with('success', 'Varian berhasil dihapus.');

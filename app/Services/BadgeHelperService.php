@@ -92,9 +92,35 @@ class BadgeHelperService
             ];
         }
 
-        // --- Badge 4: Potensi Expired (expiry_date ≤ 7 hari ke depan) ---
+        // --- Badge 4: Sudah Expired (expiry_date < hari ini) ---
+        $alreadyExpired = (clone $variantScope)
+            ->whereNotNull('expiry_date')
+            ->where('expiry_date', '<', now()->startOfDay())
+            ->where('stock', '>', 0)
+            ->with('product:id,name')
+            ->get();
+
+        if ($alreadyExpired->count() > 0) {
+            $badges[] = [
+                'type' => 'expired',
+                'severity' => 'danger',
+                'title' => 'Sudah Expired',
+                'count' => $alreadyExpired->count(),
+                'message' => "{$alreadyExpired->count()} varian sudah kedaluwarsa",
+                'items' => $alreadyExpired->map(fn ($v) => [
+                    'id' => $v->id,
+                    'product_name' => $v->product->name,
+                    'variant_name' => $v->name,
+                    'stock' => $v->stock,
+                    'expiry_date' => $v->expiry_date->format('Y-m-d'),
+                ])->toArray(),
+            ];
+        }
+
+        // --- Badge 5: Mendekati Expired (expiry_date dalam 7 hari ke depan) ---
         $nearExpiry = (clone $variantScope)
             ->whereNotNull('expiry_date')
+            ->where('expiry_date', '>=', now()->startOfDay())
             ->where('expiry_date', '<=', now()->addDays(7))
             ->where('stock', '>', 0)
             ->with('product:id,name')
@@ -104,7 +130,7 @@ class BadgeHelperService
             $badges[] = [
                 'type' => 'near_expiry',
                 'severity' => 'warning',
-                'title' => 'Potensi Expired',
+                'title' => 'Mendekati Expired',
                 'count' => $nearExpiry->count(),
                 'message' => "{$nearExpiry->count()} varian mendekati kedaluwarsa",
                 'items' => $nearExpiry->map(fn ($v) => [

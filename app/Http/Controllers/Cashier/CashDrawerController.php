@@ -60,13 +60,13 @@ class CashDrawerController extends Controller
             ->whereNull('closed_at')
             ->firstOrFail();
 
-        // Hitung expected_amount dari SEMUA payment methods (sesuai kesepakatan)
-        $expectedFromTransactions = TransactionPayment::whereHas('transaction', function ($q) use ($drawer) {
-            $q->where('tenant_id', $drawer->tenant_id)
-                ->where('status', 'completed')
-                ->where('created_at', '>=', $drawer->opened_at)
-                ->where('created_at', '<=', now());
-        })->sum('amount');
+        // Hitung expected_amount dari total transaksi (bukan payment amount, karena
+        // payment amount bisa lebih besar dari total belanja jika ada kembalian cash)
+        $expectedFromTransactions = \App\Models\Transaction::where('tenant_id', $drawer->tenant_id)
+            ->where('status', 'completed')
+            ->where('created_at', '>=', $drawer->opened_at)
+            ->where('created_at', '<=', now())
+            ->sum('total_amount');
 
         $expectedAmount = $drawer->opening_amount + $expectedFromTransactions;
         $closingAmount = $request->validated('closing_amount');
@@ -88,6 +88,11 @@ class CashDrawerController extends Controller
      */
     public function summary(CashDrawer $cashDrawer): Response
     {
+        // Authorization: cashier hanya bisa lihat kas sendiri, owner bisa lihat semua
+        if (auth()->user()->isCashier() && $cashDrawer->user_id !== auth()->id()) {
+            abort(403, 'Anda tidak memiliki akses ke sesi kas ini.');
+        }
+
         // Rekap per payment method
         $paymentSummary = TransactionPayment::query()
             ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')

@@ -40,6 +40,8 @@ class StockController extends Controller
      */
     public function restock(RestockRequest $request, ProductVariant $variant): RedirectResponse
     {
+        $this->authorizeVariant($variant);
+
         try {
             $this->stockService->restock(
                 variant: $variant,
@@ -59,6 +61,8 @@ class StockController extends Controller
      */
     public function adjust(AdjustStockRequest $request, ProductVariant $variant): RedirectResponse
     {
+        $this->authorizeVariant($variant);
+
         try {
             $this->stockService->adjust(
                 variant: $variant,
@@ -78,6 +82,8 @@ class StockController extends Controller
      */
     public function history(ProductVariant $variant): Response
     {
+        $this->authorizeVariant($variant);
+
         $movements = StockMovement::where('product_variant_id', $variant->id)
             ->latest('created_at')
             ->paginate(50);
@@ -124,5 +130,13 @@ class StockController extends Controller
             'products' => $products,
             'filters' => $request->only(['type', 'date_from', 'date_to', 'product_id']),
         ]);
+    }
+
+    private function authorizeVariant(ProductVariant $variant): void
+    {
+        $variant->loadMissing('product');
+        if ($variant->product->tenant_id !== auth()->user()->tenant_id) {
+            abort(403);
+        }
     }
 }
