@@ -110,7 +110,7 @@ const logout = () => {
                     <!-- Expected vs Actual -->
                     <div class="border-t border-gray-200 pt-4 space-y-3">
                         <div class="flex justify-between text-sm">
-                            <span class="text-gray-500">Expected Amount</span>
+                            <span class="text-gray-500">Expected Cash (uang tunai di laci)</span>
                             <span class="font-medium">{{ formatCurrency(cashDrawer.expected_amount) }}</span>
                         </div>
                         <div class="flex justify-between text-sm">

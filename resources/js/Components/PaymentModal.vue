@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -15,17 +15,56 @@ const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
 };
 
+// Format display value: "50000" → "50.000"
+const formatNumber = (value) => {
+    const num = Number(String(value).replace(/\D/g, ''));
+    if (!num) return '';
+    return num.toLocaleString('id-ID');
+};
+
+// Parse formatted string back to number: "50.000" → 50000
+const parseNumber = (str) => {
+    return Number(String(str).replace(/\D/g, '')) || 0;
+};
+
 // Reset ketika modal dibuka
 watch(() => props.show, (val) => {
     if (val) {
-        // Mulai dengan 1 baris payment (default)
         payments.value = [{
             payment_method_id: null,
             amount: '',
+            displayAmount: '',
             reference_code: '',
         }];
     }
 });
+
+// Handle amount input — auto format angka
+const onAmountInput = (idx, event) => {
+    const raw = event.target.value.replace(/\D/g, '');
+    const num = Number(raw) || 0;
+    payments.value[idx].amount = num;
+    payments.value[idx].displayAmount = num > 0 ? formatNumber(num) : '';
+    // Update the input value directly to show formatted version
+    nextTick(() => {
+        event.target.value = payments.value[idx].displayAmount;
+    });
+};
+
+const onAmountFocus = (idx, event) => {
+    // On focus, show raw number for easy editing
+    const num = payments.value[idx].amount;
+    if (num > 0) {
+        event.target.value = String(num);
+    }
+};
+
+const onAmountBlur = (idx, event) => {
+    // On blur, show formatted version
+    const num = payments.value[idx].amount;
+    event.target.value = num > 0 ? formatNumber(num) : '';
+    payments.value[idx].displayAmount = num > 0 ? formatNumber(num) : '';
+};
 
 const totalPaid = computed(() => {
     return payments.value.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -38,12 +77,10 @@ const change = computed(() => {
 const isValid = computed(() => {
     if (payments.value.length === 0) return false;
 
-    // Semua payment harus punya method dan amount > 0
     for (const p of payments.value) {
         if (!p.payment_method_id || !p.amount || Number(p.amount) <= 0) return false;
     }
 
-    // Total bayar harus >= total belanja
     return totalPaid.value >= props.totalAmount;
 });
 
@@ -51,6 +88,7 @@ const addPaymentRow = () => {
     payments.value.push({
         payment_method_id: null,
         amount: '',
+        displayAmount: '',
         reference_code: '',
     });
 };
@@ -71,9 +109,21 @@ const needsReferenceCode = (methodId) => {
     return type === 'qris_static' || type === 'bank_transfer';
 };
 
+// Tombol uang pas
 const payExact = () => {
     if (payments.value.length === 1) {
         payments.value[0].amount = props.totalAmount;
+        payments.value[0].displayAmount = formatNumber(props.totalAmount);
+    }
+};
+
+// Tombol denominasi cepat — tambah nominal ke pembayaran pertama
+const quickCash = (denomination) => {
+    if (payments.value.length >= 1) {
+        const current = Number(payments.value[0].amount) || 0;
+        const newAmount = current + denomination;
+        payments.value[0].amount = newAmount;
+        payments.value[0].displayAmount = formatNumber(newAmount);
     }
 };
 
@@ -109,25 +159,27 @@ const close = () => {
                 <!-- Backdrop -->
                 <div class="absolute inset-0 bg-black/50" @click="close" />
 
-                <!-- Modal -->
-                <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
-                    <!-- Header -->
-                    <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-gray-800">Pembayaran</h3>
-                        <button @click="close" class="text-gray-400 hover:text-gray-600">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
+                <!-- Modal — wider -->
+                <div class="relative bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col">
+                    <!-- Header + Total (sticky, not scrollable) -->
+                    <div class="sticky top-0 bg-white border-b border-gray-200 rounded-t-xl z-10 flex-shrink-0">
+                        <div class="px-6 py-4 flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-gray-800">Pembayaran</h3>
+                            <button @click="close" class="text-gray-400 hover:text-gray-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <!-- Total headline (always visible) -->
+                        <div class="bg-indigo-50 px-6 py-3 flex items-center justify-between">
+                            <span class="text-sm text-indigo-600 font-medium">Total Belanja</span>
+                            <span class="text-2xl font-bold text-indigo-700">{{ formatCurrency(totalAmount) }}</span>
+                        </div>
                     </div>
 
-                    <div class="p-6 space-y-4">
-                        <!-- Total yang harus dibayar -->
-                        <div class="bg-indigo-50 rounded-lg p-4 text-center">
-                            <p class="text-sm text-indigo-600 font-medium">Total Belanja</p>
-                            <p class="text-2xl font-bold text-indigo-700">{{ formatCurrency(totalAmount) }}</p>
-                        </div>
-
+                    <!-- Scrollable content -->
+                    <div class="flex-1 overflow-y-auto p-6 space-y-4">
                         <!-- Payment rows -->
                         <div v-for="(payment, idx) in payments" :key="idx" class="border border-gray-200 rounded-lg p-4 space-y-3">
                             <div class="flex items-center justify-between">
@@ -152,23 +204,49 @@ const close = () => {
                                 </option>
                             </select>
 
-                            <!-- Amount -->
-                            <div class="relative">
-                                <input
-                                    v-model="payment.amount"
-                                    type="number"
-                                    min="0"
-                                    step="1000"
-                                    placeholder="Nominal"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                />
-                                <button
-                                    v-if="payments.length === 1 && idx === 0"
-                                    @click="payExact"
-                                    class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                                >
-                                    Uang pas
-                                </button>
+                            <!-- Amount with formatting -->
+                            <div>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
+                                    <input
+                                        :value="payment.displayAmount"
+                                        @input="onAmountInput(idx, $event)"
+                                        @focus="onAmountFocus(idx, $event)"
+                                        @blur="onAmountBlur(idx, $event)"
+                                        type="text"
+                                        inputmode="numeric"
+                                        placeholder="0"
+                                        class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                </div>
+
+                                <!-- Quick denomination buttons for first payment row -->
+                                <div v-if="idx === 0" class="flex flex-wrap gap-2 mt-2">
+                                    <button
+                                        @click="payExact"
+                                        class="px-3 py-1.5 text-xs font-medium bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition border border-indigo-200"
+                                    >
+                                        Uang Pas
+                                    </button>
+                                    <button
+                                        @click="quickCash(20000)"
+                                        class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition border border-green-200"
+                                    >
+                                        +20rb
+                                    </button>
+                                    <button
+                                        @click="quickCash(50000)"
+                                        class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition border border-green-200"
+                                    >
+                                        +50rb
+                                    </button>
+                                    <button
+                                        @click="quickCash(100000)"
+                                        class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition border border-green-200"
+                                    >
+                                        +100rb
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Reference code (for QRIS/Transfer) -->
@@ -207,8 +285,8 @@ const close = () => {
                         </div>
                     </div>
 
-                    <!-- Footer -->
-                    <div class="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
+                    <!-- Footer (sticky) -->
+                    <div class="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3 rounded-b-xl flex-shrink-0">
                         <button
                             @click="close"
                             class="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition"

@@ -74,6 +74,11 @@ const printReceipt = () => {
                                         <span v-if="Number(mod.extra_price) > 0">({{ formatCurrency(mod.extra_price) }})</span>
                                     </p>
                                 </div>
+
+                                <!-- Item Notes -->
+                                <p v-if="item.notes" class="text-xs text-amber-600 italic ml-4 mt-0.5">
+                                    {{ item.notes }}
+                                </p>
                             </div>
                         </div>
 

@@ -13,6 +13,7 @@ const props = defineProps({
     products: Array,
     paymentMethods: Array,
     cashDrawer: Object,
+    openBills: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -28,10 +29,20 @@ const showPaymentModal = ref(false);
 const showReceiptModal = ref(false);
 const lastTransaction = ref(null);
 const processing = ref(false);
+const showOpenBills = ref(false);
+const selectedOpenBill = ref(null);
+const showOpenBillPayment = ref(false);
 
 // --- Helpers ---
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
+};
+
+const formatDate = (date) => {
+    return new Date(date).toLocaleString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
 };
 
 // --- Filtered Products ---
@@ -69,7 +80,6 @@ const cartItemCount = computed(() => {
 });
 
 const selectProduct = (product) => {
-    // Jika produk punya 1 variant tanpa modifier → langsung tambah ke cart
     const availableVariants = (product.variants || []).filter(v => v.stock > 0);
     const hasModifiers = product.modifier_groups && product.modifier_groups.length > 0;
 
@@ -81,9 +91,9 @@ const selectProduct = (product) => {
             unit_price: Number(variant.price),
             qty: 1,
             modifiers: [],
+            notes: '',
         });
     } else {
-        // Buka ModifierModal untuk pilih variant + modifiers
         selectedProduct.value = product;
         showModifierModal.value = true;
     }
@@ -104,13 +114,13 @@ const getCartQtyForVariant = (variantId) => {
 };
 
 const addToCart = (item) => {
-    // Cek apakah item sama sudah ada di cart (sama variant + sama modifiers)
+    // item dengan catatan berbeda = baris terpisah
     const existingIdx = cart.value.findIndex(c =>
         c.variant_id === item.variant_id &&
-        JSON.stringify(c.modifiers.map(m => m.id).sort()) === JSON.stringify((item.modifiers || []).map(m => m.id).sort())
+        JSON.stringify(c.modifiers.map(m => m.id).sort()) === JSON.stringify((item.modifiers || []).map(m => m.id).sort()) &&
+        (c.notes || '') === (item.notes || '')
     );
 
-    // Cek stok tersedia
     const stock = getVariantStock(item.variant_id);
     const currentCartQty = getCartQtyForVariant(item.variant_id);
     if (currentCartQty + item.qty > stock) {
@@ -121,7 +131,7 @@ const addToCart = (item) => {
     if (existingIdx >= 0) {
         cart.value[existingIdx].qty += item.qty;
     } else {
-        cart.value.push({ ...item });
+        cart.value.push({ ...item, notes: item.notes || '' });
     }
 };
 
@@ -135,6 +145,10 @@ const updateCartQty = (index, newQty) => {
         return;
     }
     cart.value[index].qty = newQty;
+};
+
+const updateCartNotes = (index, notes) => {
+    cart.value[index].notes = notes;
 };
 
 const removeCartItem = (index) => {
@@ -166,6 +180,7 @@ const handlePayment = (payments) => {
                 name: m.name,
                 extra_price: m.extra_price,
             })),
+            notes: item.notes || null,
         })),
         payments: payments,
         notes: null,
@@ -175,7 +190,6 @@ const handlePayment = (payments) => {
         preserveScroll: true,
         onSuccess: (page) => {
             showPaymentModal.value = false;
-            // Ambil lastTransaction dari flash
             const txData = page.props.flash?.lastTransaction;
             if (txData) {
                 lastTransaction.value = txData;
@@ -189,9 +203,75 @@ const handlePayment = (payments) => {
     });
 };
 
+// --- Open Bill ---
+const saveAsOpenBill = () => {
+    if (cart.value.length === 0 || processing.value) return;
+    processing.value = true;
+
+    const data = {
+        items: cart.value.map(item => ({
+            variant_id: item.variant_id,
+            variant_name: item.variant_name,
+            qty: item.qty,
+            unit_price: item.unit_price,
+            modifiers: (item.modifiers || []).map(m => ({
+                id: m.id,
+                name: m.name,
+                extra_price: m.extra_price,
+            })),
+            notes: item.notes || null,
+        })),
+        payments: null,
+        notes: null,
+        is_open_bill: true,
+    };
+
+    router.post('/cashier/transactions', data, {
+        preserveScroll: true,
+        onSuccess: () => {
+            cart.value = [];
+        },
+        onFinish: () => {
+            processing.value = false;
+        },
+    });
+};
+
+const openBillPayment = (bill) => {
+    selectedOpenBill.value = bill;
+    showOpenBillPayment.value = true;
+};
+
+const handleOpenBillPayment = (payments) => {
+    if (processing.value || !selectedOpenBill.value) return;
+    processing.value = true;
+
+    router.post(`/cashier/transactions/${selectedOpenBill.value.id}/pay`, {
+        payments: payments,
+    }, {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            showOpenBillPayment.value = false;
+            selectedOpenBill.value = null;
+            const txData = page.props.flash?.lastTransaction;
+            if (txData) {
+                lastTransaction.value = txData;
+                showReceiptModal.value = true;
+            }
+        },
+        onFinish: () => {
+            processing.value = false;
+        },
+    });
+};
+
 // --- Navigation ---
 const goToCashDrawer = () => {
     router.get('/cashier/cash-drawer');
+};
+
+const goToHistory = () => {
+    router.get('/cashier/transactions');
 };
 
 const logout = () => {
@@ -204,13 +284,23 @@ const logout = () => {
         <FlashMessage />
 
         <!-- Top Bar -->
-        <nav class="bg-white shadow-sm px-4 py-3 flex items-center justify-between flex-shrink-0 z-10">
+        <nav class="bg-white shadow-sm px-4 py-3 flex items-center justify-between shrink-0 z-10">
             <div class="flex items-center gap-3">
                 <h1 class="text-lg font-bold text-indigo-600">SAPI POS</h1>
                 <span class="text-xs text-gray-400 hidden sm:inline">|</span>
                 <span class="text-xs text-gray-500 hidden sm:inline">{{ auth.user.name }}</span>
             </div>
             <div class="flex items-center gap-3">
+                <button
+                    @click="goToHistory"
+                    class="text-sm text-gray-600 hover:text-indigo-600 flex items-center gap-1.5 transition"
+                    title="Riwayat Transaksi"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    <span class="hidden sm:inline">Riwayat</span>
+                </button>
                 <button
                     @click="goToCashDrawer"
                     class="text-sm text-gray-600 hover:text-indigo-600 flex items-center gap-1.5 transition"
@@ -229,7 +319,7 @@ const logout = () => {
             <!-- LEFT: Product Grid -->
             <div class="flex-1 flex flex-col overflow-hidden">
                 <!-- Search + Category Filter -->
-                <div class="p-4 pb-2 flex-shrink-0 space-y-3">
+                <div class="p-4 pb-2 shrink-0 space-y-3">
                     <!-- Search -->
                     <div class="relative">
                         <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -290,7 +380,7 @@ const logout = () => {
             </div>
 
             <!-- RIGHT: Cart Panel -->
-            <div class="w-80 lg:w-96 bg-white border-l border-gray-200 flex flex-col flex-shrink-0">
+            <div class="w-80 lg:w-96 bg-white border-l border-gray-200 flex flex-col shrink-0">
                 <!-- Cart Header -->
                 <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                     <div class="flex items-center gap-2">
@@ -310,6 +400,49 @@ const logout = () => {
 
                 <!-- Cart Items -->
                 <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                    <!-- Open Bills Panel -->
+                    <div v-if="openBills.length > 0" class="mb-2">
+                        <button
+                            @click="showOpenBills = !showOpenBills"
+                            class="w-full flex items-center justify-between px-3 py-2 bg-amber-50 rounded-lg border border-amber-200 text-sm"
+                        >
+                            <span class="font-medium text-amber-700">Open Bill ({{ openBills.length }})</span>
+                            <svg
+                                :class="['w-4 h-4 text-amber-600 transition-transform', showOpenBills ? 'rotate-180' : '']"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            >
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <div v-if="showOpenBills" class="mt-2 space-y-2">
+                            <div
+                                v-for="bill in openBills"
+                                :key="bill.id"
+                                class="bg-amber-50 border border-amber-200 rounded-lg p-3"
+                            >
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-semibold text-amber-700">{{ bill.code }}</span>
+                                    <span class="text-xs text-gray-400">{{ formatDate(bill.created_at) }}</span>
+                                </div>
+                                <div class="text-xs text-gray-600 space-y-0.5">
+                                    <p v-for="item in bill.items" :key="item.id" class="truncate">
+                                        {{ item.qty }}x {{ item.variant_name }}
+                                        <span v-if="item.notes" class="text-amber-600 italic"> — {{ item.notes }}</span>
+                                    </p>
+                                </div>
+                                <div class="flex items-center justify-between mt-2">
+                                    <span class="text-sm font-semibold text-gray-800">{{ formatCurrency(bill.total_amount) }}</span>
+                                    <button
+                                        @click="openBillPayment(bill)"
+                                        class="px-3 py-1 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 transition"
+                                    >
+                                        Bayar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <template v-if="cart.length > 0">
                         <CartItem
                             v-for="(item, idx) in cart"
@@ -317,6 +450,7 @@ const logout = () => {
                             :item="item"
                             :index="idx"
                             @update-qty="updateCartQty"
+                            @update-notes="updateCartNotes"
                             @remove="removeCartItem"
                         />
                     </template>
@@ -335,16 +469,26 @@ const logout = () => {
                         <span class="text-sm text-gray-600">Total</span>
                         <span class="text-xl font-bold text-gray-800">{{ formatCurrency(cartTotal) }}</span>
                     </div>
-                    <button
-                        @click="openPaymentModal"
-                        :disabled="cart.length === 0 || processing"
-                        class="w-full py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                        </svg>
-                        {{ processing ? 'Memproses...' : 'BAYAR' }}
-                    </button>
+                    <div class="flex gap-2">
+                        <button
+                            @click="saveAsOpenBill"
+                            :disabled="cart.length === 0 || processing"
+                            class="flex-1 py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                            title="Simpan pesanan tanpa bayar"
+                        >
+                            Open Bill
+                        </button>
+                        <button
+                            @click="openPaymentModal"
+                            :disabled="cart.length === 0 || processing"
+                            class="flex-[2] py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            {{ processing ? 'Memproses...' : 'BAYAR' }}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -363,6 +507,15 @@ const logout = () => {
             :payment-methods="paymentMethods"
             @close="showPaymentModal = false"
             @confirm="handlePayment"
+        />
+
+        <!-- Open Bill Payment Modal -->
+        <PaymentModal
+            :show="showOpenBillPayment"
+            :total-amount="Number(selectedOpenBill?.total_amount || 0)"
+            :payment-methods="paymentMethods"
+            @close="showOpenBillPayment = false; selectedOpenBill = null"
+            @confirm="handleOpenBillPayment"
         />
 
         <ReceiptModal
