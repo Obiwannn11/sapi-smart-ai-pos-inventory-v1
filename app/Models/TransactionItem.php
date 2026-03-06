@@ -12,7 +12,7 @@ class TransactionItem extends Model
 
     protected $fillable = [
         'transaction_id', 'product_variant_id',
-        'variant_name', 'qty', 'unit_price', 'subtotal',
+        'variant_name', 'qty', 'unit_price', 'subtotal', 'notes',
     ];
 
     protected function casts(): array

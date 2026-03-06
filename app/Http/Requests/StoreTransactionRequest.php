@@ -4,18 +4,25 @@ namespace App\Http\Requests;
 
 use App\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 class StoreTransactionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return Auth::check();
     }
 
     public function rules(): array
     {
-        $tenantId = auth()->user()->tenant_id;
+        $user = Auth::user();
+
+        if (!$user) {
+            return [];
+        }
+
+        $tenantId = $user->tenant_id;
 
         return [
             // Items
@@ -40,9 +47,10 @@ class StoreTransactionRequest extends FormRequest
             ],
             'items.*.modifiers.*.name'        => 'required|string|max:255',
             'items.*.modifiers.*.extra_price' => 'required|numeric|min:0',
+            'items.*.notes'                   => 'nullable|string|max:500',
 
-            // Payments
-            'payments'                        => 'required|array|min:1',
+            // Payments (nullable for open bill)
+            'payments'                        => 'nullable|array|min:1',
             'payments.*.payment_method_id'    => [
                 'required',
                 Rule::exists('payment_methods', 'id')->where('tenant_id', $tenantId),
@@ -52,6 +60,9 @@ class StoreTransactionRequest extends FormRequest
 
             // Notes
             'notes' => 'nullable|string|max:1000',
+
+            // Open bill flag
+            'is_open_bill' => 'nullable|boolean',
         ];
     }
 
@@ -69,6 +80,17 @@ class StoreTransactionRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            // Skip payment validation for open bill
+            if ($this->boolean('is_open_bill')) {
+                return;
+            }
+
+            // Payments required for non-open-bill
+            if (empty($this->input('payments'))) {
+                $validator->errors()->add('payments', 'Metode pembayaran harus dipilih.');
+                return;
+            }
+
             $totalBelanja = 0;
             foreach ($this->input('items', []) as $item) {
                 $itemTotal = ($item['unit_price'] ?? 0) * ($item['qty'] ?? 0);

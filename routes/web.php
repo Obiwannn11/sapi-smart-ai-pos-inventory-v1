@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 // --- Auth (Guest) ---
@@ -84,6 +85,14 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
         Route::post('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'store'])
             ->name('transactions.store');
 
+        // Open Bill — bayar pesanan pending
+        Route::post('/transactions/{transaction}/pay', [\App\Http\Controllers\Cashier\POSController::class, 'payOpenBill'])
+            ->name('transactions.pay');
+
+        // Transaction History (kasir)
+        Route::get('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'history'])
+            ->name('transactions.index');
+
         // Cash Drawer
         Route::get('/cash-drawer', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'index'])
             ->name('cash-drawer.index');
@@ -102,8 +111,10 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
 
 // Redirect root ke login atau dashboard
 Route::get('/', function () {
-    if (auth()->check()) {
-        return auth()->user()->isOwner()
+    if (Auth::check()) {
+        $user = Auth::user();
+
+        return $user && $user->isOwner()
             ? redirect('/owner/dashboard')
             : redirect('/cashier/pos');
     }

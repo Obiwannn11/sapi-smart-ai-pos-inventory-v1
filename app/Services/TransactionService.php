@@ -6,6 +6,7 @@ use App\Models\Modifier;
 use App\Models\ProductVariant;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
 class TransactionService
@@ -16,11 +17,20 @@ class TransactionService
 
     /**
      * Proses checkout — atomic transaction.
+     * Mendukung open bill (simpan tanpa bayar) jika is_open_bill = true.
      */
     public function checkout(array $data): Transaction
     {
-        return DB::transaction(function () use ($data) {
-            $tenantId = auth()->user()->tenant_id;
+        $isOpenBill = !empty($data['is_open_bill']);
+
+        return DB::transaction(function () use ($data, $isOpenBill) {
+            $user = Auth::user();
+
+            if (!$user) {
+                throw new \Exception('User tidak terautentikasi.');
+            }
+
+            $tenantId = $user->tenant_id;
 
             // 1. Generate kode transaksi
             $code = $this->generateTransactionCode($tenantId);
@@ -28,7 +38,7 @@ class TransactionService
             // 2. Buat transaksi (total dihitung ulang dari DB prices setelah item loop)
             $transaction = Transaction::create([
                 'tenant_id' => $tenantId,
-                'user_id' => auth()->id(),
+                'user_id' => $user->id,
                 'code' => $code,
                 'status' => Transaction::STATUS_PENDING,
                 'total_amount' => 0,
@@ -38,7 +48,7 @@ class TransactionService
 
             $totalAmount = 0;
 
-            // 5. Simpan items + modifiers (SNAPSHOT)
+            // 3. Simpan items + modifiers (SNAPSHOT)
             foreach ($data['items'] as $item) {
                 // Lock row variant untuk mencegah race condition
                 $variant = ProductVariant::lockForUpdate()->find($item['variant_id']);
@@ -81,6 +91,7 @@ class TransactionService
                     'qty' => $item['qty'],
                     'unit_price' => $unitPrice,                   // SNAPSHOT from DB
                     'subtotal' => $subtotal,
+                    'notes' => $item['notes'] ?? null,            // Catatan per item
                 ]);
 
                 // Simpan modifier snapshots (from DB values)
@@ -94,19 +105,27 @@ class TransactionService
 
                 $totalAmount += $subtotal;
 
-                // 6. Kurangi stok
+                // 4. Kurangi stok (juga untuk open bill — stok langsung dikurangi)
                 $this->stockService->deduct($variant, $item['qty'], $transaction->id);
             }
 
-            // 7. Update total from DB-verified prices
+            // 5. Update total from DB-verified prices
+            $transaction->update([
+                'total_amount' => $totalAmount,
+            ]);
+
+            // 6. Jika open bill → selesai, tetap pending tanpa pembayaran
+            if ($isOpenBill) {
+                return $transaction->load(['items.modifiers']);
+            }
+
+            // 7. Simpan pembayaran
             $totalPaid = collect($data['payments'])->sum('amount');
             $changeAmount = max(0, $totalPaid - $totalAmount);
             $transaction->update([
-                'total_amount' => $totalAmount,
                 'change_amount' => $changeAmount,
             ]);
 
-            // 8. Simpan pembayaran
             foreach ($data['payments'] as $payment) {
                 $transaction->payments()->create([
                     'payment_method_id' => $payment['payment_method_id'],
@@ -115,8 +134,46 @@ class TransactionService
                 ]);
             }
 
-            // 9. Update status
+            // 8. Update status
             $transaction->update(['status' => Transaction::STATUS_COMPLETED]);
+
+            return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
+        });
+    }
+
+    /**
+     * Bayar open bill yang masih pending.
+     */
+    public function payOpenBill(Transaction $transaction, array $payments): Transaction
+    {
+        if ($transaction->status !== Transaction::STATUS_PENDING) {
+            throw new \Exception('Transaksi ini bukan open bill / sudah dibayar.');
+        }
+
+        return DB::transaction(function () use ($transaction, $payments) {
+            $totalPaid = collect($payments)->sum('amount');
+            $totalAmount = (float) $transaction->total_amount;
+            $changeAmount = max(0, $totalPaid - $totalAmount);
+
+            if ($totalPaid < $totalAmount) {
+                throw new \Exception(
+                    "Total pembayaran kurang. Harus: " . number_format($totalAmount) . ", dibayar: " . number_format($totalPaid)
+                );
+            }
+
+            // Simpan pembayaran
+            foreach ($payments as $payment) {
+                $transaction->payments()->create([
+                    'payment_method_id' => $payment['payment_method_id'],
+                    'amount' => $payment['amount'],
+                    'reference_code' => $payment['reference_code'] ?? null,
+                ]);
+            }
+
+            $transaction->update([
+                'change_amount' => $changeAmount,
+                'status' => Transaction::STATUS_COMPLETED,
+            ]);
 
             return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
         });

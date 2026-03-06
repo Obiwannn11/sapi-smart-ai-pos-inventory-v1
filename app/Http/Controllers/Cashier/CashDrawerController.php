@@ -8,6 +8,7 @@ use App\Http\Requests\OpenCashDrawerRequest;
 use App\Models\CashDrawer;
 use App\Models\TransactionPayment;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -18,7 +19,7 @@ class CashDrawerController extends Controller
      */
     public function index(): Response
     {
-        $openDrawer = CashDrawer::where('user_id', auth()->id())
+        $openDrawer = CashDrawer::where('user_id', Auth::id())
             ->whereNull('closed_at')
             ->first();
 
@@ -32,8 +33,14 @@ class CashDrawerController extends Controller
      */
     public function open(OpenCashDrawerRequest $request): RedirectResponse
     {
+        $user = Auth::user();
+
+        if (!$user) {
+            abort(401);
+        }
+
         // Validasi: tidak boleh ada sesi terbuka
-        $existingOpen = CashDrawer::where('user_id', auth()->id())
+        $existingOpen = CashDrawer::where('user_id', $user->id)
             ->whereNull('closed_at')
             ->exists();
 
@@ -42,8 +49,8 @@ class CashDrawerController extends Controller
         }
 
         CashDrawer::create([
-            'tenant_id' => auth()->user()->tenant_id,
-            'user_id' => auth()->id(),
+            'tenant_id' => $user->tenant_id,
+            'user_id' => $user->id,
             'opening_amount' => $request->validated('opening_amount'),
             'opened_at' => now(),
         ]);
@@ -56,19 +63,30 @@ class CashDrawerController extends Controller
      */
     public function close(CloseCashDrawerRequest $request): RedirectResponse
     {
-        $drawer = CashDrawer::where('user_id', auth()->id())
+        $drawer = CashDrawer::where('user_id', Auth::id())
             ->whereNull('closed_at')
             ->firstOrFail();
 
-        // Hitung expected_amount dari total transaksi (bukan payment amount, karena
-        // payment amount bisa lebih besar dari total belanja jika ada kembalian cash)
-        $expectedFromTransactions = \App\Models\Transaction::where('tenant_id', $drawer->tenant_id)
+        // Hitung expected_amount hanya dari pembayaran CASH
+        // (QRIS & transfer tidak masuk ke laci kas fisik)
+        $expectedCashFromPayments = TransactionPayment::query()
+            ->whereHas('paymentMethod', fn($q) => $q->where('type', 'cash'))
+            ->whereHas('transaction', function ($q) use ($drawer) {
+                $q->where('tenant_id', $drawer->tenant_id)
+                    ->where('status', 'completed')
+                    ->where('created_at', '>=', $drawer->opened_at)
+                    ->where('created_at', '<=', now());
+            })
+            ->sum('amount');
+
+        // Hitung total kembalian cash yang dikeluarkan dari laci
+        $totalChangeGiven = \App\Models\Transaction::where('tenant_id', $drawer->tenant_id)
             ->where('status', 'completed')
             ->where('created_at', '>=', $drawer->opened_at)
             ->where('created_at', '<=', now())
-            ->sum('total_amount');
+            ->sum('change_amount');
 
-        $expectedAmount = $drawer->opening_amount + $expectedFromTransactions;
+        $expectedAmount = $drawer->opening_amount + $expectedCashFromPayments - $totalChangeGiven;
         $closingAmount = $request->validated('closing_amount');
 
         $drawer->update([
@@ -88,8 +106,10 @@ class CashDrawerController extends Controller
      */
     public function summary(CashDrawer $cashDrawer): Response
     {
+        $user = Auth::user();
+
         // Authorization: cashier hanya bisa lihat kas sendiri, owner bisa lihat semua
-        if (auth()->user()->isCashier() && $cashDrawer->user_id !== auth()->id()) {
+        if (!$user || ($user->isCashier() && $cashDrawer->user_id !== $user->id)) {
             abort(403, 'Anda tidak memiliki akses ke sesi kas ini.');
         }
 
