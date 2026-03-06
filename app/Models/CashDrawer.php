@@ -3,12 +3,13 @@
 namespace App\Models;
 
 use App\Traits\BelongsToTenant;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CashDrawer extends Model
 {
-    use BelongsToTenant;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id', 'user_id', 'opening_amount', 'closing_amount',
