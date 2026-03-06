@@ -9,6 +9,14 @@ const visible = ref(false);
 const message = ref('');
 const type = ref('success');
 
+let timer = null;
+const autoHide = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+        visible.value = false;
+    }, 4000);
+};
+
 watch(flash, (f) => {
     if (f?.success) {
         message.value = f.success;
@@ -22,14 +30,6 @@ watch(flash, (f) => {
         autoHide();
     }
 }, { immediate: true, deep: true });
-
-let timer = null;
-const autoHide = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-        visible.value = false;
-    }, 4000);
-};
 
 const dismiss = () => {
     visible.value = false;
