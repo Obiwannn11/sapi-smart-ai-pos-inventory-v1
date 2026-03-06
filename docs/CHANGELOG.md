@@ -290,6 +290,103 @@
 
 ---
 
+### [ADDITION] Fitur Open Bill (Simpan Pesanan Tanpa Bayar)
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Controller | Service | Route | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Kasir kini bisa menyimpan pesanan sebagai "Open Bill" (status `pending`) tanpa langsung membayar. Stok dikurangi saat bill dibuat untuk mencegah overselling. Pembayaran dilakukan kemudian dari panel Open Bill di halaman POS. Phase 3 doc tidak mendefinisikan fitur open bill.
+- **Alasan:** Permintaan user — di banyak skenario F&B, pelanggan pesan dulu dan bayar belakangan (makan di tempat, tab, dll). Stok tetap dikurangi di awal agar tidak terjual ganda.
+- **File Terdampak:**
+  - `app/Services/TransactionService.php` — `checkout()` menerima flag `is_open_bill`; method baru `payOpenBill()` untuk menyelesaikan pembayaran
+  - `app/Http/Requests/StoreTransactionRequest.php` — validasi `payments` jadi nullable + field `is_open_bill`
+  - `app/Http/Controllers/Cashier/POSController.php` — method `payOpenBill()`, load `openBills` untuk frontend
+  - `routes/web.php` — route `POST /cashier/transactions/{transaction}/pay`
+  - `resources/js/Pages/Cashier/POS.vue` — panel Open Bill, tombol "Open Bill", flow pembayaran pending
+
+---
+
+### [SCHEMA] Penambahan Kolom `notes` di `transaction_items`
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Migration | Model
+- **Breaking Change:** Tidak (kolom baru, nullable)
+- **Deskripsi:** Kolom `notes` (text, nullable) ditambahkan ke tabel `transaction_items` untuk menyimpan catatan per item pesanan (contoh: "less sugar", "no ice"). Tidak ada di Phase 3 doc.
+- **Alasan:** Permintaan user — support catatan khusus per item pesanan, umum di bisnis F&B.
+- **File Terdampak:**
+  - `database/migrations/2026_03_06_200001_add_notes_to_transaction_items_table.php` — migration baru
+  - `app/Models/TransactionItem.php` — `notes` ditambahkan ke `$fillable`
+- **Catatan Migrasi:** Jalankan `php artisan migrate` untuk menambah kolom.
+
+---
+
+### [ADDITION] Catatan (Notes) per Item di Halaman POS
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Frontend | Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** Setiap item di cart kini bisa memiliki catatan individual. Item dengan produk & modifier sama tapi catatan berbeda ditampilkan sebagai baris terpisah di cart. Catatan ditampilkan di struk (ReceiptModal). Phase 3 doc tidak mendefinisikan fitur notes.
+- **Alasan:** Permintaan user — catatan per item umum di POS F&B untuk instruksi khusus dapur/barista.
+- **File Terdampak:**
+  - `resources/js/Components/CartItem.vue` — toggle notes + input text per item
+  - `resources/js/Pages/Cashier/POS.vue` — dedup cart mempertimbangkan notes, handler `updateCartNotes()`
+  - `resources/js/Components/ReceiptModal.vue` — tampilkan notes item di struk
+  - `app/Services/TransactionService.php` — simpan `notes` per item ke database
+
+---
+
+### [ADDITION] Halaman Riwayat Transaksi Kasir
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Controller | Route | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Halaman baru `Cashier/TransactionHistory` untuk kasir melihat riwayat transaksi mereka sendiri, dengan filter status dan tanggal, serta tombol cetak ulang struk. Phase 3 doc tidak mendefinisikan halaman history khusus untuk kasir.
+- **Alasan:** Permintaan user — kasir perlu bisa melihat & mencetak ulang struk transaksi sebelumnya tanpa harus minta akses owner.
+- **File Terdampak:**
+  - `app/Http/Controllers/Cashier/POSController.php` — method `history()` dengan filter & pagination
+  - `routes/web.php` — route `GET /cashier/transactions`
+  - `resources/js/Pages/Cashier/TransactionHistory.vue` — halaman baru
+  - `resources/js/Pages/Cashier/POS.vue` — link "Riwayat" di top bar
+
+---
+
+### [DECISION] Reversal: `expected_amount` Cash Drawer = Cash Only (Bukan Semua Payment)
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Controller | Frontend
+- **Breaking Change:** Ya (mengubah behavior kalkulasi expected_amount)
+- **Deskripsi:** **Membalik keputusan sebelumnya.** `expected_amount` di `cash_drawers` kini dihitung hanya dari pembayaran tunai (cash) dikurangi kembalian, bukan dari semua metode pembayaran. Formula baru: `opening_amount + Σ(cash payments) - Σ(change given)`.
+- **Alasan:** Permintaan user — `expected_amount` seharusnya merepresentasikan uang fisik yang diharapkan ada di laci kas. Pembayaran QRIS dan transfer tidak masuk ke laci kas fisik. Keputusan sebelumnya (`expected_amount = semua payment method`) dibatalkan.
+- **File Terdampak:**
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — `close()` query hanya `TransactionPayment` with `paymentMethod.type = 'cash'`, kurangi `change_amount`
+  - `resources/js/Pages/Cashier/CashDrawerSummary.vue` — label diubah dari "Expected Amount" ke "Expected Cash (uang tunai di laci)"
+
+---
+
+### [ADDITION] Perbaikan Payment Modal (Lebar, Sticky Total, Denominasi, Format Angka)
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-3 POS & Transactions
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Beberapa perbaikan UX pada PaymentModal: (1) Modal diperlebar dari `max-w-md` ke `max-w-lg`, (2) Total Belanja menjadi sticky headline yang selalu terlihat saat scroll, (3) Tombol denominasi: "Uang Pas" + "+20rb" + "+50rb" + "+100rb" yang kumulatif, (4) Input amount menggunakan `type="text" inputmode="numeric"` dengan auto-format ribuan (titik).
+- **Alasan:** Permintaan user — modal terlalu kecil, total tidak terlihat saat scroll, dan kasir butuh shortcut denominasi untuk mempercepat proses pembayaran.
+- **File Terdampak:**
+  - `resources/js/Components/PaymentModal.vue` — semua perubahan di atas
+
+---
+
+### [ADDITION] Sidebar Owner Grouped dengan Dropdown Collapsible
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-5 Dashboard, Laporan & Badge Helper
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** Navigasi sidebar OwnerLayout diubah dari flat list ke grouped sections: Dashboard (standalone), "Atur Menu" (Kategori, Produk, Stok, Modifier), "Keuangan" (Laporan Harian, Transaksi, Sesi Kas, Pembayaran). Setiap group memiliki dropdown collapsible dengan chevron animasi. Group label ter-highlight saat salah satu child-nya aktif. Juga memperbaiki issue sidebar yang memiliki empty space di bawah yang bisa di-scroll.
+- **Alasan:** Permintaan user — navigasi flat terlalu panjang dan sulit dinavigasi. Grouping membantu organisasi menu berdasarkan domain bisnis. Perbaikan scroll menghilangkan empty space yang tidak perlu.
+- **File Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue` — rewrite navigasi dari flat array ke `sidebarGroups` array, collapsible dropdown per group, `overflow-y-auto` hanya pada nav
+
+---
+
 ## Template Entry Kosong (Copy-Paste)
 
 ```markdown
