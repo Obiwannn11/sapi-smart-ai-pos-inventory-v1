@@ -1,0 +1,52 @@
+name: Deploy to aaPanel
+
+on:
+  push:
+    branches: [ "main" ] # Sesuaikan dengan branch utama Anda
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            # Masuk ke folder project (Sesuaikan dengan path project Anda di aaPanel)
+            cd /www/wwwroot/domain-anda.com
+
+            # Tarik kodingan terbaru dari GitHub
+            git fetch --all
+            git reset --hard origin/main
+
+            # Install dependency Node.js (Library frontend)
+            npm install # atau npm ci jika menggunakan package-lock.json
+
+            # Compile Vite (Build assets CSS & JS untuk produksi)
+            npm run build
+
+            # Install dependency PHP tanpa interaksi dan optimasi autoloader
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+            # Jalankan migrasi database
+            # CATATAN: Gunakan migrate --force untuk produksi, HINDARI migrate:fresh --seed di production agar data tidak hilang!
+            php artisan migrate --force
+
+            # Buat symlink untuk storage jika belum ada
+            php artisan storage:link
+
+            # Bersihkan dan cache ulang config, route, view untuk optimasi
+            php artisan optimize:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            # PENTING: Fix Permission aaPanel (agar tidak error 500)
+            chown -R www:www .
+            chmod -R 775 storage bootstrap/cache
+            
+            echo "Deployment Berhasil!"
