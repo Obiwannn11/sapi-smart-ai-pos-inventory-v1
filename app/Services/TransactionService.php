@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Modifier;
 use App\Models\ProductVariant;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
@@ -24,23 +25,18 @@ class TransactionService
             // 1. Generate kode transaksi
             $code = $this->generateTransactionCode($tenantId);
 
-            // 2. Hitung total
-            $totalAmount = $this->calculateTotal($data['items']);
-
-            // 3. Hitung kembalian
-            $totalPaid = collect($data['payments'])->sum('amount');
-            $changeAmount = max(0, $totalPaid - $totalAmount);
-
-            // 4. Buat transaksi
+            // 2. Buat transaksi (total dihitung ulang dari DB prices setelah item loop)
             $transaction = Transaction::create([
                 'tenant_id' => $tenantId,
                 'user_id' => auth()->id(),
                 'code' => $code,
                 'status' => Transaction::STATUS_PENDING,
-                'total_amount' => $totalAmount,
-                'change_amount' => $changeAmount,
+                'total_amount' => 0,
+                'change_amount' => 0,
                 'notes' => $data['notes'] ?? null,
             ]);
+
+            $totalAmount = 0;
 
             // 5. Simpan items + modifiers (SNAPSHOT)
             foreach ($data['items'] as $item) {
@@ -48,18 +44,34 @@ class TransactionService
                 $variant = ProductVariant::lockForUpdate()->find($item['variant_id']);
 
                 if (!$variant || $variant->stock < $item['qty']) {
+                    $variantName = $variant?->name ?? 'produk';
+                    $variantStock = $variant?->stock ?? 0;
                     throw new \Exception(
-                        "Stok {$variant?->name ?? 'produk'} tidak cukup. " .
-                        "Tersedia: {$variant?->stock ?? 0}, diminta: {$item['qty']}"
+                        "Stok {$variantName} tidak cukup. Tersedia: {$variantStock}, diminta: {$item['qty']}"
                     );
                 }
 
-                $subtotal = ($item['unit_price'] * $item['qty']);
+                // Use authoritative DB price, NOT client-supplied price
+                $unitPrice = $variant->price;
+                $subtotal = ($unitPrice * $item['qty']);
 
-                // Hitung total modifier extra price per item
+                // Hitung total modifier extra price per item from DB
                 $modifierTotal = 0;
+                $resolvedModifiers = [];
                 if (!empty($item['modifiers'])) {
-                    $modifierTotal = collect($item['modifiers'])->sum('extra_price') * $item['qty'];
+                    foreach ($item['modifiers'] as $mod) {
+                        $dbModifier = Modifier::find($mod['id']);
+                        if (!$dbModifier) {
+                            throw new \Exception("Modifier #{$mod['id']} tidak ditemukan.");
+                        }
+                        $resolvedModifiers[] = [
+                            'id' => $dbModifier->id,
+                            'name' => $dbModifier->name,
+                            'extra_price' => $dbModifier->extra_price,
+                        ];
+                        $modifierTotal += $dbModifier->extra_price;
+                    }
+                    $modifierTotal *= $item['qty'];
                 }
                 $subtotal += $modifierTotal;
 
@@ -67,26 +79,34 @@ class TransactionService
                     'product_variant_id' => $variant->id,
                     'variant_name' => $item['variant_name'],      // SNAPSHOT
                     'qty' => $item['qty'],
-                    'unit_price' => $item['unit_price'],          // SNAPSHOT
+                    'unit_price' => $unitPrice,                   // SNAPSHOT from DB
                     'subtotal' => $subtotal,
                 ]);
 
-                // Simpan modifier snapshots
-                if (!empty($item['modifiers'])) {
-                    foreach ($item['modifiers'] as $modifier) {
-                        $txItem->modifiers()->create([
-                            'modifier_id' => $modifier['id'],
-                            'modifier_name' => $modifier['name'],     // SNAPSHOT
-                            'extra_price' => $modifier['extra_price'], // SNAPSHOT
-                        ]);
-                    }
+                // Simpan modifier snapshots (from DB values)
+                foreach ($resolvedModifiers as $modifier) {
+                    $txItem->modifiers()->create([
+                        'modifier_id' => $modifier['id'],
+                        'modifier_name' => $modifier['name'],     // SNAPSHOT
+                        'extra_price' => $modifier['extra_price'], // SNAPSHOT from DB
+                    ]);
                 }
+
+                $totalAmount += $subtotal;
 
                 // 6. Kurangi stok
                 $this->stockService->deduct($variant, $item['qty'], $transaction->id);
             }
 
-            // 7. Simpan pembayaran
+            // 7. Update total from DB-verified prices
+            $totalPaid = collect($data['payments'])->sum('amount');
+            $changeAmount = max(0, $totalPaid - $totalAmount);
+            $transaction->update([
+                'total_amount' => $totalAmount,
+                'change_amount' => $changeAmount,
+            ]);
+
+            // 8. Simpan pembayaran
             foreach ($data['payments'] as $payment) {
                 $transaction->payments()->create([
                     'payment_method_id' => $payment['payment_method_id'],
@@ -95,7 +115,7 @@ class TransactionService
                 ]);
             }
 
-            // 8. Update status
+            // 9. Update status
             $transaction->update(['status' => Transaction::STATUS_COMPLETED]);
 
             return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
@@ -117,9 +137,13 @@ class TransactionService
         }
 
         return DB::transaction(function () use ($transaction) {
-            // Kembalikan stok
+            // Kembalikan stok (handle soft-deleted variants)
             foreach ($transaction->items as $item) {
-                $this->stockService->restore($item->variant, $item->qty, $transaction->id);
+                $variant = $item->variant()->withTrashed()->first();
+                if (!$variant) {
+                    continue; // Variant permanently deleted, skip restore
+                }
+                $this->stockService->restore($variant, $item->qty, $transaction->id);
             }
 
             $transaction->update(['status' => Transaction::STATUS_VOIDED]);
@@ -151,24 +175,4 @@ class TransactionService
         return sprintf("TRX-%s-%03d", $today, $nextNumber);
     }
 
-    /**
-     * Hitung total dari items (harga variant + modifier extra).
-     */
-    private function calculateTotal(array $items): float
-    {
-        $total = 0;
-
-        foreach ($items as $item) {
-            $itemTotal = $item['unit_price'] * $item['qty'];
-
-            if (!empty($item['modifiers'])) {
-                $modifierExtra = collect($item['modifiers'])->sum('extra_price');
-                $itemTotal += $modifierExtra * $item['qty'];
-            }
-
-            $total += $itemTotal;
-        }
-
-        return $total;
-    }
 }

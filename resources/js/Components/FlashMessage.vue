@@ -1,6 +1,6 @@
 <script setup>
 import { usePage } from '@inertiajs/vue3';
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onUnmounted } from 'vue';
 
 const page = usePage();
 
@@ -35,6 +35,8 @@ const dismiss = () => {
     visible.value = false;
     clearTimeout(timer);
 };
+
+onUnmounted(() => clearTimeout(timer));
 </script>
 
 <template>

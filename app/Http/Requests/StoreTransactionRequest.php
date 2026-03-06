@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreTransactionRequest extends FormRequest
 {
@@ -13,21 +15,38 @@ class StoreTransactionRequest extends FormRequest
 
     public function rules(): array
     {
+        $tenantId = auth()->user()->tenant_id;
+
         return [
             // Items
             'items'                           => 'required|array|min:1',
-            'items.*.variant_id'              => 'required|exists:product_variants,id',
+            'items.*.variant_id'              => [
+                'required',
+                Rule::exists('product_variants', 'id')->where(function ($q) use ($tenantId) {
+                    $q->whereIn('product_id', Product::where('tenant_id', $tenantId)->pluck('id'));
+                }),
+            ],
             'items.*.variant_name'            => 'required|string|max:255',
             'items.*.qty'                     => 'required|integer|min:1',
             'items.*.unit_price'              => 'required|numeric|min:0',
             'items.*.modifiers'               => 'nullable|array',
-            'items.*.modifiers.*.id'          => 'required|exists:modifiers,id',
+            'items.*.modifiers.*.id'          => [
+                'required',
+                Rule::exists('modifiers', 'id')->where(function ($q) use ($tenantId) {
+                    $q->whereIn('modifier_group_id',
+                        \App\Models\ModifierGroup::where('tenant_id', $tenantId)->pluck('id')
+                    );
+                }),
+            ],
             'items.*.modifiers.*.name'        => 'required|string|max:255',
             'items.*.modifiers.*.extra_price' => 'required|numeric|min:0',
 
             // Payments
             'payments'                        => 'required|array|min:1',
-            'payments.*.payment_method_id'    => 'required|exists:payment_methods,id',
+            'payments.*.payment_method_id'    => [
+                'required',
+                Rule::exists('payment_methods', 'id')->where('tenant_id', $tenantId),
+            ],
             'payments.*.amount'               => 'required|numeric|min:0',
             'payments.*.reference_code'       => 'nullable|string|max:255',
 

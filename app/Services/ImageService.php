@@ -49,6 +49,9 @@ class ImageService
             return null;
         }
 
-        return Storage::disk('public')->url($path) . '?v=' . now()->timestamp;
+        $fullPath = Storage::disk('public')->path($path);
+        $version = file_exists($fullPath) ? filemtime($fullPath) : 0;
+
+        return Storage::disk('public')->url($path) . '?v=' . $version;
     }
 }

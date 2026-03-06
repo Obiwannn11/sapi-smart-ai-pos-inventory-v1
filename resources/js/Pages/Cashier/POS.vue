@@ -89,12 +89,34 @@ const selectProduct = (product) => {
     }
 };
 
+const getVariantStock = (variantId) => {
+    for (const product of (props.products || [])) {
+        const variant = (product.variants || []).find(v => v.id === variantId);
+        if (variant) return variant.stock;
+    }
+    return 0;
+};
+
+const getCartQtyForVariant = (variantId) => {
+    return cart.value
+        .filter(c => c.variant_id === variantId)
+        .reduce((sum, c) => sum + c.qty, 0);
+};
+
 const addToCart = (item) => {
     // Cek apakah item sama sudah ada di cart (sama variant + sama modifiers)
     const existingIdx = cart.value.findIndex(c =>
         c.variant_id === item.variant_id &&
         JSON.stringify(c.modifiers.map(m => m.id).sort()) === JSON.stringify((item.modifiers || []).map(m => m.id).sort())
     );
+
+    // Cek stok tersedia
+    const stock = getVariantStock(item.variant_id);
+    const currentCartQty = getCartQtyForVariant(item.variant_id);
+    if (currentCartQty + item.qty > stock) {
+        alert(`Stok tidak cukup. Tersedia: ${stock}, di keranjang: ${currentCartQty}`);
+        return;
+    }
 
     if (existingIdx >= 0) {
         cart.value[existingIdx].qty += item.qty;
@@ -104,9 +126,15 @@ const addToCart = (item) => {
 };
 
 const updateCartQty = (index, newQty) => {
-    if (newQty > 0) {
-        cart.value[index].qty = newQty;
+    if (newQty <= 0) return;
+    const item = cart.value[index];
+    const stock = getVariantStock(item.variant_id);
+    const otherCartQty = getCartQtyForVariant(item.variant_id) - item.qty;
+    if (otherCartQty + newQty > stock) {
+        alert(`Stok tidak cukup. Tersedia: ${stock}`);
+        return;
     }
+    cart.value[index].qty = newQty;
 };
 
 const removeCartItem = (index) => {
@@ -146,6 +174,7 @@ const handlePayment = (payments) => {
     router.post('/cashier/transactions', data, {
         preserveScroll: true,
         onSuccess: (page) => {
+            showPaymentModal.value = false;
             // Ambil lastTransaction dari flash
             const txData = page.props.flash?.lastTransaction;
             if (txData) {

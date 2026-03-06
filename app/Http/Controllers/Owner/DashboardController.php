@@ -30,9 +30,13 @@ class DashboardController extends Controller
         $todayAverage = $todayCount > 0 ? $todayRevenue / $todayCount : 0;
 
         // Pendapatan per metode pembayaran hari ini
+        $tenantId = auth()->user()->tenant_id;
         $todayByPaymentMethod = TransactionPayment::query()
             ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', 'transaction_payments.payment_method_id', '=', 'payment_methods.id')
+            ->join('payment_methods', function ($join) use ($tenantId) {
+                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
+                    ->where('payment_methods.tenant_id', $tenantId);
+            })
             ->whereHas('transaction', function ($q) use ($today) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
                     ->whereDate('created_at', $today);

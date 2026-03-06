@@ -34,9 +34,13 @@ class ReportController extends Controller
             ->count();
 
         // Rekap per metode pembayaran
+        $tenantId = auth()->user()->tenant_id;
         $paymentSummary = TransactionPayment::query()
             ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', 'transaction_payments.payment_method_id', '=', 'payment_methods.id')
+            ->join('payment_methods', function ($join) use ($tenantId) {
+                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
+                    ->where('payment_methods.tenant_id', $tenantId);
+            })
             ->whereHas('transaction', function ($q) use ($date) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
                     ->whereDate('created_at', $date);

@@ -69,6 +69,10 @@ class POSController extends Controller
      */
     public function void(Transaction $transaction): RedirectResponse
     {
+        if ($transaction->tenant_id !== auth()->user()->tenant_id) {
+            abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
+        }
+
         try {
             $this->transactionService->void($transaction);
 
