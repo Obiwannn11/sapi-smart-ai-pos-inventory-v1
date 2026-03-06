@@ -34,7 +34,8 @@ jobs:
 
             # Jalankan migrasi database
             # CATATAN: Gunakan migrate --force untuk produksi, HINDARI migrate:fresh --seed di production agar data tidak hilang!
-            php artisan migrate --force
+            # php artisan migrate --force
+            php artisan migrate:fresh --force --seed
 
             # Buat symlink untuk storage jika belum ada
             php artisan storage:link
