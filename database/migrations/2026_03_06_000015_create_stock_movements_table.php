@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('tenant_id')->constrained('tenants')->cascadeOnDelete();
             $table->foreignId('product_variant_id')->constrained('product_variants');
-            $table->enum('type', ['sale', 'restock', 'adjustment']);
+            $table->enum('type', ['sale', 'restock', 'adjustment', 'void']);
             $table->integer('qty');
             $table->text('notes')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();
