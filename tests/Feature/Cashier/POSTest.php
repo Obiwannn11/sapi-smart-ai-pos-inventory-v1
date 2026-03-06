@@ -12,38 +12,51 @@ use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
 
-$tenant = null;
-$cashier = null;
-$product = null;
-$variant = null;
-$paymentMethod = null;
-
-beforeEach(function () use (&$tenant, &$cashier, &$product, &$variant, &$paymentMethod) {
+/**
+ * @return array{tenant: Tenant, cashier: User, variant: ProductVariant, paymentMethod: PaymentMethod}
+ */
+function makePOSContext(): array
+{
     $tenant = Tenant::factory()->create();
+
     $cashier = User::factory()->create([
         'tenant_id' => $tenant->id,
         'role' => 'cashier',
     ]);
+
     $product = Product::factory()->create(['tenant_id' => $tenant->id]);
+
     $variant = ProductVariant::factory()->create([
         'product_id' => $product->id,
         'price' => 25000,
         'cost_price' => 15000,
         'stock' => 50,
     ]);
+
     $paymentMethod = PaymentMethod::factory()->create([
         'tenant_id' => $tenant->id,
         'type' => 'cash',
     ]);
-});
 
-test('cashier is redirected to cash drawer if no open session', function () use (&$cashier) {
+    return [
+        'tenant' => $tenant,
+        'cashier' => $cashier,
+        'variant' => $variant,
+        'paymentMethod' => $paymentMethod,
+    ];
+}
+
+test('cashier is redirected to cash drawer if no open session', function () {
+    ['cashier' => $cashier] = makePOSContext();
+
     actingAs($cashier);
 
     get('/cashier/pos')->assertRedirect(route('cashier.cash-drawer.index'));
 });
 
-test('cashier can access POS with open cash drawer', function () use (&$tenant, &$cashier) {
+test('cashier can access POS with open cash drawer', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
     CashDrawer::factory()->create([
         'tenant_id' => $tenant->id,
         'user_id' => $cashier->id,
@@ -55,7 +68,9 @@ test('cashier can access POS with open cash drawer', function () use (&$tenant, 
     get('/cashier/pos')->assertStatus(200);
 });
 
-test('checkout creates transaction and deducts stock', function () use (&$tenant, &$cashier, &$variant, &$paymentMethod) {
+test('checkout creates transaction and deducts stock', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
     CashDrawer::factory()->create([
         'tenant_id' => $tenant->id,
         'user_id' => $cashier->id,
@@ -101,7 +116,9 @@ test('checkout creates transaction and deducts stock', function () use (&$tenant
     ])->exists())->toBeTrue();
 });
 
-test('checkout fails when stock is insufficient', function () use (&$tenant, &$cashier, &$variant, &$paymentMethod) {
+test('checkout fails when stock is insufficient', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
     CashDrawer::factory()->create([
         'tenant_id' => $tenant->id,
         'user_id' => $cashier->id,
@@ -133,7 +150,9 @@ test('checkout fails when stock is insufficient', function () use (&$tenant, &$c
     expect($variant->fresh()->stock)->toBe(50);
 });
 
-test('checkout with modifiers includes modifier extra price', function () use (&$tenant, &$cashier, &$variant, &$paymentMethod) {
+test('checkout with modifiers includes modifier extra price', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
     CashDrawer::factory()->create([
         'tenant_id' => $tenant->id,
         'user_id' => $cashier->id,
