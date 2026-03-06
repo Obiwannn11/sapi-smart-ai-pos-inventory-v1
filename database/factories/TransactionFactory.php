@@ -24,6 +24,11 @@ class TransactionFactory extends Factory
             'total_amount' => fake()->numberBetween(10000, 500000),
             'change_amount' => 0,
             'notes' => null,
+            'source' => Transaction::SOURCE_POS,
+            'order_type' => Transaction::ORDER_TYPE_DINE_IN,
+            'fulfillment_status' => null,
+            'customer_name' => null,
+            'table_number' => null,
         ];
     }
 
@@ -38,6 +43,29 @@ class TransactionFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'status' => Transaction::STATUS_VOIDED,
+        ]);
+    }
+
+    public function selfOrder(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'source' => Transaction::SOURCE_SELF_ORDER,
+            'fulfillment_status' => Transaction::FULFILLMENT_WAITING,
+            'customer_name' => fake()->firstName(),
+        ]);
+    }
+
+    public function withFulfillment(string $status = Transaction::FULFILLMENT_WAITING): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'fulfillment_status' => $status,
+        ]);
+    }
+
+    public function pickup(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'order_type' => Transaction::ORDER_TYPE_PICKUP,
         ]);
     }
 }
