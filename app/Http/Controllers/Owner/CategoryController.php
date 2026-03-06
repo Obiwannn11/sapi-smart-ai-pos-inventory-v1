@@ -36,7 +36,8 @@ class CategoryController extends Controller
 
     public function destroy(Category $category): RedirectResponse
     {
-        // Produk di bawahnya → category_id = NULL (via DB constraint nullOnDelete)
+        // Soft delete doesn't trigger DB-level nullOnDelete, so nullify manually
+        $category->products()->update(['category_id' => null]);
         $category->delete(); // soft delete
 
         return back()->with('success', 'Kategori berhasil dihapus.');
