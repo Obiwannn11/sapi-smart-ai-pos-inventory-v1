@@ -6,22 +6,54 @@ import { ref } from 'vue';
 const { auth } = usePage().props;
 const sidebarOpen = ref(false);
 
-const navigation = [
-    { name: 'Dashboard', href: '/owner/dashboard', icon: 'home' },
-    { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report' },
-    { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt' },
-    { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash' },
-    { name: 'Kategori', href: '/owner/categories', icon: 'folder' },
-    { name: 'Produk', href: '/owner/products', icon: 'cube' },
-    { name: 'Stok', href: '/owner/stock', icon: 'archive' },
-    { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments' },
-    { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
+// Sidebar groups
+const sidebarGroups = [
+    {
+        label: null, // no label, standalone item
+        items: [
+            { name: 'Dashboard', href: '/owner/dashboard', icon: 'home' },
+        ],
+    },
+    {
+        label: 'Atur Menu',
+        icon: 'menu',
+        items: [
+            { name: 'Kategori', href: '/owner/categories', icon: 'folder' },
+            { name: 'Produk', href: '/owner/products', icon: 'cube' },
+            { name: 'Stok', href: '/owner/stock', icon: 'archive' },
+            { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments' },
+        ],
+    },
+    {
+        label: 'Keuangan',
+        icon: 'finance',
+        items: [
+            { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report' },
+            { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt' },
+            { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash' },
+            { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
+        ],
+    },
 ];
+
+// Track which groups are expanded
+const expandedGroups = ref({
+    'Atur Menu': true,
+    'Keuangan': true,
+});
+
+const toggleGroup = (label) => {
+    expandedGroups.value[label] = !expandedGroups.value[label];
+};
 
 const isActive = (href) => {
     const currentPath = usePage().url;
     if (href === '/owner/dashboard') return currentPath === '/owner/dashboard';
     return currentPath.startsWith(href);
+};
+
+const isGroupActive = (group) => {
+    return group.items.some(item => isActive(item.href));
 };
 
 const logout = () => {
@@ -41,11 +73,11 @@ const logout = () => {
         <!-- Sidebar -->
         <aside
             :class="[
-                'fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-0 lg:shrink-0',
+                'fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-0 lg:shrink-0 flex flex-col',
                 sidebarOpen ? 'translate-x-0' : '-translate-x-full'
             ]"
         >
-            <div class="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+            <div class="flex items-center justify-between h-16 px-6 border-b border-gray-200 flex-shrink-0">
                 <h1 class="text-xl font-bold text-indigo-600">SAPI</h1>
                 <button @click="sidebarOpen = false" class="lg:hidden text-gray-500 hover:text-gray-700">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -53,56 +85,115 @@ const logout = () => {
                     </svg>
                 </button>
             </div>
-            <nav class="mt-4 px-3 space-y-1">
-                <Link
-                    v-for="item in navigation"
-                    :key="item.href"
-                    :href="item.href"
-                    :class="[
-                        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                        isActive(item.href)
-                            ? 'bg-indigo-50 text-indigo-700'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                    ]"
-                >
-                    <!-- Home -->
-                    <svg v-if="item.icon === 'home'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
-                    <!-- Report -->
-                    <svg v-else-if="item.icon === 'report'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <!-- Receipt -->
-                    <svg v-else-if="item.icon === 'receipt'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
-                    </svg>
-                    <!-- Cash -->
-                    <svg v-else-if="item.icon === 'cash'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                    <!-- Folder -->
-                    <svg v-else-if="item.icon === 'folder'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    <!-- Cube -->
-                    <svg v-else-if="item.icon === 'cube'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                    </svg>
-                    <!-- Adjustments -->
-                    <svg v-else-if="item.icon === 'adjustments'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                    </svg>
-                    <!-- Archive (Stok) -->
-                    <svg v-else-if="item.icon === 'archive'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                    </svg>
-                    <!-- Credit Card -->
-                    <svg v-else-if="item.icon === 'credit-card'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                    </svg>
-                    {{ item.name }}
-                </Link>
+            <nav class="flex-1 overflow-y-auto mt-2 px-3 pb-4">
+                <template v-for="(group, gIdx) in sidebarGroups" :key="gIdx">
+                    <!-- Standalone items (no group label) -->
+                    <template v-if="!group.label">
+                        <Link
+                            v-for="item in group.items"
+                            :key="item.href"
+                            :href="item.href"
+                            :class="[
+                                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+                                isActive(item.href)
+                                    ? 'bg-indigo-50 text-indigo-700'
+                                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                            ]"
+                        >
+                            <!-- Home -->
+                            <svg v-if="item.icon === 'home'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                            </svg>
+                            {{ item.name }}
+                        </Link>
+                    </template>
+
+                    <!-- Grouped items with dropdown -->
+                    <div v-else class="mt-3">
+                        <button
+                            @click="toggleGroup(group.label)"
+                            :class="[
+                                'w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors',
+                                isGroupActive(group) ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
+                            ]"
+                        >
+                            <div class="flex items-center gap-2">
+                                <!-- Menu icon -->
+                                <svg v-if="group.icon === 'menu'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                                </svg>
+                                <!-- Finance icon -->
+                                <svg v-else-if="group.icon === 'finance'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>{{ group.label }}</span>
+                            </div>
+                            <svg
+                                :class="['w-4 h-4 transition-transform duration-200', expandedGroups[group.label] ? 'rotate-180' : '']"
+                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            >
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+
+                        <Transition
+                            enter-active-class="transition-all duration-200 ease-out"
+                            enter-from-class="opacity-0 max-h-0"
+                            enter-to-class="opacity-100 max-h-96"
+                            leave-active-class="transition-all duration-200 ease-in"
+                            leave-from-class="opacity-100 max-h-96"
+                            leave-to-class="opacity-0 max-h-0"
+                        >
+                            <div v-show="expandedGroups[group.label]" class="mt-1 space-y-0.5 overflow-hidden">
+                                <Link
+                                    v-for="item in group.items"
+                                    :key="item.href"
+                                    :href="item.href"
+                                    :class="[
+                                        'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors pl-5',
+                                        isActive(item.href)
+                                            ? 'bg-indigo-50 text-indigo-700'
+                                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                    ]"
+                                >
+                                    <!-- Report -->
+                                    <svg v-if="item.icon === 'report'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <!-- Receipt -->
+                                    <svg v-else-if="item.icon === 'receipt'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+                                    </svg>
+                                    <!-- Cash -->
+                                    <svg v-else-if="item.icon === 'cash'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                    <!-- Folder -->
+                                    <svg v-else-if="item.icon === 'folder'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                    </svg>
+                                    <!-- Cube -->
+                                    <svg v-else-if="item.icon === 'cube'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                    </svg>
+                                    <!-- Adjustments -->
+                                    <svg v-else-if="item.icon === 'adjustments'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                                    </svg>
+                                    <!-- Archive (Stok) -->
+                                    <svg v-else-if="item.icon === 'archive'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                    </svg>
+                                    <!-- Credit Card -->
+                                    <svg v-else-if="item.icon === 'credit-card'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                    </svg>
+                                    {{ item.name }}
+                                </Link>
+                            </div>
+                        </Transition>
+                    </div>
+                </template>
             </nav>
         </aside>
 
