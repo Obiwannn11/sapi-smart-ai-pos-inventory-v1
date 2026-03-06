@@ -17,7 +17,7 @@ jobs:
           port: 22
           script: |
             # Masuk ke folder project (Sesuaikan dengan path project Anda di aaPanel)
-            cd /www/wwwroot/sapi-v1.obiwannn.web.id
+            cd ${{ secrets.PATH_VPS }}
 
             # Tarik kodingan terbaru dari GitHub
             git fetch --all
