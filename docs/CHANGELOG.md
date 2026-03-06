@@ -45,6 +45,20 @@
 
 ---
 
+### [ADDITION] Laravel IDE Helper untuk Autocomplete IDE
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Dependency | Config
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan package `barryvdh/laravel-ide-helper` (sebagai dependensi dev) untuk mengatasi issue property & magic method Laravel yang sering dianggap error oleh IDE/Editor (VS Code, PhpStorm).
+- **Alasan:** Meningkatkan DX (Developer Experience) agar editor dapat mengenali model properti, facades, dan magic method Laravel lainnya dengan tepat.
+- **File Terdampak:**
+  - `composer.json` — Tambahan `barryvdh/laravel-ide-helper` di require-dev.
+  - `.gitignore` — Ignore file hasil generate (`_ide_helper.php`, `.phpstorm.meta.php`, `_ide_helper_models.php`).
+- **Catatan Migrasi:** Jika IDE masih complain, jalankan perintah `php artisan ide-helper:generate`, `php artisan ide-helper:meta`, dan `php artisan ide-helper:models -N`.
+
+---
+
 ### [RECONCILE] Transaction Status Naming
 - **Tanggal:** 2026-03-06
 - **Fase Terkait:** Cross-Phase (Phase-1 migration, Phase-3 logic)
@@ -221,6 +235,58 @@
 - **Alasan:** Halaman-halaman baru Phase 5 perlu bisa diakses via navigasi sidebar agar UX konsisten dengan halaman owner lainnya.
 - **File Terdampak:**
   - `resources/js/Layouts/OwnerLayout.vue` — tambah navigation items + ikon SVG
+
+---
+
+### [HOTFIX] BadgeHelperService Dead Stock Query Bug
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-6 Testing & QA (ditemukan saat testing)
+- **Dampak:** Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** Query dead stock badge menggunakan `transactionItems.created_at` yang tidak ada (tabel `transaction_items` memiliki `$timestamps = false`). Diperbaiki dengan query melalui relasi `transactionItems.transaction` dan filter berdasarkan `transactions.created_at` serta `transactions.status = completed`.
+- **Alasan:** Bug — query selalu gagal karena kolom `created_at` tidak ada di tabel `transaction_items`, sehingga badge dead stock tidak pernah akurat.
+- **File Terdampak:**
+  - `app/Services/BadgeHelperService.php` — perbaikan `whereDoesntHave` query dari `transactionItems` ke `transactionItems.transaction`
+
+---
+
+### [HOTFIX] CategoryController Soft Delete Tidak Nullify product.category_id
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-6 Testing & QA (ditemukan saat testing)
+- **Dampak:** Controller
+- **Breaking Change:** Tidak
+- **Deskripsi:** Komentar di controller mengklaim `nullOnDelete` DB constraint akan handle nullify `category_id` produk saat kategori dihapus. Namun soft delete tidak memicu DB-level foreign key constraint. Diperbaiki dengan menambahkan manual `$category->products()->update(['category_id' => null])` sebelum soft delete.
+- **Alasan:** Bug — produk tetap mereferensi kategori yang sudah di-soft-delete, menyebabkan data inkonsisten.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/CategoryController.php` — tambah manual nullify sebelum `$category->delete()`
+
+---
+
+### [SCHEMA] Penambahan 'void' di ENUM stock_movements.type (Create Migration)
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-6 Testing & QA (fix untuk SQLite test compatibility)
+- **Dampak:** Migration
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan `'void'` ke ENUM di migration create `stock_movements` agar SQLite CHECK constraint mengizinkan tipe void. Migration ALTER tetap ada untuk MySQL production yang sudah menjalankan migration create sebelumnya.
+- **Alasan:** SQLite (test database) membuat CHECK constraint dari ENUM. Migration ALTER yang skip SQLite menyebabkan 'void' tidak dikenal di test environment.
+- **File Terdampak:**
+  - `database/migrations/2026_03_06_000015_create_stock_movements_table.php` — ENUM values ditambah `'void'`
+  - `database/migrations/2026_03_06_100002_add_void_type_to_stock_movements.php` — tetap ada driver-aware skip untuk SQLite
+
+---
+
+### [ADDITION] HasFactory Trait pada Semua Model
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Phase-6 Testing & QA
+- **Dampak:** Model
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan `HasFactory` trait ke semua model yang belum memilikinya: `Transaction`, `CashDrawer`, `StockMovement`, `Tenant`, `Category`, `Product`, `ProductVariant`, `ModifierGroup`, `Modifier`, `PaymentMethod`, `TransactionPayment`. Diperlukan agar `Model::factory()` dapat digunakan di test suite.
+- **Alasan:** Prasyarat untuk factory-based testing di Pest PHP.
+- **File Terdampak:**
+  - `app/Models/Transaction.php` — tambah `use HasFactory`
+  - `app/Models/CashDrawer.php` — tambah `use HasFactory`
+  - `app/Models/StockMovement.php` — tambah `use HasFactory`
+  - (dan 8 model lain yang sudah ditambahkan sebelumnya)
 
 ---
 
