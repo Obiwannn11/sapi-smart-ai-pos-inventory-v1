@@ -46,7 +46,7 @@ jobs:
             php artisan view:cache
 
             # PENTING: Fix Permission aaPanel (agar tidak error 500)
-            chown -R www:www .
+            chown -R www:www storage bootstrap/cache
             chmod -R 775 storage bootstrap/cache
             
             echo "Deployment Berhasil!"
