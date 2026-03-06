@@ -402,6 +402,68 @@
 
 ---
 
+### [SCHEMA] Penambahan Kolom Self-Order & Fulfillment di `transactions`
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Di Luar Fase (Self Order Feature)
+- **Dampak:** Migration | Model | Service | Controller | Route | Config
+- **Breaking Change:** Tidak (kolom baru, nullable/default)
+- **Deskripsi:** Menambahkan 5 kolom baru ke tabel `transactions` untuk mendukung fitur Self Order via Telegram + Xendit payment dan sistem fulfillment tracking:
+  - `source` (enum: pos, self_order) — asal pesanan
+  - `order_type` (enum: dine_in, pickup) — tipe pesanan
+  - `fulfillment_status` (enum nullable: waiting, preparing, ready, done) — status penyajian
+  - `customer_name` (varchar 100, nullable) — nama customer terstruktur
+  - `table_number` (varchar 10, nullable) — nomor meja free text
+- **Alasan:** Mendukung multi-channel order (POS + Telegram) dengan tracking status penyajian per pesanan. Fulfillment dipisahkan dari payment status untuk fleksibilitas (bayar dulu / sajikan dulu).
+- **File Terdampak:**
+  - `database/migrations/2026_03_06_300001_add_selforder_and_fulfillment_to_transactions.php` — migration baru
+  - `app/Models/Transaction.php` — constants baru (SOURCE_*, ORDER_TYPE_*, FULFILLMENT_*), $fillable, helper methods (isSelfOrder, hasFulfillmentTracking, advanceFulfillment)
+  - `database/factories/TransactionFactory.php` — state methods baru (selfOrder, withFulfillment, pickup)
+- **Catatan Migrasi:** Jalankan `php artisan migrate`
+
+---
+
+### [ADDITION] API Layer untuk Self Order (Sanctum + Xendit)
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Di Luar Fase (Self Order Feature)
+- **Dampak:** Controller | Route | Config | Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan REST API layer untuk integrasi Self Order via n8n/Telegram:
+  - `GET /api/products` — daftar produk aktif + variant tersedia (Sanctum auth)
+  - `POST /api/orders` — buat self-order + generate Xendit Invoice (Sanctum auth)
+  - `PATCH /api/orders/{transaction}/fulfillment` — advance fulfillment status (Sanctum auth)
+  - `POST /api/xendit/webhook` — handle Xendit payment callback (token auth)
+- **Alasan:** Dibutuhkan sebagai backend untuk n8n workflow yang menerima order dari Telegram bot.
+- **File Terdampak:**
+  - `routes/api.php` — file baru, semua API routes
+  - `bootstrap/app.php` — registrasi api routes
+  - `app/Http/Controllers/Api/ApiProductController.php` — controller baru
+  - `app/Http/Controllers/Api/ApiOrderController.php` — controller baru
+  - `app/Http/Controllers/Api/XenditWebhookController.php` — controller baru
+
+---
+
+### [DECISION] Self-Order: Stok Tidak Dikurangi Sebelum Bayar
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Di Luar Fase (Self Order Feature)
+- **Dampak:** Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** Untuk self-order, stok **TIDAK** dikurangi saat order dibuat. Stok baru dikurangi setelah Xendit webhook mengkonfirmasi pembayaran (status PAID). Jika invoice expired (30 menit), transaksi langsung di-void tanpa perlu restore stok.
+- **Alasan:** Mencegah order fiktif / tidak dibayar yang mengurangi stok. Berbeda dengan POS (stok langsung dikurangi) dan open bill POS (stok langsung dikurangi karena customer sudah di lokasi).
+- **File Terdampak:**
+  - `app/Services/TransactionService.php` — method baru: `createSelfOrder()` (tanpa deduct), `confirmSelfOrderPayment()` (deduct setelah bayar), `voidExpiredSelfOrder()` (void tanpa restore). Refactor `processItems()` sebagai shared method dengan flag `deductStock`.
+
+---
+
+### [DECISION] Fulfillment Tracking: Opsional, Terpisah dari Payment Status
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Di Luar Fase (Self Order Feature)
+- **Dampak:** Model | Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** Fulfillment tracking (`waiting → preparing → ready → done`) terpisah dari payment status (`pending → completed → voided`). Fulfillment = `null` untuk POS bayar langsung (tidak perlu tracking), `waiting` untuk open bill dan self-order (setelah bayar). Kasir + Owner yang manage fulfillment (tanpa role kitchen baru). Customer diberitahu secara manual (panggil nama).
+- **Alasan:** POS bayar langsung di counter tidak perlu tracking penyajian. Fulfillment hanya relevan untuk pesanan yang butuh waktu (open bill, self-order).
+
+---
+
 ## Template Entry Kosong (Copy-Paste)
 
 ```markdown
