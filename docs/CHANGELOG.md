@@ -59,6 +59,21 @@
 
 ---
 
+### [ADDITION] Integrasi Dependency Xendit SDK (Persiapan Payment Gateway)
+- **Tanggal:** 2026-03-06
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Dependency | Config
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan package `xendit/xendit-php` ke dependency aplikasi dan konfigurasi service `xendit` di `config/services.php` (`secret_key`, `webhook_token`).
+- **Alasan:** Persiapan integrasi payment gateway Xendit untuk kebutuhan pembayaran digital dan webhook settlement.
+- **File Terdampak:**
+  - `composer.json` — tambah dependency `xendit/xendit-php`
+  - `composer.lock` — lock file update setelah install package
+  - `config/services.php` — tambah config `xendit.secret_key` dan `xendit.webhook_token`
+- **Catatan Migrasi:** Tambahkan env `XENDIT_SECRET_KEY` dan `XENDIT_WEBHOOK_TOKEN` pada environment yang digunakan.
+
+---
+
 ### [RECONCILE] Transaction Status Naming
 - **Tanggal:** 2026-03-06
 - **Fase Terkait:** Cross-Phase (Phase-1 migration, Phase-3 logic)
