@@ -61,6 +61,9 @@ class StoreTransactionRequest extends FormRequest
             // Notes
             'notes' => 'nullable|string|max:1000',
 
+            // Customer name (open bill)
+            'customer_name' => 'nullable|string|max:100',
+
             // Open bill flag
             'is_open_bill' => 'nullable|boolean',
         ];

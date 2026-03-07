@@ -45,7 +45,40 @@
 
 ---
 
-### [ADDITION] Laravel IDE Helper untuk Autocomplete IDE
+### [ADDITION] UX POS: Auto-Amount Non-Cash, Thermal Receipt, Open Bill Customer Name
+- **Tanggal:** 2026-03-07
+- **Fase Terkait:** Phase-3 POS / Phase-5 UX
+- **Dampak:** Frontend | Controller | Request
+- **Breaking Change:** Tidak
+- **Deskripsi:** Tiga improvement UX pada alur kasir:
+  1. **PaymentModal** — metode non-cash (QRIS/Transfer) kini otomatis mengisi nominal sesuai total transaksi tanpa perlu input manual. Metode cash tetap menggunakan input nominal + tombol denominasi cepat. Kembalian hanya muncul jika ada metode cash.
+  2. **ReceiptModal** — desain ulang struk cetak menjadi format thermal 80mm standar, menampilkan nama perusahaan (tenant), info transaksi (no., tanggal, waktu, kasir, pelanggan), item + modifier, subtotal, total, pembayaran per metode, kembali, dan footer.
+  3. **Open Bill** — tambah modal input nama pelanggan saat menekan "Open Bill". Nama pelanggan ditampilkan pada kartu open bill di sidebar dan tercatat di struk.
+- **Alasan:** Meningkatkan kecepatan kasir (tidak perlu ketik nominal QRIS), struk lebih profesional dan siap cetak ke printer thermal, serta mempermudah identifikasi pesanan open bill per pelanggan/meja.
+- **File Terdampak:**
+  - `resources/js/Components/PaymentModal.vue` — smart cash vs non-cash input, `onMethodChange` auto-amount, kembalian conditional
+  - `resources/js/Components/ReceiptModal.vue` — full redesign thermal receipt, prop `tenantName`, format mono-font, section header/info/items/total/payment/footer
+  - `resources/js/Pages/Cashier/POS.vue` — prop `tenantName`, modal input nama pelanggan untuk open bill (`showOpenBillNameModal`, `openBillCustomerName`, `confirmSaveOpenBill`), tampilkan nama di kartu open bill
+  - `app/Http/Controllers/Cashier/POSController.php` — pass `tenantName` ke Inertia, load relasi `user:id,name` pada `lastTransaction` sebelum flash
+  - `app/Http/Requests/StoreTransactionRequest.php` — tambah rule `customer_name: nullable|string|max:100`
+- **Catatan Migrasi:** Tidak perlu migrasi. Kolom `customer_name` sudah ada di tabel `transactions`.
+
+---
+
+### [ADDITION] Dashboard Owner: Badge Self Order pada Transaksi Terbaru
+- **Tanggal:** 2026-03-07
+- **Fase Terkait:** Phase-5 Dashboard
+- **Dampak:** Frontend | Controller
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan kolom `source` pada query `recentTransactions` di DashboardController dan badge "Self Order" (bg-blue) di samping kode transaksi pada tabel Transaksi Terbaru di halaman Dashboard Owner.
+- **Alasan:** Membedakan visually transaksi dari channel POS vs Self Order langsung dari dashboard.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/DashboardController.php` — tambah `'source'` di `get([...])`
+  - `resources/js/Pages/Owner/Dashboard.vue` — wrap `tx.code` + `<span v-if="tx.source === 'self_order'>` dalam flex div
+
+---
+
+
 - **Tanggal:** 2026-03-06
 - **Fase Terkait:** Di Luar Fase
 - **Dampak:** Dependency | Config

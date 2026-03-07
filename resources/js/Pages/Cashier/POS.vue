@@ -14,6 +14,7 @@ const props = defineProps({
     paymentMethods: Array,
     cashDrawer: Object,
     openBills: { type: Array, default: () => [] },
+    tenantName: { type: String, default: 'SAPI POS' },
 });
 
 const page = usePage();
@@ -32,6 +33,10 @@ const processing = ref(false);
 const showOpenBills = ref(false);
 const selectedOpenBill = ref(null);
 const showOpenBillPayment = ref(false);
+
+// --- Open Bill Customer Name Modal ---
+const showOpenBillNameModal = ref(false);
+const openBillCustomerName = ref('');
 
 // --- Helpers ---
 const formatCurrency = (value) => {
@@ -206,7 +211,14 @@ const handlePayment = (payments) => {
 // --- Open Bill ---
 const saveAsOpenBill = () => {
     if (cart.value.length === 0 || processing.value) return;
+    openBillCustomerName.value = '';
+    showOpenBillNameModal.value = true;
+};
+
+const confirmSaveOpenBill = () => {
+    if (processing.value) return;
     processing.value = true;
+    showOpenBillNameModal.value = false;
 
     const data = {
         items: cart.value.map(item => ({
@@ -224,6 +236,7 @@ const saveAsOpenBill = () => {
         payments: null,
         notes: null,
         is_open_bill: true,
+        customer_name: openBillCustomerName.value.trim() || null,
     };
 
     router.post('/cashier/transactions', data, {
@@ -424,6 +437,9 @@ const logout = () => {
                                     <span class="text-xs font-semibold text-amber-700">{{ bill.code }}</span>
                                     <span class="text-xs text-gray-400">{{ formatDate(bill.created_at) }}</span>
                                 </div>
+                                <p v-if="bill.customer_name" class="text-xs font-medium text-amber-800 mb-1">
+                                    👤 {{ bill.customer_name }}
+                                </p>
                                 <div class="text-xs text-gray-600 space-y-0.5">
                                     <p v-for="item in bill.items" :key="item.id" class="truncate">
                                         {{ item.qty }}x {{ item.variant_name }}
@@ -521,8 +537,53 @@ const logout = () => {
         <ReceiptModal
             :show="showReceiptModal"
             :transaction="lastTransaction"
+            :tenant-name="tenantName"
             @close="showReceiptModal = false"
         />
+
+        <!-- Open Bill Customer Name Modal -->
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition-opacity duration-150"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition-opacity duration-150"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-if="showOpenBillNameModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div class="absolute inset-0 bg-black/50" @click="showOpenBillNameModal = false" />
+                    <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                        <h3 class="text-base font-semibold text-gray-800">Nama Pelanggan</h3>
+                        <p class="text-sm text-gray-500">Masukkan nama pelanggan untuk open bill ini (opsional).</p>
+                        <input
+                            v-model="openBillCustomerName"
+                            type="text"
+                            placeholder="Contoh: Meja 3 / Budi"
+                            maxlength="100"
+                            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                            @keydown.enter="confirmSaveOpenBill"
+                            @keydown.esc="showOpenBillNameModal = false"
+                            autofocus
+                        />
+                        <div class="flex gap-3 pt-1">
+                            <button
+                                @click="showOpenBillNameModal = false"
+                                class="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition text-sm"
+                            >
+                                Batal
+                            </button>
+                            <button
+                                @click="confirmSaveOpenBill"
+                                class="flex-1 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition text-sm"
+                            >
+                                Simpan Open Bill
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
     </div>
 </template>
 

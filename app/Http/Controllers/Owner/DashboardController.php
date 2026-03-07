@@ -66,7 +66,7 @@ class DashboardController extends Controller
             ->where('status', Transaction::STATUS_COMPLETED)
             ->latest()
             ->take(5)
-            ->get(['id', 'code', 'total_amount', 'user_id', 'created_at']);
+            ->get(['id', 'code', 'total_amount', 'user_id', 'created_at', 'source']);
 
         return Inertia::render('Owner/Dashboard', [
             'metrics' => [

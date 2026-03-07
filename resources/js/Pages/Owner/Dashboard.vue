@@ -139,7 +139,15 @@ const formatDate = (datetime) => {
                             </svg>
                         </div>
                         <div>
-                            <p class="text-sm font-medium text-gray-800">{{ tx.code }}</p>
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-medium text-gray-800">{{ tx.code }}</p>
+                                <span
+                                    v-if="tx.source === 'self_order'"
+                                    class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium"
+                                >
+                                    Self Order
+                                </span>
+                            </div>
                             <p class="text-xs text-gray-400">{{ tx.user?.name || '-' }}</p>
                         </div>
                     </div>

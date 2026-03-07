@@ -61,6 +61,7 @@ class POSController extends Controller
             'paymentMethods' => $paymentMethods,
             'cashDrawer' => $openDrawer,
             'openBills' => $openBills,
+            'tenantName' => Auth::user()->tenant->name,
         ]);
     }
 
@@ -74,6 +75,8 @@ class POSController extends Controller
             if ($isOpenBill) {
                 return back()->with('success', "Open bill {$transaction->code} berhasil disimpan!");
             }
+
+            $transaction->loadMissing('user:id,name');
 
             return back()->with('success', "Transaksi {$transaction->code} berhasil!")
                 ->with('lastTransaction', $transaction->toArray());
@@ -106,6 +109,8 @@ class POSController extends Controller
                 $transaction,
                 $request->input('payments')
             );
+
+            $transaction->loadMissing('user:id,name');
 
             return back()->with('success', "Open bill {$transaction->code} berhasil dibayar!")
                 ->with('lastTransaction', $transaction->toArray());

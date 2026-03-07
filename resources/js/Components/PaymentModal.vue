@@ -15,16 +15,10 @@ const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
 };
 
-// Format display value: "50000" → "50.000"
 const formatNumber = (value) => {
     const num = Number(String(value).replace(/\D/g, ''));
     if (!num) return '';
     return num.toLocaleString('id-ID');
-};
-
-// Parse formatted string back to number: "50.000" → 50000
-const parseNumber = (str) => {
-    return Number(String(str).replace(/\D/g, '')) || 0;
 };
 
 // Reset ketika modal dibuka
@@ -39,20 +33,45 @@ watch(() => props.show, (val) => {
     }
 });
 
-// Handle amount input — auto format angka
+const getMethodType = (methodId) => {
+    const method = props.paymentMethods.find(m => m.id === methodId);
+    return method?.type || '';
+};
+
+const isCash = (methodId) => getMethodType(methodId) === 'cash';
+const isNonCash = (methodId) => methodId && !isCash(methodId);
+
+const needsReferenceCode = (methodId) => {
+    const type = getMethodType(methodId);
+    return type === 'qris_static' || type === 'bank_transfer';
+};
+
+// Ketika metode pembayaran dipilih, auto-set amount jika non-cash
+const onMethodChange = (idx) => {
+    const p = payments.value[idx];
+    if (isNonCash(p.payment_method_id)) {
+        // Remaining = total - amount from other rows
+        const otherPaid = payments.value
+            .filter((_, i) => i !== idx)
+            .reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+        const autoAmount = Math.max(0, props.totalAmount - otherPaid);
+        p.amount = autoAmount;
+        p.displayAmount = formatNumber(autoAmount);
+    }
+};
+
+// Handle amount input (hanya untuk cash)
 const onAmountInput = (idx, event) => {
     const raw = event.target.value.replace(/\D/g, '');
     const num = Number(raw) || 0;
     payments.value[idx].amount = num;
     payments.value[idx].displayAmount = num > 0 ? formatNumber(num) : '';
-    // Update the input value directly to show formatted version
     nextTick(() => {
         event.target.value = payments.value[idx].displayAmount;
     });
 };
 
 const onAmountFocus = (idx, event) => {
-    // On focus, show raw number for easy editing
     const num = payments.value[idx].amount;
     if (num > 0) {
         event.target.value = String(num);
@@ -60,7 +79,6 @@ const onAmountFocus = (idx, event) => {
 };
 
 const onAmountBlur = (idx, event) => {
-    // On blur, show formatted version
     const num = payments.value[idx].amount;
     event.target.value = num > 0 ? formatNumber(num) : '';
     payments.value[idx].displayAmount = num > 0 ? formatNumber(num) : '';
@@ -76,11 +94,9 @@ const change = computed(() => {
 
 const isValid = computed(() => {
     if (payments.value.length === 0) return false;
-
     for (const p of payments.value) {
         if (!p.payment_method_id || !p.amount || Number(p.amount) <= 0) return false;
     }
-
     return totalPaid.value >= props.totalAmount;
 });
 
@@ -99,16 +115,6 @@ const removePaymentRow = (index) => {
     }
 };
 
-const getMethodType = (methodId) => {
-    const method = props.paymentMethods.find(m => m.id === methodId);
-    return method?.type || '';
-};
-
-const needsReferenceCode = (methodId) => {
-    const type = getMethodType(methodId);
-    return type === 'qris_static' || type === 'bank_transfer';
-};
-
 // Tombol uang pas
 const payExact = () => {
     if (payments.value.length === 1) {
@@ -117,7 +123,7 @@ const payExact = () => {
     }
 };
 
-// Tombol denominasi cepat — tambah nominal ke pembayaran pertama
+// Tombol denominasi cepat
 const quickCash = (denomination) => {
     if (payments.value.length >= 1) {
         const current = Number(payments.value[0].amount) || 0;
@@ -129,13 +135,11 @@ const quickCash = (denomination) => {
 
 const confirm = () => {
     if (!isValid.value) return;
-
     const data = payments.value.map(p => ({
         payment_method_id: p.payment_method_id,
         amount: Number(p.amount),
         reference_code: p.reference_code || null,
     }));
-
     emit('confirm', data);
     emit('close');
 };
@@ -196,6 +200,7 @@ const close = () => {
                             <!-- Payment method -->
                             <select
                                 v-model="payment.payment_method_id"
+                                @change="onMethodChange(idx)"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                             >
                                 <option :value="null" disabled>Pilih metode pembayaran</option>
@@ -204,8 +209,8 @@ const close = () => {
                                 </option>
                             </select>
 
-                            <!-- Amount with formatting -->
-                            <div>
+                            <!-- CASH: input nominal + quick buttons -->
+                            <div v-if="isCash(payment.payment_method_id)">
                                 <div class="relative">
                                     <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
                                     <input
@@ -219,8 +224,7 @@ const close = () => {
                                         class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                                     />
                                 </div>
-
-                                <!-- Quick denomination buttons for first payment row -->
+                                <!-- Quick denomination buttons -->
                                 <div v-if="idx === 0" class="flex flex-wrap gap-2 mt-2">
                                     <button
                                         @click="payExact"
@@ -249,6 +253,19 @@ const close = () => {
                                 </div>
                             </div>
 
+                            <!-- NON-CASH: nominal otomatis sesuai total -->
+                            <div
+                                v-else-if="isNonCash(payment.payment_method_id)"
+                                class="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg"
+                            >
+                                <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span class="text-sm text-blue-700">
+                                    Nominal otomatis: <strong>{{ formatCurrency(payment.amount) }}</strong>
+                                </span>
+                            </div>
+
                             <!-- Reference code (for QRIS/Transfer) -->
                             <input
                                 v-if="needsReferenceCode(payment.payment_method_id)"
@@ -275,7 +292,7 @@ const close = () => {
                                     {{ formatCurrency(totalPaid) }}
                                 </span>
                             </div>
-                            <div v-if="change > 0" class="flex justify-between text-sm">
+                            <div v-if="change > 0 && payments.some(p => isCash(p.payment_method_id))" class="flex justify-between text-sm">
                                 <span class="text-gray-500">Kembalian</span>
                                 <span class="font-semibold text-green-600">{{ formatCurrency(change) }}</span>
                             </div>
