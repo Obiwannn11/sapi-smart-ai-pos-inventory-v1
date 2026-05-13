@@ -1,0 +1,4 @@
+- buat lp dalam tailwind, menggunakan laravel blade (contoh referensi ramoo.id)
+- file view simpan di views/public/landing.blade.php
+- (kalau pakai) controllers/public
+- jangan edit /docs 
