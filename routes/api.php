@@ -26,3 +26,32 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 // --- Xendit Webhook (No Auth — verifikasi via x-callback-token) ---
 Route::post('/xendit/webhook', [\App\Http\Controllers\Api\XenditWebhookController::class, 'handle']);
+
+// ─────────────────────────────────────────────────────────────────
+// MOBILE APP — POS Kasir
+// ─────────────────────────────────────────────────────────────────
+
+Route::post('/mobile/login', [\App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'login'])
+    ->middleware('throttle:5,1');
+
+Route::middleware(['auth:sanctum', 'tenant.api'])->group(function () {
+
+    Route::post('/mobile/logout',
+        [\App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'logout']);
+
+    Route::get('/mobile/tenant/profile',
+        [\App\Http\Controllers\Api\Mobile\MobileTenantController::class, 'profile']);
+
+    Route::get('/mobile/products',
+        [\App\Http\Controllers\Api\ApiProductController::class, 'index']);
+
+    Route::get('/mobile/cash-drawer/status',
+        [\App\Http\Controllers\Api\Mobile\MobileCashDrawerController::class, 'status']);
+
+    Route::post('/mobile/transactions',
+        [\App\Http\Controllers\Api\Mobile\MobileTransactionController::class, 'store']);
+
+    Route::get('/mobile/transactions/{transaction}/receipt',
+        [\App\Http\Controllers\Api\Mobile\MobileTransactionController::class, 'receipt']);
+
+});
