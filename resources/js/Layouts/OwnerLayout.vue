@@ -34,12 +34,20 @@ const sidebarGroups = [
             { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
         ],
     },
+    {
+        label: 'Pengaturan',
+        icon: 'settings',
+        items: [
+            { name: 'Profil Usaha', href: '/owner/settings', icon: 'office-building' },
+        ],
+    },
 ];
 
 // Track which groups are expanded
 const expandedGroups = ref({
     'Atur Menu': true,
     'Keuangan': true,
+    'Pengaturan': true,
 });
 
 const toggleGroup = (label) => {

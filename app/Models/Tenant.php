@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Tenant extends Model
 {
     use HasFactory;
-    protected $fillable = ['name', 'slug', 'logo'];
+    protected $fillable = ['name', 'slug', 'logo', 'address', 'phone'];
 
     // --- Relationships ---
     public function users(): HasMany
