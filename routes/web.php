@@ -72,6 +72,12 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
             ->name('stock.history');
         Route::get('stock/movements', [\App\Http\Controllers\Owner\StockController::class, 'movements'])
             ->name('stock.movements');
+
+        // Settings
+        Route::get('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'index'])
+            ->name('settings.index');
+        Route::patch('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'update'])
+            ->name('settings.update');
     });
 
 // --- Cashier Routes (owner juga bisa akses) ---

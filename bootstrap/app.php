@@ -19,8 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Alias middleware
         $middleware->alias([
-            'tenant' => \App\Http\Middleware\EnsureTenant::class,
-            'role'   => \App\Http\Middleware\EnsureRole::class,
+            'tenant'     => \App\Http\Middleware\EnsureTenant::class,
+            'tenant.api' => \App\Http\Middleware\EnsureTenantApi::class,
+            'role'       => \App\Http\Middleware\EnsureRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
