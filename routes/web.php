@@ -109,14 +109,5 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
     ->post('/owner/transactions/{transaction}/void', [\App\Http\Controllers\Cashier\POSController::class, 'void'])
     ->name('owner.transactions.void');
 
-// Redirect root ke login atau dashboard
-Route::get('/', function () {
-    if (Auth::check()) {
-        $user = Auth::user();
-
-        return $user && $user->isOwner()
-            ? redirect('/owner/dashboard')
-            : redirect('/cashier/pos');
-    }
-    return redirect('/login');
-});
+// Halaman Landing
+Route::get('/', [\App\Http\Controllers\Public\LandingController::class, 'index'])->name('landing');
