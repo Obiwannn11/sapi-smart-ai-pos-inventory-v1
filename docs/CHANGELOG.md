@@ -45,6 +45,21 @@
 
 ---
 
+### [ADDITION] Mobile API Phase 2: Operasi Kasir Lengkap
+- **Tanggal:** 2026-05-25
+- **Fase Terkait:** Phase-2 (Mobile API Enhancement)
+- **Dampak:** Controller | Route | API Contract
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan endpoint mobile untuk operasional kasir harian yang lebih lengkap, meliputi buka kas, tutup kas, ringkasan sesi kas, daftar transaksi, pembayaran open bill, dan void transaksi.
+- **Alasan:** Melengkapi alur operasional kasir mobile end-to-end agar proses shift kas dan lifecycle transaksi dapat ditangani penuh dari mobile client.
+- **File Terdampak:**
+  - `app/Http/Controllers/Api/Mobile/MobileCashDrawerController.php` — tambah method `open`, `close`, dan `summary` dengan validasi serta perhitungan expected amount/difference.
+  - `app/Http/Controllers/Api/Mobile/MobileTransactionController.php` — tambah method `index`, `pay`, dan `void` untuk list transaksi, pembayaran open bill, serta pembatalan transaksi.
+  - `routes/api.php` — registrasi route baru untuk operasi kas drawer dan transaksi (group role cashier/owner dan owner-only void).
+- **Catatan Migrasi:** Tidak ada migrasi database baru. Pastikan role middleware `role:cashier,owner` dan `role:owner` aktif serta payment method cash memiliki `type = cash` untuk kalkulasi tutup kas.
+
+---
+
 ### [ADDITION] UX POS: Auto-Amount Non-Cash, Thermal Receipt, Open Bill Customer Name
 - **Tanggal:** 2026-03-07
 - **Fase Terkait:** Phase-3 POS / Phase-5 UX

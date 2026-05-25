@@ -55,3 +55,29 @@ Route::middleware(['auth:sanctum', 'tenant.api'])->group(function () {
         [\App\Http\Controllers\Api\Mobile\MobileTransactionController::class, 'receipt']);
 
 });
+
+// ─── Phase 2: Operasi Kasir Lengkap ───────────────────────────────────────────
+
+// Kasir + Owner: buka/tutup kas, summary, bayar open bill, list transaksi
+Route::middleware(['auth:sanctum', 'tenant.api', 'role:cashier,owner'])->group(function () {
+    Route::post('/mobile/cash-drawer/open',
+        [\App\Http\Controllers\Api\Mobile\MobileCashDrawerController::class, 'open']);
+
+    Route::post('/mobile/cash-drawer/close',
+        [\App\Http\Controllers\Api\Mobile\MobileCashDrawerController::class, 'close']);
+
+    Route::get('/mobile/cash-drawer/{cashDrawer}/summary',
+        [\App\Http\Controllers\Api\Mobile\MobileCashDrawerController::class, 'summary']);
+
+    Route::post('/mobile/transactions/{transaction}/pay',
+        [\App\Http\Controllers\Api\Mobile\MobileTransactionController::class, 'pay']);
+
+    Route::get('/mobile/transactions',
+        [\App\Http\Controllers\Api\Mobile\MobileTransactionController::class, 'index']);
+});
+
+// Owner only: void transaksi
+Route::middleware(['auth:sanctum', 'tenant.api', 'role:owner'])->group(function () {
+    Route::post('/mobile/transactions/{transaction}/void',
+        [\App\Http\Controllers\Api\Mobile\MobileTransactionController::class, 'void']);
+});
