@@ -1,15 +1,14 @@
 <script setup>
-import { usePage, router } from '@inertiajs/vue3';
+import { router, Head } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
+import CashierTopbar from '@/Components/CashierTopbar.vue';
 
 const props = defineProps({
     transactions: Object,
     filters: Object,
 });
-
-const { auth } = usePage().props;
 
 const statusFilter = ref(props.filters?.status || '');
 const dateFilter = ref(props.filters?.date || '');
@@ -32,7 +31,7 @@ const formatDate = (date) => {
 
 const statusLabel = (status) => {
     const map = {
-        pending: 'Open Bill',
+        pending: 'Tagihan Terbuka',
         completed: 'Selesai',
         voided: 'Void',
     };
@@ -41,9 +40,9 @@ const statusLabel = (status) => {
 
 const statusClass = (status) => {
     const map = {
-        pending: 'bg-amber-100 text-amber-800',
-        completed: 'bg-green-100 text-green-800',
-        voided: 'bg-red-100 text-red-800',
+        pending: 'bg-warning/10 text-warning-foreground',
+        completed: 'bg-success/10 text-success',
+        voided: 'bg-destructive/10 text-destructive',
     };
     return map[status] || 'bg-gray-100 text-gray-800';
 };
@@ -66,60 +65,50 @@ const viewReceipt = (transaction) => {
     showReceiptModal.value = true;
 };
 
-const goToPOS = () => {
-    router.get('/cashier/pos');
-};
-
-const logout = () => {
-    router.post('/logout');
-};
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50">
+    <Head title="Riwayat Transaksi" />
+    <div class="min-h-screen bg-background">
         <FlashMessage />
 
         <!-- Header -->
-        <nav class="bg-white shadow-sm px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <h1 class="text-lg font-bold text-indigo-600">SAPI — Riwayat</h1>
-            </div>
-            <div class="flex items-center gap-3">
-                <button @click="goToPOS" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
-                    Kembali ke POS
-                </button>
-                <button @click="logout" class="text-sm text-red-500 hover:text-red-700">Logout</button>
-            </div>
-        </nav>
+        <CashierTopbar title="Riwayat" />
 
         <main class="max-w-3xl mx-auto py-6 px-4">
             <!-- Filters -->
-            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+                <div class="flex items-center gap-2 mb-3">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                    </svg>
+                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filter</span>
+                </div>
                 <div class="flex flex-wrap gap-3 items-end">
                     <div class="flex-1 min-w-[140px]">
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
                         <select
                             v-model="statusFilter"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         >
                             <option value="">Semua</option>
-                            <option value="pending">Open Bill</option>
+                            <option value="pending">Tagihan Terbuka</option>
                             <option value="completed">Selesai</option>
                             <option value="voided">Void</option>
                         </select>
                     </div>
                     <div class="flex-1 min-w-[140px]">
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal</label>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
                         <input
                             v-model="dateFilter"
                             type="date"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 items-end">
                         <button
                             @click="applyFilters"
-                            class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
+                            class="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition"
                         >
                             Filter
                         </button>
@@ -142,7 +131,7 @@ const logout = () => {
                 >
                     <div class="flex items-center justify-between mb-2">
                         <div class="flex items-center gap-2">
-                            <span class="text-sm font-semibold text-indigo-600">{{ tx.code }}</span>
+                            <span class="text-sm font-semibold text-primary">{{ tx.code }}</span>
                             <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', statusClass(tx.status)]">
                                 {{ statusLabel(tx.status) }}
                             </span>
@@ -165,7 +154,7 @@ const logout = () => {
                         <span class="text-sm font-bold text-gray-800">{{ formatCurrency(tx.total_amount) }}</span>
                         <button
                             @click="viewReceipt(tx)"
-                            class="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                            class="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
                         >
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
@@ -190,7 +179,7 @@ const logout = () => {
                         :class="[
                             'px-3 py-1.5 text-sm rounded-lg transition',
                             link.active
-                                ? 'bg-indigo-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
                         ]"
                         v-html="link.label"

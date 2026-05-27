@@ -1,14 +1,13 @@
 <script setup>
-import { usePage, router } from '@inertiajs/vue3';
+import { router, Head } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import CashierTopbar from '@/Components/CashierTopbar.vue';
 
 const props = defineProps({
     cashDrawer: Object,
     paymentSummary: Array,
     transactionCount: Number,
 });
-
-const { auth } = usePage().props;
 
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -34,24 +33,19 @@ const logout = () => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50">
+    <Head title="Rekap Kas" />
+    <div class="min-h-screen bg-background">
         <FlashMessage />
 
         <!-- Header -->
-        <nav class="bg-white shadow px-6 py-4 flex items-center justify-between">
-            <h1 class="text-xl font-bold text-indigo-600">SAPI — Rekap Kas</h1>
-            <div class="flex items-center gap-4">
-                <span class="text-sm text-gray-600">{{ auth.user.name }}</span>
-                <button @click="logout" class="text-sm text-red-600 hover:text-red-800">Logout</button>
-            </div>
-        </nav>
+        <CashierTopbar title="Rekap Kas" />
 
         <main class="max-w-lg mx-auto py-12 px-6">
             <div class="bg-white rounded-xl shadow-lg overflow-hidden">
                 <!-- Header -->
-                <div class="bg-indigo-600 px-6 py-5 text-white text-center">
+                <div class="bg-primary px-6 py-5 text-primary-foreground text-center">
                     <h2 class="text-xl font-semibold">Rekap Sesi Kas</h2>
-                    <p class="text-indigo-200 text-sm mt-1">Sesi telah ditutup</p>
+                    <p class="text-primary-foreground/70 text-sm mt-1">Sesi telah ditutup</p>
                 </div>
 
                 <div class="p-6 space-y-5">
@@ -91,9 +85,9 @@ const logout = () => {
                                 <div class="flex items-center gap-2">
                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                                           :class="{
-                                              'bg-green-100 text-green-800': pm.type === 'cash',
-                                              'bg-blue-100 text-blue-800': pm.type === 'qris_static',
-                                              'bg-purple-100 text-purple-800': pm.type === 'bank_transfer',
+                                              'bg-success/10 text-success': pm.type === 'cash',
+                                              'bg-primary/10 text-primary': pm.type === 'qris_static',
+                                              'bg-secondary text-secondary-foreground': pm.type === 'bank_transfer',
                                           }">
                                         {{ pm.type === 'cash' ? 'Tunai' : pm.type === 'qris_static' ? 'QRIS' : 'Transfer' }}
                                     </span>
@@ -120,8 +114,8 @@ const logout = () => {
                         <div class="flex justify-between text-sm font-semibold border-t border-gray-200 pt-3">
                             <span>Selisih</span>
                             <span :class="{
-                                'text-green-600': Number(cashDrawer.difference) >= 0,
-                                'text-red-600': Number(cashDrawer.difference) < 0,
+                                'text-success': Number(cashDrawer.difference) >= 0,
+                                'text-destructive': Number(cashDrawer.difference) < 0,
                             }">
                                 {{ Number(cashDrawer.difference) >= 0 ? '+' : '' }}{{ formatCurrency(cashDrawer.difference) }}
                             </span>
@@ -139,7 +133,7 @@ const logout = () => {
                 <div class="px-6 pb-6 space-y-3">
                     <button
                         @click="goToCashDrawer"
-                        class="w-full py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition"
+                        class="w-full py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition"
                     >
                         Buka Sesi Baru
                     </button>
