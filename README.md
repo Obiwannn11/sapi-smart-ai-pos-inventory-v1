@@ -35,6 +35,26 @@ Perubahan besar pada Mobile API Phase 2:
 
 Lihat detail teknis dan alasan perubahan di `docs/CHANGELOG.md`.
 
+## Update Terbaru (2026-05-28)
+
+Penyegaran besar pada UI system dan alur kasir/owner:
+
+- Theme system semantik baru berbasis design token (`primary`, `success`, `warning`, `destructive`) diterapkan lintas komponen dan halaman.
+- Komponen reusable baru:
+   - `CashierTopbar` untuk navigasi konsisten di halaman kasir
+   - `DatePicker` custom untuk filter laporan owner
+   - `useFlash` composable untuk notifikasi sukses/error/peringatan tanpa alert browser
+- Peningkatan UX kasir:
+   - Flow tutup kas 2 langkah dengan ringkasan sebelum konfirmasi
+   - Validasi stok menampilkan flash message (bukan alert blocking)
+   - Konsistensi copy untuk open bill/tagihan
+- Perbaikan role flow backend:
+   - Owner tidak lagi diwajibkan membuka sesi kas sebelum masuk POS
+   - Sesi cash drawer dibatasi untuk role kasir
+- Halaman login di-redesign agar konsisten dengan visual system baru.
+
+Lihat detail lengkap file terdampak di `docs/CHANGELOG.md`.
+
 ## Mobile API Endpoints (Phase 2)
 
 Base prefix mengikuti konfigurasi route API project.
