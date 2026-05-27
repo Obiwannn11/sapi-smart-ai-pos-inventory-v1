@@ -219,9 +219,9 @@ const logout = () => router.post('/logout');
             <!-- Nav items -->
             <nav class="flex-1 overflow-y-auto py-3 px-3" aria-label="Navigasi utama">
                 <template v-for="(group, gIdx) in sidebarGroups" :key="gIdx">
-                    <!-- Group label — collapsible toggle -->
+                    <!-- Group label — collapsible toggle; hidden in icon-only rail mode -->
                     <button
-                        v-if="group.label"
+                        v-if="group.label && sidebarOpen"
                         type="button"
                         @click="toggleGroup(group.label)"
                         class="w-full flex items-center justify-between px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground hover:text-foreground transition-colors duration-150 select-none"
@@ -238,26 +238,27 @@ const logout = () => router.post('/logout');
                         </svg>
                     </button>
 
-                    <!-- Group items — collapse on toggle -->
+                    <!-- Group items — collapse only when sidebar is open; always visible in icon-only rail -->
                     <div
                         class="overflow-hidden transition-[max-height] duration-200 ease-in-out"
-                        :class="group.label && collapsedGroups[group.label] ? 'max-h-0' : 'max-h-96'"
+                        :class="group.label && collapsedGroups[group.label] && sidebarOpen ? 'max-h-0' : 'max-h-96'"
                     >
                         <Link
                             v-for="item in group.items"
                             :key="item.href"
                             :href="item.href"
                             @click="handleNavClick"
+                            :title="!sidebarOpen ? item.name : undefined"
                             :class="[
-                                'flex items-center gap-2.5 px-3 rounded-md text-sm transition-colors duration-150 mb-0.5',
-                                'h-9',
+                                'flex items-center rounded-md text-sm transition-colors duration-150 mb-0.5 h-9',
+                                sidebarOpen ? 'gap-2.5 px-3' : 'justify-center px-0',
                                 isActive(item.href)
                                     ? 'bg-primary/10 text-primary font-medium'
                                     : 'text-foreground/60 font-normal hover:bg-muted hover:text-foreground',
                             ]"
                         >
                             <NavIcon :name="item.icon" />
-                            {{ item.name }}
+                            <span v-show="sidebarOpen" class="whitespace-nowrap">{{ item.name }}</span>
                         </Link>
                     </div>
                 </template>
@@ -265,23 +266,28 @@ const logout = () => router.post('/logout');
 
             <!-- User footer -->
             <div class="flex-shrink-0 border-t border-border p-3">
-                <div class="flex items-center gap-2.5 px-1 min-w-0">
-                    <!-- Avatar -->
+                <div
+                    class="flex items-center min-w-0"
+                    :class="sidebarOpen ? 'gap-2.5 px-1' : 'justify-center px-0'"
+                >
+                    <!-- Avatar (always visible) -->
                     <div
                         class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"
+                        :title="!sidebarOpen ? auth.user.name : undefined"
                         aria-hidden="true"
                     >
                         <span class="text-primary text-sm font-semibold leading-none select-none">{{ userInitial }}</span>
                     </div>
 
-                    <!-- Name + role -->
-                    <div class="flex-1 min-w-0">
+                    <!-- Name + role — hidden in icon-only rail mode -->
+                    <div v-show="sidebarOpen" class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-foreground truncate leading-snug">{{ auth.user.name }}</p>
                         <p class="text-[11px] text-muted-foreground leading-snug">{{ roleLabel }}</p>
                     </div>
 
-                    <!-- Logout -->
+                    <!-- Logout — hidden in icon-only rail mode -->
                     <button
+                        v-show="sidebarOpen"
                         @click="logout"
                         class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
                         title="Keluar"
