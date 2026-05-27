@@ -16,9 +16,14 @@ class CashDrawerController extends Controller
 {
     /**
      * Halaman cash drawer — form buka kas atau summary sesi aktif.
+     * Sesi kas hanya untuk kasir; owner diarahkan ke POS.
      */
-    public function index(): Response
+    public function index(): Response|RedirectResponse
     {
+        if (! Auth::user()->isCashier()) {
+            return redirect()->route('cashier.pos');
+        }
+
         $openDrawer = CashDrawer::where('user_id', Auth::id())
             ->whereNull('closed_at')
             ->first();
@@ -37,6 +42,11 @@ class CashDrawerController extends Controller
 
         if (!$user) {
             abort(401);
+        }
+
+        // Hanya kasir yang boleh membuka sesi kas; owner tidak mengelola kas.
+        if (! $user->isCashier()) {
+            abort(403, 'Hanya kasir yang dapat membuka sesi kas.');
         }
 
         // Validasi: tidak boleh ada sesi terbuka

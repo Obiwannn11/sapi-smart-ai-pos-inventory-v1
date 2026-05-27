@@ -45,6 +45,34 @@
 
 ---
 
+### [ADDITION] UI System Refresh, Cashier Flow Guard, and Shared Components
+- **Tanggal:** 2026-05-28
+- **Fase Terkait:** Cross-Phase (Phase-3 POS / Phase-5 Dashboard)
+- **Dampak:** Frontend | Controller | Config
+- **Breaking Change:** Tidak
+- **Deskripsi:** Pembaruan besar pada antarmuka dan pengalaman operasional:
+  1. Penerapan design token semantik global (primary/success/warning/destructive) dan font aplikasi.
+  2. Penambahan komponen reusable baru: `CashierTopbar`, `DatePicker`, dan composable `useFlash`.
+  3. Refactor komponen shared dan halaman owner/cashier agar konsisten dengan sistem tema baru.
+  4. Guard backend alur kas: owner tidak lagi diwajibkan membuka sesi kas dan tidak dapat mengelola cash drawer kasir.
+  5. Penyegaran halaman login untuk UX lebih modern dan konsisten dengan tema aplikasi.
+- **Alasan:** Menyatukan visual language aplikasi, mengurangi inkonsistensi UI lintas halaman, memperjelas pemisahan alur owner vs kasir, dan meningkatkan kecepatan operasional kasir.
+- **File Terdampak:**
+  - `resources/css/app.css` — token warna semantik, radius, mapping warna tema
+  - `resources/views/app.blade.php` — preload font Plus Jakarta Sans + JetBrains Mono
+  - `resources/js/Components/CashierTopbar.vue` — topbar kasir reusable
+  - `resources/js/Components/DatePicker.vue` — date picker custom untuk filter laporan
+  - `resources/js/composables/useFlash.js` — state notifikasi global
+  - `resources/js/Components/*.vue` — migrasi style komponen shared ke token semantik
+  - `resources/js/Pages/Cashier/*.vue` — perbaikan flow kasir, notifikasi, dan wording
+  - `resources/js/Pages/Owner/**/*.vue` — harmonisasi UI dashboard/management owner
+  - `resources/js/Pages/Auth/Login.vue` — redesign halaman login
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — pembatasan sesi kas untuk role kasir
+  - `app/Http/Controllers/Cashier/POSController.php` — owner bypass kewajiban buka kas
+- **Catatan Migrasi:** Tidak ada migrasi database. Disarankan jalankan `npm run build` untuk validasi aset frontend.
+
+---
+
 ### [ADDITION] Mobile API Phase 2: Operasi Kasir Lengkap
 - **Tanggal:** 2026-05-25
 - **Fase Terkait:** Phase-2 (Mobile API Enhancement)

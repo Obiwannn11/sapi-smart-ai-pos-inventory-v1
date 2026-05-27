@@ -6,7 +6,102 @@
 @source '../**/*.js';
 @source '../**/*.vue';
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+:root {
+    --radius: 0.625rem;
+
+    --background: oklch(0.993 0.004 150);
+    --foreground: oklch(0.23 0.015 160);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.23 0.015 160);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.23 0.015 160);
+    --muted: oklch(0.962 0.007 150);
+    --muted-foreground: oklch(0.48 0.012 160);
+    --secondary: oklch(0.95 0.008 150);
+    --secondary-foreground: oklch(0.27 0.015 160);
+    --accent: oklch(0.95 0.008 150);
+    --accent-foreground: oklch(0.27 0.015 160);
+    --border: oklch(0.9 0.008 150);
+    --input: oklch(0.9 0.008 150);
+
+    --primary: oklch(0.58 0.128 162);
+    --primary-foreground: oklch(0.99 0.005 150);
+    --ring: oklch(0.58 0.128 162);
+
+    --brand: oklch(0.72 0.15 162);
+    --brand-foreground: oklch(0.21 0.05 162);
+
+    --success: oklch(0.62 0.12 200);
+    --success-foreground: oklch(0.99 0.005 150);
+    --warning: oklch(0.78 0.14 75);
+    --warning-foreground: oklch(0.27 0.05 75);
+    --destructive: oklch(0.58 0.2 27);
+    --destructive-foreground: oklch(0.99 0.005 150);
+}
+
+.dark {
+    --background: oklch(0.18 0.012 160);
+    --foreground: oklch(0.95 0.005 150);
+    --card: oklch(0.21 0.013 160);
+    --card-foreground: oklch(0.95 0.005 150);
+    --popover: oklch(0.21 0.013 160);
+    --popover-foreground: oklch(0.95 0.005 150);
+    --muted: oklch(0.27 0.012 160);
+    --muted-foreground: oklch(0.68 0.01 155);
+    --secondary: oklch(0.27 0.012 160);
+    --secondary-foreground: oklch(0.95 0.005 150);
+    --accent: oklch(0.27 0.012 160);
+    --accent-foreground: oklch(0.95 0.005 150);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 14%);
+
+    --primary: oklch(0.64 0.13 162);
+    --primary-foreground: oklch(0.16 0.01 160);
+    --ring: oklch(0.64 0.13 162);
+
+    --brand: oklch(0.75 0.15 162);
+    --brand-foreground: oklch(0.16 0.04 162);
+
+    --success: oklch(0.68 0.12 200);
+    --success-foreground: oklch(0.16 0.01 160);
+    --warning: oklch(0.8 0.14 80);
+    --warning-foreground: oklch(0.2 0.05 80);
+    --destructive: oklch(0.62 0.2 25);
+    --destructive-foreground: oklch(0.99 0.005 150);
+}
+
+@theme inline {
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
 }

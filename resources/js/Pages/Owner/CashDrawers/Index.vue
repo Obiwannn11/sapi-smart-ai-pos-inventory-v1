@@ -64,13 +64,13 @@ const formatDateTime = (datetime) => {
                             <td class="py-3 px-4 text-right text-gray-700">
                                 {{ cd.closing_amount !== null ? formatCurrency(cd.closing_amount) : '-' }}
                             </td>
-                            <td class="py-3 px-4 text-right font-semibold" :class="cd.difference < 0 ? 'text-red-600' : cd.difference > 0 ? 'text-green-600' : 'text-gray-600'">
+                            <td class="py-3 px-4 text-right font-semibold" :class="cd.difference < 0 ? 'text-destructive' : cd.difference > 0 ? 'text-success' : 'text-muted-foreground'">
                                 {{ cd.difference !== null ? formatCurrency(cd.difference) : '-' }}
                             </td>
                             <td class="py-3 px-4 text-center">
                                 <span
                                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                                    :class="cd.closed_at ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-800'"
+                                    :class="cd.closed_at ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success'"
                                 >
                                     {{ cd.closed_at ? 'Closed' : 'Open' }}
                                 </span>
@@ -97,7 +97,7 @@ const formatDateTime = (datetime) => {
                         :class="[
                             'px-3 py-1.5 text-xs rounded-lg transition-colors',
                             link.active
-                                ? 'bg-indigo-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : link.url
                                     ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                     : 'bg-gray-50 text-gray-300 cursor-not-allowed'

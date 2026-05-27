@@ -58,7 +58,7 @@ const subtotal = () => {
 
                 <!-- Modifiers -->
                 <div v-if="item.modifiers && item.modifiers.length > 0" class="mt-1 space-y-0.5">
-                    <p v-for="mod in item.modifiers" :key="mod.id" class="text-xs text-indigo-500">
+                    <p v-for="mod in item.modifiers" :key="mod.id" class="text-xs text-primary">
                         + {{ mod.name }}
                         <span v-if="Number(mod.extra_price) > 0" class="text-gray-400">({{ formatCurrency(mod.extra_price) }})</span>
                     </p>
@@ -67,7 +67,7 @@ const subtotal = () => {
 
             <div class="flex items-center gap-1 flex-shrink-0">
                 <!-- Toggle notes -->
-                <button @click="toggleNotes" class="text-gray-300 hover:text-indigo-500 transition" title="Catatan">
+                <button @click="toggleNotes" class="text-gray-300 hover:text-primary transition" title="Catatan">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -89,7 +89,7 @@ const subtotal = () => {
                 @input="onNotesChange"
                 type="text"
                 placeholder="Catatan: ekstra susu, tanpa gula, dll"
-                class="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50"
+                class="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:ring-1 focus:ring-ring focus:border-ring bg-gray-50"
             />
         </div>
 

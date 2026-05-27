@@ -24,14 +24,16 @@ class POSController extends Controller
 
     public function index(): Response|RedirectResponse
     {
-        $userId = Auth::id();
+        $user = Auth::user();
+        $userId = $user->id;
 
-        // Cek apakah kasir sudah buka kas
+        // Cek apakah kasir sudah buka kas.
+        // Hanya kasir yang wajib membuka sesi kas; owner boleh langsung masuk POS.
         $openDrawer = CashDrawer::where('user_id', $userId)
             ->whereNull('closed_at')
             ->first();
 
-        if (!$openDrawer) {
+        if (!$openDrawer && $user->isCashier()) {
             return redirect()->route('cashier.cash-drawer.index');
         }
 

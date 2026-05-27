@@ -176,9 +176,9 @@ const close = () => {
                             </button>
                         </div>
                         <!-- Total headline (always visible) -->
-                        <div class="bg-indigo-50 px-6 py-3 flex items-center justify-between">
-                            <span class="text-sm text-indigo-600 font-medium">Total Belanja</span>
-                            <span class="text-2xl font-bold text-indigo-700">{{ formatCurrency(totalAmount) }}</span>
+                        <div class="bg-primary/10 px-6 py-3 flex items-center justify-between">
+                            <span class="text-sm text-primary font-medium">Total Belanja</span>
+                            <span class="text-2xl font-bold text-primary">{{ formatCurrency(totalAmount) }}</span>
                         </div>
                     </div>
 
@@ -201,7 +201,7 @@ const close = () => {
                             <select
                                 v-model="payment.payment_method_id"
                                 @change="onMethodChange(idx)"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                             >
                                 <option :value="null" disabled>Pilih metode pembayaran</option>
                                 <option v-for="method in paymentMethods" :key="method.id" :value="method.id">
@@ -221,32 +221,32 @@ const close = () => {
                                         type="text"
                                         inputmode="numeric"
                                         placeholder="0"
-                                        class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                                     />
                                 </div>
                                 <!-- Quick denomination buttons -->
                                 <div v-if="idx === 0" class="flex flex-wrap gap-2 mt-2">
                                     <button
                                         @click="payExact"
-                                        class="px-3 py-1.5 text-xs font-medium bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition border border-indigo-200"
+                                        class="px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition border border-primary/20"
                                     >
                                         Uang Pas
                                     </button>
                                     <button
                                         @click="quickCash(20000)"
-                                        class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition border border-green-200"
+                                        class="px-3 py-1.5 text-xs font-medium bg-success/10 text-success rounded-lg hover:bg-success/20 transition border border-success/20"
                                     >
                                         +20rb
                                     </button>
                                     <button
                                         @click="quickCash(50000)"
-                                        class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition border border-green-200"
+                                        class="px-3 py-1.5 text-xs font-medium bg-success/10 text-success rounded-lg hover:bg-success/20 transition border border-success/20"
                                     >
                                         +50rb
                                     </button>
                                     <button
                                         @click="quickCash(100000)"
-                                        class="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition border border-green-200"
+                                        class="px-3 py-1.5 text-xs font-medium bg-success/10 text-success rounded-lg hover:bg-success/20 transition border border-success/20"
                                     >
                                         +100rb
                                     </button>
@@ -256,12 +256,12 @@ const close = () => {
                             <!-- NON-CASH: nominal otomatis sesuai total -->
                             <div
                                 v-else-if="isNonCash(payment.payment_method_id)"
-                                class="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg"
+                                class="flex items-center gap-2 px-3 py-2.5 bg-muted border border-border rounded-lg"
                             >
-                                <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-4 h-4 text-muted-foreground shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <span class="text-sm text-blue-700">
+                                <span class="text-sm text-foreground">
                                     Nominal otomatis: <strong>{{ formatCurrency(payment.amount) }}</strong>
                                 </span>
                             </div>
@@ -272,14 +272,14 @@ const close = () => {
                                 v-model="payment.reference_code"
                                 type="text"
                                 placeholder="Kode referensi (opsional)"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                             />
                         </div>
 
                         <!-- Add payment row -->
                         <button
                             @click="addPaymentRow"
-                            class="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition"
+                            class="w-full py-2 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition"
                         >
                             + Split Pembayaran
                         </button>
@@ -288,16 +288,17 @@ const close = () => {
                         <div class="border-t border-gray-200 pt-4 space-y-2">
                             <div class="flex justify-between text-sm">
                                 <span class="text-gray-500">Total Bayar</span>
-                                <span class="font-medium" :class="totalPaid >= totalAmount ? 'text-green-600' : 'text-red-600'">
+                                <span class="font-medium" :class="totalPaid >= totalAmount ? 'text-success' : 'text-destructive'">
                                     {{ formatCurrency(totalPaid) }}
                                 </span>
                             </div>
                             <div v-if="change > 0 && payments.some(p => isCash(p.payment_method_id))" class="flex justify-between text-sm">
                                 <span class="text-gray-500">Kembalian</span>
-                                <span class="font-semibold text-green-600">{{ formatCurrency(change) }}</span>
+                                <span class="font-semibold text-success">{{ formatCurrency(change) }}</span>
                             </div>
-                            <div v-if="totalPaid < totalAmount" class="text-xs text-red-500 text-center">
-                                Masih kurang {{ formatCurrency(totalAmount - totalPaid) }}
+                            <div v-if="totalPaid < totalAmount" class="flex justify-between items-center text-sm font-semibold text-destructive">
+                                <span>Masih kurang</span>
+                                <span>{{ formatCurrency(totalAmount - totalPaid) }}</span>
                             </div>
                         </div>
                     </div>
@@ -313,7 +314,7 @@ const close = () => {
                         <button
                             @click="confirm"
                             :disabled="!isValid"
-                            class="flex-1 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                            class="flex-1 py-2.5 bg-success text-success-foreground font-semibold rounded-lg hover:bg-success/90 transition disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             Bayar
                         </button>

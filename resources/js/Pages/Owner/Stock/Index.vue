@@ -127,7 +127,7 @@ const formatDate = (date) => {
             </div>
             <Link
                 href="/owner/stock/movements"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -142,7 +142,7 @@ const formatDate = (date) => {
                 v-model="search"
                 type="text"
                 placeholder="Cari produk atau varian..."
-                class="w-full max-w-md px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                class="w-full max-w-md px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
             />
         </div>
 
@@ -204,13 +204,13 @@ const formatDate = (date) => {
                                     <td class="px-5 py-3 text-center">
                                         <span
                                             v-if="isOutOfStock(variant.stock)"
-                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"
+                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-destructive/10 text-destructive"
                                         >
                                             Habis
                                         </span>
                                         <span
                                             v-else-if="isLowStock(variant.stock)"
-                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning-foreground"
                                         >
                                             {{ variant.stock }} — Kritis
                                         </span>
@@ -221,13 +221,13 @@ const formatDate = (date) => {
                                     <td class="px-5 py-3 text-center">
                                         <span
                                             v-if="isExpired(variant.expiry_date)"
-                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"
+                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-destructive/10 text-destructive"
                                         >
                                             Expired {{ formatDate(variant.expiry_date) }}
                                         </span>
                                         <span
                                             v-else-if="isNearExpiry(variant.expiry_date)"
-                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800"
+                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning-foreground"
                                         >
                                             ⚠️ {{ formatDate(variant.expiry_date) }}
                                         </span>
@@ -240,7 +240,7 @@ const formatDate = (date) => {
                                             <!-- Restock -->
                                             <button
                                                 @click="openRestock(variant, product)"
-                                                class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                                                class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-success bg-success/10 border border-success/20 rounded-lg hover:bg-success/20 transition-colors"
                                                 title="Restock"
                                             >
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +251,7 @@ const formatDate = (date) => {
                                             <!-- Adjustment -->
                                             <button
                                                 @click="openAdjust(variant, product)"
-                                                class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
+                                                class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-warning-foreground bg-warning/10 border border-warning/20 rounded-lg hover:bg-warning/20 transition-colors"
                                                 title="Adjustment"
                                             >
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -320,7 +320,7 @@ const formatDate = (date) => {
                                 min="1"
                                 placeholder="Masukkan jumlah"
                                 autofocus
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                                 :class="{ 'border-red-300': restockForm.errors.qty }"
                             />
                             <p v-if="restockForm.errors.qty" class="mt-1 text-xs text-red-600">{{ restockForm.errors.qty }}</p>
@@ -332,7 +332,7 @@ const formatDate = (date) => {
                             <input
                                 v-model="restockForm.expiry_date"
                                 type="date"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                                 :class="{ 'border-red-300': restockForm.errors.expiry_date }"
                             />
                             <p v-if="restockForm.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ restockForm.errors.expiry_date }}</p>
@@ -345,7 +345,7 @@ const formatDate = (date) => {
                                 v-model="restockForm.notes"
                                 rows="2"
                                 placeholder="Contoh: Restock dari supplier A"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                                 :class="{ 'border-red-300': restockForm.errors.notes }"
                             />
                             <p v-if="restockForm.errors.notes" class="mt-1 text-xs text-red-600">{{ restockForm.errors.notes }}</p>
@@ -363,7 +363,7 @@ const formatDate = (date) => {
                             <button
                                 type="submit"
                                 :disabled="restockForm.processing"
-                                class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                class="px-4 py-2 text-sm font-medium text-success-foreground bg-success rounded-lg hover:bg-success/90 disabled:opacity-50 transition-colors"
                             >
                                 {{ restockForm.processing ? 'Menyimpan...' : 'Restock' }}
                             </button>
@@ -404,7 +404,7 @@ const formatDate = (date) => {
                                 type="number"
                                 placeholder="Positif (+) atau negatif (-)"
                                 autofocus
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                                 :class="{ 'border-red-300': adjustForm.errors.qty }"
                             />
                             <p v-if="adjustForm.errors.qty" class="mt-1 text-xs text-red-600">{{ adjustForm.errors.qty }}</p>
@@ -420,7 +420,7 @@ const formatDate = (date) => {
                                 v-model="adjustForm.notes"
                                 rows="2"
                                 placeholder="Contoh: Bahan expired dibuang, audit fisik, dll"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                                 :class="{ 'border-red-300': adjustForm.errors.notes }"
                             />
                             <p v-if="adjustForm.errors.notes" class="mt-1 text-xs text-red-600">{{ adjustForm.errors.notes }}</p>
@@ -438,7 +438,7 @@ const formatDate = (date) => {
                             <button
                                 type="submit"
                                 :disabled="adjustForm.processing"
-                                class="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-lg hover:bg-yellow-700 disabled:opacity-50 transition-colors"
+                                class="px-4 py-2 text-sm font-medium text-warning-foreground bg-warning rounded-lg hover:bg-warning/90 disabled:opacity-50 transition-colors"
                             >
                                 {{ adjustForm.processing ? 'Menyimpan...' : 'Simpan Adjustment' }}
                             </button>

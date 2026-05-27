@@ -65,9 +65,9 @@ const typeLabel = (type) => {
 
 const typeBadgeClass = (type) => {
     const classes = {
-        sale: 'bg-blue-100 text-blue-800',
-        restock: 'bg-green-100 text-green-800',
-        adjustment: 'bg-yellow-100 text-yellow-800',
+        sale: 'bg-primary/10 text-primary',
+        restock: 'bg-success/10 text-success',
+        adjustment: 'bg-warning/10 text-warning-foreground',
     };
     return classes[type] || 'bg-gray-100 text-gray-800';
 };
@@ -77,7 +77,7 @@ const formatQty = (qty) => {
 };
 
 const qtyClass = (qty) => {
-    return qty > 0 ? 'text-green-600' : 'text-red-600';
+    return qty > 0 ? 'text-success' : 'text-destructive';
 };
 </script>
 
@@ -108,7 +108,7 @@ const qtyClass = (qty) => {
                     <label class="block text-xs font-medium text-gray-500 mb-1">Tipe</label>
                     <select
                         v-model="filterType"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                         <option value="">Semua Tipe</option>
                         <option value="sale">Penjualan</option>
@@ -122,7 +122,7 @@ const qtyClass = (qty) => {
                     <label class="block text-xs font-medium text-gray-500 mb-1">Produk</label>
                     <select
                         v-model="filterProduct"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                         <option value="">Semua Produk</option>
                         <option v-for="product in products" :key="product.id" :value="product.id">
@@ -137,7 +137,7 @@ const qtyClass = (qty) => {
                     <input
                         v-model="filterDateFrom"
                         type="date"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
 
@@ -147,7 +147,7 @@ const qtyClass = (qty) => {
                     <input
                         v-model="filterDateTo"
                         type="date"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
 
@@ -155,7 +155,7 @@ const qtyClass = (qty) => {
                 <div class="flex gap-2">
                     <button
                         @click="applyFilters"
-                        class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                        class="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
                     >
                         Filter
                     </button>
@@ -227,7 +227,7 @@ const qtyClass = (qty) => {
                     :class="[
                         'px-3 py-1.5 text-sm rounded-lg border transition-colors',
                         link.active
-                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            ? 'bg-primary text-primary-foreground border-primary'
                             : link.url
                                 ? 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                 : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'

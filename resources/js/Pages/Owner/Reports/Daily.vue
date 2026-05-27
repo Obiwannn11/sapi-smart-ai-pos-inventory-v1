@@ -1,8 +1,9 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -27,7 +28,8 @@ const formatTime = (datetime) => {
     });
 };
 
-const changeDate = () => {
+const changeDate = (newDate) => {
+    if (newDate) selectedDate.value = newDate;
     router.get('/owner/reports/daily', { date: selectedDate.value }, {
         preserveState: true,
         preserveScroll: true,
@@ -57,12 +59,7 @@ const toggleTx = (id) => {
                 <p class="text-sm text-gray-500 mt-1">Detail penjualan per hari</p>
             </div>
             <div class="flex items-center gap-2">
-                <input
-                    v-model="selectedDate"
-                    type="date"
-                    class="rounded-lg border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                    @change="changeDate"
-                />
+                <DatePicker v-model="selectedDate" @update:modelValue="changeDate" />
             </div>
         </div>
 
@@ -72,21 +69,21 @@ const toggleTx = (id) => {
                 title="Total Pendapatan"
                 :value="formatCurrency(summary.total_revenue)"
                 icon="currency"
-                color="green"
+                color="success"
             />
             <MetricCard
                 title="Total Transaksi"
                 :value="summary.total_transactions"
                 subtitle="transaksi selesai"
                 icon="receipt"
-                color="blue"
+                color="primary"
             />
             <MetricCard
                 title="Transaksi Void"
                 :value="summary.voided_count"
                 subtitle="dibatalkan"
                 icon="average"
-                color="purple"
+                color="muted"
             />
         </div>
 
@@ -109,9 +106,9 @@ const toggleTx = (id) => {
                                 <span
                                     class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                                     :class="{
-                                        'bg-green-100 text-green-800': pm.type === 'cash',
-                                        'bg-blue-100 text-blue-800': pm.type === 'qris_static',
-                                        'bg-purple-100 text-purple-800': pm.type === 'bank_transfer',
+                                        'bg-success/10 text-success': pm.type === 'cash',
+                                        'bg-primary/10 text-primary': pm.type === 'qris_static',
+                                        'bg-secondary text-secondary-foreground': pm.type === 'bank_transfer',
                                     }"
                                 >
                                     {{ pm.type === 'cash' ? 'Tunai' : pm.type === 'qris_static' ? 'QRIS' : 'Transfer' }}

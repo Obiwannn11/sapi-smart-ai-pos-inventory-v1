@@ -458,21 +458,26 @@ LOG_LEVEL=warning
 
 Copy checklist ini dan tandai ✅ sebelum deploy ke production:
 
+Status update 2026-05-28:
+- ✅ DONE = sudah diimplementasikan di repository
+- ⏸️ DEFERRED = ditunda sesuai keputusan produk saat ini
+- 🔧 OPS ONLY = harus diset di environment production (server), tidak cukup dari perubahan kode
+
 ### CRITICAL — harus selesai sebelum deploy
-- [ ] **OPS-001** Ganti `.github/workflows/deploy.yml:38` dari `migrate:fresh --force --seed` ke `migrate --force`
-- [ ] **OPS-002** Set `APP_DEBUG=false` di server production
-- [ ] **OPS-002** Set `LOG_LEVEL=warning` di server production
-- [ ] **OPS-002** Set `SESSION_ENCRYPT=true` di server production
-- [ ] **OPS-002** Ganti `XENDIT_WEBHOOK_TOKEN` ke random string 64+ karakter
-- [ ] **OPS-002** Ganti `XENDIT_SECRET_KEY` ke key production dari Xendit dashboard
-- [ ] **SEC-001** Set `SANCTUM_TOKEN_EXPIRY=525600` (atau nilai sesuai kebijakan) di `config/sanctum.php`
-- [ ] **SEC-002** Sebelum run seeder: pastikan ADMIN_EMAIL dan password sudah diganti, atau paksa ganti password saat login pertama
+- [x] **OPS-001** Ganti `.github/workflows/deploy.yml:38` dari `migrate:fresh --force --seed` ke `migrate --force` ✅ DONE
+- [ ] **OPS-002** Set `APP_DEBUG=false` di server production 🔧 OPS ONLY
+- [ ] **OPS-002** Set `LOG_LEVEL=warning` di server production 🔧 OPS ONLY
+- [ ] **OPS-002** Set `SESSION_ENCRYPT=true` di server production 🔧 OPS ONLY
+- [ ] **OPS-002** Ganti `XENDIT_WEBHOOK_TOKEN` ke random string 64+ karakter ⏸️ DEFERRED (integrasi Xendit ditunda)
+- [ ] **OPS-002** Ganti `XENDIT_SECRET_KEY` ke key production dari Xendit dashboard ⏸️ DEFERRED (integrasi Xendit ditunda)
+- [x] **SEC-001** Set `SANCTUM_TOKEN_EXPIRY=525600` (atau nilai sesuai kebijakan) di `config/sanctum.php` ✅ DONE
+- [x] **SEC-002** Sebelum run seeder: pastikan ADMIN_EMAIL dan password sudah diganti, atau paksa ganti password saat login pertama ✅ DONE
 
 ### HIGH — selesaikan segera
-- [ ] **SEC-003** Ganti `XENDIT_WEBHOOK_TOKEN` (sudah di atas), aktifkan IP allowlist di Xendit Dashboard
-- [ ] **SEC-005** Tambahkan `throttle:60,1` ke route group API di `routes/api.php`
-- [ ] **SEC-009** Set `SESSION_SECURE_COOKIE=true` di `.env` production
-- [ ] **BUG-002** Tulis minimal 4 test cases untuk `XenditWebhookController@handle`
+- [ ] **SEC-003** Ganti `XENDIT_WEBHOOK_TOKEN` (sudah di atas), aktifkan IP allowlist di Xendit Dashboard ⏸️ DEFERRED (integrasi Xendit ditunda)
+- [x] **SEC-005** Tambahkan `throttle:60,1` ke route group API di `routes/api.php` ✅ DONE
+- [ ] **SEC-009** Set `SESSION_SECURE_COOKIE=true` di `.env` production 🔧 OPS ONLY
+- [ ] **BUG-002** Tulis minimal 4 test cases untuk `XenditWebhookController@handle` ⏸️ DEFERRED (integrasi Xendit ditunda)
 - [ ] **DEP-001** Jalankan `npm audit fix` dan review hasilnya
 
 ### MEDIUM — jadwalkan dalam 2 minggu pertama post-launch

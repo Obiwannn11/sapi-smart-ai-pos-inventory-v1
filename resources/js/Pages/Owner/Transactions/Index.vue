@@ -51,9 +51,9 @@ const resetFilters = () => {
 
 const statusBadge = (status) => {
     switch (status) {
-        case 'completed': return 'bg-green-100 text-green-800';
-        case 'voided': return 'bg-red-100 text-red-800';
-        case 'pending': return 'bg-yellow-100 text-yellow-800';
+        case 'completed': return 'bg-success/10 text-success';
+        case 'voided': return 'bg-destructive/10 text-destructive';
+        case 'pending': return 'bg-warning/10 text-warning-foreground';
         default: return 'bg-gray-100 text-gray-800';
     }
 };
@@ -79,12 +79,18 @@ const statusLabel = (status) => {
 
         <!-- Filters -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div class="flex items-center gap-2 mb-3">
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                </svg>
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filter</span>
+            </div>
             <div class="flex flex-wrap items-end gap-3">
-                <div>
+                <div class="min-w-[160px]">
                     <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
                     <select
                         v-model="filterStatus"
-                        class="rounded-lg border-gray-300 text-sm shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                         <option value="">Semua</option>
                         <option value="completed">Selesai</option>
@@ -92,34 +98,36 @@ const statusLabel = (status) => {
                         <option value="pending">Pending</option>
                     </select>
                 </div>
-                <div>
+                <div class="min-w-[160px]">
                     <label class="block text-xs font-medium text-gray-500 mb-1">Dari</label>
                     <input
                         v-model="filterFrom"
                         type="date"
-                        class="rounded-lg border-gray-300 text-sm shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
-                <div>
+                <div class="min-w-[160px]">
                     <label class="block text-xs font-medium text-gray-500 mb-1">Sampai</label>
                     <input
                         v-model="filterTo"
                         type="date"
-                        class="rounded-lg border-gray-300 text-sm shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                 </div>
-                <button
-                    @click="applyFilters"
-                    class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                    Filter
-                </button>
-                <button
-                    @click="resetFilters"
-                    class="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                    Reset
-                </button>
+                <div class="flex gap-2 items-end">
+                    <button
+                        @click="applyFilters"
+                        class="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
+                    >
+                        Filter
+                    </button>
+                    <button
+                        @click="resetFilters"
+                        class="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                        Reset
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -155,8 +163,12 @@ const statusLabel = (status) => {
                             <td class="py-3 px-4 text-center">
                                 <Link
                                     :href="`/owner/transactions/${tx.id}`"
-                                    class="text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
                                 >
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    </svg>
                                     Detail
                                 </Link>
                             </td>
@@ -182,7 +194,7 @@ const statusLabel = (status) => {
                         :class="[
                             'px-3 py-1.5 text-xs rounded-lg transition-colors',
                             link.active
-                                ? 'bg-indigo-600 text-white'
+                                ? 'bg-primary text-primary-foreground'
                                 : link.url
                                     ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                     : 'bg-gray-50 text-gray-300 cursor-not-allowed'

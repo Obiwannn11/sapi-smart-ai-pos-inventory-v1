@@ -37,7 +37,7 @@ const handleClick = () => {
         :class="[
             'relative bg-white rounded-xl border-2 p-3 text-left transition-all duration-150 w-full',
             hasStock()
-                ? 'border-gray-200 hover:border-indigo-400 hover:shadow-md cursor-pointer active:scale-[0.97]'
+                ? 'border-gray-200 hover:border-primary/50 hover:shadow-md cursor-pointer active:scale-[0.97]'
                 : 'border-gray-100 opacity-60 cursor-not-allowed'
         ]"
     >
@@ -63,12 +63,12 @@ const handleClick = () => {
         <div>
             <p class="text-sm font-semibold text-gray-800 leading-tight truncate">{{ product.name }}</p>
             <p v-if="product.category" class="text-xs text-gray-400 mt-0.5">{{ product.category.name }}</p>
-            <p class="text-xs font-medium text-indigo-600 mt-1">{{ priceRange() }}</p>
+            <p class="text-xs font-medium text-primary mt-1">{{ priceRange() }}</p>
         </div>
 
         <!-- Variant count badge -->
         <span v-if="product.variants && product.variants.length > 1"
-              class="absolute top-2 left-2 inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-700">
+              class="absolute top-2 left-2 inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
             {{ product.variants.length }} varian
         </span>
     </button>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, nextTick } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
@@ -102,10 +102,34 @@ const toggle = (id) => {
 const formatCurrency = (val) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 };
+
+const formatNumber = (value) => {
+    const num = Number(String(value).replace(/\D/g, ''));
+    if (!num) return '';
+    return num.toLocaleString('id-ID');
+};
+
+const onExtraPriceInput = (i, event) => {
+    const raw = event.target.value.replace(/\D/g, '');
+    const num = Number(raw) || 0;
+    form.modifiers[i].extra_price = num;
+    nextTick(() => { event.target.value = num > 0 ? formatNumber(num) : ''; });
+};
+
+const onExtraPriceFocus = (i, event) => {
+    const num = Number(form.modifiers[i].extra_price) || 0;
+    event.target.value = num > 0 ? String(num) : '';
+    event.target.select();
+};
+
+const onExtraPriceBlur = (i, event) => {
+    const num = Number(form.modifiers[i].extra_price) || 0;
+    event.target.value = num > 0 ? formatNumber(num) : '';
+};
 </script>
 
 <template>
-    <Head title="Modifier Groups" />
+    <Head title="Grup Modifier" />
 
     <div class="max-w-4xl mx-auto">
         <!-- Header -->
@@ -116,7 +140,7 @@ const formatCurrency = (val) => {
             </div>
             <button
                 @click="openCreate"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -151,7 +175,7 @@ const formatCurrency = (val) => {
                                     type="text"
                                     placeholder="Contoh: Level Pedas"
                                     autofocus
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     :class="{ 'border-red-300': form.errors.name }"
                                 />
                                 <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
@@ -160,11 +184,11 @@ const formatCurrency = (val) => {
                             <!-- Toggles -->
                             <div class="flex items-center gap-6">
                                 <label class="flex items-center gap-2 cursor-pointer">
-                                    <input v-model="form.is_required" type="checkbox" class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+                                    <input v-model="form.is_required" type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring" />
                                     <span class="text-sm text-gray-700">Wajib dipilih</span>
                                 </label>
                                 <label class="flex items-center gap-2 cursor-pointer">
-                                    <input v-model="form.is_multiple" type="checkbox" class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+                                    <input v-model="form.is_multiple" type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-ring" />
                                     <span class="text-sm text-gray-700">Boleh pilih banyak</span>
                                 </label>
                             </div>
@@ -173,7 +197,7 @@ const formatCurrency = (val) => {
                             <div>
                                 <div class="flex items-center justify-between mb-2">
                                     <label class="block text-sm font-medium text-gray-700">Modifier Items</label>
-                                    <button type="button" @click="addModifier" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                                    <button type="button" @click="addModifier" class="text-xs text-primary hover:text-primary/80 font-medium">
                                         + Tambah Item
                                     </button>
                                 </div>
@@ -186,19 +210,21 @@ const formatCurrency = (val) => {
                                                 v-model="mod.name"
                                                 type="text"
                                                 placeholder="Nama modifier"
-                                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                                 :class="{ 'border-red-300': form.errors[`modifiers.${i}.name`] }"
                                             />
                                             <p v-if="form.errors[`modifiers.${i}.name`]" class="mt-1 text-xs text-red-600">{{ form.errors[`modifiers.${i}.name`] }}</p>
                                         </div>
                                         <div class="w-32">
                                             <input
-                                                v-model="mod.extra_price"
-                                                type="number"
-                                                min="0"
-                                                step="any"
-                                                placeholder="Harga"
-                                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                type="text"
+                                                inputmode="numeric"
+                                                :value="Number(mod.extra_price) > 0 ? formatNumber(mod.extra_price) : ''"
+                                                @input="onExtraPriceInput(i, $event)"
+                                                @focus="onExtraPriceFocus(i, $event)"
+                                                @blur="onExtraPriceBlur(i, $event)"
+                                                placeholder="Gratis"
+                                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                             />
                                         </div>
                                         <button
@@ -227,7 +253,7 @@ const formatCurrency = (val) => {
                                 <button
                                     type="submit"
                                     :disabled="form.processing"
-                                    class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                                    class="px-4 py-2 text-sm font-medium text-primary-foreground bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
                                 >
                                     {{ form.processing ? 'Menyimpan...' : (editingGroup ? 'Perbarui' : 'Simpan') }}
                                 </button>
@@ -260,13 +286,23 @@ const formatCurrency = (val) => {
                         </svg>
                         <span class="text-sm font-semibold text-gray-900">{{ group.name }}</span>
                         <span v-if="group.is_required" class="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded">Wajib</span>
-                        <span v-if="group.is_multiple" class="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">Multi</span>
+                        <span v-if="group.is_multiple" class="px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">Multi</span>
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="text-xs text-gray-400">{{ group.modifiers?.length || 0 }} modifier · {{ group.products_count }} produk</span>
                         <div class="flex gap-2" @click.stop>
-                            <button @click="openEdit(group)" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
-                            <button @click="confirmDelete(group)" class="text-xs text-red-600 hover:text-red-800 font-medium">Hapus</button>
+                            <button @click="openEdit(group)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit
+                            </button>
+                            <button @click="confirmDelete(group)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Hapus
+                            </button>
                         </div>
                     </div>
                 </button>
@@ -313,7 +349,7 @@ const formatCurrency = (val) => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                 </svg>
                 <p class="mt-2 text-sm text-gray-500">Belum ada modifier group</p>
-                <button @click="openCreate" class="mt-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+                <button @click="openCreate" class="mt-2 text-sm text-primary hover:text-primary/80 font-medium">
                     Tambah modifier group pertama
                 </button>
             </div>

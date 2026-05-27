@@ -1,12 +1,14 @@
 <script setup>
-import { usePage, router } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { router, Head } from '@inertiajs/vue3';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import { useFlash } from '@/composables/useFlash';
 import ProductCard from '@/Components/ProductCard.vue';
 import CartItem from '@/Components/CartItem.vue';
 import ModifierModal from '@/Components/ModifierModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
+import CashierTopbar from '@/Components/CashierTopbar.vue';
 
 const props = defineProps({
     categories: Array,
@@ -17,8 +19,7 @@ const props = defineProps({
     tenantName: { type: String, default: 'SAPI POS' },
 });
 
-const page = usePage();
-const auth = page.props.auth;
+const { show: showFlash } = useFlash();
 
 // --- State ---
 const selectedCategoryId = ref(null);
@@ -129,7 +130,7 @@ const addToCart = (item) => {
     const stock = getVariantStock(item.variant_id);
     const currentCartQty = getCartQtyForVariant(item.variant_id);
     if (currentCartQty + item.qty > stock) {
-        alert(`Stok tidak cukup. Tersedia: ${stock}, di keranjang: ${currentCartQty}`);
+        showFlash(`Stok tidak cukup. Tersedia: ${stock}, di keranjang: ${currentCartQty}`, 'error');
         return;
     }
 
@@ -146,7 +147,7 @@ const updateCartQty = (index, newQty) => {
     const stock = getVariantStock(item.variant_id);
     const otherCartQty = getCartQtyForVariant(item.variant_id) - item.qty;
     if (otherCartQty + newQty > stock) {
-        alert(`Stok tidak cukup. Tersedia: ${stock}`);
+        showFlash(`Stok tidak cukup. Tersedia: ${stock}`, 'error');
         return;
     }
     cart.value[index].qty = newQty;
@@ -160,9 +161,28 @@ const removeCartItem = (index) => {
     cart.value.splice(index, 1);
 };
 
+// --- Inline "Kosongkan" confirmation ---
+const confirmingClear = ref(false);
+let _clearTimer = null;
+
+const requestClearCart = () => {
+    confirmingClear.value = true;
+    clearTimeout(_clearTimer);
+    _clearTimer = setTimeout(() => { confirmingClear.value = false; }, 2500);
+};
+
+const cancelClearCart = () => {
+    confirmingClear.value = false;
+    clearTimeout(_clearTimer);
+};
+
 const clearCart = () => {
     cart.value = [];
+    confirmingClear.value = false;
+    clearTimeout(_clearTimer);
 };
+
+onUnmounted(() => clearTimeout(_clearTimer));
 
 // --- Checkout ---
 const openPaymentModal = () => {
@@ -278,54 +298,15 @@ const handleOpenBillPayment = (payments) => {
     });
 };
 
-// --- Navigation ---
-const goToCashDrawer = () => {
-    router.get('/cashier/cash-drawer');
-};
-
-const goToHistory = () => {
-    router.get('/cashier/transactions');
-};
-
-const logout = () => {
-    router.post('/logout');
-};
 </script>
 
 <template>
-    <div class="h-screen flex flex-col bg-gray-100 overflow-hidden">
+    <Head title="Kasir" />
+    <div class="h-screen flex flex-col bg-background overflow-hidden">
         <FlashMessage />
 
         <!-- Top Bar -->
-        <nav class="bg-white shadow-sm px-4 py-3 flex items-center justify-between shrink-0 z-10">
-            <div class="flex items-center gap-3">
-                <h1 class="text-lg font-bold text-indigo-600">SAPI POS</h1>
-                <span class="text-xs text-gray-400 hidden sm:inline">|</span>
-                <span class="text-xs text-gray-500 hidden sm:inline">{{ auth.user.name }}</span>
-            </div>
-            <div class="flex items-center gap-3">
-                <button
-                    @click="goToHistory"
-                    class="text-sm text-gray-600 hover:text-indigo-600 flex items-center gap-1.5 transition"
-                    title="Riwayat Transaksi"
-                >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    <span class="hidden sm:inline">Riwayat</span>
-                </button>
-                <button
-                    @click="goToCashDrawer"
-                    class="text-sm text-gray-600 hover:text-indigo-600 flex items-center gap-1.5 transition"
-                >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                    <span class="hidden sm:inline">Kas</span>
-                </button>
-                <button @click="logout" class="text-sm text-red-500 hover:text-red-700 transition">Logout</button>
-            </div>
-        </nav>
+        <CashierTopbar :title="tenantName" />
 
         <!-- Main Content -->
         <div class="flex-1 flex overflow-hidden">
@@ -342,7 +323,7 @@ const logout = () => {
                             v-model="searchQuery"
                             type="text"
                             placeholder="Cari produk..."
-                            class="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            class="w-full pl-10 pr-4 py-2.5 bg-white border border-border rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                     </div>
 
@@ -353,8 +334,8 @@ const logout = () => {
                             :class="[
                                 'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition',
                                 selectedCategoryId === null
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-300'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-white text-gray-600 border border-border hover:border-primary/30'
                             ]"
                         >
                             Semua
@@ -366,8 +347,8 @@ const logout = () => {
                             :class="[
                                 'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition',
                                 selectedCategoryId === cat.id
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-300'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-white text-gray-600 border border-border hover:border-primary/30'
                             ]"
                         >
                             {{ cat.name }}
@@ -393,22 +374,39 @@ const logout = () => {
             </div>
 
             <!-- RIGHT: Cart Panel -->
-            <div class="w-80 lg:w-96 bg-white border-l border-gray-200 flex flex-col shrink-0">
+            <div class="w-80 lg:w-96 bg-card border-l border-border flex flex-col shrink-0">
                 <!-- Cart Header -->
-                <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <h2 class="text-sm font-semibold text-gray-800">Keranjang</h2>
-                        <span v-if="cartItemCount > 0" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+                        <span v-if="cartItemCount > 0" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
                             {{ cartItemCount }}
                         </span>
                     </div>
-                    <button
-                        v-if="cart.length > 0"
-                        @click="clearCart"
-                        class="text-xs text-red-500 hover:text-red-700 transition"
+                    <Transition
+                        enter-active-class="transition-all duration-150 ease-out"
+                        enter-from-class="opacity-0 scale-95"
+                        enter-to-class="opacity-100 scale-100"
+                        leave-active-class="transition-all duration-100 ease-in"
+                        leave-from-class="opacity-100 scale-100"
+                        leave-to-class="opacity-0 scale-95"
+                        mode="out-in"
                     >
-                        Kosongkan
-                    </button>
+                        <div v-if="confirmingClear" key="confirm" class="flex items-center gap-1.5">
+                            <span class="text-xs text-muted-foreground">Hapus semua?</span>
+                            <button @click="clearCart" class="text-xs font-semibold text-destructive hover:text-destructive/70 transition">Ya</button>
+                            <span class="text-muted-foreground/40 text-[10px] select-none">·</span>
+                            <button @click="cancelClearCart" class="text-xs text-muted-foreground hover:text-foreground transition">Batal</button>
+                        </div>
+                        <button
+                            v-else-if="cart.length > 0"
+                            key="trigger"
+                            @click="requestClearCart"
+                            class="text-xs text-muted-foreground hover:text-destructive transition"
+                        >
+                            Kosongkan
+                        </button>
+                    </Transition>
                 </div>
 
                 <!-- Cart Items -->
@@ -419,7 +417,7 @@ const logout = () => {
                             @click="showOpenBills = !showOpenBills"
                             class="w-full flex items-center justify-between px-3 py-2 bg-amber-50 rounded-lg border border-amber-200 text-sm"
                         >
-                            <span class="font-medium text-amber-700">Open Bill ({{ openBills.length }})</span>
+                            <span class="font-medium text-amber-700">Tagihan Terbuka ({{ openBills.length }})</span>
                             <svg
                                 :class="['w-4 h-4 text-amber-600 transition-transform', showOpenBills ? 'rotate-180' : '']"
                                 fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -450,7 +448,7 @@ const logout = () => {
                                     <span class="text-sm font-semibold text-gray-800">{{ formatCurrency(bill.total_amount) }}</span>
                                     <button
                                         @click="openBillPayment(bill)"
-                                        class="px-3 py-1 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 transition"
+                                        class="px-3 py-1 text-xs font-medium bg-success text-success-foreground rounded-md hover:bg-success/90 transition"
                                     >
                                         Bayar
                                     </button>
@@ -480,7 +478,7 @@ const logout = () => {
                 </div>
 
                 <!-- Cart Footer -->
-                <div class="border-t border-gray-200 p-4 space-y-3 flex-shrink-0">
+                <div class="border-t border-border p-4 space-y-3 flex-shrink-0">
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-600">Total</span>
                         <span class="text-xl font-bold text-gray-800">{{ formatCurrency(cartTotal) }}</span>
@@ -492,12 +490,12 @@ const logout = () => {
                             class="flex-1 py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
                             title="Simpan pesanan tanpa bayar"
                         >
-                            Open Bill
+                            Tunda Bayar
                         </button>
                         <button
                             @click="openPaymentModal"
                             :disabled="cart.length === 0 || processing"
-                            class="flex-[2] py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            class="flex-[2] py-3 bg-success text-success-foreground font-semibold rounded-lg hover:bg-success/90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -555,13 +553,13 @@ const logout = () => {
                     <div class="absolute inset-0 bg-black/50" @click="showOpenBillNameModal = false" />
                     <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
                         <h3 class="text-base font-semibold text-gray-800">Nama Pelanggan</h3>
-                        <p class="text-sm text-gray-500">Masukkan nama pelanggan untuk open bill ini (opsional).</p>
+                        <p class="text-sm text-gray-500">Nama pelanggan untuk tagihan ini (opsional).</p>
                         <input
                             v-model="openBillCustomerName"
                             type="text"
                             placeholder="Contoh: Meja 3 / Budi"
                             maxlength="100"
-                            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                             @keydown.enter="confirmSaveOpenBill"
                             @keydown.esc="showOpenBillNameModal = false"
                             autofocus
@@ -577,7 +575,7 @@ const logout = () => {
                                 @click="confirmSaveOpenBill"
                                 class="flex-1 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition text-sm"
                             >
-                                Simpan Open Bill
+                                Simpan Tagihan
                             </button>
                         </div>
                     </div>
