@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class ProductionSeeder extends Seeder
 {
@@ -17,15 +18,29 @@ class ProductionSeeder extends Seeder
             ['name' => 'My Business']
         );
 
-        User::firstOrCreate(
-            ['email' => 'admin@sapi.com'],
+        $adminEmail = env('ADMIN_EMAIL', 'admin@sapi.com');
+        $adminPassword = env('ADMIN_INITIAL_PASSWORD');
+        $generatedPassword = false;
+
+        if (empty($adminPassword)) {
+            $adminPassword = Str::random(24);
+            $generatedPassword = true;
+        }
+
+        $admin = User::firstOrCreate(
+            ['email' => $adminEmail],
             [
                 'tenant_id' => $tenant->id,
                 'name' => 'Admin',
-                'password' => Hash::make('change-me-immediately'),
+                'password' => Hash::make($adminPassword),
                 'role' => 'owner',
             ]
         );
+
+        if ($admin->wasRecentlyCreated && $generatedPassword && $this->command) {
+            $this->command->warn('ADMIN_INITIAL_PASSWORD tidak diset. Password admin sementara: '.$adminPassword);
+            $this->command->warn('Segera ganti password setelah login pertama.');
+        }
 
         // Default payment method
         PaymentMethod::firstOrCreate(

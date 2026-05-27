@@ -17,7 +17,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/products', [\App\Http\Controllers\Api\ApiProductController::class, 'index']);
 
     // Buat self-order baru (dari n8n setelah AI parsing)
-    Route::post('/orders', [\App\Http\Controllers\Api\ApiOrderController::class, 'store']);
+    Route::post('/orders', [\App\Http\Controllers\Api\ApiOrderController::class, 'store'])
+        ->middleware('throttle:60,1');
 
     // Update fulfillment status (kasir advance status penyajian)
     Route::patch('/orders/{transaction}/fulfillment', [\App\Http\Controllers\Api\ApiOrderController::class, 'updateFulfillment']);
