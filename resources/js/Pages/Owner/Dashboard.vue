@@ -49,26 +49,26 @@ const formatDate = (datetime) => {
                 title="Pendapatan Hari Ini"
                 :value="formatCurrency(metrics.today_revenue)"
                 icon="currency"
-                color="green"
+                color="success"
             />
             <MetricCard
                 title="Transaksi Hari Ini"
                 :value="metrics.today_count"
                 subtitle="transaksi"
                 icon="receipt"
-                color="blue"
+                color="primary"
             />
             <MetricCard
                 title="Rata-rata / Trx"
                 :value="formatCurrency(metrics.today_average)"
                 icon="average"
-                color="purple"
+                color="muted"
             />
             <MetricCard
                 title="Minggu Ini"
                 :value="formatCurrency(metrics.week_revenue)"
                 icon="chart"
-                color="indigo"
+                color="primary"
             />
         </div>
 
@@ -84,9 +84,9 @@ const formatDate = (datetime) => {
                     <span
                         class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                         :class="{
-                            'bg-green-100 text-green-800': pm.type === 'cash',
-                            'bg-blue-100 text-blue-800': pm.type === 'qris_static',
-                            'bg-purple-100 text-purple-800': pm.type === 'bank_transfer',
+                            'bg-success/10 text-success': pm.type === 'cash',
+                            'bg-primary/10 text-primary': pm.type === 'qris_static',
+                            'bg-secondary text-secondary-foreground': pm.type === 'bank_transfer',
                         }"
                     >
                         {{ pm.type === 'cash' ? 'Tunai' : pm.type === 'qris_static' ? 'QRIS' : 'Transfer' }}
@@ -98,9 +98,12 @@ const formatDate = (datetime) => {
         </div>
 
         <!-- Badges -->
-        <div v-if="badges.length > 0" class="space-y-3">
-            <h3 class="text-sm font-semibold text-gray-700">Alert & Notifikasi</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div v-if="badges.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4">
+            <div class="flex items-center justify-between gap-3">
+                <h3 class="text-sm font-semibold text-gray-700">Alert & Notifikasi</h3>
+                <span class="text-xs text-gray-400">{{ badges.length }} kartu</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
                 <BadgeCard
                     v-for="badge in badges"
                     :key="badge.type"
@@ -121,7 +124,7 @@ const formatDate = (datetime) => {
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h3 class="text-sm font-semibold text-gray-700">Transaksi Terbaru</h3>
-                <Link href="/owner/transactions" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                <Link href="/owner/transactions" class="text-xs text-primary hover:text-primary/80 font-medium">
                     Lihat Semua →
                 </Link>
             </div>
@@ -133,8 +136,8 @@ const formatDate = (datetime) => {
                     class="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
                 >
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-                            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
                             </svg>
                         </div>
@@ -143,7 +146,7 @@ const formatDate = (datetime) => {
                                 <p class="text-sm font-medium text-gray-800">{{ tx.code }}</p>
                                 <span
                                     v-if="tx.source === 'self_order'"
-                                    class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium"
+                                    class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium"
                                 >
                                     Self Order
                                 </span>
@@ -164,29 +167,29 @@ const formatDate = (datetime) => {
 
         <!-- Quick Links -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Link href="/owner/reports/daily" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-indigo-200 transition-all text-center group">
-                <svg class="w-6 h-6 mx-auto text-indigo-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link href="/owner/reports/daily" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-primary/30 transition-all text-center group">
+                <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-indigo-600">Laporan Harian</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Laporan Harian</p>
             </Link>
-            <Link href="/owner/transactions" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-indigo-200 transition-all text-center group">
-                <svg class="w-6 h-6 mx-auto text-indigo-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link href="/owner/transactions" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-primary/30 transition-all text-center group">
+                <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-indigo-600">Riwayat Transaksi</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Riwayat Transaksi</p>
             </Link>
-            <Link href="/owner/cash-drawers" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-indigo-200 transition-all text-center group">
-                <svg class="w-6 h-6 mx-auto text-indigo-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link href="/owner/cash-drawers" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-primary/30 transition-all text-center group">
+                <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-indigo-600">Riwayat Kas</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Riwayat Kas</p>
             </Link>
-            <Link href="/owner/stock" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-indigo-200 transition-all text-center group">
-                <svg class="w-6 h-6 mx-auto text-indigo-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link href="/owner/stock" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-primary/30 transition-all text-center group">
+                <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-indigo-600">Kelola Stok</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Kelola Stok</p>
             </Link>
         </div>
     </div>

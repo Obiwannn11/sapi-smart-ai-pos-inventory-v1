@@ -28,9 +28,9 @@ const typeLabel = (type) => {
 
 const typeBadgeClass = (type) => {
     const classes = {
-        sale: 'bg-blue-100 text-blue-800',
-        restock: 'bg-green-100 text-green-800',
-        adjustment: 'bg-yellow-100 text-yellow-800',
+        sale: 'bg-primary/10 text-primary',
+        restock: 'bg-success/10 text-success',
+        adjustment: 'bg-warning/10 text-warning-foreground',
     };
     return classes[type] || 'bg-gray-100 text-gray-800';
 };
@@ -40,7 +40,7 @@ const formatQty = (qty) => {
 };
 
 const qtyClass = (qty) => {
-    return qty > 0 ? 'text-green-600' : 'text-red-600';
+    return qty > 0 ? 'text-success' : 'text-destructive';
 };
 </script>
 
@@ -62,7 +62,7 @@ const qtyClass = (qty) => {
             <h1 class="text-2xl font-bold text-gray-900">Riwayat Stok</h1>
             <p class="text-sm text-gray-500 mt-1">
                 {{ variant.product?.name }} — <span class="font-medium text-gray-700">{{ variant.name }}</span>
-                &middot; Stok saat ini: <span class="font-semibold" :class="variant.stock <= 5 ? 'text-red-600' : 'text-gray-900'">{{ variant.stock }}</span>
+                &middot; Stok saat ini: <span class="font-semibold" :class="variant.stock <= 5 ? 'text-destructive' : 'text-gray-900'">{{ variant.stock }}</span>
             </p>
         </div>
 
@@ -121,7 +121,7 @@ const qtyClass = (qty) => {
                     :class="[
                         'px-3 py-1.5 text-sm rounded-lg border transition-colors',
                         link.active
-                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            ? 'bg-primary text-primary-foreground border-primary'
                             : link.url
                                 ? 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                 : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
