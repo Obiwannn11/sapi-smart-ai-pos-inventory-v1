@@ -1,42 +1,17 @@
 <script setup>
 import { usePage } from '@inertiajs/vue3';
-import { ref, watch, computed, onUnmounted } from 'vue';
+import { watch } from 'vue';
+import { useFlash } from '@/composables/useFlash';
 
 const page = usePage();
+const { message, type, visible, show, dismiss } = useFlash();
 
-const flash = computed(() => page.props.flash);
-const visible = ref(false);
-const message = ref('');
-const type = ref('success');
-
-let timer = null;
-const autoHide = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-        visible.value = false;
-    }, 4000);
-};
-
-watch(flash, (f) => {
-    if (f?.success) {
-        message.value = f.success;
-        type.value = 'success';
-        visible.value = true;
-        autoHide();
-    } else if (f?.error) {
-        message.value = f.error;
-        type.value = 'error';
-        visible.value = true;
-        autoHide();
-    }
+// Bridge server-side Inertia flash into the shared composable state.
+watch(() => page.props.flash, (f) => {
+    if (f?.success) show(f.success, 'success');
+    else if (f?.error) show(f.error, 'error');
+    else if (f?.warning) show(f.warning, 'warning');
 }, { immediate: true, deep: true });
-
-const dismiss = () => {
-    visible.value = false;
-    clearTimeout(timer);
-};
-
-onUnmounted(() => clearTimeout(timer));
 </script>
 
 <template>
@@ -51,23 +26,35 @@ onUnmounted(() => clearTimeout(timer));
         <div
             v-if="visible"
             :class="[
-                'fixed top-4 right-4 z-[200] max-w-sm w-full px-4 py-3 rounded-lg shadow-lg flex items-center gap-3',
-                type === 'success' ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'
+                'fixed top-4 right-4 z-[200] max-w-sm w-full px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 border bg-card',
+                type === 'success' && 'border-primary/40 text-primary',
+                type === 'error'   && 'border-destructive/40 text-destructive',
+                type === 'warning' && 'border-warning/50 text-warning-foreground',
             ]"
+            role="alert"
+            aria-live="assertive"
         >
             <!-- Success icon -->
-            <svg v-if="type === 'success'" class="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg v-if="type === 'success'" class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <!-- Error icon -->
-            <svg v-else class="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg v-else-if="type === 'error'" class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <!-- Warning icon -->
+            <svg v-else class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.834-1.964-.834-2.732 0L3.07 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
 
             <p class="text-sm font-medium flex-1">{{ message }}</p>
 
-            <button @click="dismiss" class="flex-shrink-0 text-gray-400 hover:text-gray-600">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button
+                @click="dismiss"
+                class="flex-shrink-0 opacity-50 hover:opacity-80 transition-opacity"
+                aria-label="Tutup notifikasi"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>

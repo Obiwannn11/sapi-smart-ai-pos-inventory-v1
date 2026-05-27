@@ -148,8 +148,8 @@ const close = () => {
                                         variant.stock <= 0
                                             ? 'border-gray-100 opacity-50 cursor-not-allowed'
                                             : selectedVariantId === variant.id
-                                                ? 'border-indigo-500 bg-indigo-50'
-                                                : 'border-gray-200 hover:border-indigo-300'
+                                                ? 'border-primary bg-primary/10'
+                                                : 'border-gray-200 hover:border-primary/30'
                                     ]"
                                 >
                                     <div class="flex items-center gap-3">
@@ -158,7 +158,7 @@ const close = () => {
                                             :value="variant.id"
                                             v-model="selectedVariantId"
                                             :disabled="variant.stock <= 0"
-                                            class="text-indigo-600 focus:ring-indigo-500"
+                                            class="text-primary focus:ring-ring"
                                         />
                                         <div>
                                             <span class="text-sm font-medium text-gray-800">{{ variant.name }}</span>
@@ -188,8 +188,8 @@ const close = () => {
                                         :class="[
                                             'flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition',
                                             selectedModifiers[group.id] === mod.id
-                                                ? 'border-indigo-500 bg-indigo-50'
-                                                : 'border-gray-200 hover:border-indigo-300'
+                                                ? 'border-primary bg-primary/10'
+                                                : 'border-gray-200 hover:border-primary/30'
                                         ]"
                                     >
                                         <div class="flex items-center gap-3">
@@ -197,7 +197,7 @@ const close = () => {
                                                 type="radio"
                                                 :value="mod.id"
                                                 v-model="selectedModifiers[group.id]"
-                                                class="text-indigo-600 focus:ring-indigo-500"
+                                                class="text-primary focus:ring-ring"
                                             />
                                             <span class="text-sm text-gray-700">{{ mod.name }}</span>
                                         </div>
@@ -215,8 +215,8 @@ const close = () => {
                                         :class="[
                                             'flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition',
                                             (selectedModifiers[group.id] || []).includes(mod.id)
-                                                ? 'border-indigo-500 bg-indigo-50'
-                                                : 'border-gray-200 hover:border-indigo-300'
+                                                ? 'border-primary bg-primary/10'
+                                                : 'border-gray-200 hover:border-primary/30'
                                         ]"
                                         @click.prevent="toggleMultiModifier(group.id, mod.id)"
                                     >
@@ -224,7 +224,7 @@ const close = () => {
                                             <input
                                                 type="checkbox"
                                                 :checked="(selectedModifiers[group.id] || []).includes(mod.id)"
-                                                class="text-indigo-600 focus:ring-indigo-500 rounded pointer-events-none"
+                                                class="text-primary focus:ring-ring rounded pointer-events-none"
                                             />
                                             <span class="text-sm text-gray-700">{{ mod.name }}</span>
                                         </div>
@@ -241,7 +241,7 @@ const close = () => {
                     <div class="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
                         <div v-if="selectedVariant" class="flex items-center justify-between mb-3">
                             <span class="text-sm text-gray-500">Harga per item</span>
-                            <span class="text-lg font-bold text-indigo-600">{{ formatCurrency(previewPrice) }}</span>
+                            <span class="text-lg font-bold text-primary">{{ formatCurrency(previewPrice) }}</span>
                         </div>
                         <div class="flex gap-3">
                             <button
@@ -253,7 +253,7 @@ const close = () => {
                             <button
                                 @click="confirm"
                                 :disabled="!isValid"
-                                class="flex-1 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                class="flex-1 py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 Tambah ke Cart
                             </button>

@@ -4,17 +4,17 @@ const props = defineProps({
     value: { type: [String, Number], required: true },
     subtitle: { type: String, default: null },
     icon: { type: String, default: 'chart' },
-    color: { type: String, default: 'indigo' }, // indigo | green | blue | purple
+    color: { type: String, default: 'primary' }, // primary | success | warning | muted
 });
 
 const colorClasses = {
-    indigo: { bg: 'bg-indigo-50', icon: 'text-indigo-600', ring: 'ring-indigo-100' },
-    green: { bg: 'bg-green-50', icon: 'text-green-600', ring: 'ring-green-100' },
-    blue: { bg: 'bg-blue-50', icon: 'text-blue-600', ring: 'ring-blue-100' },
-    purple: { bg: 'bg-purple-50', icon: 'text-purple-600', ring: 'ring-purple-100' },
+    primary: { bg: 'bg-primary/10', icon: 'text-primary', ring: 'ring-primary/20' },
+    success: { bg: 'bg-success/10', icon: 'text-success', ring: 'ring-success/20' },
+    warning: { bg: 'bg-warning/10', icon: 'text-warning-foreground', ring: 'ring-warning/20' },
+    muted: { bg: 'bg-muted', icon: 'text-muted-foreground', ring: 'ring-border' },
 };
 
-const c = colorClasses[props.color] || colorClasses.indigo;
+const c = colorClasses[props.color] || colorClasses.primary;
 </script>
 
 <template>

@@ -12,8 +12,27 @@ import {
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
+const DEFAULT_PRIMARY_COLOR = '#1f9d78';
+
 const props = defineProps({
     data: { type: Array, default: () => [] }, // [{ date, count, revenue }]
+});
+
+const getThemeColor = (variableName, fallback = DEFAULT_PRIMARY_COLOR) => {
+    if (typeof window === 'undefined') return fallback;
+
+    const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+    return value || fallback;
+};
+
+const chartColors = computed(() => {
+    const primary = getThemeColor('--color-primary');
+    const brand = getThemeColor('--color-brand', primary);
+
+    return {
+        primary,
+        brand,
+    };
 });
 
 const chartData = computed(() => {
@@ -28,7 +47,10 @@ const chartData = computed(() => {
             {
                 label: 'Pendapatan',
                 data: props.data.map((d) => Number(d.revenue)),
-                backgroundColor: 'rgba(79, 70, 229, 0.8)',
+                backgroundColor: chartColors.value.primary,
+                borderColor: chartColors.value.brand,
+                hoverBackgroundColor: chartColors.value.brand,
+                borderWidth: 1,
                 borderRadius: 6,
                 borderSkipped: false,
                 barThickness: 28,

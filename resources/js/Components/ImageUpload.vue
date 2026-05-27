@@ -102,7 +102,7 @@ const openPicker = () => {
             @drop.prevent="onDrop"
             :class="[
                 'w-32 h-32 border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors',
-                dragActive ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                dragActive ? 'border-primary bg-primary/10' : 'border-gray-300 hover:border-gray-400 bg-gray-50'
             ]"
         >
             <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

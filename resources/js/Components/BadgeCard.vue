@@ -30,12 +30,12 @@ const severityClasses = {
         msg: 'text-amber-600',
     },
     info: {
-        bg: 'bg-blue-50',
-        border: 'border-blue-200',
-        icon: 'text-blue-500',
-        badge: 'bg-blue-100 text-blue-800',
-        title: 'text-blue-800',
-        msg: 'text-blue-600',
+        bg: 'bg-primary/5',
+        border: 'border-primary/20',
+        icon: 'text-primary',
+        badge: 'bg-primary/10 text-primary',
+        title: 'text-primary',
+        msg: 'text-primary',
     },
 };
 
@@ -43,11 +43,11 @@ const c = severityClasses[props.severity] || severityClasses.info;
 </script>
 
 <template>
-    <div class="rounded-xl border p-4 cursor-pointer transition-all" :class="[c.bg, c.border]" @click="expanded = !expanded">
+    <div class="self-start overflow-hidden rounded-xl border p-4 cursor-pointer transition-all" :class="[c.bg, c.border]" @click="expanded = !expanded">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <!-- Icon -->
-                <div class="flex-shrink-0">
+                <div class="shrink-0">
                     <!-- Out of stock / Danger -->
                     <svg v-if="severity === 'danger'" class="w-5 h-5" :class="c.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -88,7 +88,7 @@ const c = severityClasses[props.severity] || severityClasses.info;
             leave-from-class="max-h-96 opacity-100"
             leave-to-class="max-h-0 opacity-0"
         >
-            <div v-if="expanded" class="mt-3 space-y-1.5 overflow-hidden">
+            <div v-if="expanded" class="mt-3 space-y-1.5 overflow-hidden border-t border-black/5 pt-3">
                 <div
                     v-for="item in items"
                     :key="item.id"
