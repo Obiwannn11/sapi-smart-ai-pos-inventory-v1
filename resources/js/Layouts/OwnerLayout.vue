@@ -217,7 +217,7 @@ const logout = () => router.post('/logout');
             </div>
 
             <!-- Nav items -->
-            <nav class="flex-1 overflow-y-auto py-3 px-3" aria-label="Navigasi utama">
+            <nav class="flex-1 overflow-y-auto py-3 px-3 scrollbar-sidebar" aria-label="Navigasi utama">
                 <template v-for="(group, gIdx) in sidebarGroups" :key="gIdx">
                     <!-- Group label — collapsible toggle; hidden in icon-only rail mode -->
                     <button
@@ -348,7 +348,7 @@ const logout = () => router.post('/logout');
 
             <FlashMessage />
 
-            <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7">
+            <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7 scrollbar-main">
                 <slot />
             </main>
         </div>
