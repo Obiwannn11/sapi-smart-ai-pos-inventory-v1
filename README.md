@@ -55,6 +55,23 @@ Penyegaran besar pada UI system dan alur kasir/owner:
 
 Lihat detail lengkap file terdampak di `docs/CHANGELOG.md`.
 
+## Update Tambahan (2026-05-28)
+
+Perubahan incremental non-landing page:
+
+- Owner Modifiers:
+   - Toggle cepat pengaturan group modifier (`wajib dipilih` dan `boleh pilih banyak`) langsung dari halaman list.
+   - Detail group menampilkan item modifier dan daftar produk yang menggunakan group tersebut.
+- Cashier Topbar:
+   - Menu akun berbasis dropdown (nama, email, logout) untuk navigasi yang lebih ringkas.
+- DatePicker:
+   - Popup calendar dipindah ke body (`Teleport`) dengan posisi adaptif agar tidak terpotong area scroll/layout.
+- UI Polish dan kompatibilitas request:
+   - Scrollbar custom untuk sidebar dan area konten owner.
+   - Penambahan meta CSRF token pada layout utama app.
+
+Rincian file dan konteks perubahan tersedia di `docs/CHANGELOG.md`.
+
 ## Mobile API Endpoints (Phase 2)
 
 Base prefix mengikuti konfigurasi route API project.
