@@ -45,6 +45,32 @@
 
 ---
 
+### [ADDITION] Owner Modifier Quick Settings, Cashier Account Menu, and UI Stability Fixes
+- **Tanggal:** 2026-05-28
+- **Fase Terkait:** Cross-Phase (Phase-3 POS / Phase-5 Dashboard)
+- **Dampak:** Frontend | Controller | Route | View
+- **Breaking Change:** Tidak
+- **Deskripsi:** Penambahan dan perbaikan terfokus pada operasional harian:
+  1. Owner kini bisa mengubah pengaturan modifier group (`is_required`, `is_multiple`) langsung dari halaman list tanpa masuk form edit terpisah.
+  2. Detail modifier group diperluas dengan daftar produk yang menggunakan modifier dan ringkasan visual yang lebih jelas.
+  3. Topbar kasir diperbarui dengan dropdown akun (nama, email, dan logout) agar navigasi lebih ringkas di layar sempit.
+  4. Date picker dipindah ke `Teleport` dengan posisi `fixed` adaptif agar tidak terpotong container scroll dan tetap terlihat saat resize/scroll.
+  5. Owner layout mendapat custom scrollbar pada sidebar dan area konten untuk konsistensi visual.
+  6. Penambahan meta CSRF token pada layout app untuk kompatibilitas request client-side yang membutuhkan token dari DOM.
+- **Alasan:** Mengurangi friction pada konfigurasi modifier, meningkatkan kejelasan konteks data owner, menstabilkan komponen input tanggal di berbagai layout, dan memperbaiki ergonomi navigasi kasir.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/ModifierController.php` — tambah endpoint update settings + preload relasi produk
+  - `routes/web.php` — route patch untuk `modifiers.settings`
+  - `resources/js/Pages/Owner/Modifiers/Index.vue` — quick toggle settings + section detail produk pemakai modifier
+  - `resources/js/Components/CashierTopbar.vue` — dropdown akun + logout di menu profil
+  - `resources/js/Components/DatePicker.vue` — teleport popup + kalkulasi posisi viewport-aware
+  - `resources/js/Layouts/OwnerLayout.vue` — penerapan kelas scrollbar custom
+  - `resources/css/app.css` — style scrollbar sidebar/main
+  - `resources/views/app.blade.php` — meta `csrf-token`
+- **Catatan Migrasi:** Tidak ada migrasi database. Jalankan `npm run build`/`npm run dev` untuk memverifikasi aset frontend setelah update komponen.
+
+---
+
 ### [ADDITION] UI System Refresh, Cashier Flow Guard, and Shared Components
 - **Tanggal:** 2026-05-28
 - **Fase Terkait:** Cross-Phase (Phase-3 POS / Phase-5 Dashboard)
