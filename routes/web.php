@@ -56,6 +56,8 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::resource('modifiers', \App\Http\Controllers\Owner\ModifierController::class)
             ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['modifiers' => 'modifierGroup']);
+        Route::patch('modifiers/{modifierGroup}/settings', [\App\Http\Controllers\Owner\ModifierController::class, 'updateSettings'])
+            ->name('modifiers.settings');
 
         // Payment Methods
         Route::resource('payment-methods', \App\Http\Controllers\Owner\PaymentMethodController::class)

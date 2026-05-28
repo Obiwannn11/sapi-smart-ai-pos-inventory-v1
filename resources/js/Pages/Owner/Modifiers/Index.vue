@@ -1,6 +1,6 @@
 <script setup>
 import { ref, nextTick } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { useForm, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 
@@ -99,6 +99,24 @@ const toggle = (id) => {
     expandedId.value = expandedId.value === id ? null : id;
 };
 
+// --- Quick Settings Toggle ---
+const togglingSettings = ref({});
+
+const toggleSetting = (group, field) => {
+    const key = `${group.id}-${field}`;
+    if (togglingSettings.value[key]) return;
+    togglingSettings.value[key] = true;
+
+    router.patch(`/owner/modifiers/${group.id}/settings`, {
+        is_required: field === 'is_required' ? !group.is_required : group.is_required,
+        is_multiple: field === 'is_multiple' ? !group.is_multiple : group.is_multiple,
+    }, {
+        preserveScroll: true,
+        onFinish: () => { delete togglingSettings.value[key]; },
+    });
+};
+
+// --- Formatting ---
 const formatCurrency = (val) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 };
@@ -311,33 +329,119 @@ const onExtraPriceBlur = (i, event) => {
                 <Transition
                     enter-active-class="transition-all duration-200"
                     enter-from-class="max-h-0 opacity-0"
-                    enter-to-class="max-h-96 opacity-100"
+                    enter-to-class="max-h-[600px] opacity-100"
                     leave-active-class="transition-all duration-150"
-                    leave-from-class="max-h-96 opacity-100"
+                    leave-from-class="max-h-[600px] opacity-100"
                     leave-to-class="max-h-0 opacity-0"
                 >
                     <div v-if="expandedId === group.id" class="overflow-hidden">
-                        <div class="px-5 pb-4 border-t border-gray-100">
-                            <table class="w-full mt-3">
-                                <thead>
-                                    <tr>
-                                        <th class="text-left text-xs font-medium text-gray-500 pb-2">Nama Modifier</th>
-                                        <th class="text-right text-xs font-medium text-gray-500 pb-2">Harga Tambahan</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-100">
-                                    <tr v-for="mod in group.modifiers" :key="mod.id" class="text-sm">
-                                        <td class="py-2 text-gray-700">{{ mod.name }}</td>
-                                        <td class="py-2 text-right text-gray-600">
-                                            <span v-if="Number(mod.extra_price) > 0">{{ formatCurrency(mod.extra_price) }}</span>
-                                            <span v-else class="text-gray-400">Gratis</span>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            <div v-if="!group.modifiers?.length" class="py-4 text-center text-sm text-gray-400">
-                                Belum ada modifier
+                        <div class="border-t border-gray-100 divide-y divide-gray-100">
+
+                            <!-- Section 1: Pengaturan -->
+                            <div class="px-5 py-4">
+                                <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Pengaturan</h4>
+                                <div class="flex flex-wrap gap-4">
+                                    <!-- Toggle: Wajib dipilih -->
+                                    <button
+                                        type="button"
+                                        @click="toggleSetting(group, 'is_required')"
+                                        :disabled="togglingSettings[`${group.id}-is_required`]"
+                                        class="flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-colors"
+                                        :class="group.is_required
+                                            ? 'bg-red-50 border-red-200 text-red-700'
+                                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'"
+                                    >
+                                        <!-- Toggle switch visual -->
+                                        <span
+                                            class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+                                            :class="group.is_required ? 'bg-red-500' : 'bg-gray-300'"
+                                        >
+                                            <span
+                                                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
+                                                :class="group.is_required ? 'translate-x-4' : 'translate-x-0'"
+                                            />
+                                        </span>
+                                        <div class="text-left">
+                                            <p class="text-xs font-semibold leading-none">Wajib dipilih</p>
+                                            <p class="text-xs mt-0.5 opacity-70">{{ group.is_required ? 'Pelanggan harus memilih' : 'Bersifat opsional' }}</p>
+                                        </div>
+                                    </button>
+
+                                    <!-- Toggle: Boleh pilih banyak -->
+                                    <button
+                                        type="button"
+                                        @click="toggleSetting(group, 'is_multiple')"
+                                        :disabled="togglingSettings[`${group.id}-is_multiple`]"
+                                        class="flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-colors"
+                                        :class="group.is_multiple
+                                            ? 'bg-primary/5 border-primary/30 text-primary'
+                                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'"
+                                    >
+                                        <span
+                                            class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+                                            :class="group.is_multiple ? 'bg-primary' : 'bg-gray-300'"
+                                        >
+                                            <span
+                                                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
+                                                :class="group.is_multiple ? 'translate-x-4' : 'translate-x-0'"
+                                            />
+                                        </span>
+                                        <div class="text-left">
+                                            <p class="text-xs font-semibold leading-none">Boleh pilih banyak</p>
+                                            <p class="text-xs mt-0.5 opacity-70">{{ group.is_multiple ? 'Multi-pilih aktif' : 'Hanya satu pilihan' }}</p>
+                                        </div>
+                                    </button>
+                                </div>
                             </div>
+
+                            <!-- Section 2: Item Modifier -->
+                            <div class="px-5 py-4">
+                                <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Item Modifier</h4>
+                                <div v-if="group.modifiers?.length">
+                                    <table class="w-full">
+                                        <thead>
+                                            <tr class="border-b border-gray-100">
+                                                <th class="text-left text-xs font-medium text-gray-400 pb-2 w-8">No</th>
+                                                <th class="text-left text-xs font-medium text-gray-400 pb-2">Nama Modifier</th>
+                                                <th class="text-right text-xs font-medium text-gray-400 pb-2">Perubahan Harga</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-50">
+                                            <tr v-for="(mod, idx) in group.modifiers" :key="mod.id" class="text-sm">
+                                                <td class="py-2 text-xs text-gray-400">{{ idx + 1 }}</td>
+                                                <td class="py-2 text-gray-700 font-medium">{{ mod.name }}</td>
+                                                <td class="py-2 text-right">
+                                                    <span v-if="Number(mod.extra_price) > 0" class="font-medium text-gray-700">+{{ formatCurrency(mod.extra_price) }}</span>
+                                                    <span v-else class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">Gratis</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div v-else class="py-3 text-sm text-gray-400 italic">Belum ada item modifier</div>
+                            </div>
+
+                            <!-- Section 3: Produk yang Menggunakan -->
+                            <div class="px-5 py-4">
+                                <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                                    Digunakan oleh Produk
+                                    <span class="ml-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium normal-case tracking-normal">{{ group.products_count }}</span>
+                                </h4>
+                                <div v-if="group.products?.length" class="flex flex-wrap gap-2">
+                                    <span
+                                        v-for="product in group.products"
+                                        :key="product.id"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                                    >
+                                        <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                        </svg>
+                                        {{ product.name }}
+                                    </span>
+                                </div>
+                                <p v-else class="text-sm text-gray-400 italic">Belum digunakan oleh produk manapun</p>
+                            </div>
+
                         </div>
                     </div>
                 </Transition>
