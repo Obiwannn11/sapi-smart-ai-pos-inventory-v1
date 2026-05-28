@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 
 const props = defineProps({
     modelValue: String, // YYYY-MM-DD
@@ -9,6 +9,35 @@ const emit = defineEmits(['update:modelValue']);
 
 const open = ref(false);
 const container = ref(null);
+const popupStyle = ref({});
+
+const CALENDAR_HEIGHT = 340;
+
+const computePosition = () => {
+    if (!container.value) return;
+    const rect = container.value.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openAbove = spaceBelow < CALENDAR_HEIGHT && spaceAbove > spaceBelow;
+
+    const top = openAbove
+        ? rect.top - CALENDAR_HEIGHT - 8
+        : rect.bottom + 8;
+
+    const left = Math.min(rect.left, window.innerWidth - 288 - 8);
+
+    popupStyle.value = { position: 'fixed', top: top + 'px', left: left + 'px', zIndex: 9999 };
+};
+
+watch(open, (isOpen) => {
+    if (isOpen) {
+        window.addEventListener('scroll', computePosition, true);
+        window.addEventListener('resize', computePosition);
+    } else {
+        window.removeEventListener('scroll', computePosition, true);
+        window.removeEventListener('resize', computePosition);
+    }
+});
 
 const today = new Date();
 today.setHours(0, 0, 0, 0);
@@ -33,7 +62,10 @@ const initView = () => {
 const currentView = ref(initView());
 
 const toggleOpen = () => {
-    if (!open.value) currentView.value = initView();
+    if (!open.value) {
+        currentView.value = initView();
+        computePosition();
+    }
     open.value = !open.value;
 };
 
@@ -126,7 +158,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
 </script>
 
 <template>
-    <div ref="container" class="relative inline-block">
+    <div ref="container" class="inline-block">
         <!-- Trigger button -->
         <button
             type="button"
@@ -148,6 +180,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
         </button>
 
         <!-- Calendar dropdown -->
+        <Teleport to="body">
         <Transition
             enter-active-class="transition ease-out duration-150"
             enter-from-class="opacity-0 scale-95 -translate-y-1"
@@ -158,7 +191,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
         >
             <div
                 v-if="open"
-                class="absolute left-0 top-full mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-3 w-72 origin-top-left"
+                :style="popupStyle"
+                class="bg-white rounded-xl shadow-lg border border-gray-200 p-3 w-72 origin-top-left"
             >
                 <!-- Month navigation -->
                 <div class="flex items-center justify-between mb-3">
@@ -228,5 +262,6 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
                 </div>
             </div>
         </Transition>
+        </Teleport>
     </div>
 </template>
