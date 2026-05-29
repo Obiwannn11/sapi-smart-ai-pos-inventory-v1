@@ -17,6 +17,17 @@ SAPI adalah aplikasi Point of Sale (POS) multi-tenant berbasis Laravel untuk keb
 - Cash drawer session (buka kas, tutup kas, rekap sesi).
 - Mobile API untuk operasional kasir.
 
+## Update Terbaru (2026-05-29)
+
+Perubahan besar pada API consumer dan dokumentasinya:
+
+- Semua endpoint consumer dipindahkan ke prefix `/api/v1`.
+- Controller API dipindahkan ke namespace `App\Http\Controllers\Api\V1` agar versioning route dan implementasi konsisten.
+- Xendit webhook tetap non-versioned di `POST /api/xendit/webhook` agar callback eksternal tidak perlu diubah tiap versi API.
+- Ditambahkan halaman referensi API publik di `/api-docs` untuk dokumentasi endpoint mobile POS.
+
+Lihat detail perubahan dan catatan migrasi di `docs/CHANGELOG.md`.
+
 ## Update Terbaru (2026-05-25)
 
 Perubahan besar pada Mobile API Phase 2:
@@ -72,16 +83,34 @@ Perubahan incremental non-landing page:
 
 Rincian file dan konteks perubahan tersedia di `docs/CHANGELOG.md`.
 
-## Mobile API Endpoints (Phase 2)
+## API Endpoints (v1)
 
-Base prefix mengikuti konfigurasi route API project.
+Base prefix endpoint consumer sekarang adalah `/api/v1`.
 
-- `POST /mobile/cash-drawer/open`
-- `POST /mobile/cash-drawer/close`
-- `GET /mobile/cash-drawer/{cashDrawer}/summary`
-- `GET /mobile/transactions`
-- `POST /mobile/transactions/{transaction}/pay`
-- `POST /mobile/transactions/{transaction}/void` (owner only)
+Endpoint utama:
+
+- `POST /api/v1/mobile/login`
+- `POST /api/v1/mobile/logout`
+- `GET /api/v1/mobile/tenant/profile`
+- `GET /api/v1/mobile/products`
+- `GET /api/v1/mobile/cash-drawer/status`
+- `POST /api/v1/mobile/cash-drawer/open`
+- `POST /api/v1/mobile/cash-drawer/close`
+- `GET /api/v1/mobile/cash-drawer/{cashDrawer}/summary`
+- `POST /api/v1/mobile/transactions`
+- `GET /api/v1/mobile/transactions`
+- `POST /api/v1/mobile/transactions/{transaction}/pay`
+- `GET /api/v1/mobile/transactions/{transaction}/receipt`
+- `POST /api/v1/mobile/transactions/{transaction}/void` (owner only)
+- `GET /api/v1/products`
+- `POST /api/v1/orders`
+- `PATCH /api/v1/orders/{transaction}/fulfillment`
+
+Endpoint non-versioned yang tetap dipertahankan:
+
+- `POST /api/xendit/webhook`
+
+Referensi yang lebih lengkap tersedia di halaman `/api-docs`.
 
 ## Setup Singkat
 
@@ -103,6 +132,7 @@ Base prefix mengikuti konfigurasi route API project.
 ## Dokumentasi
 
 - Changelog: `docs/CHANGELOG.md`
+- Public API reference: `/api-docs`
 - Technical docs: `docs/SAPI_Technical_Doc_v1.1.md`
 - Security audit: `docs/SAPI-Security-Audit_v1.0.md`
 

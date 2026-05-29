@@ -45,6 +45,43 @@
 
 ---
 
+### [ADDITION] Public API Reference Page for Mobile POS
+- **Tanggal:** 2026-05-29
+- **Fase Terkait:** Cross-Phase (Phase-2 Mobile API / Public Docs)
+- **Dampak:** View | Controller | Route
+- **Breaking Change:** Tidak
+- **Deskripsi:** Menambahkan halaman dokumentasi publik di `/api-docs` untuk referensi endpoint Mobile POS, autentikasi Sanctum, contoh request/response JSON, dan batasan akses per role.
+- **Alasan:** Mengurangi ketergantungan pada dokumentasi manual terpisah dan memberi sumber referensi tunggal yang bisa diakses langsung dari aplikasi saat integrasi client mobile berjalan.
+- **File Terdampak:**
+  - `app/Http/Controllers/Public/LandingController.php` — tambah action `docs()` untuk halaman dokumentasi
+  - `routes/web.php` — route baru `/api-docs`
+  - `resources/views/public/api-docs.blade.php` — halaman referensi API publik
+- **Catatan Migrasi:** Tidak ada migrasi database. Pastikan aset frontend/Vite tersedia jika style global dipakai di halaman dokumentasi.
+
+---
+
+### [DECISION] API Consumer Dipindahkan ke Prefix `/api/v1`
+- **Tanggal:** 2026-05-29
+- **Fase Terkait:** Cross-Phase (Self Order / Mobile API)
+- **Dampak:** Controller | Route | API Contract
+- **Breaking Change:** Ya
+- **Deskripsi:** Semua endpoint consumer yang sebelumnya berada langsung di bawah `/api/*` dipindahkan ke namespace versi pertama di `/api/v1/*`. Controller terkait juga dipindahkan dari `App\Http\Controllers\Api\...` ke `App\Http\Controllers\Api\V1\...` agar struktur implementasi mengikuti kontrak route versi.
+- **Alasan:** Menyiapkan kompatibilitas jangka panjang untuk perubahan contract API tanpa mengganggu webhook eksternal atau endpoint versi lama yang nantinya perlu dipelihara paralel.
+- **File Terdampak:**
+  - `routes/api.php` — regroup route consumer di bawah prefix `v1`
+  - `app/Http/Controllers/Api/V1/ApiProductController.php` — lokasi baru endpoint daftar produk
+  - `app/Http/Controllers/Api/V1/ApiOrderController.php` — lokasi baru endpoint self-order dan fulfillment
+  - `app/Http/Controllers/Api/V1/Mobile/MobileAuthController.php` — lokasi baru auth mobile
+  - `app/Http/Controllers/Api/V1/Mobile/MobileTenantController.php` — lokasi baru profil tenant mobile
+  - `app/Http/Controllers/Api/V1/Mobile/MobileCashDrawerController.php` — lokasi baru operasi cash drawer mobile
+  - `app/Http/Controllers/Api/V1/Mobile/MobileTransactionController.php` — lokasi baru operasi transaksi mobile
+  - `app/Http/Controllers/Api/ApiProductController.php` — controller lama dihapus
+  - `app/Http/Controllers/Api/ApiOrderController.php` — controller lama dihapus
+  - `app/Http/Controllers/Api/Mobile/*.php` — controller mobile lama dihapus
+- **Catatan Migrasi:** Update semua consumer/client dari path lama ke path baru, misalnya `/api/mobile/...` menjadi `/api/v1/mobile/...`, `/api/products` menjadi `/api/v1/products`, dan `/api/orders` menjadi `/api/v1/orders`. Endpoint `POST /api/xendit/webhook` tetap non-versioned.
+
+---
+
 ### [ADDITION] Owner Modifier Quick Settings, Cashier Account Menu, and UI Stability Fixes
 - **Tanggal:** 2026-05-28
 - **Fase Terkait:** Cross-Phase (Phase-3 POS / Phase-5 Dashboard)
