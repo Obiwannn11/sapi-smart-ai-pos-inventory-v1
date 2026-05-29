@@ -119,3 +119,6 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
 
 // Halaman Landing
 Route::get('/', [\App\Http\Controllers\Public\LandingController::class, 'index'])->name('landing');
+
+// Halaman API Docs
+Route::get('/api-docs', [\App\Http\Controllers\Public\LandingController::class, 'docs'])->name('api-docs');
