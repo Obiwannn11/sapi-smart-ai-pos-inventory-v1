@@ -14,6 +14,19 @@
 
     @vite(['resources/css/app.css'])
 
+    <!-- Tailwind CDN (same as landing) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
+                    colors: { primary: '#0e9f6e', brand: '#34d399' },
+                }
+            }
+        }
+    </script>
+
     <style>
         /* ─── PALETTE (same as landing) ─────────────────── */
         :root {
@@ -67,75 +80,19 @@
         @media (min-width: 768px) { .container { padding: 0 40px; } }
         @media (min-width: 1280px) { .container { padding: 0 48px; } }
 
-        /* ─── NAVBAR ────────────────────────────────────── */
-        .nav {
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            background: oklch(0.97 0.006 150 / 0.92);
+        /* ─── NAVBAR (glass-morphism, from landing) ─────── */
+        .glass-nav {
+            background: rgba(255, 255, 255, 0.7);
             backdrop-filter: blur(10px);
-            border-bottom: 1px solid var(--border-faint);
+            -webkit-backdrop-filter: blur(10px);
         }
-        .nav-inner {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            height: 60px;
-            gap: 32px;
-        }
-        .nav-wordmark {
-            font-size: 1.375rem;
-            font-weight: 800;
-            color: var(--green);
-            text-decoration: none;
-            letter-spacing: -0.02em;
-            flex-shrink: 0;
-        }
-        .nav-links {
-            display: none;
-            list-style: none;
-            gap: 4px;
-            align-items: center;
-        }
-        @media (min-width: 768px) { .nav-links { display: flex; } }
-        .nav-links a {
-            font-size: 0.9rem;
-            font-weight: 500;
-            color: var(--text-muted);
-            text-decoration: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            transition: color 120ms, background 120ms;
-        }
-        .nav-links a:hover { color: var(--text); background: var(--bg-surface); }
-        .nav-actions { display: flex; align-items: center; gap: 12px; }
-        .nav-back {
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--text-muted);
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: color 120ms;
-        }
-        .nav-back:hover { color: var(--text); }
-        .nav-badge {
-            display: inline-flex;
-            align-items: center;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 4px 10px;
-            border-radius: 20px;
-            background: var(--green-faint);
-            color: var(--green-cta);
-            letter-spacing: 0.02em;
-        }
+        [x-cloak] { display: none !important; }
 
         /* ─── DOCS PAGE LAYOUT ──────────────────────────── */
         .docs-page {
             display: flex;
-            min-height: calc(100vh - 60px);
+            min-height: calc(100vh - 80px);
+            padding-top: 80px;
         }
 
         /* ─── SIDEBAR ───────────────────────────────────── */
@@ -149,8 +106,8 @@
         @media (min-width: 900px) { .docs-sidebar { display: block; } }
         .sidebar-inner {
             position: sticky;
-            top: 60px;
-            max-height: calc(100vh - 60px);
+            top: 80px;
+            max-height: calc(100vh - 80px);
             overflow-y: auto;
             padding: 28px 0 40px;
             scrollbar-width: thin;
@@ -550,6 +507,25 @@
         .copy-btn:hover { color: var(--code-text); background: oklch(0.27 0.01 155); }
         .copy-btn.copied { color: oklch(0.72 0.12 162); }
 
+        /* ─── COPY PATH BUTTON ──────────────────────────── */
+        .copy-path-btn {
+            display: inline-flex;
+            align-items: center;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: oklch(0.65 0.02 155);
+            background: oklch(0.22 0.01 155);
+            border: 1px solid oklch(0.28 0.01 155);
+            border-radius: 4px;
+            padding: 2px 7px;
+            cursor: pointer;
+            transition: color 100ms, background 100ms;
+            flex-shrink: 0;
+        }
+        .copy-path-btn:hover { color: var(--code-text); background: oklch(0.27 0.01 155); }
+        .copy-path-btn.copied { color: oklch(0.72 0.12 162); }
+
         /* syntax highlighting helpers */
         .tok-key  { color: oklch(0.72 0.12 162); }     /* json key */
         .tok-str  { color: oklch(0.78 0.09 220); }     /* string value */
@@ -580,30 +556,60 @@
         }
     </style>
 </head>
-<body x-data="{ mobileSidebar: false }">
+<body x-data="{ mobileSidebar: false, open: false }">
 
     <!-- ─── NAV ───────────────────────────────────────── -->
-    <nav class="nav">
-        <div class="container">
-            <div class="nav-inner">
-                <a href="/" class="nav-wordmark">SAPI</a>
-                <ul class="nav-links">
-                    <li><a href="/">Beranda</a></li>
-                    <li><a href="/#fitur">Fitur</a></li>
-                    <li><a href="/#harga">Harga</a></li>
-                </ul>
-                <div class="nav-actions">
-                    <span class="nav-badge">API v1</span>
-                    <a href="/" class="nav-back">
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8">
-                            <path d="M9 11L5 7l4-4"/>
-                        </svg>
-                        Beranda
+    <nav class="fixed w-full z-50 glass-nav border-b border-gray-100">
+        <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
+            <div class="flex justify-between h-20 items-center">
+                <!-- Brand -->
+                <div class="flex-shrink-0">
+                    <a href="/" class="flex items-center gap-3 group">
+                        <span class="font-extrabold text-xl md:text-2xl tracking-tighter text-gray-900 group-hover:text-primary transition-colors">SAPI</span>
                     </a>
+                </div>
+
+                <!-- Right: Links & Action -->
+                <div class="flex items-center gap-4 md:gap-10">
+                    <div class="hidden md:flex items-center gap-8">
+                        <a href="/#solusi" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Solusi</a>
+                        <a href="/#fitur" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Fitur AI</a>
+                        <a href="/#demo" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Demo</a>
+                        <a href="/#pricing" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Harga</a>
+                    </div>
+                    <div class="h-6 w-px bg-gray-100 hidden md:block"></div>
+                    <a href="/login" class="hidden sm:block bg-primary text-white px-8 py-3 rounded-full text-[14px] font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/10 hover:-translate-y-0.5">
+                        Login
+                    </a>
+                    <!-- Hamburger -->
+                    <button @click="open = !open" class="md:hidden p-2 text-gray-600 hover:text-primary transition-colors">
+                        <svg x-show="!open" class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                        <svg x-show="open" class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
                 </div>
             </div>
         </div>
+
+        <!-- Mobile Menu Overlay -->
+        <div x-show="open" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 -translate-y-4"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 -translate-y-4"
+             class="md:hidden bg-white border-b border-gray-100 shadow-2xl absolute w-full px-6 py-8 space-y-6">
+            <a @click="open = false" href="/#solusi" class="block text-lg font-black text-gray-900 hover:text-primary">Solusi</a>
+            <a @click="open = false" href="/#fitur" class="block text-lg font-black text-gray-900 hover:text-primary">Fitur AI</a>
+            <a @click="open = false" href="/#demo" class="block text-lg font-black text-gray-900 hover:text-primary">Demo</a>
+            <a @click="open = false" href="/#pricing" class="block text-lg font-black text-gray-900 hover:text-primary">Harga</a>
+            <div class="pt-4 border-t border-gray-100">
+                <a @click="open = false" href="/login" class="block w-full bg-primary text-white text-center py-4 rounded-2xl font-black shadow-xl shadow-primary/10">Login / Daftar Gratis</a>
+            </div>
+        </div>
     </nav>
+
+    @php $baseUrl = rtrim(url('/'), '/') . '/api/v1/mobile'; @endphp
 
     <!-- ─── PAGE ──────────────────────────────────────── -->
     <div class="docs-page">
@@ -745,13 +751,15 @@
                         Referensi lengkap endpoint REST API untuk aplikasi kasir mobile SAPI.
                         Semua endpoint mengembalikan JSON dan menggunakan autentikasi Bearer token via Laravel Sanctum.
                     </p>
-                    <div class="base-url-pill">
+                    <div class="base-url-pill" x-data="{ urlCopied: false }" style="gap:12px;">
                         <span>BASE URL</span>
-                        https://yourdomain.com
-                    </div>
-                    <div class="base-url-pill" style="margin-top:8px;">
-                        <span>API VERSION</span>
-                        v1 &mdash; semua endpoint berada di bawah <code>/api/v1/</code>
+                        <span style="font-weight:500;">{{ $baseUrl }}</span>
+                        <button
+                            class="copy-path-btn"
+                            @click="navigator.clipboard.writeText('{{ $baseUrl }}').then(() => { urlCopied = true; setTimeout(() => urlCopied = false, 2000) })"
+                            :class="{ 'copied': urlCopied }"
+                            x-text="urlCopied ? '✓ Disalin' : 'Salin'"
+                        >Salin</button>
                     </div>
                 </section>
 
@@ -833,10 +841,13 @@
                 <div class="endpoint-card" id="ep-login">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/login</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /login
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/login').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
-                                <span class="role-badge role-public">Publik</span>
+                                <span class="role-badge role-public">Tanpa Header</span>
                                 <span class="rate-badge">5/menit</span>
                             </div>
                         </div>
@@ -856,10 +867,21 @@
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Request Body (JSON)</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">{
+  <span class="tok-key">"email"</span>: <span class="tok-str">"kasir@cafesapi.com"</span>,
+  <span class="tok-key">"password"</span>: <span class="tok-str">"rahasia123"</span>
+}</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Contoh Request (cURL)</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
-                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST https://yourdomain.com/api/v1/mobile/login \
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST {{ $baseUrl }}/login \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Content-Type: application/json"</span> \
   <span class="tok-curl-flag">-d</span> <span class="tok-str">'{
@@ -897,8 +919,11 @@
                 <div class="endpoint-card" id="ep-logout">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/logout</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /logout
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/logout').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-auth">Bearer Token</span>
                             </div>
@@ -908,11 +933,20 @@
                         <p class="endpoint-desc">Mencabut token saat ini. Gunakan saat pengguna keluar dari aplikasi.</p>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Contoh Request (cURL)</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
-                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST https://yourdomain.com/api/v1/mobile/logout \
-  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer 1|abc123xyz..."</span> \
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST {{ $baseUrl }}/logout \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span></pre>
                             </div>
                         </div>
@@ -941,8 +975,11 @@
                 <div class="endpoint-card" id="ep-tenant-profile">
                     <div class="endpoint-header">
                         <span class="method-badge mb-get">GET</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/tenant/profile</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /tenant/profile
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/tenant/profile').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-auth">Bearer Token</span>
                             </div>
@@ -952,10 +989,19 @@
                         <p class="endpoint-desc">Mengembalikan informasi tenant milik pengguna yang sedang login (nama, alamat, telepon).</p>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Contoh Request (cURL)</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
-                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> https://yourdomain.com/api/v1/mobile/tenant/profile \
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> {{ $baseUrl }}/tenant/profile \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span></pre>
                             </div>
@@ -982,8 +1028,11 @@
                 <div class="endpoint-card" id="ep-products">
                     <div class="endpoint-header">
                         <span class="method-badge mb-get">GET</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/products</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /products
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/products').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-auth">Bearer Token</span>
                             </div>
@@ -991,6 +1040,15 @@
                     </div>
                     <div class="endpoint-body">
                         <p class="endpoint-desc">Mengembalikan semua produk aktif beserta varian yang memiliki stok > 0 dan kategorinya. Digunakan untuk membangun daftar menu di kasir.</p>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
+                        </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Response 200 OK</div>
@@ -1032,8 +1090,11 @@
                 <div class="endpoint-card" id="ep-drawer-status">
                     <div class="endpoint-header">
                         <span class="method-badge mb-get">GET</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/cash-drawer/status</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /cash-drawer/status
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/cash-drawer/status').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-auth">Bearer Token</span>
                             </div>
@@ -1041,6 +1102,15 @@
                     </div>
                     <div class="endpoint-body">
                         <p class="endpoint-desc">Mengecek apakah pengguna saat ini memiliki sesi kas yang sedang terbuka.</p>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
+                        </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Response 200 OK</div>
@@ -1068,8 +1138,11 @@
                 <div class="endpoint-card" id="ep-drawer-open">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/cash-drawer/open</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /cash-drawer/open
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/cash-drawer/open').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-cashier">Cashier / Owner</span>
                             </div>
@@ -1089,10 +1162,30 @@
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json
+Content-Type: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Request Body (JSON)</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">{
+  <span class="tok-key">"opening_amount"</span>: <span class="tok-num">500000</span>
+}</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Contoh Request (cURL)</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
-                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST https://yourdomain.com/api/v1/mobile/cash-drawer/open \
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST {{ $baseUrl }}/cash-drawer/open \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Content-Type: application/json"</span> \
@@ -1118,8 +1211,11 @@
                 <div class="endpoint-card" id="ep-drawer-close">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/cash-drawer/close</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /cash-drawer/close
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/cash-drawer/close').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-cashier">Cashier / Owner</span>
                             </div>
@@ -1137,6 +1233,39 @@
                                     <tr><td><span class="param-name">notes</span> <span class="param-optional">OPSIONAL</span></td><td><code>string</code></td><td>Catatan penutupan kas (maks 500 karakter)</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json
+Content-Type: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Request Body (JSON)</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">{
+  <span class="tok-key">"closing_amount"</span>: <span class="tok-num">520000</span>,
+  <span class="tok-key">"notes"</span>: <span class="tok-str">"Sesuai"</span>
+}</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Contoh Request (cURL)</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST {{ $baseUrl }}/cash-drawer/close \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span> \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Content-Type: application/json"</span> \
+  <span class="tok-curl-flag">-d</span> <span class="tok-str">'{ "closing_amount": 520000, "notes": "Sesuai" }'</span></pre>
+                            </div>
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
@@ -1159,8 +1288,11 @@
                 <div class="endpoint-card" id="ep-drawer-summary">
                     <div class="endpoint-header">
                         <span class="method-badge mb-get">GET</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/cash-drawer/<em>{cashDrawer}</em>/summary</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /cash-drawer/<em>{cashDrawer}</em>/summary
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/cash-drawer/{cashDrawer}/summary').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-cashier">Cashier / Owner</span>
                             </div>
@@ -1177,6 +1309,15 @@
                                     <tr><td><span class="param-name">cashDrawer</span> <span class="param-required">WAJIB</span></td><td><code>integer</code></td><td>ID sesi kas (<code>drawer_id</code> dari endpoint buka/tutup)</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
@@ -1220,8 +1361,11 @@
                 <div class="endpoint-card" id="ep-trx-create">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/transactions</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /transactions
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/transactions').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-auth">Bearer Token</span>
                             </div>
@@ -1257,6 +1401,16 @@
                                     <tr><td><span class="param-name">payments[].reference_code</span> <span class="param-optional">OPSIONAL</span></td><td><code>string</code></td><td>Kode referensi transfer/QRIS (maks 255)</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json
+Content-Type: application/json</pre>
+                            </div>
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
@@ -1304,8 +1458,11 @@
                 <div class="endpoint-card" id="ep-trx-list">
                     <div class="endpoint-header">
                         <span class="method-badge mb-get">GET</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/transactions</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /transactions
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/transactions').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-cashier">Cashier / Owner</span>
                             </div>
@@ -1328,10 +1485,27 @@
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">URL dengan Query Params</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code"><span class="tok-curl-flag">GET</span> <span class="tok-curl-url">{{ $baseUrl }}/transactions?from=2026-06-01&amp;to=2026-06-30&amp;status=completed&amp;per_page=10</span></pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Contoh Request (cURL)</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
-                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> <span class="tok-curl-url">"https://yourdomain.com/api/v1/mobile/transactions?from=2026-05-01&status=completed&per_page=10"</span> \
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> <span class="tok-curl-url">"{{ $baseUrl }}/transactions?from=2026-06-01&status=completed&per_page=10"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span></pre>
                             </div>
@@ -1371,8 +1545,11 @@
                 <div class="endpoint-card" id="ep-trx-pay">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/transactions/<em>{transaction}</em>/pay</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /transactions/<em>{transaction}</em>/pay
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/transactions/{transaction}/pay').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-cashier">Cashier / Owner</span>
                             </div>
@@ -1405,6 +1582,43 @@
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json
+Content-Type: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Request Body (JSON)</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">{
+  <span class="tok-key">"payments"</span>: [
+    {
+      <span class="tok-key">"payment_method_id"</span>: <span class="tok-num">1</span>,
+      <span class="tok-key">"amount"</span>: <span class="tok-num">40000</span>
+    }
+  ]
+}</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Contoh Request (cURL)</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST {{ $baseUrl }}/transactions/42/pay \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span> \
+  <span class="tok-curl-flag">-H</span> <span class="tok-str">"Content-Type: application/json"</span> \
+  <span class="tok-curl-flag">-d</span> <span class="tok-str">'{ "payments": [{ "payment_method_id": 1, "amount": 40000 }] }'</span></pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Response 200 OK</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
@@ -1425,8 +1639,11 @@
                 <div class="endpoint-card" id="ep-trx-receipt">
                     <div class="endpoint-header">
                         <span class="method-badge mb-get">GET</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/transactions/<em>{transaction}</em>/receipt</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /transactions/<em>{transaction}</em>/receipt
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/transactions/{transaction}/receipt').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-auth">Bearer Token</span>
                             </div>
@@ -1443,6 +1660,15 @@
                                     <tr><td><span class="param-name">transaction</span> <span class="param-required">WAJIB</span></td><td><code>integer</code></td><td>ID transaksi</td></tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
@@ -1494,8 +1720,11 @@
                 <div class="endpoint-card" id="ep-trx-void">
                     <div class="endpoint-header">
                         <span class="method-badge mb-post">POST</span>
-                        <div style="flex:1">
-                            <div class="endpoint-path">/api/v1/mobile/transactions/<em>{transaction}</em>/void</div>
+                        <div style="flex:1" x-data="{ pathCopied: false }">
+                            <div class="endpoint-path" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                /transactions/<em>{transaction}</em>/void
+                                <button class="copy-path-btn" @click="navigator.clipboard.writeText('{{ $baseUrl }}/transactions/{transaction}/void').then(()=>{pathCopied=true;setTimeout(()=>pathCopied=false,2000)})" :class="{'copied':pathCopied}" x-text="pathCopied ? '✓ Disalin' : 'Salin URL'">Salin URL</button>
+                            </div>
                             <div class="endpoint-meta" style="margin-top:6px;">
                                 <span class="role-badge role-owner">Owner Only</span>
                             </div>
@@ -1515,10 +1744,19 @@
                         </div>
 
                         <div class="code-block-wrap" x-data="clipboardBlock()">
+                            <div class="code-block-label">Header Wajib</div>
+                            <div class="code-block">
+                                <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
+                                <pre x-ref="code">Authorization: Bearer <span class="tok-str">{token}</span>
+Accept: application/json</pre>
+                            </div>
+                        </div>
+
+                        <div class="code-block-wrap" x-data="clipboardBlock()">
                             <div class="code-block-label">Contoh Request (cURL)</div>
                             <div class="code-block">
                                 <button class="copy-btn" @click="copy" :class="{ copied: copied }" x-text="copied ? '✓ Disalin' : 'Salin'">Salin</button>
-                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST https://yourdomain.com/api/v1/mobile/transactions/42/void \
+                                <pre x-ref="code"><span class="tok-curl-flag">curl</span> -X POST {{ $baseUrl }}/transactions/42/void \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Authorization: Bearer {token}"</span> \
   <span class="tok-curl-flag">-H</span> <span class="tok-str">"Accept: application/json"</span></pre>
                             </div>
@@ -1579,7 +1817,7 @@
                         });
                     }
                 });
-            }, { rootMargin: '-60px 0px -70% 0px' });
+            }, { rootMargin: '-80px 0px -70% 0px' });
 
             document.querySelectorAll('[id]').forEach(el => observer.observe(el));
         })();
