@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreModifierGroupRequest;
 use App\Models\ModifierGroup;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -13,7 +14,10 @@ class ModifierController extends Controller
 {
     public function index(): Response
     {
-        $modifierGroups = ModifierGroup::with('modifiers:id,modifier_group_id,name,extra_price')
+        $modifierGroups = ModifierGroup::with([
+            'modifiers:id,modifier_group_id,name,extra_price',
+            'products:id,name',
+        ])
             ->withCount('products')
             ->latest()
             ->get();
@@ -21,6 +25,21 @@ class ModifierController extends Controller
         return Inertia::render('Owner/Modifiers/Index', [
             'modifierGroups' => $modifierGroups,
         ]);
+    }
+
+    public function updateSettings(Request $request, ModifierGroup $modifierGroup): RedirectResponse
+    {
+        $request->validate([
+            'is_required' => 'required|boolean',
+            'is_multiple' => 'required|boolean',
+        ]);
+
+        $modifierGroup->update([
+            'is_required' => $request->boolean('is_required'),
+            'is_multiple' => $request->boolean('is_multiple'),
+        ]);
+
+        return back()->with('success', 'Pengaturan modifier berhasil diperbarui.');
     }
 
     public function store(StoreModifierGroupRequest $request): RedirectResponse

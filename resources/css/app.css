@@ -70,6 +70,58 @@
     --destructive-foreground: oklch(0.99 0.005 150);
 }
 
+/* ───── Custom Scrollbar ───── */
+
+/* Sidebar scrollbar — slim, no arrows */
+.scrollbar-sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+.scrollbar-sidebar::-webkit-scrollbar {
+    width: 4px;
+}
+.scrollbar-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.scrollbar-sidebar::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+}
+.scrollbar-sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+}
+.scrollbar-sidebar::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+    width: 0;
+}
+
+/* Main content scrollbar — slightly wider, branded accent on hover */
+.scrollbar-main {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+.scrollbar-main::-webkit-scrollbar {
+    width: 6px;
+}
+.scrollbar-main::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 9999px;
+}
+.scrollbar-main::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+    transition: background-color 150ms ease;
+}
+.scrollbar-main::-webkit-scrollbar-thumb:hover {
+    background-color: var(--primary);
+}
+.scrollbar-main::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+    width: 0;
+}
+
 @theme inline {
     --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;

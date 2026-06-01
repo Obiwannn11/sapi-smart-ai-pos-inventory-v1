@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, defineComponent } from 'vue';
+import { computed, h, ref, onMounted, onBeforeUnmount, defineComponent } from 'vue';
 import { usePage, router, Link } from '@inertiajs/vue3';
 
 defineProps({
@@ -10,12 +10,12 @@ const page = usePage();
 
 const user = computed(() => page.props.auth?.user ?? null);
 const userName = computed(() => user.value?.name ?? '');
+const userEmail = computed(() => user.value?.email ?? '');
 const userInitial = computed(() => userName.value.charAt(0).toUpperCase() || 'U');
 const isOwner = computed(() => user.value?.role === 'owner');
 
 const isActive = (href) => page.url.startsWith(href);
 
-// Cash drawer is cashier-only — owner never manages kas.
 const navItems = computed(() => {
     const items = [
         { name: 'POS', href: '/cashier/pos', icon: 'pos' },
@@ -32,6 +32,7 @@ const iconPaths = {
     history: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
     cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
     logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
+    chevron: 'M19 9l-7 7-7-7',
 };
 
 const NavIcon = defineComponent({
@@ -63,41 +64,94 @@ const btnBase =
     'inline-flex items-center gap-1.5 px-3 h-9 text-sm font-medium rounded-md border transition-colors duration-150';
 const btnInactive = 'border-border text-foreground/70 hover:bg-muted hover:text-foreground';
 const btnActive = 'bg-primary/10 text-primary border-primary/30';
-const btnLogout = 'border-destructive/30 text-destructive hover:bg-destructive/10';
+
+const dropdownOpen = ref(false);
+const dropdownRef = ref(null);
+
+const toggleDropdown = () => { dropdownOpen.value = !dropdownOpen.value; };
+
+const handleClickOutside = (e) => {
+    if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
+        dropdownOpen.value = false;
+    }
+};
+
+onMounted(() => document.addEventListener('mousedown', handleClickOutside));
+onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside));
 
 const logout = () => router.post('/logout');
 </script>
 
 <template>
     <header class="bg-card border-b border-border shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] px-4 py-2.5 flex items-center justify-between shrink-0 z-10">
-        <!-- Left: brand + cashier identity -->
-        <div class="flex items-center gap-3 min-w-0">
-            <h1 class="text-lg font-bold text-primary truncate">{{ title }}</h1>
-            <span class="hidden sm:inline-flex items-center gap-2 pl-3 border-l border-border min-w-0">
-                <span class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                    <span class="text-primary text-xs font-semibold leading-none select-none">{{ userInitial }}</span>
-                </span>
-                <span class="text-sm text-foreground/70 truncate">{{ userName }}</span>
-            </span>
+        <!-- Left: brand -->
+        <h1 class="text-lg font-bold text-primary truncate">{{ title }}</h1>
+
+        <!-- Right: nav buttons + user avatar dropdown -->
+        <div class="flex items-center gap-2">
+            <nav class="flex items-center gap-2" aria-label="Navigasi kasir">
+                <Link
+                    v-for="item in navItems"
+                    :key="item.href"
+                    :href="item.href"
+                    :class="[btnBase, isActive(item.href) ? btnActive : btnInactive]"
+                    :aria-current="isActive(item.href) ? 'page' : undefined"
+                >
+                    <NavIcon :name="item.icon" />
+                    <span class="hidden sm:inline">{{ item.name }}</span>
+                </Link>
+            </nav>
+
+            <!-- User avatar + dropdown -->
+            <div ref="dropdownRef" class="relative">
+                <button
+                    @click="toggleDropdown"
+                    :class="[btnBase, dropdownOpen ? 'bg-muted border-border' : 'border-border hover:bg-muted']"
+                    :aria-expanded="dropdownOpen"
+                    aria-haspopup="true"
+                    aria-label="Menu akun"
+                >
+                    <span class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                        <span class="text-primary text-xs font-semibold leading-none select-none">{{ userInitial }}</span>
+                    </span>
+                    <span class="hidden sm:inline text-sm text-foreground/70 max-w-[120px] truncate">{{ userName }}</span>
+                    <svg class="w-3.5 h-3.5 text-foreground/40 flex-shrink-0 transition-transform duration-150" :class="{ 'rotate-180': dropdownOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                <!-- Dropdown panel -->
+                <Transition
+                    enter-active-class="transition duration-100 ease-out"
+                    enter-from-class="opacity-0 scale-95"
+                    enter-to-class="opacity-100 scale-100"
+                    leave-active-class="transition duration-75 ease-in"
+                    leave-from-class="opacity-100 scale-100"
+                    leave-to-class="opacity-0 scale-95"
+                >
+                    <div
+                        v-if="dropdownOpen"
+                        class="absolute right-0 top-full mt-1.5 w-52 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden origin-top-right"
+                        role="menu"
+                    >
+                        <!-- Account info -->
+                        <div class="px-3 py-2.5 border-b border-border">
+                            <p class="text-sm font-medium text-foreground truncate">{{ userName }}</p>
+                            <p class="text-xs text-foreground/50 truncate mt-0.5">{{ userEmail }}</p>
+                        </div>
+
+                        <!-- Logout -->
+                        <button
+                            @click="logout"
+                            class="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2 transition-colors duration-150"
+                            role="menuitem"
+                        >
+                            <NavIcon name="logout" />
+                            Logout
+                        </button>
+                    </div>
+                </Transition>
+            </div>
         </div>
-
-        <!-- Right: nav as buttons, ordered by cashier flow -->
-        <nav class="flex items-center gap-2" aria-label="Navigasi kasir">
-            <Link
-                v-for="item in navItems"
-                :key="item.href"
-                :href="item.href"
-                :class="[btnBase, isActive(item.href) ? btnActive : btnInactive]"
-                :aria-current="isActive(item.href) ? 'page' : undefined"
-            >
-                <NavIcon :name="item.icon" />
-                <span class="hidden sm:inline">{{ item.name }}</span>
-            </Link>
-
-            <button :class="[btnBase, btnLogout]" @click="logout" aria-label="Keluar dari akun">
-                <NavIcon name="logout" />
-                <span class="hidden sm:inline">Logout</span>
-            </button>
-        </nav>
     </header>
 </template>

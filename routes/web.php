@@ -56,6 +56,8 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::resource('modifiers', \App\Http\Controllers\Owner\ModifierController::class)
             ->only(['index', 'store', 'update', 'destroy'])
             ->parameters(['modifiers' => 'modifierGroup']);
+        Route::patch('modifiers/{modifierGroup}/settings', [\App\Http\Controllers\Owner\ModifierController::class, 'updateSettings'])
+            ->name('modifiers.settings');
 
         // Payment Methods
         Route::resource('payment-methods', \App\Http\Controllers\Owner\PaymentMethodController::class)
@@ -117,3 +119,6 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
 
 // Halaman Landing
 Route::get('/', [\App\Http\Controllers\Public\LandingController::class, 'index'])->name('landing');
+
+// Halaman API Docs
+Route::get('/api-docs', [\App\Http\Controllers\Public\LandingController::class, 'docs'])->name('api-docs');

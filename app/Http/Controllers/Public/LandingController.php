@@ -16,4 +16,9 @@ class LandingController extends Controller
     {
         return view('public.landing');
     }
+
+    public function docs()
+    {
+        return view('public.api-docs');
+    }
 }
