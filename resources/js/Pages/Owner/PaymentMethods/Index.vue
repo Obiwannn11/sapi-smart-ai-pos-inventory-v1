@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -16,6 +17,10 @@ const typeLabels = {
     qris_dynamic: 'QRIS Dinamis',
     bank_transfer: 'Transfer Bank',
 };
+
+const typeOptions = computed(() =>
+    Object.entries(typeLabels).map(([value, label]) => ({ value, label }))
+);
 
 // --- Form State ---
 const showForm = ref(false);
@@ -140,14 +145,11 @@ const cancelDelete = () => {
 
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Tipe *</label>
-                                <select
+                                <SelectDropdown
                                     v-model="form.type"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                    :class="{ 'border-red-300': form.errors.type }"
-                                >
-                                    <option v-for="(label, key) in typeLabels" :key="key" :value="key">{{ label }}</option>
-                                </select>
-                                <p v-if="form.errors.type" class="mt-1 text-xs text-red-600">{{ form.errors.type }}</p>
+                                    :options="typeOptions"
+                                    :error="form.errors.type"
+                                />
                             </div>
 
                             <div class="flex items-center gap-3">

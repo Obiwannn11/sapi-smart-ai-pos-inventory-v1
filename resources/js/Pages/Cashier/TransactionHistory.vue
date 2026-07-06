@@ -4,11 +4,19 @@ import { ref, computed } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 const props = defineProps({
     transactions: Object,
     filters: Object,
 });
+
+const statusOptions = [
+    { value: '', label: 'Semua' },
+    { value: 'pending', label: 'Tagihan Terbuka' },
+    { value: 'completed', label: 'Selesai' },
+    { value: 'voided', label: 'Void' },
+];
 
 const statusFilter = ref(props.filters?.status || '');
 const dateFilter = ref(props.filters?.date || '');
@@ -87,15 +95,10 @@ const viewReceipt = (transaction) => {
                 <div class="flex flex-wrap gap-3 items-end">
                     <div class="flex-1 min-w-[140px]">
                         <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                        <select
+                        <SelectDropdown
                             v-model="statusFilter"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        >
-                            <option value="">Semua</option>
-                            <option value="pending">Tagihan Terbuka</option>
-                            <option value="completed">Selesai</option>
-                            <option value="voided">Void</option>
-                        </select>
+                            :options="statusOptions"
+                        />
                     </div>
                     <div class="flex-1 min-w-[140px]">
                         <label class="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
