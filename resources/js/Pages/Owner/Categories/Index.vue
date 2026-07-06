@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import Modal from '@/Components/Modal.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -96,49 +97,6 @@ const cancelDelete = () => {
             </button>
         </div>
 
-        <!-- Inline Form (Create / Edit) -->
-        <Transition
-            enter-active-class="transition-all duration-200"
-            enter-from-class="opacity-0 -translate-y-2"
-            enter-to-class="opacity-100 translate-y-0"
-            leave-active-class="transition-all duration-150"
-            leave-from-class="opacity-100 translate-y-0"
-            leave-to-class="opacity-0 -translate-y-2"
-        >
-            <div v-if="showForm" class="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-6">
-                <h3 class="text-sm font-semibold text-gray-700 mb-3">
-                    {{ editingId ? 'Edit Kategori' : 'Tambah Kategori Baru' }}
-                </h3>
-                <form @submit.prevent="submit" class="flex items-start gap-3">
-                    <div class="flex-1">
-                        <input
-                            v-model="form.name"
-                            type="text"
-                            placeholder="Nama kategori"
-                            autofocus
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                            :class="{ 'border-red-300 ring-red-200': form.errors.name }"
-                        />
-                        <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
-                    </div>
-                    <button
-                        type="submit"
-                        :disabled="form.processing"
-                        class="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                        {{ form.processing ? 'Menyimpan...' : (editingId ? 'Perbarui' : 'Simpan') }}
-                    </button>
-                    <button
-                        type="button"
-                        @click="closeForm"
-                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                        Batal
-                    </button>
-                </form>
-            </div>
-        </Transition>
-
         <!-- Table -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <table class="w-full">
@@ -197,6 +155,46 @@ const cancelDelete = () => {
             </table>
         </div>
     </div>
+
+    <!-- Create / Edit Modal -->
+    <Modal
+        :show="showForm"
+        :title="editingId ? 'Edit Kategori' : 'Tambah Kategori Baru'"
+        @close="closeForm"
+    >
+        <form id="category-form" @submit.prevent="submit">
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Nama Kategori</label>
+            <input
+                v-model="form.name"
+                type="text"
+                placeholder="Nama kategori"
+                autofocus
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                :class="{ 'border-red-300 ring-red-200': form.errors.name }"
+            />
+            <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
+        </form>
+
+        <template #footer>
+            <div class="flex justify-end gap-3">
+                <button
+                    type="button"
+                    @click="closeForm"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                    Batal
+                </button>
+                <button
+                    type="submit"
+                    form="category-form"
+                    :disabled="form.processing"
+                    class="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                    {{ form.processing ? 'Menyimpan...' : (editingId ? 'Perbarui' : 'Simpan') }}
+                </button>
+            </div>
+        </template>
+    </Modal>
 
     <!-- Delete confirm -->
     <ConfirmDialog
