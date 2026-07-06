@@ -1,5 +1,7 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useThermalPrinter } from '@/composables/useThermalPrinter';
+import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -8,6 +10,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close']);
+
+const printer = useThermalPrinter();
+const showPrinterSetup = ref(false);
+const thermalBusy = ref(false);
+const thermalError = ref('');
 
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -41,6 +48,26 @@ const totalPaid = computed(() => {
 const close = () => emit('close');
 
 const printReceipt = () => window.print();
+
+// Direct thermal printing (Web Bluetooth/USB). Falls back to the setup modal
+// when no printer is configured yet, and to window.print() on unsupported browsers.
+const canThermal = computed(() => printer.supports.bluetooth || printer.supports.usb);
+
+const printThermal = async () => {
+    if (!printer.isConfigured.value) {
+        showPrinterSetup.value = true;
+        return;
+    }
+    thermalBusy.value = true;
+    thermalError.value = '';
+    try {
+        await printer.printReceipt(props.transaction, { tenantName: props.tenantName });
+    } catch (err) {
+        thermalError.value = err?.message || 'Gagal mencetak. Buka pengaturan printer.';
+    } finally {
+        thermalBusy.value = false;
+    }
+};
 </script>
 
 <template>
@@ -167,26 +194,64 @@ const printReceipt = () => window.print();
                     </div>
 
                     <!-- Action buttons (hidden on print) -->
-                    <div class="px-5 py-4 flex gap-3 border-t border-gray-200 print:hidden shrink-0">
-                        <button
-                            @click="close"
-                            class="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition text-sm"
-                        >
-                            Tutup
-                        </button>
-                        <button
-                            @click="printReceipt"
-                            class="flex-1 py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition flex items-center justify-center gap-2 text-sm"
-                        >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                            </svg>
-                            Cetak Struk
-                        </button>
+                    <div class="px-5 py-4 border-t border-gray-200 print:hidden shrink-0 space-y-3">
+                        <!-- Thermal error -->
+                        <p v-if="thermalError" class="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+                            {{ thermalError }}
+                        </p>
+
+                        <!-- Primary: direct thermal print (Chromium only) -->
+                        <div v-if="canThermal" class="flex gap-3 items-center">
+                            <button
+                                @click="printThermal"
+                                :disabled="thermalBusy"
+                                class="flex-1 py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition flex items-center justify-center gap-2 text-sm disabled:opacity-60"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                </svg>
+                                {{ thermalBusy ? 'Mencetak…' : 'Cetak Thermal' }}
+                            </button>
+                            <button
+                                @click="showPrinterSetup = true"
+                                class="shrink-0 p-2.5 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition"
+                                title="Pengaturan printer"
+                                aria-label="Pengaturan printer"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- Secondary row: browser print (fallback) + close -->
+                        <div class="flex gap-3">
+                            <button
+                                @click="close"
+                                class="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition text-sm"
+                            >
+                                Tutup
+                            </button>
+                            <button
+                                @click="printReceipt"
+                                :class="[
+                                    'flex-1 py-2.5 font-semibold rounded-lg transition flex items-center justify-center gap-2 text-sm',
+                                    canThermal ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50' : 'bg-primary text-primary-foreground hover:bg-primary/90',
+                                ]"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                </svg>
+                                Cetak Struk
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </Transition>
+
+        <PrinterSetupModal :show="showPrinterSetup" @close="showPrinterSetup = false" />
     </Teleport>
 </template>
 
