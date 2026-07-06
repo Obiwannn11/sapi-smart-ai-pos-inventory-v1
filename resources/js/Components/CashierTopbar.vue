@@ -1,12 +1,17 @@
 <script setup>
 import { computed, h, ref, onMounted, onBeforeUnmount, defineComponent } from 'vue';
 import { usePage, router, Link } from '@inertiajs/vue3';
+import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
+import { useInstallPrompt } from '@/composables/useInstallPrompt';
 
 defineProps({
     title: { type: String, default: 'SAPI POS' },
 });
 
 const page = usePage();
+
+const showPrinterSetup = ref(false);
+const { canInstall, promptInstall } = useInstallPrompt();
 
 const user = computed(() => page.props.auth?.user ?? null);
 const userName = computed(() => user.value?.name ?? '');
@@ -33,6 +38,8 @@ const iconPaths = {
     cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
     logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
     chevron: 'M19 9l-7 7-7-7',
+    printer: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
+    install: 'M12 4v12m0 0l-4-4m4 4l4-4M4 20h16',
 };
 
 const NavIcon = defineComponent({
@@ -89,6 +96,28 @@ const logout = () => router.post('/logout');
 
         <!-- Right: nav buttons + user avatar dropdown -->
         <div class="flex items-center gap-2">
+            <!-- Install PWA (shown only when the browser offers it) -->
+            <button
+                v-if="canInstall"
+                @click="promptInstall"
+                :class="[btnBase, btnInactive]"
+                title="Install aplikasi"
+                aria-label="Install aplikasi"
+            >
+                <NavIcon name="install" />
+                <span class="hidden sm:inline">Install</span>
+            </button>
+
+            <!-- Printer settings -->
+            <button
+                @click="showPrinterSetup = true"
+                :class="[btnBase, btnInactive]"
+                title="Pengaturan printer"
+                aria-label="Pengaturan printer"
+            >
+                <NavIcon name="printer" />
+            </button>
+
             <nav class="flex items-center gap-2" aria-label="Navigasi kasir">
                 <Link
                     v-for="item in navItems"
@@ -153,5 +182,7 @@ const logout = () => router.post('/logout');
                 </Transition>
             </div>
         </div>
+
+        <PrinterSetupModal :show="showPrinterSetup" @close="showPrinterSetup = false" />
     </header>
 </template>
