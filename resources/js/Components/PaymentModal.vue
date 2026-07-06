@@ -1,11 +1,16 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
     totalAmount: { type: Number, default: 0 },
     paymentMethods: { type: Array, default: () => [] },
 });
+
+const paymentMethodOptions = computed(() =>
+    props.paymentMethods.map(method => ({ value: method.id, label: method.name }))
+);
 
 const emit = defineEmits(['close', 'confirm']);
 
@@ -198,16 +203,12 @@ const close = () => {
                             </div>
 
                             <!-- Payment method -->
-                            <select
+                            <SelectDropdown
                                 v-model="payment.payment_method_id"
+                                :options="paymentMethodOptions"
+                                placeholder="Pilih metode pembayaran"
                                 @change="onMethodChange(idx)"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                            >
-                                <option :value="null" disabled>Pilih metode pembayaran</option>
-                                <option v-for="method in paymentMethods" :key="method.id" :value="method.id">
-                                    {{ method.name }}
-                                </option>
-                            </select>
+                            />
 
                             <!-- CASH: input nominal + quick buttons -->
                             <div v-if="isCash(payment.payment_method_id)">

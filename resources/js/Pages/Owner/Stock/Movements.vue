@@ -1,7 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -16,6 +17,18 @@ const filterType = ref(props.filters?.type || '');
 const filterDateFrom = ref(props.filters?.date_from || '');
 const filterDateTo = ref(props.filters?.date_to || '');
 const filterProduct = ref(props.filters?.product_id || '');
+
+const typeOptions = [
+    { value: '', label: 'Semua Tipe' },
+    { value: 'sale', label: 'Penjualan' },
+    { value: 'restock', label: 'Restock' },
+    { value: 'adjustment', label: 'Adjustment' },
+];
+
+const productOptions = computed(() => [
+    { value: '', label: 'Semua Produk' },
+    ...props.products.map(product => ({ value: product.id, label: product.name })),
+]);
 
 const applyFilters = () => {
     const params = {};
@@ -106,29 +119,22 @@ const qtyClass = (qty) => {
                 <!-- Type filter -->
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Tipe</label>
-                    <select
+                    <SelectDropdown
                         v-model="filterType"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
-                        <option value="">Semua Tipe</option>
-                        <option value="sale">Penjualan</option>
-                        <option value="restock">Restock</option>
-                        <option value="adjustment">Adjustment</option>
-                    </select>
+                        :options="typeOptions"
+                        class="w-44"
+                    />
                 </div>
 
                 <!-- Product filter -->
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Produk</label>
-                    <select
+                    <SelectDropdown
                         v-model="filterProduct"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
-                        <option value="">Semua Produk</option>
-                        <option v-for="product in products" :key="product.id" :value="product.id">
-                            {{ product.name }}
-                        </option>
-                    </select>
+                        :options="productOptions"
+                        searchable
+                        class="w-52"
+                    />
                 </div>
 
                 <!-- Date from -->

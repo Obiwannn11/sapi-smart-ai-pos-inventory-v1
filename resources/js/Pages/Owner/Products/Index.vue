@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { useForm, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -14,6 +15,18 @@ const props = defineProps({
 // --- Filters ---
 const filterCategory = ref('');
 const filterStatus = ref('');
+
+const categoryOptions = computed(() => [
+    { value: '', label: 'Semua Kategori' },
+    { value: 'none', label: 'Tanpa Kategori' },
+    ...props.categories.map(cat => ({ value: cat.id, label: cat.name })),
+]);
+
+const statusOptions = [
+    { value: '', label: 'Semua Status' },
+    { value: 'active', label: 'Aktif' },
+    { value: 'inactive', label: 'Nonaktif' },
+];
 
 const filteredProducts = computed(() => {
     let items = props.products;
@@ -89,22 +102,17 @@ const formatCurrency = (val) => {
 
         <!-- Filters -->
         <div class="flex flex-wrap items-center gap-3 mb-6">
-            <select
+            <SelectDropdown
                 v-model="filterCategory"
-                class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-                <option value="">Semua Kategori</option>
-                <option value="none">Tanpa Kategori</option>
-                <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-            </select>
-            <select
+                :options="categoryOptions"
+                searchable
+                class="w-52"
+            />
+            <SelectDropdown
                 v-model="filterStatus"
-                class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-                <option value="">Semua Status</option>
-                <option value="active">Aktif</option>
-                <option value="inactive">Nonaktif</option>
-            </select>
+                :options="statusOptions"
+                class="w-44"
+            />
         </div>
 
         <!-- Product Grid -->

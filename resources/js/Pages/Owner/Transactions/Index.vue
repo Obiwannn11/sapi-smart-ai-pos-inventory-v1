@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -9,6 +10,13 @@ const props = defineProps({
     transactions: Object, // paginated
     filters: Object,
 });
+
+const statusOptions = [
+    { value: '', label: 'Semua' },
+    { value: 'completed', label: 'Selesai' },
+    { value: 'voided', label: 'Void' },
+    { value: 'pending', label: 'Pending' },
+];
 
 const filterStatus = ref(props.filters?.status || '');
 const filterFrom = ref(props.filters?.from || '');
@@ -88,15 +96,10 @@ const statusLabel = (status) => {
             <div class="flex flex-wrap items-end gap-3">
                 <div class="min-w-[160px]">
                     <label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                    <select
+                    <SelectDropdown
                         v-model="filterStatus"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
-                        <option value="">Semua</option>
-                        <option value="completed">Selesai</option>
-                        <option value="voided">Void</option>
-                        <option value="pending">Pending</option>
-                    </select>
+                        :options="statusOptions"
+                    />
                 </div>
                 <div class="min-w-[160px]">
                     <label class="block text-xs font-medium text-gray-500 mb-1">Dari</label>
