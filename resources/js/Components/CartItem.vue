@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, nextTick } from 'vue';
 
 const props = defineProps({
     item: Object,
@@ -21,6 +21,45 @@ const increment = () => {
 const decrement = () => {
     if (props.item.qty > 1) {
         emit('updateQty', props.index, props.item.qty - 1);
+    }
+};
+
+// --- Direct qty input (double-click / long-press) ---
+const isEditingQty = ref(false);
+const qtyInput = ref(null);
+const qtyDraft = ref('');
+let longPressTimer = null;
+
+const startEditQty = () => {
+    qtyDraft.value = String(props.item.qty);
+    isEditingQty.value = true;
+    nextTick(() => {
+        qtyInput.value?.focus();
+        qtyInput.value?.select();
+    });
+};
+
+const commitQty = () => {
+    if (!isEditingQty.value) return;
+    isEditingQty.value = false;
+    const parsed = parseInt(qtyDraft.value, 10);
+    if (!Number.isNaN(parsed) && parsed >= 1 && parsed !== props.item.qty) {
+        emit('updateQty', props.index, parsed);
+    }
+};
+
+const cancelEditQty = () => {
+    isEditingQty.value = false;
+};
+
+const startLongPress = () => {
+    longPressTimer = setTimeout(startEditQty, 450);
+};
+
+const cancelLongPress = () => {
+    if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
     }
 };
 
@@ -54,7 +93,7 @@ const subtotal = () => {
         <div class="flex items-start justify-between gap-2">
             <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-800 truncate">{{ item.variant_name }}</p>
-                <p class="text-xs text-gray-400">@ {{ formatCurrency(item.unit_price) }}</p>
+                <p class="text-xs text-gray-400">@ {{ formatCurrency(item.unit_price) }} x {{ item.qty }}</p>
 
                 <!-- Modifiers -->
                 <div v-if="item.modifiers && item.modifiers.length > 0" class="mt-1 space-y-0.5">
@@ -110,7 +149,28 @@ const subtotal = () => {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
                     </svg>
                 </button>
-                <span class="text-sm font-semibold text-gray-800 w-8 text-center">{{ item.qty }}</span>
+                <input
+                    v-if="isEditingQty"
+                    ref="qtyInput"
+                    v-model="qtyDraft"
+                    type="number"
+                    min="1"
+                    inputmode="numeric"
+                    @blur="commitQty"
+                    @keydown.enter.prevent="commitQty"
+                    @keydown.esc.prevent="cancelEditQty"
+                    class="w-12 h-7 px-1 text-sm font-semibold text-gray-800 text-center border border-primary rounded-md focus:ring-1 focus:ring-ring focus:border-ring [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span
+                    v-else
+                    @dblclick="startEditQty"
+                    @touchstart.passive="startLongPress"
+                    @touchend="cancelLongPress"
+                    @touchmove="cancelLongPress"
+                    @touchcancel="cancelLongPress"
+                    title="Klik 2x atau tahan untuk isi jumlah"
+                    class="text-sm font-semibold text-gray-800 w-8 text-center cursor-pointer select-none rounded hover:bg-gray-100"
+                >{{ item.qty }}</span>
                 <button
                     @click="increment"
                     class="w-7 h-7 flex items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 transition"
