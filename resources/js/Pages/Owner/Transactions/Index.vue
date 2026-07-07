@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -101,21 +102,13 @@ const statusLabel = (status) => {
                         :options="statusOptions"
                     />
                 </div>
-                <div class="min-w-[160px]">
+                <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Dari</label>
-                    <input
-                        v-model="filterFrom"
-                        type="date"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    <DatePicker v-model="filterFrom" />
                 </div>
-                <div class="min-w-[160px]">
+                <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Sampai</label>
-                    <input
-                        v-model="filterTo"
-                        type="date"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    <DatePicker v-model="filterTo" />
                 </div>
                 <div class="flex gap-2 items-end">
                     <button
