@@ -5,6 +5,7 @@ import FlashMessage from '@/Components/FlashMessage.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 
 const props = defineProps({
     transactions: Object,
@@ -102,11 +103,7 @@ const viewReceipt = (transaction) => {
                     </div>
                     <div class="flex-1 min-w-[140px]">
                         <label class="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
-                        <input
-                            v-model="dateFilter"
-                            type="date"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        />
+                        <DatePicker v-model="dateFilter" />
                     </div>
                     <div class="flex gap-2 items-end">
                         <button
