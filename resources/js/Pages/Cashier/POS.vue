@@ -1,6 +1,6 @@
 <script setup>
 import { router, Head } from '@inertiajs/vue3';
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted, onMounted } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import { useFlash } from '@/composables/useFlash';
 import ProductCard from '@/Components/ProductCard.vue';
@@ -311,6 +311,69 @@ const handleOpenBillPayment = (payments) => {
     });
 };
 
+// --- Resizable Cart Panel ---
+const CART_WIDTH_KEY = 'cashier.cartWidth';
+const CART_MIN_WIDTH = 300;
+const CART_MAX_WIDTH = 640;
+const CART_DEFAULT_WIDTH = 384; // matches lg:w-96
+
+const cartWidth = ref(CART_DEFAULT_WIDTH);
+const isResizingCart = ref(false);
+
+const clampCartWidth = (value) => {
+    return Math.min(CART_MAX_WIDTH, Math.max(CART_MIN_WIDTH, value));
+};
+
+onMounted(() => {
+    const stored = Number(localStorage.getItem(CART_WIDTH_KEY));
+    if (stored) {
+        cartWidth.value = clampCartWidth(stored);
+    }
+});
+
+const pointerX = (event) => {
+    return event.touches ? event.touches[0].clientX : event.clientX;
+};
+
+const onResizeMove = (event) => {
+    if (!isResizingCart.value) return;
+    // Cart is anchored to the right edge, so width grows as the pointer moves left.
+    cartWidth.value = clampCartWidth(window.innerWidth - pointerX(event));
+    event.preventDefault();
+};
+
+const stopResizeCart = () => {
+    if (!isResizingCart.value) return;
+    isResizingCart.value = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    localStorage.setItem(CART_WIDTH_KEY, String(Math.round(cartWidth.value)));
+
+    window.removeEventListener('mousemove', onResizeMove);
+    window.removeEventListener('mouseup', stopResizeCart);
+    window.removeEventListener('touchmove', onResizeMove);
+    window.removeEventListener('touchend', stopResizeCart);
+};
+
+const startResizeCart = (event) => {
+    isResizingCart.value = true;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    window.addEventListener('mousemove', onResizeMove);
+    window.addEventListener('mouseup', stopResizeCart);
+    window.addEventListener('touchmove', onResizeMove, { passive: false });
+    window.addEventListener('touchend', stopResizeCart);
+    event.preventDefault();
+};
+
+const resetCartWidth = () => {
+    cartWidth.value = CART_DEFAULT_WIDTH;
+    localStorage.setItem(CART_WIDTH_KEY, String(CART_DEFAULT_WIDTH));
+};
+
+onUnmounted(stopResizeCart);
+
 </script>
 
 <template>
@@ -386,8 +449,31 @@ const handleOpenBillPayment = (payments) => {
                 </div>
             </div>
 
+            <!-- Resize Handle: drag / long-press to change cart width -->
+            <div
+                @mousedown="startResizeCart"
+                @touchstart="startResizeCart"
+                @dblclick="resetCartWidth"
+                :class="[
+                    'group relative w-1.5 shrink-0 cursor-col-resize select-none touch-none flex items-center justify-center transition-colors',
+                    isResizingCart ? 'bg-primary/60' : 'bg-border hover:bg-primary/40'
+                ]"
+                title="Geser untuk atur lebar keranjang · klik dua kali untuk reset"
+            >
+                <!-- Larger invisible hit area for easier grabbing -->
+                <span class="absolute inset-y-0 -left-1.5 -right-1.5"></span>
+                <!-- Grip dots -->
+                <span class="relative flex flex-col gap-1 pointer-events-none">
+                    <span :class="['w-0.5 h-0.5 rounded-full', isResizingCart ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
+                    <span :class="['w-0.5 h-0.5 rounded-full', isResizingCart ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
+                    <span :class="['w-0.5 h-0.5 rounded-full', isResizingCart ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
+                </span>
+            </div>
+
             <!-- RIGHT: Cart Panel -->
-            <div class="w-80 lg:w-96 bg-card border-l border-border flex flex-col shrink-0">
+            <div
+                :style="{ width: cartWidth + 'px' }"
+                class="bg-card border-l border-border flex flex-col shrink-0">
                 <!-- Cart Header -->
                 <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                     <div class="flex items-center gap-2">
