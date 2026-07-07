@@ -8,6 +8,7 @@ import CartItem from '@/Components/CartItem.vue';
 import ModifierModal from '@/Components/ModifierModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
+import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 
 const props = defineProps({
@@ -28,6 +29,7 @@ const cart = ref([]);
 const showModifierModal = ref(false);
 const selectedProduct = ref(null);
 const showPaymentModal = ref(false);
+const showSuccessModal = ref(false);
 const showReceiptModal = ref(false);
 const lastTransaction = ref(null);
 const processing = ref(false);
@@ -218,7 +220,7 @@ const handlePayment = (payments) => {
             const txData = page.props.flash?.lastTransaction;
             if (txData) {
                 lastTransaction.value = txData;
-                showReceiptModal.value = true;
+                showSuccessModal.value = true;
             }
             cart.value = [];
         },
@@ -226,6 +228,17 @@ const handlePayment = (payments) => {
             processing.value = false;
         },
     });
+};
+
+// --- Success / Receipt flow ---
+const closeSuccessModal = () => {
+    showSuccessModal.value = false;
+    lastTransaction.value = null;
+};
+
+const printFromSuccess = () => {
+    showSuccessModal.value = false;
+    showReceiptModal.value = true;
 };
 
 // --- Open Bill ---
@@ -289,7 +302,7 @@ const handleOpenBillPayment = (payments) => {
             const txData = page.props.flash?.lastTransaction;
             if (txData) {
                 lastTransaction.value = txData;
-                showReceiptModal.value = true;
+                showSuccessModal.value = true;
             }
         },
         onFinish: () => {
@@ -532,11 +545,18 @@ const handleOpenBillPayment = (payments) => {
             @confirm="handleOpenBillPayment"
         />
 
+        <TransactionSuccessModal
+            :show="showSuccessModal"
+            :transaction="lastTransaction"
+            @close="closeSuccessModal"
+            @print="printFromSuccess"
+        />
+
         <ReceiptModal
             :show="showReceiptModal"
             :transaction="lastTransaction"
             :tenant-name="tenantName"
-            @close="showReceiptModal = false"
+            @close="showReceiptModal = false; lastTransaction = null"
         />
 
         <!-- Open Bill Customer Name Modal -->
