@@ -21,9 +21,9 @@ const isOwner = computed(() => user.value?.role === 'owner');
 
 const isActive = (href) => page.url.startsWith(href);
 
+// POS/kasir is reachable via the back button on the left, so it's omitted here.
 const navItems = computed(() => {
     const items = [
-        { name: 'POS', href: '/cashier/pos', icon: 'pos' },
         { name: 'Riwayat', href: '/cashier/transactions', icon: 'history' },
     ];
     if (!isOwner.value) {
@@ -38,6 +38,7 @@ const iconPaths = {
     cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
     logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
     chevron: 'M19 9l-7 7-7-7',
+    back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
     printer: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
     install: 'M12 4v12m0 0l-4-4m4 4l4-4M4 20h16',
 };
@@ -91,8 +92,20 @@ const logout = () => router.post('/logout');
 
 <template>
     <header class="bg-card border-b border-border shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] px-4 py-2.5 flex items-center justify-between shrink-0 z-10">
-        <!-- Left: brand -->
-        <h1 class="text-lg font-bold text-primary truncate">{{ title }}</h1>
+        <!-- Left: back-to-POS + brand -->
+        <div class="flex items-center gap-2 min-w-0">
+            <Link
+                v-if="!isActive('/cashier/pos')"
+                href="/cashier/pos"
+                :class="[btnBase, btnInactive, 'px-2']"
+                title="Kembali ke Kasir"
+                aria-label="Kembali ke Kasir"
+            >
+                <NavIcon name="back" />
+                <span class="hidden sm:inline">Kasir</span>
+            </Link>
+            <h1 class="text-lg font-bold text-primary truncate">{{ title }}</h1>
+        </div>
 
         <!-- Right: nav buttons + user avatar dropdown -->
         <div class="flex items-center gap-2">
