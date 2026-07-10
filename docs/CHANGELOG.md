@@ -45,6 +45,23 @@
 
 ---
 
+### [ADDITION] MCP Server: Data Bridge Read-Only untuk AI Client Milik Owner
+- **Tanggal:** 2026-07-11
+- **Fase Terkait:** Phase-AI-4 (MCP Server)
+- **Dampak:** Route | Controller | Service | Config | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** MCP Server (`POST /mcp/business`) mengekspos data agregat tenant (penjualan, profit, menu) sebagai sumber data read-only untuk AI client milik owner (mis. Claude Desktop). Tiga tool: `get-sales-summary`, `get-profit`, `get-menu`. Akses via bearer token Sanctum yang dibuat/dicabut owner di Settings; endpoint dibatasi rate limit `mcp` (60/menit), owner-only, tenant-scoped otomatis, tanpa PII.
+- **Alasan:** Pada MCP, LLM yang memanggil adalah client milik owner — app hanya menyediakan data dan tidak menanggung biaya LLM. Karena itu MCP **tidak** memakai kuota/free-tier AI aplikasi (beda dari AI-2/AI-3); cukup rate limit untuk cegah abuse. `ProductCatalogService` diekstrak agar query katalog dipakai bersama MCP & API consumer.
+- **File Terdampak:**
+  - `routes/ai.php` — `Mcp::web('/mcp/business', SapiBusinessServer::class)` + middleware `auth:sanctum`, `tenant.api`, `role:owner`, `throttle:mcp`
+  - `app/Mcp/Servers/SapiBusinessServer.php`, `app/Mcp/Tools/*` — server + `BusinessDataTool` (base) + 3 tool
+  - `app/Services/ProductCatalogService.php` — katalog produk bersama; `app/Http/Controllers/Api/V1/ApiProductController.php` — refactor memakai service
+  - `app/Providers/AppServiceProvider.php` — RateLimiter `mcp`
+  - `app/Http/Controllers/Owner/SettingsController.php`, `resources/js/Pages/Owner/Settings/Index.vue`, `app/Http/Middleware/HandleInertiaRequests.php` — generate/cabut token MCP (plaintext flash sekali)
+- **Catatan Migrasi:** Tidak ada migrasi. Detail & backlog tools di `docs/phases-2/PHASE-AI-4_MCP-Server.md`.
+
+---
+
 ### [DECISION] RunAiAnalysisJob Autentikasi sebagai Pemilik Analisis (Tenant Scoping di Queue)
 - **Tanggal:** 2026-07-10
 - **Fase Terkait:** Phase-AI-3 (AI Analysis)
