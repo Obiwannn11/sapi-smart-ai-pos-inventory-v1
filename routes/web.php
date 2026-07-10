@@ -75,6 +75,14 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::get('stock/movements', [\App\Http\Controllers\Owner\StockController::class, 'movements'])
             ->name('stock.movements');
 
+        // AI Analysis
+        Route::get('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'index'])
+            ->name('ai-analysis.index');
+        Route::post('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'store'])
+            ->name('ai-analysis.store');
+        Route::get('ai-analysis/{aiAnalysis}', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'show'])
+            ->name('ai-analysis.show');
+
         // Settings
         Route::get('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'index'])
             ->name('settings.index');
