@@ -1,6 +1,6 @@
 # PHASE AI-3 — Fitur AI Analysis (UI, Async Job, Tipe Analisis)
 
-**Status:** Belum dimulai  
+**Status:** Selesai  
 **Estimasi:** Setelah `PHASE-AI-1` & `PHASE-AI-2` selesai  
 **Dependency:** `PHASE-AI-1` (`AiContextService`) + `PHASE-AI-2` (`AiProviderFactory`, kuota, BYOK)  
 **Output:** Halaman Owner AI Analysis — jalankan analisis AI asinkron & tampilkan hasil (saran diskon, perhitungan & proyeksi profit, insight)
@@ -358,14 +358,14 @@ Jalankan: `php artisan test --compact --filter="AiAnalysis|RunAiAnalysisJob"`
 
 ## 7. Checklist
 
-- [ ] Migration + model `AiAnalysis` (enum konstanta, `BelongsToTenant`, cast `params`)
-- [ ] `RunAiAnalysisJob` — build konteks, panggil provider, simpan hasil/error, cek & catat kuota
-- [ ] `AiAnalysisController` (`index`/`store`/`show`) + 3 route owner
-- [ ] `Owner/AiAnalysis/Index.vue` — form, polling Inertia v2, skeleton, render hasil
-- [ ] Sidebar nav item di `OwnerLayout.vue`
-- [ ] 4 tipe analisis (discount, profit_projection, general, custom) berfungsi
-- [ ] Test controller (`Queue::fake`) & job (`Http::fake`) hijau
-- [ ] `vendor/bin/pint --dirty --format agent` bersih
+- [x] Migration + model `AiAnalysis` (enum konstanta, `BelongsToTenant`, cast `params`)
+- [x] `RunAiAnalysisJob` — build konteks, panggil provider, simpan hasil/error, cek & catat kuota
+- [x] `AiAnalysisController` (`index`/`store`/`show`) + 3 route owner
+- [x] `Owner/AiAnalysis/Index.vue` — form, polling Inertia v2, skeleton, render hasil
+- [x] Sidebar nav item di `OwnerLayout.vue`
+- [x] 4 tipe analisis (discount, profit_projection, general, custom) berfungsi
+- [x] Test controller (`Queue::fake`) & job (`Http::fake`) hijau
+- [x] `vendor/bin/pint --dirty --format agent` bersih
 
 ### Test Manual
 1. `composer run dev` (worker jalan), login owner.

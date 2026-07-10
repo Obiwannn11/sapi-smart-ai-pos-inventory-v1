@@ -51,6 +51,8 @@ const iconPaths = {
         'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5',
         'M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
     ],
+    sparkles:
+        'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L19 12l-3.714 2.143L13 21l-2.286-6.857L7 12l3.714-2.143L13 5z',
 };
 
 const NavIcon = defineComponent({
@@ -103,6 +105,7 @@ const sidebarGroups = [
             { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt' },
             { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash' },
             { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
+            { name: 'AI Analysis', href: '/owner/ai-analysis', icon: 'sparkles' },
         ],
     },
     {
