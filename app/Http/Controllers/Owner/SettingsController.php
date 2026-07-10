@@ -69,7 +69,7 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'address' => 'nullable|string|max:500',
             'phone' => 'nullable|string|max:50',
-            'ai_provider' => 'nullable|in:gemini,openai,anthropic',
+            'ai_provider' => 'nullable|in:sumopod,gemini,openai,anthropic',
             'ai_api_key' => 'nullable|string|max:255',
             'ai_model' => 'nullable|string|max:100',
         ]);

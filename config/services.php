@@ -40,6 +40,7 @@ return [
         'webhook_token' => env('XENDIT_WEBHOOK_TOKEN'),
     ],
 
+    'sumopod' => ['key' => env('SUMOPOD_API_KEY')],
     'gemini' => ['key' => env('GEMINI_API_KEY')],
     'openai' => ['key' => env('OPENAI_API_KEY')],
     'anthropic' => ['key' => env('ANTHROPIC_API_KEY')],
