@@ -224,6 +224,7 @@ Vue components must have a single root element.
 - Make atomic commits: each commit is one logical, self-contained change that builds and passes tests on its own.
   - Do not bundle unrelated changes into a single commit; split them into separate commits.
   - Stage only the files relevant to that change (avoid a blanket `git add .` when the working tree has unrelated edits).
+- Use a single author only. Do not add a `Co-Authored-By` trailer (or any other co-author) to commit messages.
 
 # Changelog
 
