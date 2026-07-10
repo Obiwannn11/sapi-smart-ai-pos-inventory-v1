@@ -36,8 +36,12 @@ return [
     ],
 
     'xendit' => [
-    'secret_key'    => env('XENDIT_SECRET_KEY'),
-    'webhook_token' => env('XENDIT_WEBHOOK_TOKEN'),
-],
+        'secret_key' => env('XENDIT_SECRET_KEY'),
+        'webhook_token' => env('XENDIT_WEBHOOK_TOKEN'),
+    ],
+
+    'gemini' => ['key' => env('GEMINI_API_KEY')],
+    'openai' => ['key' => env('OPENAI_API_KEY')],
+    'anthropic' => ['key' => env('ANTHROPIC_API_KEY')],
 
 ];
