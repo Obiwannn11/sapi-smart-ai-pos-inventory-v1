@@ -45,6 +45,26 @@
 
 ---
 
+### [DECISION] SumoPod Jadi Provider AI Default (OpenAI-Compatible Gateway)
+- **Tanggal:** 2026-07-11
+- **Fase Terkait:** Phase-AI-2 (AI Engine)
+- **Dampak:** Service | Config | Controller | Frontend
+- **Breaking Change:** Tidak (default berubah `gemini` → `sumopod`; provider lama tetap didukung)
+- **Deskripsi:** Menambah provider `sumopod` sebagai default. SumoPod adalah gateway AI OpenAI-compatible (persis OpenAI, hanya beda base URL `https://ai.sumopod.com/v1`), jadi `SumoPodProvider` cukup extend `OpenAiProvider` dan override endpoint chat completions. `OpenAiProvider` di-refactor agar endpoint & label provider bisa di-override lewat method `endpoint()`/`providerLabel()` (tanpa mengubah kontrak `AiProvider`). Satu API key SumoPod (`sk-...`) memberi akses ke banyak model (Anthropic, OpenAI, Gemini, DeepSeek, dll) via nama model.
+- **Alasan:** Menyederhanakan setup BYOK & free-tier: satu penyedia + satu format key gaya OpenAI untuk banyak model, dengan budget limit di dashboard SumoPod. Tanpa dependency PHP baru — tetap via `Http` facade sesuai prinsip Phase-AI-2.
+- **File Terdampak:**
+  - `app/Services/Ai/SumoPodProvider.php` — provider baru (extends `OpenAiProvider`, override base URL ke `https://ai.sumopod.com/v1/chat/completions`)
+  - `app/Services/Ai/OpenAiProvider.php` — endpoint & label di-ekstrak ke `endpoint()`/`providerLabel()`; props `protected`
+  - `app/Services/Ai/AiProviderFactory.php` — `match` tambah cabang `sumopod`
+  - `config/ai.php` — `default` → `sumopod`, tambah `models.sumopod`; `config/services.php` — `sumopod` key
+  - `app/Http/Controllers/Owner/SettingsController.php` — validasi `ai_provider` tambah `sumopod`
+  - `resources/js/Pages/Owner/Settings/Index.vue` — opsi provider "SumoPod" + label default
+  - `.env.example` — `AI_DEFAULT_PROVIDER=sumopod`, `SUMOPOD_API_KEY`, `AI_SUMOPOD_MODEL`
+  - `tests/Feature/Ai/AiProviderTest.php`, `tests/Feature/Ai/AiProviderFactoryTest.php` — test SumoPod (Http::fake + resolusi factory)
+- **Catatan Migrasi:** Tidak ada migrasi. Isi `SUMOPOD_API_KEY` (untuk free tier: `AI_FREE_TIER_KEY` = key SumoPod) lalu `php artisan config:clear`. Detail penyedia di `docs/phases-2/PHASE-AI-2b_SumoPod-Provider.md`.
+
+---
+
 ### [ADDITION] MCP Server: Data Bridge Read-Only untuk AI Client Milik Owner
 - **Tanggal:** 2026-07-11
 - **Fase Terkait:** Phase-AI-4 (MCP Server)
