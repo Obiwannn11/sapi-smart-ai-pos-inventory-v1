@@ -6,11 +6,15 @@ defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     tenant: Object,
+    aiFreeTier: Object,
 });
 
 const form = useForm({
-    address: props.tenant.address ?? '',
-    phone:   props.tenant.phone ?? '',
+    address:     props.tenant.address ?? '',
+    phone:       props.tenant.phone ?? '',
+    ai_provider: props.tenant.ai_provider ?? '',
+    ai_model:    props.tenant.ai_model ?? '',
+    ai_api_key:  '',
 });
 
 const submit = () => {
@@ -67,6 +71,71 @@ const submit = () => {
                         :class="{ 'border-red-300': form.errors.phone }"
                     />
                     <p v-if="form.errors.phone" class="mt-1 text-xs text-red-600">{{ form.errors.phone }}</p>
+                </div>
+
+                <!-- AI Analysis -->
+                <div class="pt-5 border-t border-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900">AI Analysis</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Pakai kunci API sendiri (BYOK) untuk pemakaian tanpa batas, atau biarkan kosong untuk memakai kuota gratis harian.
+                    </p>
+
+                    <!-- Sisa kuota free tier (hanya bila key belum diisi) -->
+                    <div
+                        v-if="!tenant.ai_key_set"
+                        class="mb-4 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700"
+                    >
+                        <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Sisa kuota gratis hari ini: <strong>{{ aiFreeTier.remaining }}</strong> dari {{ aiFreeTier.daily_limit }}.</span>
+                    </div>
+
+                    <!-- Provider -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                        <select
+                            v-model="form.ai_provider"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            :class="{ 'border-red-300': form.errors.ai_provider }"
+                        >
+                            <option value="">Default (Gemini gratis)</option>
+                            <option value="gemini">Gemini</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                        </select>
+                        <p v-if="form.errors.ai_provider" class="mt-1 text-xs text-red-600">{{ form.errors.ai_provider }}</p>
+                    </div>
+
+                    <!-- API Key -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">API Key (opsional)</label>
+                        <input
+                            v-model="form.ai_api_key"
+                            type="password"
+                            autocomplete="off"
+                            :placeholder="tenant.ai_key_set ? '•••• tersimpan' : 'Masukkan API key Anda'"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            :class="{ 'border-red-300': form.errors.ai_api_key }"
+                        />
+                        <p v-if="form.errors.ai_api_key" class="mt-1 text-xs text-red-600">{{ form.errors.ai_api_key }}</p>
+                        <p v-else class="mt-1 text-xs text-gray-400">
+                            {{ tenant.ai_key_set ? 'Kunci sudah tersimpan. Kosongkan untuk mempertahankannya.' : 'Kosongkan untuk memakai kuota gratis.' }}
+                        </p>
+                    </div>
+
+                    <!-- Model -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Model (opsional)</label>
+                        <input
+                            v-model="form.ai_model"
+                            type="text"
+                            placeholder="Contoh: gemini-2.0-flash"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            :class="{ 'border-red-300': form.errors.ai_model }"
+                        />
+                        <p v-if="form.errors.ai_model" class="mt-1 text-xs text-red-600">{{ form.errors.ai_model }}</p>
+                    </div>
                 </div>
 
                 <!-- Submit -->
