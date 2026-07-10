@@ -16,6 +16,17 @@ SAPI adalah aplikasi Point of Sale (POS) multi-tenant berbasis Laravel untuk keb
 - POS transaction flow (pending/completed/voided).
 - Cash drawer session (buka kas, tutup kas, rekap sesi).
 - Mobile API untuk operasional kasir.
+- MCP Server data bisnis (read-only) untuk AI client milik owner (mis. Claude Desktop).
+
+## Update Terbaru (2026-07-11)
+
+Penambahan MCP Server (data bridge read-only):
+
+- Endpoint `POST /mcp/business` mengekspos data agregat tenant (penjualan, profit, menu) ke AI client milik owner (mis. Claude Desktop) — app hanya menyediakan data, tidak memakai kuota AI aplikasi.
+- Akses via bearer token Sanctum yang dibuat/dicabut owner di Pengaturan; owner-only, tenant-scoped, tanpa data pelanggan, dan dibatasi rate limit anti-abuse.
+- Tata cara pemakaian ada di bagian [MCP Server](#mcp-server-akses-data-bisnis-untuk-ai-client) di bawah.
+
+Lihat detail teknis di `docs/phases-2/PHASE-AI-4_MCP-Server.md` dan `docs/CHANGELOG.md`.
 
 ## Update Terbaru (2026-05-29)
 
@@ -112,6 +123,62 @@ Endpoint non-versioned yang tetap dipertahankan:
 
 Referensi yang lebih lengkap tersedia di halaman `/api-docs`.
 
+## MCP Server (Akses Data Bisnis untuk AI Client)
+
+MCP Server memberi **AI client milik owner** (mis. Claude Desktop) akses **read-only** ke data bisnis tenant: ringkasan penjualan, profit, dan menu. Berbeda dengan fitur AI Analysis internal — di sini LLM yang memanggil adalah client milik owner, sehingga **tidak memakai kuota AI aplikasi**. App hanya berperan sebagai sumber data.
+
+Karakteristik:
+
+- **Endpoint:** `POST {APP_URL}/mcp/business`
+- **Auth:** bearer token Sanctum (`Authorization: Bearer <token>`), **hanya untuk owner**.
+- **Isolasi:** data otomatis ter-scope ke tenant pemilik token; hanya data agregat (tanpa data pelanggan).
+- **Rate limit:** 60 request/menit per user (anti-abuse).
+
+### Tool yang tersedia
+
+| Tool | Fungsi | Argumen |
+|---|---|---|
+| `get-sales-summary` | Revenue, jumlah transaksi, rata-rata nota, produk terlaris, tren harian | `from`, `to` (opsional, `YYYY-MM-DD`) |
+| `get-profit` | Profit, margin, proyeksi periode berikutnya, margin per item | `from`, `to` (opsional, `YYYY-MM-DD`) |
+| `get-menu` | Daftar produk aktif + varian (harga, sisa stok) | — |
+
+> Tanpa `from`/`to`, rentang default adalah 30 hari terakhir.
+
+### Tata Cara Pemakaian
+
+1. Login sebagai **owner**, buka **Pengaturan**.
+2. Di bagian **Akses MCP (AI Client)**, klik **Generate Token**, lalu **salin token** (hanya ditampilkan sekali).
+3. Konfigurasikan AI client dengan URL endpoint + token. Contoh untuk Claude Desktop (`claude_desktop_config.json`), menggunakan jembatan `mcp-remote`:
+
+   ```json
+   {
+     "mcpServers": {
+       "sapi-business": {
+         "command": "npx",
+         "args": [
+           "mcp-remote",
+           "https://APP_URL/mcp/business",
+           "--header",
+           "Authorization: Bearer TOKEN_ANDA"
+         ]
+       }
+     }
+   }
+   ```
+
+4. Mulai percakapan di AI client, mis. "Berapa profit bulan ini?" atau "Produk mana yang paling laris minggu ini?" — client akan memanggil tool yang sesuai.
+5. **Rotasi/cabut token** kapan saja dari Pengaturan (klik **Buat Ulang Token** atau **Cabut**). Token yang dicabut langsung tidak berlaku.
+
+### Debug (opsional)
+
+Uji server dengan MCP Inspector bawaan:
+
+```
+php artisan mcp:inspector mcp/business
+```
+
+Sertakan header `Authorization: Bearer <token owner>` saat menyambung.
+
 ## Setup Singkat
 
 1. Install dependency PHP:
@@ -133,6 +200,7 @@ Referensi yang lebih lengkap tersedia di halaman `/api-docs`.
 
 - Changelog: `docs/CHANGELOG.md`
 - Public API reference: `/api-docs`
+- MCP Server: `docs/phases-2/PHASE-AI-4_MCP-Server.md`
 - Technical docs: `docs/SAPI_Technical_Doc_v1.1.md`
 - Security audit: `docs/SAPI-Security-Audit_v1.0.md`
 
