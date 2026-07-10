@@ -45,6 +45,20 @@
 
 ---
 
+### [DECISION] RunAiAnalysisJob Autentikasi sebagai Pemilik Analisis (Tenant Scoping di Queue)
+- **Tanggal:** 2026-07-10
+- **Fase Terkait:** Phase-AI-3 (AI Analysis)
+- **Dampak:** Job | Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** `RunAiAnalysisJob` memanggil `Auth::setUser($analysis->user)` sebelum membangun konteks, lalu `Auth::forgetGuards()` di blok `finally`. Ini menyimpang dari contoh kode awal di dokumen `PHASE-AI-3` yang tidak meng-set auth di dalam Job.
+- **Alasan:** `AiContextService` dan `ProfitService` bergantung pada `TenantScope` global yang berbasis `auth()`. Karena queue job berjalan tanpa sesi HTTP, tanpa autentikasi eksplisit query konteks tidak ter-scope ke tenant yang benar (berisiko membaca/menggabungkan data lintas tenant). Meng-set user pemilik analisis memastikan seluruh agregasi ter-scope ke tenant tersebut; `forgetGuards()` mencegah kebocoran state auth antar job pada worker yang sama.
+- **File Terdampak:**
+  - `app/Jobs/RunAiAnalysisJob.php` — `Auth::setUser()` sebelum `buildContext()`, `Auth::forgetGuards()` di `finally`
+  - `docs/phases-2/PHASE-AI-3_AI-Analysis.md` — contoh kode Job disinkronkan dengan implementasi
+- **Catatan Migrasi:** Tidak ada migrasi. Perilaku hanya relevan saat worker queue memproses beberapa job dari tenant berbeda.
+
+---
+
 ### [ADDITION] Public API Reference Page for Mobile POS
 - **Tanggal:** 2026-05-29
 - **Fase Terkait:** Cross-Phase (Phase-2 Mobile API / Public Docs)
