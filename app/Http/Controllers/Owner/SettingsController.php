@@ -11,9 +11,12 @@ use Inertia\Response;
 
 class SettingsController extends Controller
 {
+    private const MCP_TOKEN_NAME = 'mcp-client';
+
     public function index(): Response
     {
-        $tenant = auth()->user()->tenant;
+        $user = auth()->user();
+        $tenant = $user->tenant;
         $usedToday = AiUsage::whereDate('date', now()->toDateString())->value('count') ?? 0;
         $dailyLimit = (int) config('ai.free_tier.daily_limit');
 
@@ -31,7 +34,34 @@ class SettingsController extends Controller
                 'daily_limit' => $dailyLimit,
                 'remaining' => max(0, $dailyLimit - $usedToday),
             ],
+            'mcp' => [
+                'token_set' => $user->tokens()->where('name', self::MCP_TOKEN_NAME)->exists(),
+                'endpoint' => url('/mcp/business'),
+            ],
         ]);
+    }
+
+    /**
+     * Buat (atau rotasi) token akses MCP milik owner. Plaintext hanya
+     * di-flash sekali; tidak pernah disimpan/ditampilkan ulang.
+     */
+    public function generateMcpToken(): RedirectResponse
+    {
+        $user = auth()->user();
+        $user->tokens()->where('name', self::MCP_TOKEN_NAME)->delete();
+
+        $token = $user->createToken(self::MCP_TOKEN_NAME, ['mcp:use'])->plainTextToken;
+
+        return back()
+            ->with('mcpToken', $token)
+            ->with('success', 'Token MCP dibuat. Salin sekarang — tidak akan ditampilkan lagi.');
+    }
+
+    public function revokeMcpToken(): RedirectResponse
+    {
+        auth()->user()->tokens()->where('name', self::MCP_TOKEN_NAME)->delete();
+
+        return back()->with('success', 'Token MCP dicabut.');
     }
 
     public function update(Request $request): RedirectResponse

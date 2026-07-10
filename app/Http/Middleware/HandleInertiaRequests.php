@@ -25,6 +25,7 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
                 'lastTransaction' => fn () => $request->session()->get('lastTransaction'),
+                'mcpToken' => fn () => $request->session()->get('mcpToken'),
             ],
         ]);
     }

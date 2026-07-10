@@ -88,6 +88,10 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
             ->name('settings.index');
         Route::patch('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'update'])
             ->name('settings.update');
+        Route::post('settings/mcp-token', [\App\Http\Controllers\Owner\SettingsController::class, 'generateMcpToken'])
+            ->name('settings.mcp-token.generate');
+        Route::delete('settings/mcp-token', [\App\Http\Controllers\Owner\SettingsController::class, 'revokeMcpToken'])
+            ->name('settings.mcp-token.revoke');
     });
 
 // --- Cashier Routes (owner juga bisa akses) ---
