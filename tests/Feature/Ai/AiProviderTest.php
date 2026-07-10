@@ -3,6 +3,7 @@
 use App\Services\Ai\AnthropicProvider;
 use App\Services\Ai\GeminiProvider;
 use App\Services\Ai\OpenAiProvider;
+use App\Services\Ai\SumoPodProvider;
 use Illuminate\Support\Facades\Http;
 
 test('GeminiProvider posts prompt and parses AiResult', function () {
@@ -65,6 +66,41 @@ test('OpenAiProvider sends bearer token and parses AiResult', function () {
             && str_contains($body['messages'][1]['content'], '"revenue":2000');
     });
 });
+
+test('SumoPodProvider posts to sumopod base url with bearer token', function () {
+    Http::fake([
+        'ai.sumopod.com/*' => Http::response([
+            'choices' => [['message' => ['content' => 'Halo dari SumoPod']]],
+            'usage' => ['total_tokens' => 42],
+        ]),
+    ]);
+
+    $result = (new SumoPodProvider('sk-sumopod', 'gpt-4o-mini'))
+        ->generate('system', ['revenue' => 2500], 'Analisa?');
+
+    expect($result->text)->toBe('Halo dari SumoPod')
+        ->and($result->tokensUsed)->toBe(42);
+
+    Http::assertSent(function ($request) {
+        expect($request->url())->toBe('https://ai.sumopod.com/v1/chat/completions')
+            ->and($request->hasHeader('Authorization', 'Bearer sk-sumopod'))->toBeTrue();
+
+        $body = $request->data();
+
+        return $body['model'] === 'gpt-4o-mini'
+            && $body['messages'][0]['role'] === 'system'
+            && str_contains($body['messages'][1]['content'], '"revenue":2500');
+    });
+});
+
+test('SumoPodProvider throws with SumoPod label on API failure', function () {
+    Http::fake([
+        'ai.sumopod.com/*' => Http::response([], 500),
+    ]);
+
+    (new SumoPodProvider('sk-sumopod', 'gpt-4o-mini'))
+        ->generate('system', [], 'x');
+})->throws(RuntimeException::class, 'SumoPod API error: 500');
 
 test('AnthropicProvider sends api key header and sums token usage', function () {
     Http::fake([

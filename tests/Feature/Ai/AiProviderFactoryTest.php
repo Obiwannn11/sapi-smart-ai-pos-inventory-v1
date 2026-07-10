@@ -5,6 +5,7 @@ use App\Services\Ai\AiProviderFactory;
 use App\Services\Ai\AnthropicProvider;
 use App\Services\Ai\GeminiProvider;
 use App\Services\Ai\OpenAiProvider;
+use App\Services\Ai\SumoPodProvider;
 
 beforeEach(function () {
     $this->factory = new AiProviderFactory;
@@ -31,6 +32,27 @@ test('falls back to shared free tier key when tenant has no key', function () {
 
     expect($this->factory->for($tenant))->toBeInstanceOf(GeminiProvider::class)
         ->and($this->factory->isUsingFreeTier($tenant))->toBeTrue();
+});
+
+test('resolves sumopod provider as the default when tenant has no provider', function () {
+    config(['ai.default' => 'sumopod', 'ai.free_tier.key' => 'shared-free-key']);
+
+    $tenant = Tenant::factory()->create([
+        'ai_provider' => null,
+        'ai_api_key' => null,
+    ]);
+
+    expect($this->factory->for($tenant))->toBeInstanceOf(SumoPodProvider::class)
+        ->and($this->factory->isUsingFreeTier($tenant))->toBeTrue();
+});
+
+test('resolves sumopod provider for BYOK tenant', function () {
+    $tenant = Tenant::factory()->create([
+        'ai_provider' => 'sumopod',
+        'ai_api_key' => 'sk-sumopod',
+    ]);
+
+    expect($this->factory->for($tenant))->toBeInstanceOf(SumoPodProvider::class);
 });
 
 test('resolves anthropic provider', function () {

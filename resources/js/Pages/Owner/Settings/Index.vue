@@ -126,7 +126,8 @@ const revokeMcpToken = () => {
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                             :class="{ 'border-red-300': form.errors.ai_provider }"
                         >
-                            <option value="">Default (Gemini gratis)</option>
+                            <option value="">Default (SumoPod gratis)</option>
+                            <option value="sumopod">SumoPod</option>
                             <option value="gemini">Gemini</option>
                             <option value="openai">OpenAI</option>
                             <option value="anthropic">Anthropic</option>
@@ -157,7 +158,7 @@ const revokeMcpToken = () => {
                         <input
                             v-model="form.ai_model"
                             type="text"
-                            placeholder="Contoh: gemini-2.0-flash"
+                            placeholder="Contoh: gpt-4o-mini"
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                             :class="{ 'border-red-300': form.errors.ai_model }"
                         />

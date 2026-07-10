@@ -8,15 +8,15 @@ use RuntimeException;
 class OpenAiProvider implements AiProvider
 {
     public function __construct(
-        private string $apiKey,
-        private string $model,
+        protected string $apiKey,
+        protected string $model,
     ) {}
 
     public function generate(string $systemPrompt, array $context, string $userPrompt): AiResult
     {
         $response = Http::withToken($this->apiKey)
             ->timeout(60)
-            ->post('https://api.openai.com/v1/chat/completions', [
+            ->post($this->endpoint(), [
                 'model' => $this->model,
                 'messages' => [
                     ['role' => 'system', 'content' => $systemPrompt],
@@ -25,12 +25,28 @@ class OpenAiProvider implements AiProvider
             ]);
 
         if ($response->failed()) {
-            throw new RuntimeException('OpenAI API error: '.$response->status());
+            throw new RuntimeException($this->providerLabel().' API error: '.$response->status());
         }
 
         return new AiResult(
             text: $response->json('choices.0.message.content', ''),
             tokensUsed: $response->json('usage.total_tokens'),
         );
+    }
+
+    /**
+     * Endpoint chat completions. Provider yang OpenAI-compatible cukup override ini.
+     */
+    protected function endpoint(): string
+    {
+        return 'https://api.openai.com/v1/chat/completions';
+    }
+
+    /**
+     * Label provider untuk pesan error.
+     */
+    protected function providerLabel(): string
+    {
+        return 'OpenAI';
     }
 }

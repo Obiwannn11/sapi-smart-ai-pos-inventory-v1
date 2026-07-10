@@ -21,6 +21,7 @@ class AiProviderFactory
         }
 
         return match ($provider) {
+            'sumopod' => new SumoPodProvider($key, $model),
             'gemini' => new GeminiProvider($key, $model),
             'openai' => new OpenAiProvider($key, $model),
             'anthropic' => new AnthropicProvider($key, $model),
