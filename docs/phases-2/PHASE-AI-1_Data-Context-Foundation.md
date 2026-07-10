@@ -1,6 +1,6 @@
 # PHASE AI-1 — Fondasi Data Context ("Base Knowledge")
 
-**Status:** Selesai — §4 (MCP Server) ditunda sebagai lanjutan  
+**Status:** Selesai (§4 MCP Server → lihat `PHASE-AI-4_MCP-Server.md`)  
 **Estimasi:** Setelah Phase 1–5 selesai (butuh data transaksi, menu, & stok)  
 **Dependency:** Phase 3 (Transaksi), Phase 4 (Stok), Phase 5 (Report/Badge) — direuse sebagai sumber data  
 **Output:** `ProfitService` (turunkan profit) + `AiContextService` (rakit konteks agregat) — layer netral-provider yang jadi *base knowledge* AI  
@@ -236,13 +236,13 @@ class AiContextService
 
 Jalankan: `php artisan test --compact --filter="ProfitService|AiContextService"`
 
-## 4. Lanjutan: MCP Server
+## 4. Lanjutan: MCP Server → **Selesai** (`PHASE-AI-4`)
 
-> Dikerjakan **setelah** `PHASE-AI-2` & `PHASE-AI-3` stabil.
+Sudah diimplementasikan. Detail lengkap: **`PHASE-AI-4_MCP-Server.md`**.
 
-- `composer require laravel/mcp`.
-- Ekspos output `AiContextService` / `ProfitService` sebagai MCP **tools/resources** (`get_sales_summary`, `get_menu`, `get_profit`) ter-scope tenant lewat token Sanctum (pola auth sama seperti `phases-2/SAPI-Mobile-API-Integration-Plan.md`).
-- **Tanpa logika baru** — reuse service yang sama. Detail endpoint MCP dijabarkan di dokumen terpisah saat implementasi.
+- `laravel/mcp` **sudah terpasang** (bawaan) — tidak perlu `composer require`.
+- Mengekspos `AiContextService` / `ProfitService` / `ProductCatalogService` sebagai MCP **tools** (`get-sales-summary`, `get-profit`, `get-menu`) di `POST /mcp/business`, ter-scope tenant lewat token Sanctum + middleware `role:owner`.
+- **Tanpa logika baru** — reuse service yang sama.
 
 ## 5. Checklist
 
@@ -252,7 +252,7 @@ Jalankan: `php artisan test --compact --filter="ProfitService|AiContextService"`
 - [x] Test `ProfitService` (termasuk variant trashed) hijau
 - [x] Test `AiContextService` hijau
 - [x] `vendor/bin/pint --dirty --format agent` bersih
-- [ ] §4 MCP Server — lanjutan, belum dikerjakan (`laravel/mcp` belum terpasang)
+- [x] §4 MCP Server — Selesai (lihat `PHASE-AI-4_MCP-Server.md`)
 
 ### Test Manual
 1. `php artisan tinker` → `app(App\Services\ProfitService::class)->overallProfit(now()->subDays(30), now())` → cek `gross_profit`/`margin_pct` masuk akal vs data.
