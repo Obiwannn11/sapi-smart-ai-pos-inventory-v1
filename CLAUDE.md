@@ -225,3 +225,8 @@ Vue components must have a single root element.
   - Do not bundle unrelated changes into a single commit; split them into separate commits.
   - Stage only the files relevant to that change (avoid a blanket `git add .` when the working tree has unrelated edits).
 
+# Changelog
+
+- The project changelog lives at `docs/CHANGELOG.md`. Record out-of-phase changes and architecture decisions there.
+- Write a changelog entry only when the change is actually applied (implemented in the codebase), not while it is still being planned or proposed. Add the entry as part of the same work that lands the change.
+
