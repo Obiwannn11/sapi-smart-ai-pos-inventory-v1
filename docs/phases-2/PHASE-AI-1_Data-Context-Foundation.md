@@ -1,6 +1,6 @@
 # PHASE AI-1 — Fondasi Data Context ("Base Knowledge")
 
-**Status:** Belum dimulai  
+**Status:** Selesai — §4 (MCP Server) ditunda sebagai lanjutan  
 **Estimasi:** Setelah Phase 1–5 selesai (butuh data transaksi, menu, & stok)  
 **Dependency:** Phase 3 (Transaksi), Phase 4 (Stok), Phase 5 (Report/Badge) — direuse sebagai sumber data  
 **Output:** `ProfitService` (turunkan profit) + `AiContextService` (rakit konteks agregat) — layer netral-provider yang jadi *base knowledge* AI  
@@ -246,12 +246,13 @@ Jalankan: `php artisan test --compact --filter="ProfitService|AiContextService"`
 
 ## 5. Checklist
 
-- [ ] `ProfitService` — `overallProfit`, `profitByProduct`, `projection` (COGS `withTrashed`, status completed)
-- [ ] `AiContextService` — `buildContext` mengembalikan agregat lengkap tanpa PII
-- [ ] Reuse pola query dari `ReportController`/`DashboardController`/`BadgeHelperService` (bukan duplikasi)
-- [ ] Test `ProfitService` (termasuk variant trashed) hijau
-- [ ] Test `AiContextService` hijau
-- [ ] `vendor/bin/pint --dirty --format agent` bersih
+- [x] `ProfitService` — `overallProfit`, `profitByProduct`, `projection` (COGS varian trashed tetap terhitung via join, status completed)
+- [x] `AiContextService` — `buildContext` mengembalikan agregat lengkap tanpa PII
+- [x] Reuse pola query dari `ReportController`/`DashboardController`/`BadgeHelperService` (bukan duplikasi)
+- [x] Test `ProfitService` (termasuk variant trashed) hijau
+- [x] Test `AiContextService` hijau
+- [x] `vendor/bin/pint --dirty --format agent` bersih
+- [ ] §4 MCP Server — lanjutan, belum dikerjakan (`laravel/mcp` belum terpasang)
 
 ### Test Manual
 1. `php artisan tinker` → `app(App\Services\ProfitService::class)->overallProfit(now()->subDays(30), now())` → cek `gross_profit`/`margin_pct` masuk akal vs data.

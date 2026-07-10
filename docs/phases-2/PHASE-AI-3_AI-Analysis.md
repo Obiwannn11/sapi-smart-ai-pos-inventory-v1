@@ -117,11 +117,13 @@ namespace App\Jobs;
 
 use App\Models\AiAnalysis;
 use App\Models\AiUsage;
-use App\Services\AiContextService;
+use App\Models\Tenant;
 use App\Services\Ai\AiProviderFactory;
+use App\Services\AiContextService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use RuntimeException;
 
 class RunAiAnalysisJob implements ShouldQueue
@@ -140,6 +142,11 @@ class RunAiAnalysisJob implements ShouldQueue
         $tenant = $analysis->tenant;
 
         $analysis->update(['status' => AiAnalysis::STATUS_PROCESSING]);
+
+        // AiContextService & ProfitService memakai TenantScope berbasis auth().
+        // Job tak punya sesi, jadi autentikasi sebagai pemilik analisis agar seluruh
+        // query konteks ter-scope ke tenant yang benar.
+        Auth::setUser($analysis->user);
 
         try {
             $usingFreeTier = $factory->isUsingFreeTier($tenant);
@@ -169,10 +176,13 @@ class RunAiAnalysisJob implements ShouldQueue
                 'status' => AiAnalysis::STATUS_FAILED,
                 'error'  => $e->getMessage(),
             ]);
+        } finally {
+            // Cegah kebocoran state auth ke job berikutnya pada worker yang sama.
+            Auth::forgetGuards();
         }
     }
 
-    private function assertQuota($tenant): void
+    private function assertQuota(Tenant $tenant): void
     {
         $used = AiUsage::withoutGlobalScopes()
             ->where('tenant_id', $tenant->id)
@@ -184,7 +194,7 @@ class RunAiAnalysisJob implements ShouldQueue
         }
     }
 
-    private function incrementUsage($tenant): void
+    private function incrementUsage(Tenant $tenant): void
     {
         $usage = AiUsage::withoutGlobalScopes()->firstOrCreate(
             ['tenant_id' => $tenant->id, 'date' => now()->toDateString()],
