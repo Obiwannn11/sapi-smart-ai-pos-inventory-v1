@@ -93,12 +93,6 @@ const cancelDelete = () => {
     deleteTarget.value = null;
 };
 
-// --- Accordion ---
-const expandedId = ref(null);
-const toggle = (id) => {
-    expandedId.value = expandedId.value === id ? null : id;
-};
-
 // --- Quick Settings Toggle ---
 const togglingSettings = ref({});
 
@@ -149,7 +143,7 @@ const onExtraPriceBlur = (i, event) => {
 <template>
     <Head title="Grup Modifier" />
 
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-6xl mx-auto">
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
@@ -282,173 +276,145 @@ const onExtraPriceBlur = (i, event) => {
             </Transition>
         </Teleport>
 
-        <!-- Accordion List -->
-        <div class="space-y-3">
+        <!-- Card Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div
                 v-for="group in modifierGroups"
                 :key="group.id"
-                class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden"
+                class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col hover:shadow-md hover:border-gray-300 transition-shadow"
             >
-                <!-- Header -->
-                <button
-                    @click="toggle(group.id)"
-                    class="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                >
-                    <div class="flex items-center gap-3">
-                        <svg
-                            class="w-4 h-4 text-gray-400 transition-transform"
-                            :class="{ 'rotate-90': expandedId === group.id }"
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                        >
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                        </svg>
-                        <span class="text-sm font-semibold text-gray-900">{{ group.name }}</span>
-                        <span v-if="group.is_required" class="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded">Wajib</span>
-                        <span v-if="group.is_multiple" class="px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">Multi</span>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span class="text-xs text-gray-400">{{ group.modifiers?.length || 0 }} modifier · {{ group.products_count }} produk</span>
-                        <div class="flex gap-2" @click.stop>
-                            <button @click="openEdit(group)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                                Edit
-                            </button>
-                            <button @click="confirmDelete(group)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                Hapus
-                            </button>
+                <!-- Card header -->
+                <div class="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="text-sm font-semibold text-gray-900 truncate">{{ group.name }}</h3>
+                            <span v-if="group.is_required" class="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded">Wajib</span>
+                            <span v-if="group.is_multiple" class="px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">Multi</span>
                         </div>
+                        <p class="text-xs text-gray-400 mt-1">{{ group.modifiers?.length || 0 }} modifier · {{ group.products_count }} produk</p>
                     </div>
-                </button>
+                    <div class="flex gap-2 flex-shrink-0">
+                        <button @click="openEdit(group)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Edit
+                        </button>
+                        <button @click="confirmDelete(group)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Hapus
+                        </button>
+                    </div>
+                </div>
 
-                <!-- Expanded content -->
-                <Transition
-                    enter-active-class="transition-all duration-200"
-                    enter-from-class="max-h-0 opacity-0"
-                    enter-to-class="max-h-[600px] opacity-100"
-                    leave-active-class="transition-all duration-150"
-                    leave-from-class="max-h-[600px] opacity-100"
-                    leave-to-class="max-h-0 opacity-0"
-                >
-                    <div v-if="expandedId === group.id" class="overflow-hidden">
-                        <div class="border-t border-gray-100 divide-y divide-gray-100">
+                <!-- Card body -->
+                <div class="p-5 space-y-5 flex-1">
 
-                            <!-- Section 1: Pengaturan -->
-                            <div class="px-5 py-4">
-                                <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Pengaturan</h4>
-                                <div class="flex flex-wrap gap-4">
-                                    <!-- Toggle: Wajib dipilih -->
-                                    <button
-                                        type="button"
-                                        @click="toggleSetting(group, 'is_required')"
-                                        :disabled="togglingSettings[`${group.id}-is_required`]"
-                                        class="flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-colors"
-                                        :class="group.is_required
-                                            ? 'bg-red-50 border-red-200 text-red-700'
-                                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'"
-                                    >
-                                        <!-- Toggle switch visual -->
-                                        <span
-                                            class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-                                            :class="group.is_required ? 'bg-red-500' : 'bg-gray-300'"
-                                        >
-                                            <span
-                                                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
-                                                :class="group.is_required ? 'translate-x-4' : 'translate-x-0'"
-                                            />
-                                        </span>
-                                        <div class="text-left">
-                                            <p class="text-xs font-semibold leading-none">Wajib dipilih</p>
-                                            <p class="text-xs mt-0.5 opacity-70">{{ group.is_required ? 'Pelanggan harus memilih' : 'Bersifat opsional' }}</p>
-                                        </div>
-                                    </button>
-
-                                    <!-- Toggle: Boleh pilih banyak -->
-                                    <button
-                                        type="button"
-                                        @click="toggleSetting(group, 'is_multiple')"
-                                        :disabled="togglingSettings[`${group.id}-is_multiple`]"
-                                        class="flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-colors"
-                                        :class="group.is_multiple
-                                            ? 'bg-primary/5 border-primary/30 text-primary'
-                                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'"
-                                    >
-                                        <span
-                                            class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
-                                            :class="group.is_multiple ? 'bg-primary' : 'bg-gray-300'"
-                                        >
-                                            <span
-                                                class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
-                                                :class="group.is_multiple ? 'translate-x-4' : 'translate-x-0'"
-                                            />
-                                        </span>
-                                        <div class="text-left">
-                                            <p class="text-xs font-semibold leading-none">Boleh pilih banyak</p>
-                                            <p class="text-xs mt-0.5 opacity-70">{{ group.is_multiple ? 'Multi-pilih aktif' : 'Hanya satu pilihan' }}</p>
-                                        </div>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Section 2: Item Modifier -->
-                            <div class="px-5 py-4">
-                                <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Item Modifier</h4>
-                                <div v-if="group.modifiers?.length">
-                                    <table class="w-full">
-                                        <thead>
-                                            <tr class="border-b border-gray-100">
-                                                <th class="text-left text-xs font-medium text-gray-400 pb-2 w-8">No</th>
-                                                <th class="text-left text-xs font-medium text-gray-400 pb-2">Nama Modifier</th>
-                                                <th class="text-right text-xs font-medium text-gray-400 pb-2">Perubahan Harga</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-50">
-                                            <tr v-for="(mod, idx) in group.modifiers" :key="mod.id" class="text-sm">
-                                                <td class="py-2 text-xs text-gray-400">{{ idx + 1 }}</td>
-                                                <td class="py-2 text-gray-700 font-medium">{{ mod.name }}</td>
-                                                <td class="py-2 text-right">
-                                                    <span v-if="Number(mod.extra_price) > 0" class="font-medium text-gray-700">+{{ formatCurrency(mod.extra_price) }}</span>
-                                                    <span v-else class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">Gratis</span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div v-else class="py-3 text-sm text-gray-400 italic">Belum ada item modifier</div>
-                            </div>
-
-                            <!-- Section 3: Produk yang Menggunakan -->
-                            <div class="px-5 py-4">
-                                <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                                    Digunakan oleh Produk
-                                    <span class="ml-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium normal-case tracking-normal">{{ group.products_count }}</span>
-                                </h4>
-                                <div v-if="group.products?.length" class="flex flex-wrap gap-2">
+                    <!-- Section 1: Pengaturan -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Pengaturan</h4>
+                        <div class="flex flex-wrap gap-3">
+                            <!-- Toggle: Wajib dipilih -->
+                            <button
+                                type="button"
+                                @click="toggleSetting(group, 'is_required')"
+                                :disabled="togglingSettings[`${group.id}-is_required`]"
+                                class="flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-colors"
+                                :class="group.is_required
+                                    ? 'bg-red-50 border-red-200 text-red-700'
+                                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'"
+                            >
+                                <!-- Toggle switch visual -->
+                                <span
+                                    class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+                                    :class="group.is_required ? 'bg-red-500' : 'bg-gray-300'"
+                                >
                                     <span
-                                        v-for="product in group.products"
-                                        :key="product.id"
-                                        class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
-                                    >
-                                        <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                                        </svg>
-                                        {{ product.name }}
-                                    </span>
+                                        class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
+                                        :class="group.is_required ? 'translate-x-4' : 'translate-x-0'"
+                                    />
+                                </span>
+                                <div class="text-left">
+                                    <p class="text-xs font-semibold leading-none">Wajib dipilih</p>
+                                    <p class="text-xs mt-0.5 opacity-70">{{ group.is_required ? 'Pelanggan harus memilih' : 'Bersifat opsional' }}</p>
                                 </div>
-                                <p v-else class="text-sm text-gray-400 italic">Belum digunakan oleh produk manapun</p>
-                            </div>
+                            </button>
 
+                            <!-- Toggle: Boleh pilih banyak -->
+                            <button
+                                type="button"
+                                @click="toggleSetting(group, 'is_multiple')"
+                                :disabled="togglingSettings[`${group.id}-is_multiple`]"
+                                class="flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-colors"
+                                :class="group.is_multiple
+                                    ? 'bg-primary/5 border-primary/30 text-primary'
+                                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'"
+                            >
+                                <span
+                                    class="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200"
+                                    :class="group.is_multiple ? 'bg-primary' : 'bg-gray-300'"
+                                >
+                                    <span
+                                        class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200"
+                                        :class="group.is_multiple ? 'translate-x-4' : 'translate-x-0'"
+                                    />
+                                </span>
+                                <div class="text-left">
+                                    <p class="text-xs font-semibold leading-none">Boleh pilih banyak</p>
+                                    <p class="text-xs mt-0.5 opacity-70">{{ group.is_multiple ? 'Multi-pilih aktif' : 'Hanya satu pilihan' }}</p>
+                                </div>
+                            </button>
                         </div>
                     </div>
-                </Transition>
+
+                    <!-- Section 2: Item Modifier -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Item Modifier</h4>
+                        <div v-if="group.modifiers?.length" class="rounded-lg border border-gray-100 divide-y divide-gray-50">
+                            <div
+                                v-for="(mod, idx) in group.modifiers"
+                                :key="mod.id"
+                                class="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                            >
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="text-xs text-gray-400 w-4 flex-shrink-0">{{ idx + 1 }}</span>
+                                    <span class="text-gray-700 font-medium truncate">{{ mod.name }}</span>
+                                </div>
+                                <span v-if="Number(mod.extra_price) > 0" class="font-medium text-gray-700 flex-shrink-0">+{{ formatCurrency(mod.extra_price) }}</span>
+                                <span v-else class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700 flex-shrink-0">Gratis</span>
+                            </div>
+                        </div>
+                        <div v-else class="py-3 text-sm text-gray-400 italic">Belum ada item modifier</div>
+                    </div>
+
+                    <!-- Section 3: Produk yang Menggunakan -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                            Digunakan oleh Produk
+                            <span class="ml-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium normal-case tracking-normal">{{ group.products_count }}</span>
+                        </h4>
+                        <div v-if="group.products?.length" class="flex flex-wrap gap-2">
+                            <span
+                                v-for="product in group.products"
+                                :key="product.id"
+                                class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                            >
+                                <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                                {{ product.name }}
+                            </span>
+                        </div>
+                        <p v-else class="text-sm text-gray-400 italic">Belum digunakan oleh produk manapun</p>
+                    </div>
+
+                </div>
             </div>
 
             <!-- Empty state -->
-            <div v-if="modifierGroups.length === 0" class="bg-white rounded-lg shadow-sm border border-gray-200 py-16 text-center">
+            <div v-if="modifierGroups.length === 0" class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 py-16 text-center">
                 <svg class="mx-auto w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                 </svg>
