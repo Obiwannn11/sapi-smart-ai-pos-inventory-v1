@@ -3,6 +3,7 @@ import { ref, nextTick } from 'vue';
 import { useForm, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import Accordion from '@/Components/Accordion.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -390,11 +391,11 @@ const onExtraPriceBlur = (i, event) => {
                     </div>
 
                     <!-- Section 3: Produk yang Menggunakan -->
-                    <div>
-                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Digunakan oleh Produk
-                            <span class="ml-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium normal-case tracking-normal">{{ group.products_count }}</span>
-                        </h4>
+                    <Accordion :count="group.products_count">
+                        <template #title>
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Digunakan oleh Produk</span>
+                        </template>
+
                         <div v-if="group.products?.length" class="flex flex-wrap gap-2">
                             <span
                                 v-for="product in group.products"
@@ -408,7 +409,7 @@ const onExtraPriceBlur = (i, event) => {
                             </span>
                         </div>
                         <p v-else class="text-sm text-gray-400 italic">Belum digunakan oleh produk manapun</p>
-                    </div>
+                    </Accordion>
 
                 </div>
             </div>
