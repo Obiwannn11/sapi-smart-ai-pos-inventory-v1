@@ -37,6 +37,7 @@ const iconPaths = {
     history: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
     cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
     logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
+    dashboard: 'M4 5a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM14 13a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4z',
     chevron: 'M19 9l-7 7-7-7',
     back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
     printer: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
@@ -181,6 +182,18 @@ const logout = () => router.post('/logout');
                             <p class="text-sm font-medium text-foreground truncate">{{ userName }}</p>
                             <p class="text-xs text-foreground/50 truncate mt-0.5">{{ userEmail }}</p>
                         </div>
+
+                        <!-- Owner dashboard (owner only) -->
+                        <Link
+                            v-if="isOwner"
+                            href="/owner/dashboard"
+                            class="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-muted flex items-center gap-2 transition-colors duration-150"
+                            role="menuitem"
+                            @click="dropdownOpen = false"
+                        >
+                            <NavIcon name="dashboard" />
+                            Dashboard Owner
+                        </Link>
 
                         <!-- Logout -->
                         <button
