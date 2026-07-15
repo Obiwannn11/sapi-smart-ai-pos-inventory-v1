@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Models\CashDrawer;
+use App\Models\PaymentMethod;
+use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\TransactionPayment;
@@ -112,11 +114,31 @@ class ReportController extends Controller
             'items.modifiers',
             'items.variant:id,name',
             'payments.paymentMethod',
+            'editor:id,name',
+            'edits.user:id,name',
         ]);
 
         return Inertia::render('Owner/Transactions/Detail', [
             'transaction' => $transaction,
+            // Katalog untuk modal edit — deferred agar payload awal ringan.
+            'products' => Inertia::defer(fn () => $this->editCatalog()),
+            'paymentMethods' => Inertia::defer(fn () => PaymentMethod::where('is_active', true)->get()),
         ]);
+    }
+
+    /**
+     * Katalog produk (varian + modifier) untuk modal edit transaksi.
+     * Bentuknya mengikuti POSController@index agar komponen frontend bisa dibagikan.
+     */
+    private function editCatalog()
+    {
+        return Product::where('is_active', true)
+            ->with([
+                'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
+                'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
+                'category:id,name',
+            ])
+            ->get();
     }
 
     /**

@@ -33,7 +33,7 @@ class POSController extends Controller
             ->whereNull('closed_at')
             ->first();
 
-        if (!$openDrawer && $user->isCashier()) {
+        if (! $openDrawer && $user->isCashier()) {
             return redirect()->route('cashier.cash-drawer.index');
         }
 
@@ -42,7 +42,7 @@ class POSController extends Controller
 
         $products = Product::where('is_active', true)
             ->with([
-                'variants' => fn($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
+                'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
                 'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
                 'category:id,name',
             ])
@@ -95,7 +95,7 @@ class POSController extends Controller
         $user = Auth::user();
 
         // Authorization
-        if (!$user || $transaction->tenant_id !== $user->tenant_id) {
+        if (! $user || $transaction->tenant_id !== $user->tenant_id) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
 
@@ -142,10 +142,51 @@ class POSController extends Controller
 
         $transactions = $query->paginate(20)->withQueryString();
 
+        // Tandai transaksi mana yang boleh diedit oleh user ini.
+        // Owner: semua completed. Kasir: completed dalam shift laci terbuka miliknya.
+        $user = Auth::user();
+        $openDrawer = $user->isOwner()
+            ? null
+            : CashDrawer::where('user_id', $user->id)
+                ->whereNull('closed_at')
+                ->latest('opened_at')
+                ->first();
+
+        $transactions->getCollection()->transform(function (Transaction $tx) use ($user, $openDrawer) {
+            $tx->can_edit = $this->canEditTransaction($tx, $user, $openDrawer);
+
+            return $tx;
+        });
+
         return Inertia::render('Cashier/TransactionHistory', [
             'transactions' => $transactions,
             'filters' => $request->only(['status', 'date']),
+            // Katalog untuk modal edit — deferred agar payload awal ringan.
+            'products' => Inertia::defer(fn () => Product::where('is_active', true)
+                ->with([
+                    'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
+                    'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
+                    'category:id,name',
+                ])
+                ->get()),
+            'paymentMethods' => Inertia::defer(fn () => PaymentMethod::where('is_active', true)->get()),
         ]);
+    }
+
+    /**
+     * Apakah $user boleh mengedit $tx sekarang? (mirror TransactionEditService::assertEditable)
+     */
+    private function canEditTransaction(Transaction $tx, \App\Models\User $user, ?CashDrawer $openDrawer): bool
+    {
+        if ($tx->status !== Transaction::STATUS_COMPLETED) {
+            return false;
+        }
+
+        if ($user->isOwner()) {
+            return true;
+        }
+
+        return $openDrawer !== null && $tx->created_at >= $openDrawer->opened_at;
     }
 
     /**
@@ -155,7 +196,7 @@ class POSController extends Controller
     {
         $user = Auth::user();
 
-        if (!$user || $transaction->tenant_id !== $user->tenant_id) {
+        if (! $user || $transaction->tenant_id !== $user->tenant_id) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
 
