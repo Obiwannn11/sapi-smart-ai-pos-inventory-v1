@@ -13,6 +13,9 @@ createInertiaApp({
             .use(plugin)
             .mount(el);
     },
+    progress: {
+        color: 'var(--primary)',
+    },
 });
 
 // Register the PWA service worker (production only — avoids interfering with Vite HMR in dev).
