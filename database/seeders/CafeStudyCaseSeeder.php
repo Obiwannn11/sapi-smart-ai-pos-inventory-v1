@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\CashDrawer;
 use App\Models\Category;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
@@ -25,8 +26,20 @@ class CafeStudyCaseSeeder extends Seeder
      *
      * Tenant terpisah dari seeder demo lain (slug: kopi-story) agar tidak
      * mengganggu data yang dipakai DatabaseSeeder / DemoTransactionSeeder.
+     *
+     * Idempotent: menu/tenant/user/payment method pakai firstOrCreate, sesi kas
+     * pakai updateOrCreate, dan data transaksional (transactions, items,
+     * payments, stock movements) di-reset lebih dulu untuk tenant ini sebelum
+     * dibuat ulang — sehingga seeder ini aman dijalankan berkali-kali tanpa
+     * duplikasi data.
      */
     private const START_DATE = '2026-01-01';
+
+    private const INITIAL_STOCK = 300;
+
+    private const RESTOCK_QTY = 150;
+
+    private const OPENING_CASH = 500000;
 
     public function run(): void
     {
@@ -35,10 +48,25 @@ class CafeStudyCaseSeeder extends Seeder
         $this->seedModifiers($tenant, $products);
         $paymentMethods = $this->seedPaymentMethods($tenant);
 
+        $this->resetTransactionalData($tenant, $variants);
+
         $stockLevels = $this->seedMonthlyStock($tenant, $variants);
-        $this->seedDailyTransactions($tenant, $variants, $paymentMethods, $stockLevels);
+        $dailySummary = $this->seedDailyTransactions($tenant, $variants, $paymentMethods, $stockLevels);
+        $this->seedCashDrawerSessions($tenant, $dailySummary);
 
         $this->command->info('✅ CafeStudyCaseSeeder selesai.');
+    }
+
+    /**
+     * Hapus data transaksional tenant ini (transactions cascade ke items &
+     * payments, plus stock_movements) dan kembalikan stok variant ke baseline,
+     * agar seeder ini bisa dijalankan ulang tanpa menumpuk data lama.
+     */
+    private function resetTransactionalData(Tenant $tenant, \Illuminate\Support\Collection $variants): void
+    {
+        DB::table('transactions')->where('tenant_id', $tenant->id)->delete();
+        DB::table('stock_movements')->where('tenant_id', $tenant->id)->delete();
+        DB::table('product_variants')->whereIn('id', $variants->pluck('id'))->update(['stock' => self::INITIAL_STOCK]);
     }
 
     private function seedTenantAndUsers(): Tenant
@@ -114,7 +142,6 @@ class CafeStudyCaseSeeder extends Seeder
 
         $products = collect();
         $variants = collect();
-        $initialStock = 300;
 
         foreach ($menu as [$name, $categoryName, $variantDefs]) {
             $product = Product::firstOrCreate(
@@ -126,7 +153,7 @@ class CafeStudyCaseSeeder extends Seeder
             foreach ($variantDefs as [$variantName, $price, $cost]) {
                 $variant = ProductVariant::firstOrCreate(
                     ['product_id' => $product->id, 'name' => $variantName],
-                    ['price' => $price, 'cost_price' => $cost, 'stock' => $initialStock]
+                    ['price' => $price, 'cost_price' => $cost, 'stock' => self::INITIAL_STOCK]
                 );
                 $variants->push($variant);
             }
@@ -192,18 +219,17 @@ class CafeStudyCaseSeeder extends Seeder
 
         $end = Carbon::now()->startOfDay();
         $cursor = Carbon::parse(self::START_DATE)->startOfMonth();
-        $restockQtyPerVariant = 150;
 
         $movements = [];
         while ($cursor->lte($end)) {
             foreach ($variants as $variant) {
-                $stockLevels[$variant->id] += $restockQtyPerVariant;
+                $stockLevels[$variant->id] += self::RESTOCK_QTY;
 
                 $movements[] = [
                     'tenant_id' => $tenant->id,
                     'product_variant_id' => $variant->id,
                     'type' => 'restock',
-                    'qty' => $restockQtyPerVariant,
+                    'qty' => self::RESTOCK_QTY,
                     'notes' => 'Restock bulanan '.$cursor->translatedFormat('F Y'),
                     'reference_id' => null,
                     'created_at' => $cursor->copy()->setTime(7, 0),
@@ -219,13 +245,14 @@ class CafeStudyCaseSeeder extends Seeder
 
     /**
      * @param  array<int, int>  $stockLevels
+     * @return array<string, array{cash_collected: float, change_given: float, day: Carbon}> rekap kas per hari (key: Y-m-d)
      */
     private function seedDailyTransactions(
         Tenant $tenant,
         \Illuminate\Support\Collection $variants,
         \Illuminate\Support\Collection $paymentMethods,
         array $stockLevels
-    ): void {
+    ): array {
         $kasir = User::where('tenant_id', $tenant->id)->where('role', 'cashier')->firstOrFail();
 
         $start = Carbon::parse(self::START_DATE)->startOfDay();
@@ -236,12 +263,15 @@ class CafeStudyCaseSeeder extends Seeder
         $movementsBulk = [];
         $txCounter = 1;
         $totalTransactions = 0;
+        $dailySummary = [];
 
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
             $isWeekend = in_array($date->dayOfWeek, [Carbon::SATURDAY, Carbon::SUNDAY]);
             $dailyTarget = $isWeekend ? rand(1_600_000, 2_000_000) : rand(1_000_000, 1_600_000);
 
             $dailyRevenue = 0;
+            $cashCollected = 0;
+            $changeGiven = 0;
             $safetyCounter = 0;
 
             while ($dailyRevenue < $dailyTarget && $safetyCounter < 200) {
@@ -291,6 +321,8 @@ class CafeStudyCaseSeeder extends Seeder
                     $roundTo = [1000, 2000, 5000][rand(0, 2)];
                     $tenderAmount = ceil($totalAmount / $roundTo) * $roundTo;
                     $changeAmount = $tenderAmount - $totalAmount;
+                    $cashCollected += $tenderAmount;
+                    $changeGiven += $changeAmount;
                 } else {
                     $tenderAmount = $totalAmount;
                     $changeAmount = 0;
@@ -353,6 +385,12 @@ class CafeStudyCaseSeeder extends Seeder
                     $movementsBulk = [];
                 }
             }
+
+            $dailySummary[$date->toDateString()] = [
+                'cash_collected' => $cashCollected,
+                'change_given' => $changeGiven,
+                'day' => $date->copy(),
+            ];
         }
 
         if (! empty($itemsBulk)) {
@@ -370,6 +408,66 @@ class CafeStudyCaseSeeder extends Seeder
         }
 
         $this->command->info("Transaksi harian: {$totalTransactions} baris ({$start->toDateString()} s.d. {$end->toDateString()}).");
+
+        return $dailySummary;
+    }
+
+    /**
+     * Sesi kas harian per kasir, dihitung dari kas cash & kembalian hari itu
+     * (logika sama seperti CashDrawerController::close()). Selisih penutupan
+     * kas disebar tiga kasus: pas (selisih 0), minus (kurang), dan plus (lebih),
+     * agar data demo mencakup skenario nyata rekonsiliasi kas.
+     *
+     * updateOrCreate dikunci ke tenant_id+user_id+opened_at supaya seeder ini
+     * aman dijalankan ulang tanpa membuat sesi kas duplikat.
+     *
+     * @param  array<string, array{cash_collected: float, change_given: float, day: Carbon}>  $dailySummary
+     */
+    private function seedCashDrawerSessions(Tenant $tenant, array $dailySummary): void
+    {
+        $kasir = User::where('tenant_id', $tenant->id)->where('role', 'cashier')->firstOrFail();
+
+        foreach ($dailySummary as $data) {
+            $day = $data['day'];
+            $expectedAmount = self::OPENING_CASH + $data['cash_collected'] - $data['change_given'];
+
+            $variance = rand(1, 100);
+            if ($variance <= 55) {
+                // Pas — selisih 0, hitungan kasir sama dengan sistem.
+                $difference = 0;
+                $notes = null;
+            } elseif ($variance <= 78) {
+                // Minus — kasir kurang (mis. salah kembalian, uang terselip).
+                $difference = -1 * ([2000, 5000, 8000, 10000, 15000, 20000][rand(0, 5)]);
+                $notes = 'Selisih kurang Rp'.number_format(abs($difference), 0, ',', '.').' — kas fisik lebih kecil dari catatan sistem.';
+            } else {
+                // Plus — kasir lebih (mis. kembalian kurang diberikan ke customer).
+                $difference = [2000, 5000, 8000, 10000, 15000, 20000][rand(0, 5)];
+                $notes = 'Selisih lebih Rp'.number_format($difference, 0, ',', '.').' — kas fisik lebih besar dari catatan sistem.';
+            }
+
+            $closingAmount = $expectedAmount + $difference;
+            $openedAt = $day->copy()->setTime(7, 0);
+            $closedAt = $day->copy()->setTime(22, 0);
+
+            CashDrawer::updateOrCreate(
+                [
+                    'tenant_id' => $tenant->id,
+                    'user_id' => $kasir->id,
+                    'opened_at' => $openedAt,
+                ],
+                [
+                    'opening_amount' => self::OPENING_CASH,
+                    'closing_amount' => $closingAmount,
+                    'expected_amount' => $expectedAmount,
+                    'difference' => $difference,
+                    'notes' => $notes,
+                    'closed_at' => $closedAt,
+                ]
+            );
+        }
+
+        $this->command->info('Sesi kas harian: '.count($dailySummary).' sesi (pas/minus/plus).');
     }
 
     private function randomHour(bool $isWeekend): int
