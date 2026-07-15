@@ -45,6 +45,27 @@
 
 ---
 
+### [ADDITION] Edit Transaksi (Owner & Kasir) + Recalc Stok & Audit Trail
+- **Tanggal:** 2026-07-14
+- **Fase Terkait:** Phase EDIT-TX (`docs/phases-2/PHASE-EDIT-TX_Owner-Cashier-Transaction-Edit.md`)
+- **Dampak:** Migration | Model | Service | Controller | Route | Frontend
+- **Breaking Change:** Tidak (migrasi hanya menambah kolom/enum value)
+- **Deskripsi:** Owner dapat mengedit transaksi `completed` kapan saja; kasir hanya untuk transaksi dalam shift laci kas miliknya yang masih terbuka (`created_at >= opened_at`, `closed_at = null`). Edit full (item, modifier, pembayaran) dengan stok dihitung ulang lewat **delta per varian** (satu `StockMovement` tipe `edit` per varian yang berubah), harga otoritatif dari DB, seluruhnya dalam satu `DB::transaction()` dengan `lockForUpdate()`. Setiap edit direkam di `transaction_edits` (before/after + alasan). UI berupa modal reusable yang membungkus `Components/Modal.vue` dan mereuse `ModifierModal`/`PaymentModal`.
+- **Alasan:** Memberi jalan resmi koreksi salah input tanpa void+input ulang, sambil menjaga integritas stok, laporan, dan kepercayaan data lewat audit trail.
+- **File Terdampak:**
+  - `database/migrations/..._add_edit_type_to_stock_movements.php` — tambah enum value `edit`
+  - `database/migrations/..._add_edit_columns_to_transactions.php` — `edited_at`, `edited_by`
+  - `database/migrations/..._create_transaction_edits_table.php` — tabel audit before/after
+  - `app/Models/{StockMovement,Transaction,TransactionEdit}.php` — konstanta, relasi `edits()`/`editor()`
+  - `app/Services/TransactionEditService.php` — logika edit + guard `assertEditable()`
+  - `app/Http/Requests/EditTransactionRequest.php`, `app/Http/Controllers/Cashier/TransactionEditController.php`
+  - `routes/web.php` — `PUT /cashier/transactions/{transaction}` (`cashier.transactions.update`)
+  - `app/Http/Controllers/Owner/ReportController.php`, `app/Http/Controllers/Cashier/POSController.php` — kirim katalog (deferred) + flag `can_edit`/riwayat edit
+  - `resources/js/Components/TransactionEditModal.vue` + entry point di `Owner/Transactions/Detail.vue` & `Cashier/TransactionHistory.vue`
+- **Catatan Migrasi:** Nilai enum `edit` juga ditambahkan ke migrasi create `stock_movements` agar konsisten pada driver SQLite (mengikuti pola penambahan `void`).
+
+---
+
 ### [DECISION] SumoPod Jadi Provider AI Default (OpenAI-Compatible Gateway)
 - **Tanggal:** 2026-07-11
 - **Fase Terkait:** Phase-AI-2 (AI Engine)
