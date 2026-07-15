@@ -9,6 +9,7 @@ const emit = defineEmits(['update:modelValue']);
 
 const open = ref(false);
 const container = ref(null);
+const popup = ref(null);
 const popupStyle = ref({});
 
 const CALENDAR_HEIGHT = 340;
@@ -148,7 +149,9 @@ const formattedDate = computed(() => {
 const dayHeaders = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 
 const handleClickOutside = (e) => {
-    if (container.value && !container.value.contains(e.target)) {
+    const insideContainer = container.value && container.value.contains(e.target);
+    const insidePopup = popup.value && popup.value.contains(e.target);
+    if (!insideContainer && !insidePopup) {
         open.value = false;
     }
 };
@@ -191,6 +194,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
         >
             <div
                 v-if="open"
+                ref="popup"
                 :style="popupStyle"
                 class="bg-white rounded-xl shadow-lg border border-gray-200 p-3 w-72 origin-top-left"
             >
