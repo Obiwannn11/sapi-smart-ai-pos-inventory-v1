@@ -9,15 +9,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockMovement extends Model
 {
-    use HasFactory, BelongsToTenant;
+    use BelongsToTenant, HasFactory;
 
     const UPDATED_AT = null;
 
     // Type constants
     const TYPE_SALE = 'sale';
+
     const TYPE_RESTOCK = 'restock';
+
     const TYPE_ADJUSTMENT = 'adjustment';
+
     const TYPE_VOID = 'void';
+
+    const TYPE_EDIT = 'edit';
 
     protected $fillable = [
         'tenant_id', 'product_variant_id', 'type', 'qty', 'notes', 'reference_id',
