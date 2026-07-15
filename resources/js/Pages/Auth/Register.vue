@@ -3,21 +3,24 @@ import { ref } from 'vue';
 import { useForm, Head, Link } from '@inertiajs/vue3';
 
 const form = useForm({
+    business_name: '',
+    name: '',
     email: '',
     password: '',
+    password_confirmation: '',
 });
 
 const showPassword = ref(false);
 
 const submit = () => {
-    form.post('/login', {
-        onFinish: () => form.reset('password'),
+    form.post('/register', {
+        onFinish: () => form.reset('password', 'password_confirmation'),
     });
 };
 </script>
 
 <template>
-    <Head title="Masuk" />
+    <Head title="Daftar" />
 
     <div class="min-h-screen flex flex-col md:flex-row">
 
@@ -68,28 +71,100 @@ const submit = () => {
 
                 <!-- Form heading -->
                 <div class="mb-8">
-                    <h1 class="text-2xl font-bold text-foreground tracking-tight">Masuk</h1>
+                    <h1 class="text-2xl font-bold text-foreground tracking-tight">Daftar</h1>
                     <p class="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                        Masukkan email dan kata sandi Anda
+                        Buat akun untuk mulai mengelola usaha Anda
                     </p>
                 </div>
 
                 <form @submit.prevent="submit" novalidate>
 
-                    <!-- Email -->
+                    <!-- Business Name -->
                     <div>
                         <label
-                            for="login-email"
+                            for="register-business-name"
+                            class="block text-sm font-medium text-foreground mb-1.5"
+                        >
+                            Nama Usaha
+                        </label>
+                        <input
+                            id="register-business-name"
+                            v-model="form.business_name"
+                            type="text"
+                            autocomplete="organization"
+                            autofocus
+                            placeholder="Warung Sapi"
+                            :aria-invalid="!!form.errors.business_name"
+                            aria-describedby="business-name-error"
+                            :class="[
+                                'w-full px-3 py-2.5 bg-card text-sm text-foreground',
+                                'placeholder:text-muted-foreground border rounded-lg',
+                                'transition-colors duration-150',
+                                'focus:outline-none focus:ring-2 focus:ring-offset-1',
+                                form.errors.business_name
+                                    ? 'border-destructive focus:ring-destructive/50'
+                                    : 'border-border hover:border-muted-foreground/35 focus:ring-ring'
+                            ]"
+                        />
+                        <p
+                            v-if="form.errors.business_name"
+                            id="business-name-error"
+                            role="alert"
+                            class="mt-1.5 text-xs text-destructive"
+                        >
+                            {{ form.errors.business_name }}
+                        </p>
+                    </div>
+
+                    <!-- Owner Name -->
+                    <div class="mt-5">
+                        <label
+                            for="register-name"
+                            class="block text-sm font-medium text-foreground mb-1.5"
+                        >
+                            Nama Pemilik
+                        </label>
+                        <input
+                            id="register-name"
+                            v-model="form.name"
+                            type="text"
+                            autocomplete="name"
+                            placeholder="Nama Anda"
+                            :aria-invalid="!!form.errors.name"
+                            aria-describedby="name-error"
+                            :class="[
+                                'w-full px-3 py-2.5 bg-card text-sm text-foreground',
+                                'placeholder:text-muted-foreground border rounded-lg',
+                                'transition-colors duration-150',
+                                'focus:outline-none focus:ring-2 focus:ring-offset-1',
+                                form.errors.name
+                                    ? 'border-destructive focus:ring-destructive/50'
+                                    : 'border-border hover:border-muted-foreground/35 focus:ring-ring'
+                            ]"
+                        />
+                        <p
+                            v-if="form.errors.name"
+                            id="name-error"
+                            role="alert"
+                            class="mt-1.5 text-xs text-destructive"
+                        >
+                            {{ form.errors.name }}
+                        </p>
+                    </div>
+
+                    <!-- Email -->
+                    <div class="mt-5">
+                        <label
+                            for="register-email"
                             class="block text-sm font-medium text-foreground mb-1.5"
                         >
                             Email
                         </label>
                         <input
-                            id="login-email"
+                            id="register-email"
                             v-model="form.email"
                             type="email"
                             autocomplete="email"
-                            autofocus
                             placeholder="nama@usaha.com"
                             :aria-invalid="!!form.errors.email"
                             aria-describedby="email-error"
@@ -116,17 +191,17 @@ const submit = () => {
                     <!-- Password -->
                     <div class="mt-5">
                         <label
-                            for="login-password"
+                            for="register-password"
                             class="block text-sm font-medium text-foreground mb-1.5"
                         >
                             Kata Sandi
                         </label>
                         <div class="relative">
                             <input
-                                id="login-password"
+                                id="register-password"
                                 v-model="form.password"
                                 :type="showPassword ? 'text' : 'password'"
-                                autocomplete="current-password"
+                                autocomplete="new-password"
                                 :aria-invalid="!!form.errors.password"
                                 aria-describedby="password-error"
                                 :class="[
@@ -188,6 +263,40 @@ const submit = () => {
                         </p>
                     </div>
 
+                    <!-- Password Confirmation -->
+                    <div class="mt-5">
+                        <label
+                            for="register-password-confirmation"
+                            class="block text-sm font-medium text-foreground mb-1.5"
+                        >
+                            Konfirmasi Kata Sandi
+                        </label>
+                        <input
+                            id="register-password-confirmation"
+                            v-model="form.password_confirmation"
+                            :type="showPassword ? 'text' : 'password'"
+                            autocomplete="new-password"
+                            :aria-invalid="!!form.errors.password_confirmation"
+                            aria-describedby="password-confirmation-error"
+                            :class="[
+                                'w-full px-3 py-2.5 bg-card text-sm text-foreground',
+                                'border rounded-lg transition-colors duration-150',
+                                'focus:outline-none focus:ring-2 focus:ring-offset-1',
+                                form.errors.password_confirmation
+                                    ? 'border-destructive focus:ring-destructive/50'
+                                    : 'border-border hover:border-muted-foreground/35 focus:ring-ring'
+                            ]"
+                        />
+                        <p
+                            v-if="form.errors.password_confirmation"
+                            id="password-confirmation-error"
+                            role="alert"
+                            class="mt-1.5 text-xs text-destructive"
+                        >
+                            {{ form.errors.password_confirmation }}
+                        </p>
+                    </div>
+
                     <!-- Submit -->
                     <button
                         type="submit"
@@ -217,19 +326,19 @@ const submit = () => {
                                    014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                             />
                         </svg>
-                        <span>{{ form.processing ? 'Memproses...' : 'Masuk' }}</span>
+                        <span>{{ form.processing ? 'Memproses...' : 'Daftar' }}</span>
                     </button>
 
                 </form>
 
-                <!-- Link to Register -->
+                <!-- Link to Login -->
                 <p class="mt-6 text-center text-sm text-muted-foreground">
-                    Belum punya akun?
+                    Sudah punya akun?
                     <Link
-                        href="/register"
+                        href="/login"
                         class="font-medium text-primary hover:text-primary/80 transition-colors duration-150"
                     >
-                        Daftar
+                        Masuk
                     </Link>
                 </p>
             </div>
