@@ -6,10 +6,13 @@ import ReceiptModal from '@/Components/ReceiptModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import DatePicker from '@/Components/DatePicker.vue';
+import TransactionEditModal from '@/Components/TransactionEditModal.vue';
 
 const props = defineProps({
     transactions: Object,
     filters: Object,
+    products: { type: Array, default: null },
+    paymentMethods: { type: Array, default: () => [] },
 });
 
 const statusOptions = [
@@ -72,6 +75,15 @@ const clearFilters = () => {
 const viewReceipt = (transaction) => {
     selectedTransaction.value = transaction;
     showReceiptModal.value = true;
+};
+
+// Edit transaksi
+const showEditModal = ref(false);
+const editingTransaction = ref(null);
+
+const openEdit = (transaction) => {
+    editingTransaction.value = transaction;
+    showEditModal.value = true;
 };
 
 </script>
@@ -152,15 +164,27 @@ const viewReceipt = (transaction) => {
 
                     <div class="flex items-center justify-between">
                         <span class="text-sm font-bold text-gray-800">{{ formatCurrency(tx.total_amount) }}</span>
-                        <button
-                            @click="viewReceipt(tx)"
-                            class="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
-                        >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                            </svg>
-                            Lihat Struk
-                        </button>
+                        <div class="flex items-center gap-3">
+                            <button
+                                v-if="tx.can_edit"
+                                @click="openEdit(tx)"
+                                class="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit
+                            </button>
+                            <button
+                                @click="viewReceipt(tx)"
+                                class="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                </svg>
+                                Lihat Struk
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -194,6 +218,15 @@ const viewReceipt = (transaction) => {
             :show="showReceiptModal"
             :transaction="selectedTransaction"
             @close="showReceiptModal = false"
+        />
+
+        <!-- Edit Transaksi Modal -->
+        <TransactionEditModal
+            :show="showEditModal"
+            :transaction="editingTransaction"
+            :products="products"
+            :payment-methods="paymentMethods"
+            @close="showEditModal = false"
         />
     </div>
 </template>

@@ -3,11 +3,14 @@ import { ref } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import TransactionEditModal from '@/Components/TransactionEditModal.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     transaction: Object,
+    products: { type: Array, default: null },
+    paymentMethods: { type: Array, default: () => [] },
 });
 
 const formatCurrency = (value) => {
@@ -64,6 +67,10 @@ const doVoid = () => {
         },
     });
 };
+
+// Edit logic — owner boleh edit transaksi completed kapan saja.
+const showEditModal = ref(false);
+const canEdit = () => props.transaction.status === 'completed';
 </script>
 
 <template>
@@ -87,14 +94,23 @@ const doVoid = () => {
                 <p class="text-sm text-gray-500 mt-1 ml-8">{{ formatDateTime(transaction.created_at) }}</p>
             </div>
 
-            <button
-                v-if="canVoid()"
-                @click="showVoidDialog = true"
-                class="px-4 py-2 bg-destructive text-destructive-foreground text-sm font-medium rounded-lg hover:bg-destructive/90 transition-colors"
-                :disabled="voidForm.processing"
-            >
-                Void Transaksi
-            </button>
+            <div class="flex items-center gap-2">
+                <button
+                    v-if="canEdit()"
+                    @click="showEditModal = true"
+                    class="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                    Edit Transaksi
+                </button>
+                <button
+                    v-if="canVoid()"
+                    @click="showVoidDialog = true"
+                    class="px-4 py-2 bg-destructive text-destructive-foreground text-sm font-medium rounded-lg hover:bg-destructive/90 transition-colors"
+                    :disabled="voidForm.processing"
+                >
+                    Void Transaksi
+                </button>
+            </div>
         </div>
 
         <!-- Info -->
@@ -214,6 +230,24 @@ const doVoid = () => {
                 </table>
             </div>
         </div>
+        <!-- Riwayat Edit -->
+        <div v-if="transaction.edits && transaction.edits.length" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100">
+                <h3 class="text-sm font-semibold text-gray-700">Riwayat Edit</h3>
+            </div>
+            <ul class="divide-y divide-gray-50">
+                <li v-for="edit in transaction.edits" :key="edit.id" class="px-5 py-3 text-sm">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-gray-800">{{ edit.user?.name || 'Pengguna' }}</span>
+                        <span class="text-xs text-gray-400">{{ formatDateTime(edit.created_at) }}</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Total {{ formatCurrency(edit.before?.total_amount || 0) }} → {{ formatCurrency(edit.after?.total_amount || 0) }}
+                        <span v-if="edit.reason"> — {{ edit.reason }}</span>
+                    </p>
+                </li>
+            </ul>
+        </div>
     </div>
 
     <!-- Void Confirmation Dialog -->
@@ -225,5 +259,15 @@ const doVoid = () => {
         variant="danger"
         @confirm="doVoid"
         @cancel="showVoidDialog = false"
+    />
+
+    <!-- Edit Transaksi Modal -->
+    <TransactionEditModal
+        :show="showEditModal"
+        :transaction="transaction"
+        :products="products"
+        :payment-methods="paymentMethods"
+        :is-past-record="!isToday()"
+        @close="showEditModal = false"
     />
 </template>
