@@ -8,6 +8,8 @@ use App\Models\StockMovement;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Str;
+
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
@@ -80,22 +82,22 @@ test('checkout creates transaction and deducts stock', function () {
     actingAs($cashier);
 
     post('/cashier/transactions', [
-            'items' => [
-                [
-                    'variant_id' => $variant->id,
-                    'variant_name' => $variant->name,
-                    'qty' => 2,
-                    'unit_price' => $variant->price,
-                    'modifiers' => [],
-                ],
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 2,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
             ],
-            'payments' => [
-                [
-                    'payment_method_id' => $paymentMethod->id,
-                    'amount' => 50000,
-                ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 50000,
             ],
-        ])
+        ],
+    ])
         ->assertSessionHas('success');
 
     // Verify transaction created
@@ -128,26 +130,101 @@ test('checkout fails when stock is insufficient', function () {
     actingAs($cashier);
 
     post('/cashier/transactions', [
-            'items' => [
-                [
-                    'variant_id' => $variant->id,
-                    'variant_name' => $variant->name,
-                    'qty' => 999,
-                    'unit_price' => $variant->price,
-                    'modifiers' => [],
-                ],
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 999,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
             ],
-            'payments' => [
-                [
-                    'payment_method_id' => $paymentMethod->id,
-                    'amount' => 999 * 25000,
-                ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 999 * 25000,
             ],
-        ])
+        ],
+    ])
         ->assertSessionHas('error');
 
     // Stock unchanged
     expect($variant->fresh()->stock)->toBe(50);
+});
+
+test('checkout is idempotent for a repeated client_uuid', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    $clientUuid = (string) Str::uuid();
+
+    $payload = [
+        'client_uuid' => $clientUuid,
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 2,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 50000,
+            ],
+        ],
+    ];
+
+    post('/cashier/transactions', $payload)->assertSessionHas('success');
+    post('/cashier/transactions', $payload)->assertSessionHas('success');
+
+    // Only one transaction persisted for this client_uuid
+    expect(Transaction::query()->where('client_uuid', $clientUuid)->count())->toBe(1);
+
+    // Stock deducted exactly once (50 - 2), not twice
+    expect($variant->fresh()->stock)->toBe(48);
+});
+
+test('checkout rejects a malformed client_uuid', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'client_uuid' => 'not-a-uuid',
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 25000,
+            ],
+        ],
+    ])->assertSessionHasErrors('client_uuid');
+
+    expect(Transaction::query()->count())->toBe(0);
 });
 
 test('checkout with modifiers includes modifier extra price', function () {
@@ -171,28 +248,28 @@ test('checkout with modifiers includes modifier extra price', function () {
     actingAs($cashier);
 
     post('/cashier/transactions', [
-            'items' => [
-                [
-                    'variant_id' => $variant->id,
-                    'variant_name' => $variant->name,
-                    'qty' => 1,
-                    'unit_price' => $variant->price,
-                    'modifiers' => [
-                        [
-                            'id' => $modifier->id,
-                            'name' => $modifier->name,
-                            'extra_price' => $modifier->extra_price,
-                        ],
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => $variant->price,
+                'modifiers' => [
+                    [
+                        'id' => $modifier->id,
+                        'name' => $modifier->name,
+                        'extra_price' => $modifier->extra_price,
                     ],
                 ],
             ],
-            'payments' => [
-                [
-                    'payment_method_id' => $paymentMethod->id,
-                    'amount' => 30000, // 25000 + 5000
-                ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 30000, // 25000 + 5000
             ],
-        ])
+        ],
+    ])
         ->assertSessionHas('success');
 
     // Total = unit_price (25000) + modifier (5000) = 30000

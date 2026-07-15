@@ -5,8 +5,8 @@ namespace App\Services;
 use App\Models\Modifier;
 use App\Models\ProductVariant;
 use App\Models\Transaction;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class TransactionService
@@ -22,16 +22,28 @@ class TransactionService
      */
     public function checkout(array $data): Transaction
     {
-        $isOpenBill = !empty($data['is_open_bill']);
+        $isOpenBill = ! empty($data['is_open_bill']);
 
         return DB::transaction(function () use ($data, $isOpenBill) {
             $user = Auth::user();
 
-            if (!$user) {
+            if (! $user) {
                 throw new \Exception('User tidak terautentikasi.');
             }
 
             $tenantId = $user->tenant_id;
+
+            // 0. Idempotensi: kalau client_uuid sudah pernah diproses, kembalikan
+            //    transaksi lama (retry jaringan / double-submit jadi no-op).
+            if (! empty($data['client_uuid'])) {
+                $existing = Transaction::where('tenant_id', $tenantId)
+                    ->where('client_uuid', $data['client_uuid'])
+                    ->first();
+
+                if ($existing) {
+                    return $existing->load(['items.modifiers', 'payments.paymentMethod']);
+                }
+            }
 
             // 1. Generate kode transaksi
             $code = $this->generateTransactionCode($tenantId);
@@ -42,18 +54,19 @@ class TransactionService
 
             // 3. Buat transaksi
             $transaction = Transaction::create([
-                'tenant_id'          => $tenantId,
-                'user_id'            => $user->id,
-                'code'               => $code,
-                'status'             => Transaction::STATUS_PENDING,
-                'total_amount'       => 0,
-                'change_amount'      => 0,
-                'notes'              => $data['notes'] ?? null,
-                'source'             => $data['source'] ?? Transaction::SOURCE_POS,
-                'order_type'         => $data['order_type'] ?? Transaction::ORDER_TYPE_DINE_IN,
+                'tenant_id' => $tenantId,
+                'user_id' => $user->id,
+                'code' => $code,
+                'client_uuid' => $data['client_uuid'] ?? null,
+                'status' => Transaction::STATUS_PENDING,
+                'total_amount' => 0,
+                'change_amount' => 0,
+                'notes' => $data['notes'] ?? null,
+                'source' => $data['source'] ?? Transaction::SOURCE_POS,
+                'order_type' => $data['order_type'] ?? Transaction::ORDER_TYPE_DINE_IN,
                 'fulfillment_status' => $fulfillmentStatus,
-                'customer_name'      => $data['customer_name'] ?? null,
-                'table_number'       => $data['table_number'] ?? null,
+                'customer_name' => $data['customer_name'] ?? null,
+                'table_number' => $data['table_number'] ?? null,
             ]);
 
             $totalAmount = 0;
@@ -81,8 +94,8 @@ class TransactionService
             foreach ($data['payments'] as $payment) {
                 $transaction->payments()->create([
                     'payment_method_id' => $payment['payment_method_id'],
-                    'amount'            => $payment['amount'],
-                    'reference_code'    => $payment['reference_code'] ?? null,
+                    'amount' => $payment['amount'],
+                    'reference_code' => $payment['reference_code'] ?? null,
                 ]);
             }
 
@@ -103,7 +116,7 @@ class TransactionService
         return DB::transaction(function () use ($data) {
             $user = Auth::user();
 
-            if (!$user) {
+            if (! $user) {
                 throw new \Exception('User tidak terautentikasi.');
             }
 
@@ -112,18 +125,18 @@ class TransactionService
 
             // Buat transaksi — fulfillment NULL karena belum bayar
             $transaction = Transaction::create([
-                'tenant_id'          => $tenantId,
-                'user_id'            => $user->id,
-                'code'               => $code,
-                'status'             => Transaction::STATUS_PENDING,
-                'total_amount'       => 0,
-                'change_amount'      => 0,
-                'notes'              => $data['notes'] ?? null,
-                'source'             => Transaction::SOURCE_SELF_ORDER,
-                'order_type'         => $data['order_type'] ?? Transaction::ORDER_TYPE_DINE_IN,
+                'tenant_id' => $tenantId,
+                'user_id' => $user->id,
+                'code' => $code,
+                'status' => Transaction::STATUS_PENDING,
+                'total_amount' => 0,
+                'change_amount' => 0,
+                'notes' => $data['notes'] ?? null,
+                'source' => Transaction::SOURCE_SELF_ORDER,
+                'order_type' => $data['order_type'] ?? Transaction::ORDER_TYPE_DINE_IN,
                 'fulfillment_status' => null, // Belum aktif — menunggu bayar
-                'customer_name'      => $data['customer_name'] ?? null,
-                'table_number'       => $data['table_number'] ?? null,
+                'customer_name' => $data['customer_name'] ?? null,
+                'table_number' => $data['table_number'] ?? null,
             ]);
 
             // Simpan items + modifiers (SNAPSHOT) — TANPA deduct stok
@@ -157,7 +170,7 @@ class TransactionService
             foreach ($transaction->items as $item) {
                 $variant = ProductVariant::lockForUpdate()->find($item->product_variant_id);
 
-                if (!$variant || $variant->stock < $item->qty) {
+                if (! $variant || $variant->stock < $item->qty) {
                     $variantName = $variant?->name ?? 'produk';
                     $variantStock = $variant?->stock ?? 0;
                     throw new \Exception(
@@ -178,7 +191,7 @@ class TransactionService
                     ->first();
 
                 // Fallback: kalau tidak ada, pakai cash (placeholder)
-                if (!$paymentMethod) {
+                if (! $paymentMethod) {
                     $paymentMethod = \App\Models\PaymentMethod::where('is_active', true)
                         ->where('type', 'cash')
                         ->first();
@@ -187,15 +200,15 @@ class TransactionService
                 if ($paymentMethod) {
                     $transaction->payments()->create([
                         'payment_method_id' => $paymentMethod->id,
-                        'amount'            => $transaction->total_amount,
-                        'reference_code'    => $referenceCode,
+                        'amount' => $transaction->total_amount,
+                        'reference_code' => $referenceCode,
                     ]);
                 }
             }
 
             // 3. Update status + aktifkan fulfillment
             $transaction->update([
-                'status'             => Transaction::STATUS_COMPLETED,
+                'status' => Transaction::STATUS_COMPLETED,
                 'fulfillment_status' => Transaction::FULFILLMENT_WAITING,
             ]);
 
@@ -239,7 +252,7 @@ class TransactionService
 
             if ($totalPaid < $totalAmount) {
                 throw new \Exception(
-                    "Total pembayaran kurang. Harus: " . number_format($totalAmount) . ", dibayar: " . number_format($totalPaid)
+                    'Total pembayaran kurang. Harus: '.number_format($totalAmount).', dibayar: '.number_format($totalPaid)
                 );
             }
 
@@ -247,14 +260,14 @@ class TransactionService
             foreach ($payments as $payment) {
                 $transaction->payments()->create([
                     'payment_method_id' => $payment['payment_method_id'],
-                    'amount'            => $payment['amount'],
-                    'reference_code'    => $payment['reference_code'] ?? null,
+                    'amount' => $payment['amount'],
+                    'reference_code' => $payment['reference_code'] ?? null,
                 ]);
             }
 
             $transaction->update([
                 'change_amount' => $changeAmount,
-                'status'        => Transaction::STATUS_COMPLETED,
+                'status' => Transaction::STATUS_COMPLETED,
             ]);
 
             return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
@@ -271,7 +284,7 @@ class TransactionService
         }
 
         // MVP: hanya bisa void transaksi hari ini
-        if (!$transaction->created_at->isToday()) {
+        if (! $transaction->created_at->isToday()) {
             throw new \Exception('Hanya bisa void transaksi hari ini.');
         }
 
@@ -279,7 +292,7 @@ class TransactionService
             // Kembalikan stok (handle soft-deleted variants)
             foreach ($transaction->items as $item) {
                 $variant = $item->variant()->withTrashed()->first();
-                if (!$variant) {
+                if (! $variant) {
                     continue; // Variant permanently deleted, skip restore
                 }
                 $this->stockService->restore($variant, $item->qty, $transaction->id);
@@ -295,7 +308,7 @@ class TransactionService
      * Proses items: simpan snapshot + opsional deduct stok.
      * Dipakai oleh checkout() dan createSelfOrder().
      *
-     * @param bool $deductStock true = kurangi stok (POS), false = cek saja (self-order)
+     * @param  bool  $deductStock  true = kurangi stok (POS), false = cek saja (self-order)
      * @return float Total amount dari semua items
      */
     private function processItems(Transaction $transaction, array $items, bool $deductStock): float
@@ -306,7 +319,7 @@ class TransactionService
             // Lock row variant untuk mencegah race condition
             $variant = ProductVariant::lockForUpdate()->find($item['variant_id']);
 
-            if (!$variant || $variant->stock < $item['qty']) {
+            if (! $variant || $variant->stock < $item['qty']) {
                 $variantName = $variant?->name ?? 'produk';
                 $variantStock = $variant?->stock ?? 0;
                 throw new \Exception(
@@ -321,15 +334,15 @@ class TransactionService
             // Hitung total modifier extra price per item from DB
             $modifierTotal = 0;
             $resolvedModifiers = [];
-            if (!empty($item['modifiers'])) {
+            if (! empty($item['modifiers'])) {
                 foreach ($item['modifiers'] as $mod) {
                     $dbModifier = Modifier::find($mod['id']);
-                    if (!$dbModifier) {
+                    if (! $dbModifier) {
                         throw new \Exception("Modifier #{$mod['id']} tidak ditemukan.");
                     }
                     $resolvedModifiers[] = [
-                        'id'          => $dbModifier->id,
-                        'name'        => $dbModifier->name,
+                        'id' => $dbModifier->id,
+                        'name' => $dbModifier->name,
                         'extra_price' => $dbModifier->extra_price,
                     ];
                     $modifierTotal += $dbModifier->extra_price;
@@ -340,19 +353,19 @@ class TransactionService
 
             $txItem = $transaction->items()->create([
                 'product_variant_id' => $variant->id,
-                'variant_name'       => $item['variant_name'],      // SNAPSHOT
-                'qty'                => $item['qty'],
-                'unit_price'         => $unitPrice,                 // SNAPSHOT from DB
-                'subtotal'           => $subtotal,
-                'notes'              => $item['notes'] ?? null,     // Catatan per item
+                'variant_name' => $item['variant_name'],      // SNAPSHOT
+                'qty' => $item['qty'],
+                'unit_price' => $unitPrice,                 // SNAPSHOT from DB
+                'subtotal' => $subtotal,
+                'notes' => $item['notes'] ?? null,     // Catatan per item
             ]);
 
             // Simpan modifier snapshots (from DB values)
             foreach ($resolvedModifiers as $modifier) {
                 $txItem->modifiers()->create([
-                    'modifier_id'   => $modifier['id'],
+                    'modifier_id' => $modifier['id'],
                     'modifier_name' => $modifier['name'],           // SNAPSHOT
-                    'extra_price'   => $modifier['extra_price'],    // SNAPSHOT from DB
+                    'extra_price' => $modifier['extra_price'],    // SNAPSHOT from DB
                 ]);
             }
 
@@ -387,7 +400,6 @@ class TransactionService
             $nextNumber = 1;
         }
 
-        return sprintf("TRX-%s-%03d", $today, $nextNumber);
+        return sprintf('TRX-%s-%03d', $today, $nextNumber);
     }
-
 }

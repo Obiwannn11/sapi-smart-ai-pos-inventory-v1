@@ -18,7 +18,7 @@ class StoreTransactionRequest extends FormRequest
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return [];
         }
 
@@ -26,18 +26,18 @@ class StoreTransactionRequest extends FormRequest
 
         return [
             // Items
-            'items'                           => 'required|array|min:1',
-            'items.*.variant_id'              => [
+            'items' => 'required|array|min:1',
+            'items.*.variant_id' => [
                 'required',
                 Rule::exists('product_variants', 'id')->where(function ($q) use ($tenantId) {
                     $q->whereIn('product_id', Product::where('tenant_id', $tenantId)->pluck('id'));
                 }),
             ],
-            'items.*.variant_name'            => 'required|string|max:255',
-            'items.*.qty'                     => 'required|integer|min:1',
-            'items.*.unit_price'              => 'required|numeric|min:0',
-            'items.*.modifiers'               => 'nullable|array',
-            'items.*.modifiers.*.id'          => [
+            'items.*.variant_name' => 'required|string|max:255',
+            'items.*.qty' => 'required|integer|min:1',
+            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.modifiers' => 'nullable|array',
+            'items.*.modifiers.*.id' => [
                 'required',
                 Rule::exists('modifiers', 'id')->where(function ($q) use ($tenantId) {
                     $q->whereIn('modifier_group_id',
@@ -45,18 +45,18 @@ class StoreTransactionRequest extends FormRequest
                     );
                 }),
             ],
-            'items.*.modifiers.*.name'        => 'required|string|max:255',
+            'items.*.modifiers.*.name' => 'required|string|max:255',
             'items.*.modifiers.*.extra_price' => 'required|numeric|min:0',
-            'items.*.notes'                   => 'nullable|string|max:500',
+            'items.*.notes' => 'nullable|string|max:500',
 
             // Payments (nullable for open bill)
-            'payments'                        => 'nullable|array|min:1',
-            'payments.*.payment_method_id'    => [
+            'payments' => 'nullable|array|min:1',
+            'payments.*.payment_method_id' => [
                 'required',
                 Rule::exists('payment_methods', 'id')->where('tenant_id', $tenantId),
             ],
-            'payments.*.amount'               => 'required|numeric|min:0',
-            'payments.*.reference_code'       => 'nullable|string|max:255',
+            'payments.*.amount' => 'required|numeric|min:0',
+            'payments.*.reference_code' => 'nullable|string|max:255',
 
             // Notes
             'notes' => 'nullable|string|max:1000',
@@ -66,6 +66,9 @@ class StoreTransactionRequest extends FormRequest
 
             // Open bill flag
             'is_open_bill' => 'nullable|boolean',
+
+            // Idempotency key (client-generated per checkout)
+            'client_uuid' => 'nullable|uuid',
         ];
     }
 
@@ -91,13 +94,14 @@ class StoreTransactionRequest extends FormRequest
             // Payments required for non-open-bill
             if (empty($this->input('payments'))) {
                 $validator->errors()->add('payments', 'Metode pembayaran harus dipilih.');
+
                 return;
             }
 
             $totalBelanja = 0;
             foreach ($this->input('items', []) as $item) {
                 $itemTotal = ($item['unit_price'] ?? 0) * ($item['qty'] ?? 0);
-                if (!empty($item['modifiers'])) {
+                if (! empty($item['modifiers'])) {
                     $modifierExtra = collect($item['modifiers'])->sum('extra_price');
                     $itemTotal += $modifierExtra * ($item['qty'] ?? 0);
                 }

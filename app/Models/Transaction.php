@@ -39,7 +39,7 @@ class Transaction extends Model
     const FULFILLMENT_DONE = 'done';
 
     protected $fillable = [
-        'tenant_id', 'user_id', 'code', 'status',
+        'tenant_id', 'user_id', 'code', 'client_uuid', 'status',
         'total_amount', 'change_amount', 'notes',
         'source', 'order_type', 'fulfillment_status',
         'customer_name', 'table_number',

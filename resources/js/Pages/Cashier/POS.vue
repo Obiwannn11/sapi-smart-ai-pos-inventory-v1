@@ -33,6 +33,18 @@ const showSuccessModal = ref(false);
 const showReceiptModal = ref(false);
 const lastTransaction = ref(null);
 const processing = ref(false);
+
+// Idempotency key per checkout. Dibuat sekali per percobaan checkout dan
+// dipertahankan lintas retry (jaringan flaky) supaya server men-dedup dobel
+// request; direset ke null hanya setelah transaksi sukses dibuat.
+const checkoutUuid = ref(null);
+const getCheckoutUuid = () => {
+    if (!checkoutUuid.value) {
+        checkoutUuid.value = crypto.randomUUID();
+    }
+    return checkoutUuid.value;
+};
+
 const showOpenBills = ref(false);
 const selectedOpenBill = ref(null);
 const showOpenBillPayment = ref(false);
@@ -211,6 +223,7 @@ const handlePayment = (payments) => {
         })),
         payments: payments,
         notes: null,
+        client_uuid: getCheckoutUuid(),
     };
 
     router.post('/cashier/transactions', data, {
@@ -223,6 +236,7 @@ const handlePayment = (payments) => {
                 showSuccessModal.value = true;
             }
             cart.value = [];
+            checkoutUuid.value = null;
         },
         onFinish: () => {
             processing.value = false;
@@ -270,12 +284,14 @@ const confirmSaveOpenBill = () => {
         notes: null,
         is_open_bill: true,
         customer_name: openBillCustomerName.value.trim() || null,
+        client_uuid: getCheckoutUuid(),
     };
 
     router.post('/cashier/transactions', data, {
         preserveScroll: true,
         onSuccess: () => {
             cart.value = [];
+            checkoutUuid.value = null;
         },
         onFinish: () => {
             processing.value = false;

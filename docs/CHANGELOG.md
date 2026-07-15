@@ -45,6 +45,23 @@
 
 ---
 
+### [SCHEMA] Idempotency `client_uuid` di Checkout (PWA Fase A)
+- **Tanggal:** 2026-07-15
+- **Fase Terkait:** Phase PWA (`docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md`) — Fase A
+- **Dampak:** Migration | Model | Service | Request | Frontend
+- **Breaking Change:** Tidak (kolom baru `nullable`; payload `client_uuid` opsional)
+- **Deskripsi:** Menambah kolom `client_uuid` (nullable) di `transactions` dengan unique `(tenant_id, client_uuid)`. Client (`POS.vue`) membuat `crypto.randomUUID()` sekali per percobaan checkout dan mempertahankannya lintas retry; direset hanya setelah sukses. `TransactionService::checkout()` mendedup by `client_uuid` — request identik (retry jaringan flaky / double-submit) mengembalikan transaksi lama sebagai no-op alih-alih menggandakan. Berlaku untuk checkout normal maupun open bill. Ini fondasi idempotensi untuk offline-sync (Fase C) sekaligus menutup celah double-input online sekarang.
+- **Alasan:** Guard `processing` di UI tidak melindungi dari retry jaringan; `client_uuid` memberi perlindungan double-input di lapisan jaringan/server.
+- **File Terdampak:**
+  - `database/migrations/2026_07_13_175345_add_client_uuid_to_transactions_table.php` — kolom + unique `(tenant_id, client_uuid)`
+  - `app/Models/Transaction.php` — `client_uuid` di `$fillable`
+  - `app/Services/TransactionService.php` — dedup by `client_uuid` di `checkout()`
+  - `app/Http/Requests/StoreTransactionRequest.php` — validasi `client_uuid` → `nullable|uuid`
+  - `resources/js/Pages/Cashier/POS.vue` — generate/kirim/reset UUID per checkout (normal + open bill)
+  - `tests/Feature/Cashier/POSTest.php` — cakupan idempotensi
+
+---
+
 ### [ADDITION] Edit Transaksi (Owner & Kasir) + Recalc Stok & Audit Trail
 - **Tanggal:** 2026-07-14
 - **Fase Terkait:** Phase EDIT-TX (`docs/phases-2/PHASE-EDIT-TX_Owner-Cashier-Transaction-Edit.md`)
