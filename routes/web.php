@@ -109,6 +109,10 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
         Route::post('/transactions/{transaction}/pay', [\App\Http\Controllers\Cashier\POSController::class, 'payOpenBill'])
             ->name('transactions.pay');
 
+        // Edit transaksi (owner kapan saja; kasir hanya dalam shift laci terbuka — ditegakkan di service)
+        Route::put('/transactions/{transaction}', [\App\Http\Controllers\Cashier\TransactionEditController::class, 'update'])
+            ->name('transactions.update');
+
         // Transaction History (kasir)
         Route::get('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'history'])
             ->name('transactions.index');
