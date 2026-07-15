@@ -140,6 +140,9 @@ const renderMarkdown = (raw) => {
     const html = [];
     let listType = null; // 'ul' | 'ol'
 
+    const bulletRe = /^[-*]\s+(.*)$/;
+    const orderedRe = /^\d+\.\s+(.*)$/;
+
     const closeList = () => {
         if (listType) {
             html.push(`</${listType}>`);
@@ -147,16 +150,39 @@ const renderMarkdown = (raw) => {
         }
     };
 
+    // Whether the next non-empty line continues the currently open list. LLMs
+    // often insert a blank line between list items for readability; without this
+    // each item would close and reopen the list, restarting <ol> numbering at 1.
+    const nextLineContinuesList = (startIndex) => {
+        for (let j = startIndex; j < lines.length; j++) {
+            const next = lines[j].trim();
+            if (next === '') {
+                continue;
+            }
+            if (listType === 'ul') {
+                return bulletRe.test(next);
+            }
+            if (listType === 'ol') {
+                return orderedRe.test(next);
+            }
+            return false;
+        }
+        return false;
+    };
+
     const inline = (text) =>
         text
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             .replace(/(^|[^*])\*(?!\s)(.+?)\*/g, '$1<em>$2</em>');
 
-    for (const line of lines) {
-        const trimmed = line.trim();
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
 
         if (trimmed === '') {
-            closeList();
+            // Keep the list open across blank separators between items.
+            if (!nextLineContinuesList(i + 1)) {
+                closeList();
+            }
             continue;
         }
 
@@ -168,7 +194,7 @@ const renderMarkdown = (raw) => {
             continue;
         }
 
-        const bullet = trimmed.match(/^[-*]\s+(.*)$/);
+        const bullet = trimmed.match(bulletRe);
         if (bullet) {
             if (listType !== 'ul') {
                 closeList();
@@ -179,7 +205,7 @@ const renderMarkdown = (raw) => {
             continue;
         }
 
-        const ordered = trimmed.match(/^\d+\.\s+(.*)$/);
+        const ordered = trimmed.match(orderedRe);
         if (ordered) {
             if (listType !== 'ol') {
                 closeList();

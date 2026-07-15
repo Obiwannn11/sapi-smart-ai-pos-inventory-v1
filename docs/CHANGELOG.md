@@ -45,6 +45,18 @@
 
 ---
 
+### [HOTFIX] Penomoran Ordered List Hasil AI (BL-001)
+- **Tanggal:** 2026-07-15
+- **Fase Terkait:** Di Luar Fase (backlog `BL-001`)
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** `renderMarkdown()` menutup `<ol>`/`<ul>` setiap kali menemui baris kosong. Karena output LLM sering menyisipkan baris kosong antar item list, tiap item jadi list terpisah dan browser menomori ulang mulai "1." (tampil "1. 1. 1."). Kini saat menemui baris kosong, renderer mengintip baris non-kosong berikutnya: bila masih item list dengan tipe sama, list dibiarkan terbuka (baris kosong = pemisah item), selain itu list ditutup seperti semula. List campuran (ol→ul) dan list yang diikuti paragraf tetap terpisah dengan benar.
+- **Alasan:** Menampilkan penomoran hasil analisis AI sesuai maksud ("1. 2. 3.") tanpa menambah dependency markdown.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/AiAnalysis/Index.vue` — `renderMarkdown()` look-ahead pada baris kosong
+
+---
+
 ### [SCHEMA] Idempotency `client_uuid` di Checkout (PWA Fase A)
 - **Tanggal:** 2026-07-15
 - **Fase Terkait:** Phase PWA (`docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md`) — Fase A
