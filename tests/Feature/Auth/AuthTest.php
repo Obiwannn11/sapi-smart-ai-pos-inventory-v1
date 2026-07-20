@@ -75,7 +75,9 @@ test('owner can access cashier routes', function () {
 
     actingAs($owner);
 
-    get('/cashier/cash-drawer')->assertStatus(200);
+    // Owner melewati gerbang role kasir dan boleh membuka POS.
+    // (Rute /cashier/cash-drawer sengaja mengalihkan owner ke POS — lihat CashDrawerController@index.)
+    get('/cashier/pos')->assertStatus(200);
 });
 
 test('unauthenticated user is redirected to login', function () {

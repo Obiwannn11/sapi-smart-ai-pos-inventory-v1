@@ -40,10 +40,16 @@
 
 ## Daftar Isu (Open / In Progress)
 
+_(kosong — belum ada isu terbuka)_
+
+---
+
+## Riwayat Selesai
+
 ### [BL-002] Dua Test Gagal (Pre-existing) di Suite
 - **Ditemukan:** 2026-07-16
 - **Sumber:** Menjalankan suite lengkap saat mengerjakan PWA Fase B/C/D. Diverifikasi **bukan** regresi: keduanya juga gagal pada working tree bersih (`git stash` lalu run ulang).
-- **Status:** Open
+- **Status:** Selesai (2026-07-21) — lihat `[HOTFIX] Ekspektasi Dua Test Usang (BL-002)` di `docs/CHANGELOG.md`
 - **Prioritas:** Medium (menutupi sinyal CI — dua kegagalan tetap membuat suite merah, sehingga regresi baru mudah terlewat)
 - **Area Terdampak:**
   - `tests/Feature/ExampleTest.php:6` — `the application returns a successful response`
@@ -51,13 +57,8 @@
 - **Deskripsi:**
   1. `ExampleTest` meng-assert `GET /` mengembalikan `302`, tetapi kini mengembalikan `200`. Kemungkinan test bawaan yang tidak pernah disesuaikan setelah halaman root berubah.
   2. `AuthTest > owner can access cashier routes` meng-assert `GET /cashier/cash-drawer` mengembalikan `200` untuk owner, tetapi mengembalikan `302`. Kemungkinan owner ikut diarahkan oleh guard laci kas, atau ekspektasi test sudah usang terhadap perilaku sekarang.
-- **Usulan Perbaikan:** Tentukan mana yang benar — perilaku aplikasi atau ekspektasi test — lalu perbaiki sisi yang salah. Kalau `ExampleTest` memang sisa scaffolding, hapus (butuh persetujuan: `CLAUDE.md` melarang hapus test tanpa approval).
-
----
-
----
-
-## Riwayat Selesai
+- **Penyebab:** Kedua **ekspektasi test** yang usang, bukan bug aplikasi. `/` kini me-render landing page (200) lewat `LandingController@index`. `/cashier/cash-drawer` **sengaja** mengalihkan owner ke POS (`CashDrawerController@index` baris 23–25: "Sesi kas hanya untuk kasir; owner diarahkan ke POS") → owner dapat 302.
+- **Perbaikan:** `ExampleTest` di-assert `200` (sesuai nama test "successful response"). `AuthTest > owner can access cashier routes` diarahkan ke `/cashier/pos` — rute kasir yang benar-benar ter-render untuk owner (owner melewati gerbang role `role:cashier,owner`), sambil mempertahankan niat test. Suite penuh hijau (206 passed).
 
 ### [BL-001] Penomoran Ordered List Hasil AI Selalu "1." (Tidak Increment)
 - **Ditemukan:** 2026-07-11

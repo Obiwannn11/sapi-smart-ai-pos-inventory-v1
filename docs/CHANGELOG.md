@@ -45,6 +45,20 @@
 
 ---
 
+### [HOTFIX] Ekspektasi Dua Test Usang (BL-002)
+- **Tanggal:** 2026-07-21
+- **Fase Terkait:** Di Luar Fase (backlog `BL-002`)
+- **Dampak:** Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Dua test dengan ekspektasi usang membuat suite selalu merah (menutupi sinyal regresi). `ExampleTest` meng-assert `GET /` → `302`, padahal `/` kini me-render landing page (`200`). `AuthTest > owner can access cashier routes` meng-assert `GET /cashier/cash-drawer` → `200` untuk owner, padahal rute itu **sengaja** mengalihkan owner ke POS (`302`). Keduanya adalah ekspektasi test yang salah, bukan bug aplikasi.
+- **Alasan:** Suite hijau adalah pagar agar regresi baru mudah terdeteksi; dua kegagalan pre-existing mengaburkannya.
+- **File Terdampak:**
+  - `tests/Feature/ExampleTest.php` — assert `200` (sesuai nama test "successful response")
+  - `tests/Feature/Auth/AuthTest.php` — arahkan ke `/cashier/pos` (rute kasir yang ter-render untuk owner) alih-alih `/cashier/cash-drawer`
+- **Catatan:** Tidak ada test yang dihapus. Suite penuh hijau — 206 passed.
+
+---
+
 ### [ADDITION] Transaksi Offline + Sinkronisasi (PWA Fase B/C/D)
 - **Tanggal:** 2026-07-16
 - **Fase Terkait:** Phase PWA (`docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md`) — Fase B, C, D
