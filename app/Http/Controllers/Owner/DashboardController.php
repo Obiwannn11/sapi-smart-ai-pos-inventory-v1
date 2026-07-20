@@ -22,8 +22,11 @@ class DashboardController extends Controller
         $today = now()->toDateString();
 
         // --- Metrics Hari Ini ---
+        // Tanggal efektif, bukan created_at: penjualan offline kemarin yang baru
+        // tersinkron pagi ini milik KEMARIN, dan tidak boleh menggelembungkan
+        // angka hari ini.
         $todayTransactions = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereDate('created_at', $today);
+            ->whereEffectiveDate($today);
 
         $todayRevenue = (clone $todayTransactions)->sum('total_amount');
         $todayCount = (clone $todayTransactions)->count();
@@ -39,7 +42,7 @@ class DashboardController extends Controller
             })
             ->whereHas('transaction', function ($q) use ($today) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereDate('created_at', $today);
+                    ->whereEffectiveDate($today);
             })
             ->groupBy('payment_methods.name', 'payment_methods.type')
             ->get();
@@ -47,14 +50,15 @@ class DashboardController extends Controller
         // --- Metrics Minggu Ini ---
         $weekStart = now()->startOfWeek()->toDateString();
         $weekRevenue = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereDate('created_at', '>=', $weekStart)
+            ->whereEffectiveFrom($weekStart)
             ->sum('total_amount');
 
         // --- Trend 7 hari ---
+        $effectiveDate = Transaction::effectiveDateSql();
         $dailyTrend = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereDate('created_at', '>=', now()->subDays(6)->toDateString())
-            ->selectRaw('DATE(created_at) as date, COUNT(*) as count, SUM(total_amount) as revenue')
-            ->groupByRaw('DATE(created_at)')
+            ->whereEffectiveFrom(now()->subDays(6)->toDateString())
+            ->selectRaw("DATE({$effectiveDate}) as date, COUNT(*) as count, SUM(total_amount) as revenue")
+            ->groupByRaw("DATE({$effectiveDate})")
             ->orderBy('date')
             ->get();
 

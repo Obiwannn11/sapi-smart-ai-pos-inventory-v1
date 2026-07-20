@@ -33,7 +33,7 @@ class AiContextService
     public function buildContext(Tenant $tenant, Carbon $from, Carbon $to): array
     {
         $completed = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereBetween('created_at', [$from, $to]);
+            ->whereEffectiveBetween($from, $to);
 
         $revenue = (float) (clone $completed)->sum('total_amount');
         $count = (clone $completed)->count();
@@ -41,7 +41,7 @@ class AiContextService
         $topProducts = TransactionItem::query()
             ->whereHas('transaction', function ($q) use ($from, $to) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereBetween('created_at', [$from, $to]);
+                    ->whereEffectiveBetween($from, $to);
             })
             ->selectRaw('variant_name, SUM(qty) as qty, SUM(subtotal) as revenue')
             ->groupBy('variant_name')
@@ -49,9 +49,10 @@ class AiContextService
             ->take(10)
             ->get();
 
+        $effectiveDate = Transaction::effectiveDateSql();
         $dailyTrend = (clone $completed)
-            ->selectRaw('DATE(created_at) as date, COUNT(*) as count, SUM(total_amount) as revenue')
-            ->groupByRaw('DATE(created_at)')
+            ->selectRaw("DATE({$effectiveDate}) as date, COUNT(*) as count, SUM(total_amount) as revenue")
+            ->groupByRaw("DATE({$effectiveDate})")
             ->orderBy('date')
             ->get();
 

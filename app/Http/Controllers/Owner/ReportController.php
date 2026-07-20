@@ -22,17 +22,20 @@ class ReportController extends Controller
     {
         $date = $request->input('date', now()->toDateString());
 
-        // Summary transaksi
+        // Summary transaksi.
+        // whereEffectiveDate, bukan created_at: penjualan offline dibuat di server
+        // saat sync (bisa esok harinya) — laporan harian harus memakai kapan
+        // penjualannya benar-benar terjadi, bukan kapan barisnya masuk.
         $transactions = Transaction::with(['user:id,name', 'items', 'payments.paymentMethod'])
             ->where('status', Transaction::STATUS_COMPLETED)
-            ->whereDate('created_at', $date)
+            ->whereEffectiveDate($date)
             ->latest()
             ->get();
 
         $totalRevenue = $transactions->sum('total_amount');
         $totalTransactions = $transactions->count();
         $voidedCount = Transaction::where('status', Transaction::STATUS_VOIDED)
-            ->whereDate('created_at', $date)
+            ->whereEffectiveDate($date)
             ->count();
 
         // Rekap per metode pembayaran
@@ -45,7 +48,7 @@ class ReportController extends Controller
             })
             ->whereHas('transaction', function ($q) use ($date) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereDate('created_at', $date);
+                    ->whereEffectiveDate($date);
             })
             ->groupBy('payment_methods.name', 'payment_methods.type')
             ->get();
@@ -55,7 +58,7 @@ class ReportController extends Controller
             ->selectRaw('variant_name, SUM(qty) as total_qty, SUM(subtotal) as total_revenue')
             ->whereHas('transaction', function ($q) use ($date) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereDate('created_at', $date);
+                    ->whereEffectiveDate($date);
             })
             ->groupBy('variant_name')
             ->orderByDesc('total_qty')
@@ -88,12 +91,12 @@ class ReportController extends Controller
             $query->where('status', $request->status);
         }
 
-        // Filter by date range
+        // Filter by date range — pakai tanggal penjualan sebenarnya.
         if ($request->filled('from')) {
-            $query->whereDate('created_at', '>=', $request->from);
+            $query->whereEffectiveFrom($request->from);
         }
         if ($request->filled('to')) {
-            $query->whereDate('created_at', '<=', $request->to);
+            $query->whereRaw('DATE('.Transaction::effectiveDateSql().') <= ?', [$request->to]);
         }
 
         $transactions = $query->paginate(25);

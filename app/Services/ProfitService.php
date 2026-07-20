@@ -33,7 +33,7 @@ class ProfitService
     public function overallProfit(Carbon $from, Carbon $to): array
     {
         $revenue = (float) Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereBetween('created_at', [$from, $to])
+            ->whereEffectiveBetween($from, $to)
             ->sum('total_amount');
 
         $cogs = (float) $this->cogsQuery($from, $to)->value('cogs');
@@ -63,7 +63,7 @@ class ProfitService
             ->join('product_variants', 'transaction_items.product_variant_id', '=', 'product_variants.id')
             ->whereHas('transaction', function ($q) use ($from, $to) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereBetween('created_at', [$from, $to]);
+                    ->whereEffectiveBetween($from, $to);
             })
             ->selectRaw('transaction_items.variant_name')
             ->selectRaw('SUM(transaction_items.qty) as qty')
@@ -120,7 +120,7 @@ class ProfitService
             ->join('product_variants', 'transaction_items.product_variant_id', '=', 'product_variants.id')
             ->whereHas('transaction', function ($q) use ($from, $to) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereBetween('created_at', [$from, $to]);
+                    ->whereEffectiveBetween($from, $to);
             })
             ->selectRaw('SUM(transaction_items.qty * product_variants.cost_price) as cogs');
     }
