@@ -5,16 +5,29 @@
  * Strategy:
  *   - Precache a minimal app shell (offline page, logo, manifest, icons).
  *   - Cache-first for hashed build assets under /build/assets/** (immutable).
- *   - Network-first for navigations, falling back to /offline.html when offline.
+ *   - Network-first for navigations, falling back to a cached copy for
+ *     offline-capable routes, then to /offline.html.
  *   - Never touch non-GET requests (POST/PUT/etc. always hit the network).
+ *
+ * Offline transactions are deliberately NOT queued here. The app layer owns the
+ * outbox (IndexedDB) so it keeps full control over idempotency and stock
+ * conflicts — see docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md.
+ *
+ * PRIVACY: PAGE_CACHE stores authenticated HTML (Inertia props, CSRF token,
+ * the cashier's name). It is per-device, not per-user, so it MUST be cleared on
+ * logout — otherwise the next user on a shared till could open the POS offline
+ * and see the previous user's cached page. The app posts CLEAR_PRIVATE_CACHES
+ * before logging out. The IndexedDB outbox is intentionally NOT cleared there:
+ * it holds un-synced sales that must survive a logout.
  *
  * NOTE: this is a hand-written SW (not Workbox). Bump CACHE_VERSION to force a
  * refresh of the precached shell when these files change.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = `sapi-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `sapi-assets-${CACHE_VERSION}`;
+const PAGE_CACHE = `sapi-pages-${CACHE_VERSION}`;
 
 const SHELL_ASSETS = [
     '/offline.html',
@@ -23,6 +36,19 @@ const SHELL_ASSETS = [
     '/icons/icon-192.png',
     '/icons/icon-512.png',
 ];
+
+/**
+ * Routes whose last successful HTML response is kept so they still boot when
+ * the network is gone. Keep this list tight — every entry is authenticated
+ * HTML sitting on disk until logout.
+ */
+const OFFLINE_CAPABLE_ROUTES = ['/cashier/pos'];
+
+function isOfflineCapableRoute(pathname) {
+    return OFFLINE_CAPABLE_ROUTES.some(
+        (route) => pathname === route || pathname === `${route}/`,
+    );
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -39,7 +65,7 @@ self.addEventListener('activate', (event) => {
             .then((keys) =>
                 Promise.all(
                     keys
-                        .filter((key) => ![SHELL_CACHE, ASSET_CACHE].includes(key))
+                        .filter((key) => ![SHELL_CACHE, ASSET_CACHE, PAGE_CACHE].includes(key))
                         .map((key) => caches.delete(key)),
                 ),
             )
@@ -87,11 +113,48 @@ async function cacheFirst(request) {
 }
 
 async function networkFirstNavigation(request) {
+    const url = new URL(request.url);
+    const offlineCapable = isOfflineCapableRoute(url.pathname);
+
     try {
-        return await fetch(request);
+        const response = await fetch(request);
+
+        // Keep the latest good copy of offline-capable pages so they can boot
+        // without the network. Only 200s — never cache a redirect to /login or
+        // an error page, which would strand the cashier on a dead shell.
+        if (offlineCapable && response && response.status === 200 && !response.redirected) {
+            const cache = await caches.open(PAGE_CACHE);
+            cache.put(request, response.clone());
+        }
+
+        return response;
     } catch (err) {
-        const cache = await caches.open(SHELL_CACHE);
-        const offline = await cache.match('/offline.html');
+        if (offlineCapable) {
+            const pages = await caches.open(PAGE_CACHE);
+            // Match on URL only: ignore ?query so /cashier/pos?foo=1 still hits.
+            const cached = await pages.match(request, { ignoreSearch: true });
+            if (cached) return cached;
+        }
+
+        const shell = await caches.open(SHELL_CACHE);
+        const offline = await shell.match('/offline.html');
+
         return offline || Response.error();
     }
 }
+
+/**
+ * The app asks us to drop anything user-identifying before it logs out.
+ * Deliberately scoped to PAGE_CACHE: shell/assets are public, and the
+ * IndexedDB outbox (owned by the app) must survive to protect un-synced sales.
+ */
+self.addEventListener('message', (event) => {
+    if (event.data?.type !== 'CLEAR_PRIVATE_CACHES') return;
+
+    event.waitUntil(
+        caches.delete(PAGE_CACHE).then(() => {
+            // Let the page await completion before it POSTs /logout.
+            event.ports?.[0]?.postMessage({ ok: true });
+        }),
+    );
+});

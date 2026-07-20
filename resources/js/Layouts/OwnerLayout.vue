@@ -2,6 +2,7 @@
 import { usePage, router, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import { ref, computed, h, defineComponent } from 'vue';
+import { clearPrivateOfflineData } from '@/services/offlineSession';
 
 const page = usePage();
 const { auth } = page.props;
@@ -104,6 +105,7 @@ const sidebarGroups = [
             { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report' },
             { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt' },
             { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash' },
+            { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive' },
             { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
             { name: 'AI Analysis', href: '/owner/ai-analysis', icon: 'sparkles' },
         ],
@@ -150,7 +152,10 @@ const roleLabel = computed(() => {
     return map[auth.user?.role] ?? auth.user?.role ?? '';
 });
 
-const logout = () => router.post('/logout');
+const logout = async () => {
+    await clearPrivateOfflineData();
+    router.post('/logout');
+};
 </script>
 
 <template>

@@ -2,6 +2,7 @@
 import { router, Head } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
+import { clearPrivateOfflineData } from '@/services/offlineSession';
 
 const props = defineProps({
     cashDrawer: Object,
@@ -27,7 +28,8 @@ const goToCashDrawer = () => {
     router.get('/cashier/cash-drawer');
 };
 
-const logout = () => {
+const logout = async () => {
+    await clearPrivateOfflineData();
     router.post('/logout');
 };
 </script>

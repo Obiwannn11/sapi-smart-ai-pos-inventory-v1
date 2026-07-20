@@ -10,6 +10,9 @@ import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
+import { useOnlineStatus } from '@/composables/useOnlineStatus';
+import { useCatalogCache } from '@/composables/useCatalogCache';
+import { useOfflineQueue } from '@/composables/useOfflineQueue';
 
 const props = defineProps({
     categories: Array,
@@ -21,6 +24,115 @@ const props = defineProps({
 });
 
 const { show: showFlash } = useFlash();
+
+// --- Offline catalog ---
+// The catalog arrives as props. While online we harvest them into IndexedDB;
+// while offline we render that snapshot instead. We prefer the snapshot over
+// the props when offline because the page itself may have been served from the
+// service worker's cache — those props are stale and, unlike the snapshot, we
+// cannot tell the cashier how old they are.
+const { isOnline, markOffline } = useOnlineStatus();
+const { snapshot, loadSnapshot, saveSnapshot, cachedAtLabel } = useCatalogCache();
+
+const usingCachedCatalog = computed(() => !isOnline.value && snapshot.value !== null);
+
+const catalogProducts = computed(() =>
+    usingCachedCatalog.value ? (snapshot.value.products ?? []) : (props.products ?? [])
+);
+const catalogCategories = computed(() =>
+    usingCachedCatalog.value ? (snapshot.value.categories ?? []) : (props.categories ?? [])
+);
+const catalogPaymentMethods = computed(() =>
+    usingCachedCatalog.value ? (snapshot.value.paymentMethods ?? []) : (props.paymentMethods ?? [])
+);
+
+// Offline payments are cash-only, enforced here AND on the server. Card/QRIS
+// need a gateway round-trip we cannot make, so a "paid" we can't verify would
+// be a guess — and the server would reject it on sync anyway, after the
+// customer already walked out.
+const availablePaymentMethods = computed(() => {
+    if (isOnline.value) return catalogPaymentMethods.value;
+
+    return catalogPaymentMethods.value.filter((method) => method.type === 'cash');
+});
+
+// --- Offline queue ---
+const {
+    enqueue,
+    flush,
+    refresh: refreshQueue,
+    pendingCount,
+    failedCount,
+    flushing,
+} = useOfflineQueue();
+
+onMounted(() => {
+    if (isOnline.value) {
+        saveSnapshot({
+            products: props.products,
+            categories: props.categories,
+            paymentMethods: props.paymentMethods,
+        });
+    } else {
+        loadSnapshot();
+    }
+
+    refreshQueue().then(() => {
+        if (isOnline.value) flush();
+    });
+});
+
+watch(isOnline, (online) => {
+    if (!online) {
+        // Opened online, then the connection dropped: pull the snapshot in so
+        // the notice and `cachedAt` are accurate rather than showing props of
+        // unknown age.
+        if (!snapshot.value) loadSnapshot();
+
+        return;
+    }
+
+    flush();
+});
+
+// The `online` event is the primary trigger; this interval is the safety net
+// for the cases it misses — a captive portal that "connects" without firing an
+// event, or a device that came back while the tab was hidden. flush() no-ops
+// when there is nothing queued, so an idle till costs nothing.
+const SYNC_INTERVAL_MS = 60_000;
+let syncTimer = null;
+
+onMounted(() => {
+    syncTimer = setInterval(() => {
+        if (isOnline.value) flush();
+    }, SYNC_INTERVAL_MS);
+});
+
+onUnmounted(() => clearInterval(syncTimer));
+
+const syncNow = async () => {
+    const result = await flush();
+
+    if (!result) {
+        showFlash('Tidak ada transaksi offline yang menunggu.', 'success');
+
+        return;
+    }
+
+    if (result.ok) {
+        showFlash(`${result.synced} transaksi offline tersinkron.`, 'success');
+
+        return;
+    }
+
+    const reason = {
+        auth: 'Sesi berakhir — silakan login ulang untuk menyinkronkan.',
+        network: 'Sinkronisasi gagal: jaringan tidak stabil.',
+        server: 'Sinkronisasi gagal: server menolak permintaan.',
+    }[result.reason] ?? 'Sinkronisasi gagal.';
+
+    showFlash(reason, 'error');
+};
 
 // --- State ---
 const selectedCategoryId = ref(null);
@@ -67,7 +179,7 @@ const formatDate = (date) => {
 
 // --- Filtered Products ---
 const filteredProducts = computed(() => {
-    let list = props.products || [];
+    let list = catalogProducts.value;
 
     if (selectedCategoryId.value) {
         list = list.filter(p => p.category_id === selectedCategoryId.value);
@@ -120,7 +232,7 @@ const selectProduct = (product) => {
 };
 
 const getVariantStock = (variantId) => {
-    for (const product of (props.products || [])) {
+    for (const product of catalogProducts.value) {
         const variant = (product.variants || []).find(v => v.id === variantId);
         if (variant) return variant.stock;
     }
@@ -204,23 +316,64 @@ const openPaymentModal = () => {
     showPaymentModal.value = true;
 };
 
-const handlePayment = (payments) => {
+const cartToItems = () => cart.value.map(item => ({
+    variant_id: item.variant_id,
+    variant_name: item.variant_name,
+    qty: item.qty,
+    unit_price: item.unit_price,
+    modifiers: (item.modifiers || []).map(m => ({
+        id: m.id,
+        name: m.name,
+        extra_price: m.extra_price,
+    })),
+    notes: item.notes || null,
+}));
+
+/**
+ * Save a sale the server cannot be told about right now.
+ *
+ * The cart is only cleared once the row is actually on disk — if IndexedDB is
+ * unavailable we must not pretend the sale was recorded, or the cashier would
+ * hand over goods against a transaction that exists nowhere.
+ */
+const queueOfflineSale = async (payments) => {
+    const stored = await enqueue({
+        clientUuid: getCheckoutUuid(),
+        items: cartToItems(),
+        payments,
+        totalAmount: cartTotal.value,
+    });
+
+    if (!stored) {
+        showFlash(
+            'Gagal menyimpan transaksi offline di perangkat ini. Jangan tutup halaman — catat manual.',
+            'error',
+        );
+
+        return false;
+    }
+
+    showPaymentModal.value = false;
+    cart.value = [];
+    checkoutUuid.value = null;
+    showFlash('Tersimpan offline. Akan tersinkron otomatis saat kembali online.', 'success');
+
+    return true;
+};
+
+const handlePayment = async (payments) => {
     if (processing.value) return;
     processing.value = true;
 
+    if (!isOnline.value) {
+        await queueOfflineSale(payments);
+        processing.value = false;
+
+        return;
+    }
+
     const data = {
-        items: cart.value.map(item => ({
-            variant_id: item.variant_id,
-            variant_name: item.variant_name,
-            qty: item.qty,
-            unit_price: item.unit_price,
-            modifiers: (item.modifiers || []).map(m => ({
-                id: m.id,
-                name: m.name,
-                extra_price: m.extra_price,
-            })),
-            notes: item.notes || null,
-        })),
+        items: cartToItems(),
         payments: payments,
         notes: null,
         client_uuid: getCheckoutUuid(),
@@ -237,6 +390,17 @@ const handlePayment = (payments) => {
             }
             cart.value = [];
             checkoutUuid.value = null;
+        },
+        // navigator.onLine said we were online but the request never landed
+        // (dead uplink, captive portal, server down). The sale is real, so fall
+        // back to the queue rather than dropping it. The same client_uuid is
+        // reused, so if the request did reach the server after all, the sync
+        // dedups it instead of double-charging.
+        onError: async (errors) => {
+            if (Object.keys(errors ?? {}).length > 0) return;
+
+            markOffline();
+            await queueOfflineSale(payments);
         },
         onFinish: () => {
             processing.value = false;
@@ -258,6 +422,18 @@ const printFromSuccess = () => {
 // --- Open Bill ---
 const saveAsOpenBill = () => {
     if (cart.value.length === 0 || processing.value) return;
+
+    // Open bills stay online-only, deliberately. Unlike a completed sale, an
+    // open bill is a *pending* record the cashier expects to find and settle
+    // later — possibly from another till. Queuing it locally would make it
+    // invisible to every other device until sync, so the safer answer is to say
+    // no rather than lose track of an unpaid order.
+    if (!isOnline.value) {
+        showFlash('Tunda Bayar tidak tersedia saat offline. Selesaikan pembayaran tunai.', 'error');
+
+        return;
+    }
+
     openBillCustomerName.value = '';
     showOpenBillNameModal.value = true;
 };
@@ -268,18 +444,7 @@ const confirmSaveOpenBill = () => {
     showOpenBillNameModal.value = false;
 
     const data = {
-        items: cart.value.map(item => ({
-            variant_id: item.variant_id,
-            variant_name: item.variant_name,
-            qty: item.qty,
-            unit_price: item.unit_price,
-            modifiers: (item.modifiers || []).map(m => ({
-                id: m.id,
-                name: m.name,
-                extra_price: m.extra_price,
-            })),
-            notes: item.notes || null,
-        })),
+        items: cartToItems(),
         payments: null,
         notes: null,
         is_open_bill: true,
@@ -300,6 +465,16 @@ const confirmSaveOpenBill = () => {
 };
 
 const openBillPayment = (bill) => {
+    // Settling an open bill mutates a row that already lives on the server —
+    // there is no local copy to safely amend, and another till may be settling
+    // the same bill. Same reasoning as saveAsOpenBill: refuse rather than risk
+    // double-settling one order.
+    if (!isOnline.value) {
+        showFlash('Pembayaran tagihan terbuka butuh koneksi. Coba lagi saat online.', 'error');
+
+        return;
+    }
+
     selectedOpenBill.value = bill;
     showOpenBillPayment.value = true;
 };
@@ -400,6 +575,60 @@ onUnmounted(stopResizeCart);
         <!-- Top Bar -->
         <CashierTopbar :title="tenantName" />
 
+        <!-- Offline notice: the catalog is a snapshot and stock is only a hint. -->
+        <Transition
+            enter-active-class="transition-all duration-200 ease-out"
+            enter-from-class="opacity-0 -translate-y-1"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition-all duration-150 ease-in"
+            leave-from-class="opacity-100 translate-y-0"
+            leave-to-class="opacity-0 -translate-y-1"
+        >
+            <div
+                v-if="!isOnline"
+                class="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800"
+            >
+                <span class="relative flex w-2 h-2 shrink-0">
+                    <span class="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-75 animate-ping"></span>
+                    <span class="relative inline-flex w-2 h-2 rounded-full bg-amber-500"></span>
+                </span>
+                <span class="text-xs font-semibold">Mode Offline</span>
+                <span class="text-amber-400 text-[10px] select-none">·</span>
+                <span class="text-xs">
+                    <template v-if="cachedAtLabel">Katalog per {{ cachedAtLabel }} — stok indikatif, hanya tunai.</template>
+                    <template v-else>Katalog tersimpan tidak ditemukan — data mungkin tidak lengkap.</template>
+                </span>
+                <span v-if="pendingCount > 0" class="ml-auto text-xs font-medium">
+                    {{ pendingCount }} transaksi menunggu sinkronisasi
+                </span>
+            </div>
+        </Transition>
+
+        <!-- Unsynced sales while online: the cashier should know money is still
+             sitting on this device, and be able to push it without waiting. -->
+        <div
+            v-if="isOnline && (pendingCount > 0 || failedCount > 0)"
+            class="shrink-0 flex items-center gap-2 px-4 py-2 bg-sky-50 border-b border-sky-200 text-sky-800"
+        >
+            <svg class="w-3.5 h-3.5 shrink-0" :class="flushing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span class="text-xs">
+                <template v-if="flushing">Menyinkronkan transaksi offline…</template>
+                <template v-else-if="failedCount > 0">
+                    {{ failedCount }} transaksi offline gagal tersinkron dan perlu ditinjau.
+                </template>
+                <template v-else>{{ pendingCount }} transaksi offline menunggu sinkronisasi.</template>
+            </span>
+            <button
+                @click="syncNow"
+                :disabled="flushing"
+                class="ml-auto text-xs font-semibold underline underline-offset-2 hover:text-sky-950 transition disabled:opacity-40 disabled:no-underline"
+            >
+                Sync sekarang
+            </button>
+        </div>
+
         <!-- Main Content -->
         <div class="flex-1 flex overflow-hidden">
             <!-- LEFT: Product Grid -->
@@ -433,7 +662,7 @@ onUnmounted(stopResizeCart);
                             Semua
                         </button>
                         <button
-                            v-for="cat in categories"
+                            v-for="cat in catalogCategories"
                             :key="cat.id"
                             @click="selectedCategoryId = cat.id"
                             :class="[
@@ -633,7 +862,7 @@ onUnmounted(stopResizeCart);
         <PaymentModal
             :show="showPaymentModal"
             :total-amount="cartTotal"
-            :payment-methods="paymentMethods"
+            :payment-methods="availablePaymentMethods"
             @close="showPaymentModal = false"
             @confirm="handlePayment"
         />
@@ -642,7 +871,7 @@ onUnmounted(stopResizeCart);
         <PaymentModal
             :show="showOpenBillPayment"
             :total-amount="Number(selectedOpenBill?.total_amount || 0)"
-            :payment-methods="paymentMethods"
+            :payment-methods="availablePaymentMethods"
             @close="showOpenBillPayment = false; selectedOpenBill = null"
             @confirm="handleOpenBillPayment"
         />

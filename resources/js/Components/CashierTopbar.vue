@@ -3,6 +3,7 @@ import { computed, h, ref, onMounted, onBeforeUnmount, defineComponent } from 'v
 import { usePage, router, Link } from '@inertiajs/vue3';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
+import { clearPrivateOfflineData } from '@/services/offlineSession';
 
 defineProps({
     title: { type: String, default: 'SAPI POS' },
@@ -88,7 +89,11 @@ const handleClickOutside = (e) => {
 onMounted(() => document.addEventListener('mousedown', handleClickOutside));
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside));
 
-const logout = () => router.post('/logout');
+// Drop cached POS page + catalog before leaving: the till is shared hardware.
+const logout = async () => {
+    await clearPrivateOfflineData();
+    router.post('/logout');
+};
 </script>
 
 <template>

@@ -147,8 +147,24 @@ const openEdit = (transaction) => {
                             <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', statusClass(tx.status)]">
                                 {{ statusLabel(tx.status) }}
                             </span>
+                            <span
+                                v-if="tx.channel === 'offline'"
+                                class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800"
+                                :title="`Terjadi ${formatDate(tx.occurred_at)}, tersinkron ${formatDate(tx.synced_at)}`"
+                            >
+                                Offline
+                            </span>
+                            <span
+                                v-if="tx.sync_status === 'needs_review'"
+                                class="px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive"
+                                title="Ada anomali stok/harga — menunggu koreksi owner"
+                            >
+                                Perlu koreksi
+                            </span>
                         </div>
-                        <span class="text-xs text-gray-400">{{ formatDate(tx.created_at) }}</span>
+                        <!-- Tanggal penjualan sebenarnya: untuk transaksi offline
+                             created_at adalah waktu sync, bukan waktu jual. -->
+                        <span class="text-xs text-gray-400">{{ formatDate(tx.occurred_at ?? tx.created_at) }}</span>
                     </div>
 
                     <!-- Items preview -->
