@@ -77,6 +77,12 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::get('stock/movements', [\App\Http\Controllers\Owner\StockController::class, 'movements'])
             ->name('stock.movements');
 
+        // Koreksi transaksi offline yang tersinkron dengan anomali
+        Route::get('offline-review', [\App\Http\Controllers\Owner\OfflineReviewController::class, 'index'])
+            ->name('offline-review.index');
+        Route::post('offline-review/{transaction}/resolve', [\App\Http\Controllers\Owner\OfflineReviewController::class, 'resolve'])
+            ->name('offline-review.resolve');
+
         // AI Analysis
         Route::get('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'index'])
             ->name('ai-analysis.index');
@@ -106,6 +112,11 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
             ->name('pos');
         Route::post('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'store'])
             ->name('transactions.store');
+
+        // Sinkronisasi transaksi offline (batch, JSON) — didaftarkan sebelum
+        // rute ber-parameter agar "sync" tidak tertangkap sebagai {transaction}.
+        Route::post('/transactions/sync', [\App\Http\Controllers\Cashier\POSController::class, 'sync'])
+            ->name('transactions.sync');
 
         // Open Bill — bayar pesanan pending
         Route::post('/transactions/{transaction}/pay', [\App\Http\Controllers\Cashier\POSController::class, 'payOpenBill'])

@@ -4,15 +4,18 @@ namespace App\Http\Controllers\Cashier;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTransactionRequest;
+use App\Http\Requests\SyncOfflineTransactionsRequest;
 use App\Models\CashDrawer;
 use App\Models\Category;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Transaction;
 use App\Services\TransactionService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -85,6 +88,63 @@ class POSController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }
+    }
+
+    /**
+     * Sinkronkan batch transaksi yang ditangkap saat perangkat offline.
+     *
+     * Dipanggil lewat fetch (bukan Inertia) sehingga mengembalikan JSON: client
+     * butuh hasil PER transaksi untuk menandai outbox-nya, bukan redirect.
+     *
+     * Setiap item diproses dalam try/catch-nya sendiri. Satu payload rusak
+     * (variant terhapus, metode bayar hilang) hanya menggagalkan dirinya sendiri
+     * — kalau satu kegagalan me-rollback seluruh batch, satu transaksi beracun
+     * akan menahan semua penjualan lain di antrean selamanya.
+     */
+    public function sync(SyncOfflineTransactionsRequest $request): JsonResponse
+    {
+        $cashier = Auth::user();
+        $results = [];
+
+        foreach ($request->validated()['transactions'] as $payload) {
+            $clientUuid = $payload['client_uuid'];
+
+            try {
+                $wasQueued = ! Transaction::where('tenant_id', $cashier->tenant_id)
+                    ->where('client_uuid', $clientUuid)
+                    ->exists();
+
+                $transaction = $this->transactionService->commitOffline($payload, $cashier);
+
+                $results[] = [
+                    'client_uuid' => $clientUuid,
+                    // 'duplicate' bukan kegagalan: flush yang diulang setelah respons
+                    // hilang di jaringan. Client menghapusnya dari outbox sama seperti 'synced'.
+                    'status' => $wasQueued ? 'synced' : 'duplicate',
+                    'code' => $transaction->code,
+                    'needs_review' => $transaction->needsReview(),
+                ];
+            } catch (\Exception $e) {
+                Log::warning('Offline transaction sync failed', [
+                    'client_uuid' => $clientUuid,
+                    'tenant_id' => $cashier->tenant_id,
+                    'user_id' => $cashier->id,
+                    'message' => $e->getMessage(),
+                ]);
+
+                $results[] = [
+                    'client_uuid' => $clientUuid,
+                    'status' => 'error',
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return response()->json([
+            'results' => $results,
+            'synced' => collect($results)->whereIn('status', ['synced', 'duplicate'])->count(),
+            'failed' => collect($results)->where('status', 'error')->count(),
+        ]);
     }
 
     /**

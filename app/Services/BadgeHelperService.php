@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ProductVariant;
 use App\Models\Tenant;
+use App\Models\Transaction;
 
 class BadgeHelperService
 {
@@ -140,6 +141,32 @@ class BadgeHelperService
                     'variant_name' => $v->name,
                     'stock' => $v->stock,
                     'expiry_date' => $v->expiry_date->format('Y-m-d'),
+                ])->toArray(),
+            ];
+        }
+
+        // --- Badge 6: Perlu Koreksi (sync) ---
+        // Transaksi offline yang tersimpan dengan anomali: stok jadi minus, harga
+        // berbeda dari katalog, atau produknya sudah dihapus. Penjualannya sah dan
+        // tidak pernah ditolak — tapi angkanya perlu dirapikan owner.
+        $needsReview = Transaction::where('tenant_id', $tenant->id)
+            ->where('sync_status', Transaction::SYNC_NEEDS_REVIEW)
+            ->orderByDesc('occurred_at')
+            ->get(['id', 'code', 'occurred_at', 'total_amount', 'device_id']);
+
+        if ($needsReview->count() > 0) {
+            $badges[] = [
+                'type' => 'needs_review',
+                'severity' => 'warning',
+                'title' => 'Perlu Koreksi (sync)',
+                'count' => $needsReview->count(),
+                'message' => "{$needsReview->count()} transaksi offline perlu ditinjau",
+                'items' => $needsReview->map(fn ($t) => [
+                    'id' => $t->id,
+                    'code' => $t->code,
+                    'occurred_at' => $t->effectiveDate()->format('Y-m-d H:i'),
+                    'total_amount' => $t->total_amount,
+                    'device_id' => $t->device_id,
                 ])->toArray(),
             ];
         }
