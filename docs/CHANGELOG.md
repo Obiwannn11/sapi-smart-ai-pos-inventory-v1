@@ -45,6 +45,38 @@
 
 ---
 
+### [ADDITION] Transaksi Offline + Sinkronisasi (PWA Fase B/C/D)
+- **Tanggal:** 2026-07-16
+- **Fase Terkait:** Phase PWA (`docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md`) — Fase B, C, D
+- **Dampak:** Migration | Model | Controller | Service | Route | Frontend | Config
+- **Breaking Change:** Tidak
+- **Deskripsi:** Kasir kini bisa terus menjual (tunai) saat internet putus. Katalog di-cache ke IndexedDB, transaksi offline diantre di outbox lokal, lalu tersinkron otomatis saat online lewat `POST /cashier/transactions/sync`. Konflik ditangani optimistik: penjualan yang sudah terjadi fisik **tidak pernah ditolak** — stok boleh minus, transaksi ditandai `needs_review`, owner mengoreksi lewat halaman Koreksi Offline. Payload offline tidak pernah dipercaya mentah: total dihitung ulang server, kepemilikan tenant & cash-only ditegakkan, `occurred_at` dicek kewajarannya.
+- **Alasan:** Menutup kehilangan penjualan saat koneksi putus tanpa mengorbankan integritas data. Melanjutkan Fase A (`client_uuid`) yang sudah menyediakan fondasi idempotensi.
+- **Dependency Baru:** `idb@8.0.3` (~1–2 KB gzip) — disetujui owner 2026-07-16, lihat Keputusan Terbuka A di dokumen fase.
+- **File Terdampak:**
+  - `database/migrations/2026_07_16_231216_add_offline_sync_to_transactions.php` — kolom `channel`, `occurred_at`, `synced_at`, `sync_status`, `device_id` + index `(tenant_id, sync_status)` & `(tenant_id, occurred_at)`
+  - `app/Models/Transaction.php` — konstanta channel/sync_status, `effectiveDate()`, `effectiveDateSql()`, scope `whereEffectiveDate`/`whereEffectiveBetween`/`whereEffectiveFrom`
+  - `app/Services/TransactionService.php` — `commitOffline()`, `processOfflineItems()`, `resolveOfflineModifiers()`, `assertCashOnly()`, `parseOccurredAt()`, `generateTransactionCodeFor()`
+  - `app/Http/Controllers/Cashier/POSController.php` — `sync()` (JSON, try/catch per item)
+  - `app/Http/Requests/SyncOfflineTransactionsRequest.php` — validasi bentuk batch
+  - `app/Http/Controllers/Owner/OfflineReviewController.php` + `resources/js/Pages/Owner/OfflineReview/Index.vue` — halaman koreksi
+  - `app/Services/BadgeHelperService.php` — badge `needs_review`
+  - `app/Http/Controllers/Owner/ReportController.php`, `Owner/DashboardController.php`, `app/Services/ProfitService.php`, `app/Services/AiContextService.php` — laporan pakai tanggal efektif
+  - `resources/js/services/offlineDb.js`, `offlineSession.js`, `deviceId.js` — layer IndexedDB & siklus hidup data offline
+  - `resources/js/composables/useCatalogCache.js`, `useOfflineQueue.js`, `useOnlineStatus.js`
+  - `resources/js/Pages/Cashier/POS.vue` — cache katalog, enqueue offline, cash-only guard, pemicu sync
+  - `public/sw.js` — `PAGE_CACHE` untuk shell POS, `CLEAR_PRIVATE_CACHES`, `CACHE_VERSION` → v2
+  - `tests/Feature/OfflineSyncTest.php` — 30 test
+- **Keputusan Arsitektur Penting:**
+  - `channel` kolom string baru, **bukan** value tambahan pada enum `source` — `source` (pos|self_order) dan `channel` (online|offline) ortogonal; mengubah enum juga bermasalah di SQLite test suite.
+  - Antrean transaksi ada di layer aplikasi (IndexedDB), **bukan** Background Sync di SW — kontrol penuh atas idempotensi & konflik. Background Sync tetap di luar scope (Keputusan C).
+  - Outbox menyimpan `cashier_id` dan hanya di-flush oleh kasir yang membuatnya — server mengatribusikan penjualan ke user yang login saat sync, sehingga tanpa penjaga ini penjualan bisa masuk ke laporan shift kasir yang salah.
+  - `PAGE_CACHE` (HTML ter-autentikasi) dibersihkan saat logout; outbox **tidak** — outbox berisi uang yang belum sampai ke server.
+  - Open bill & pembayaran tagihan terbuka diblokir saat offline (memutasi baris server yang bisa disentuh till lain).
+- **Catatan Migrasi:** `php artisan migrate` lalu `npm install && npm run build`. `CACHE_VERSION` sudah dinaikkan sehingga SW lama otomatis membuang cache-nya saat activate.
+
+---
+
 ### [HOTFIX] Penomoran Ordered List Hasil AI (BL-001)
 - **Tanggal:** 2026-07-15
 - **Fase Terkait:** Di Luar Fase (backlog `BL-001`)

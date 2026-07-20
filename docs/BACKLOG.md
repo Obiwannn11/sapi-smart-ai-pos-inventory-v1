@@ -40,7 +40,20 @@
 
 ## Daftar Isu (Open / In Progress)
 
-_(kosong — belum ada isu terbuka)_
+### [BL-002] Dua Test Gagal (Pre-existing) di Suite
+- **Ditemukan:** 2026-07-16
+- **Sumber:** Menjalankan suite lengkap saat mengerjakan PWA Fase B/C/D. Diverifikasi **bukan** regresi: keduanya juga gagal pada working tree bersih (`git stash` lalu run ulang).
+- **Status:** Open
+- **Prioritas:** Medium (menutupi sinyal CI — dua kegagalan tetap membuat suite merah, sehingga regresi baru mudah terlewat)
+- **Area Terdampak:**
+  - `tests/Feature/ExampleTest.php:6` — `the application returns a successful response`
+  - `tests/Feature/Auth/AuthTest.php:78` — `owner can access cashier routes`
+- **Deskripsi:**
+  1. `ExampleTest` meng-assert `GET /` mengembalikan `302`, tetapi kini mengembalikan `200`. Kemungkinan test bawaan yang tidak pernah disesuaikan setelah halaman root berubah.
+  2. `AuthTest > owner can access cashier routes` meng-assert `GET /cashier/cash-drawer` mengembalikan `200` untuk owner, tetapi mengembalikan `302`. Kemungkinan owner ikut diarahkan oleh guard laci kas, atau ekspektasi test sudah usang terhadap perilaku sekarang.
+- **Usulan Perbaikan:** Tentukan mana yang benar — perilaku aplikasi atau ekspektasi test — lalu perbaiki sisi yang salah. Kalau `ExampleTest` memang sisa scaffolding, hapus (butuh persetujuan: `CLAUDE.md` melarang hapus test tanpa approval).
+
+---
 
 ---
 
