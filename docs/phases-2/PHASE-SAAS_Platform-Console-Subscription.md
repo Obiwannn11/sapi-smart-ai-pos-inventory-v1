@@ -403,15 +403,17 @@ Belum menghalangi Tahap A, tapi **harus** selesai sebelum Tahap C/D:
 
 ## Bagian 13 — Checklist Eksekusi (bertahap)
 
-### Tahap A — Fondasi platform (mandiri, tidak menyentuh alur tenant)
-- [ ] `platform_users` + guard `platform` + login/logout
-- [ ] **Perbaiki `HandleInertiaRequests` (Bagian 2d) — kerjakan lebih dulu, ini blocker.** Ini satu-satunya berkas milik alur tenant yang tersentuh di Tahap A, jadi butuh regresi: pastikan test RBAC/owner yang ada tetap hijau.
-- [ ] `platform_user_modules` + `config/platform-rbac.php`
-- [ ] Middleware `platform.can:{module}`
-- [ ] `PlatformLayout.vue` + rute `/platform`
-- [ ] `platform_audit_logs` + pencatatan login
-- [ ] Daftar tenant read-only via `PlatformTenantResource` (nama, owner, jumlah user, tanggal daftar)
-- [ ] **`PlatformArchTest` & `PlatformIsolationTest` — dikerjakan di tahap ini, bukan belakangan**
+### Tahap A — Fondasi platform (mandiri, tidak menyentuh alur tenant) — ✅ SELESAI 2026-07-21
+- [x] `platform_users` + guard `platform` + login/logout
+- [x] **Perbaiki `HandleInertiaRequests` (Bagian 2d)** — dibedakan lewat `instanceof`; 12 test RBAC tetap hijau
+- [x] `platform_user_modules` + `config/platform-rbac.php`
+- [x] Middleware `platform.can:{module}`
+- [x] `PlatformLayout.vue` + rute `/platform`
+- [x] `platform_audit_logs` + pencatatan login (sukses **dan** gagal) serta akses daftar tenant
+- [x] Daftar tenant read-only via `PlatformTenantResource` (nama, owner, jumlah user, tanggal daftar)
+- [x] **`PlatformArchTest` & `PlatformIsolationTest`** — 16 test platform, suite penuh 234 hijau
+
+> **Temuan saat eksekusi (di luar rencana):** tamu di `/platform/*` semula diarahkan ke `route('login')` — halaman masuk **tenant**. Karena akun platform ada di tabel lain, pemilik SaaS yang sesinya habis tidak akan pernah bisa masuk dari sana. Diperbaiki dengan `redirectGuestsTo()` bersyarat di `bootstrap/app.php`. Ini bukan sekadar ekspektasi test yang meleset, melainkan jalan buntu nyata bagi pengguna.
 
 ### Tahap B — Langganan dasar (jalur normal)
 - [ ] `plans`, `subscriptions`, `invoices` + `tenants.status`/`pricing_track`

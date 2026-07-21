@@ -127,7 +127,7 @@
 ### [BL-005] Platform Console — Panel Pemilik SaaS (Privacy-Preserving)
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Permintaan pemilik SaaS — butuh satu panel untuk melihat siapa saja tenant yang terdaftar, status langganan, dan riwayat pembayaran, **tanpa** bisa melihat data operasional klien
-- **Status:** Open — sudah di-plan di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` (Tahap A), belum dieksekusi
+- **Status:** In Progress — **Tahap A selesai 2026-07-21** (lihat `[ADDITION] Platform Console — Fondasi Panel Pemilik SaaS` di `docs/CHANGELOG.md`). Sisa Tahap B–D di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md`
 - **Prioritas:** Medium (belum menghambat operasional tenant, tapi jadi blocker begitu tenant berbayar pertama masuk — tanpa ini penagihan & pencatatan langganan manual)
 - **Area Terdampak:** (belum ada satu pun yang eksis — semuanya baru)
   - `app/Models/Tenant.php` — belum punya konsep plan/status langganan sama sekali (kolom saat ini hanya `name`, `slug`, `logo`, `address`, `phone`, `ai_provider`, `ai_api_key`, `ai_model`)

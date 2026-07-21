@@ -45,6 +45,34 @@
 
 ---
 
+### [ADDITION] Platform Console — Fondasi Panel Pemilik SaaS (Tahap A)
+- **Tanggal:** 2026-07-21
+- **Fase Terkait:** `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` — Tahap A (dari `[BL-005]`/`[BL-006]`)
+- **Dampak:** Migration | Model | Middleware | Controller | Config | Route | Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Tingkat akses ketiga di atas tenant: akun **pemilik SaaS** dengan tabel & guard sendiri (`platform_users` / guard `platform`), izin per modul lewat `platform_user_modules` + `config/platform-rbac.php`, panel `/platform` berisi beranda dan daftar tenant **read-only**, serta jejak audit `platform_audit_logs`. Belum ada langganan, harga, maupun data omset — itu Tahap B–D.
+- **Alasan:** Pemilik SaaS perlu tahu siapa kliennya dan berapa akunnya untuk menjalankan bisnis, **tanpa** bisa melihat data operasional klien. Fondasi isolasinya sengaja dibangun lebih dulu berikut testnya, karena semua tahap berikutnya menumpuk di atasnya.
+- **File Terdampak:**
+  - `database/migrations/2026_07_21_1324{29,30,31}_*` — `platform_users`, `platform_audit_logs`, `platform_user_modules`
+  - `app/Models/PlatformUser.php`, `PlatformUserModule.php`, `PlatformAuditLog.php` — model baru
+  - `app/Models/Tenant.php` — relasi `owners()` (kontak penagihan)
+  - `config/auth.php` — guard `platform` + provider `platform_users`
+  - `config/platform-rbac.php` — katalog 6 modul platform
+  - `app/Http/Middleware/EnsurePlatformModule.php` + alias `platform.can` di `bootstrap/app.php`
+  - `app/Http/Middleware/HandleInertiaRequests.php` — bedakan `User` vs `PlatformUser` lewat `instanceof`; akun platform dibagikan di kunci **terpisah** `auth.platformUser`
+  - `bootstrap/app.php` — `redirectGuestsTo()` bersyarat untuk area `/platform`
+  - `app/Http/Controllers/Platform/{Auth,Dashboard,Tenant}Controller.php`, `app/Http/Resources/PlatformTenantResource.php`
+  - `resources/js/Layouts/PlatformLayout.vue`, `resources/js/Pages/Platform/**`
+  - `database/seeders/PlatformUserSeeder.php`, `database/factories/PlatformUserFactory.php`
+  - `tests/Feature/Platform/{PlatformAuthTest,PlatformIsolationTest,PlatformArchTest}.php` — 16 test
+- **Keputusan teknis yang perlu diketahui:**
+  1. **spatie TIDAK dipakai di sisi platform.** Pivot `model_has_roles` menuntut `tenant_id` non-null karena kolom itu bagian dari primary key-nya, sedangkan akun platform tak punya tenant. Diganti tabel `platform_user_modules` yang sederhana; pola UI modul+centang tetap sama seperti Phase RBAC.
+  2. **Isolasi tidak bersandar pada `TenantScope`.** Di request platform scope itu memfilter `tenant_id = null` (nol baris — gagal menutup, aman), tapi di job/command/seeder ia tidak aktif sama sekali. Karena itu batasnya dijaga tiga lapis: arch test (impor), isolation test (payload HTTP), dan resource daftar-putih.
+  3. **`PlatformTenantResource` memakai daftar putih**, bukan `parent::toArray()` — kolom baru di `tenants` (mis. `ai_api_key`) tidak ikut bocor dengan sendirinya.
+- **Catatan Migrasi:** `php artisan migrate` lalu `php artisan db:seed --class=PlatformUserSeeder`. Akun pertama diambil dari `PLATFORM_ADMIN_EMAIL`/`PLATFORM_ADMIN_PASSWORD`; nilai bawaan hanya untuk lokal dan **wajib** diganti sebelum dipakai di server sungguhan. Perlu `npm run build` karena ada komponen Vue baru.
+
+---
+
 ### [HOTFIX] Lima Kendala Implementasi RBAC & Resolusinya
 - **Tanggal:** 2026-07-21
 - **Fase Terkait:** Phase RBAC (menyertai entri `[ADDITION]` RBAC di bawah)
