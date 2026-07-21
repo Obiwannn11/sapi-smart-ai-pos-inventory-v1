@@ -45,6 +45,26 @@
 
 ---
 
+### [HOTFIX] Rate Limit Endpoint Login (BL-007)
+- **Tanggal:** 2026-07-21
+- **Fase Terkait:** Di Luar Fase (temuan review setelah Platform Console Tahap A)
+- **Dampak:** Route | Provider | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** `POST /login` dan `POST /platform/login` sebelumnya tidak punya pembatas laju sama sekali, sehingga tebak-kata-sandi otomatis tidak menemui hambatan. Ditambahkan tiga limiter bernama yang semuanya berkunci **email + IP**; endpoint mobile yang tadinya `throttle:5,1` (per IP) ikut dipindahkan ke limiter bernama agar konsisten.
+- **Alasan:** Satu akun platform yang jebol membuka data administratif seluruh klien sekaligus. Audit log sudah mencatat `login.failed` dengan rajin — tapi mencatat serangan tanpa menghentikannya tidak melindungi siapa pun.
+- **File Terdampak:**
+  - `app/Providers/AppServiceProvider.php` — limiter `login`, `platform-login`, `mobile-login` + helper kunci & balasan
+  - `routes/web.php` — `throttle:login` dan `throttle:platform-login`
+  - `routes/api.php` — `throttle:5,1` → `throttle:mobile-login`
+  - `tests/Feature/Security/LoginThrottleTest.php` — 8 test baru
+- **Keputusan teknis yang perlu diketahui:**
+  1. **Kunci email + IP, bukan IP saja.** Satu warung atau kantor sering keluar lewat satu IP publik; pembatasan per-IP murni membuat kasir saling mengunci padahal tak ada yang menyerang. Email dinormalkan lowercase supaya mengubah kapitalisasi tidak memberi jatah baru.
+  2. **Langit-langit 20/jam per IP hanya di panel platform.** Ia menahan penebakan lintas-email yang lolos dari kunci email+IP, dan aman di sana karena penggunanya segelintir. Di login tenant hal yang sama justru berbahaya — karena itu sengaja tidak dipasang, dan ada test yang menjaga batas itu tidak merembet.
+  3. **Balasan berupa error validasi berbahasa Indonesia**, bukan halaman 429 generik (lewat `Limit::response()`), karena alur login memakai Inertia. Endpoint mobile tetap 429 JSON.
+- **Catatan Migrasi:** Tidak ada. Limiter memakai cache; di produksi pastikan `CACHE_STORE` bukan `array` agar hitungannya bertahan lintas proses.
+
+---
+
 ### [ADDITION] Platform Console — Fondasi Panel Pemilik SaaS (Tahap A)
 - **Tanggal:** 2026-07-21
 - **Fase Terkait:** `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` — Tahap A (dari `[BL-005]`/`[BL-006]`)

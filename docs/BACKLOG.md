@@ -97,24 +97,6 @@
   2. Beri penanda di UI untuk modul yang belum punya halaman, atau sembunyikan dari daftar centang sampai halamannya ada — mencentang sesuatu yang tidak berefek itu membingungkan.
   3. **Saat menambah resource platform berikutnya:** pindahkan ke namespace `App\Http\Resources\Platform` dan ubah arch test agar menjaga **namespace**, bukan satu nama kelas. Bentuk sekarang (`->expect('App\Http\Resources\PlatformTenantResource')`) hanya menjaga satu file — resource platform kedua tidak akan terjaga tanpa perubahan ini.
 
-### [BL-007] Endpoint Login Tanpa Rate Limit (Web Tenant, Platform, & Mobile API)
-- **Ditemukan:** 2026-07-21
-- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A — diverifikasi lewat `php artisan route:list -v`
-- **Status:** Open
-- **Prioritas:** **High** (satu-satunya entri keamanan yang bisa dieksploitasi dari luar tanpa akun)
-- **Area Terdampak:**
-  - `POST /platform/login` — middleware hanya `web` + `RedirectIfAuthenticated:platform`; **tidak ada `throttle`**
-  - `POST /login` — hanya grup `guest`; **tidak ada `throttle`**
-  - `POST /api/v1/mobile/login` — perlu diperiksa ulang, kemungkinan sama
-- **Deskripsi:**
-  Tidak ada satu pun endpoint login yang dibatasi laju percobaannya, sehingga tebak-kata-sandi otomatis tidak menemui hambatan apa pun. Ini **bukan** regresi dari Tahap A — kondisi yang sama sudah berlaku untuk login tenant sejak awal dan baru terlihat saat memeriksa middleware panel platform.
-  Yang membuatnya naik prioritas adalah **taruhannya sekarang berbeda**: satu akun platform yang jebol membuka data administratif **seluruh** klien sekaligus, bukan satu tenant. Ironisnya audit log sudah rajin mencatat `login.failed` — jadi serangannya akan terekam rapi, tapi tidak ada yang menghentikannya.
-- **Usulan Perbaikan:**
-  1. Pasang `throttle` pada ketiga endpoint login. Untuk `/platform/login` pakai batas yang lebih ketat daripada login tenant.
-  2. Pertimbangkan kunci throttle per **email + IP**, bukan IP saja, agar satu jaringan bersama (mis. warnet/kantor) tidak saling mengunci.
-  3. Manfaatkan `platform_audit_logs` yang sudah ada: beri peringatan bila `login.failed` melewati ambang tertentu dalam satu rentang waktu.
-  4. Tambahkan test yang menegaskan percobaan ke-N ditolak — tanpa test, throttle mudah hilang diam-diam saat rute dirapikan.
-
 ### [BL-006] Sistem Langganan Dua Jalur — Harga Normal (Privasi Penuh) & Subsidi UMKM (Berbasis Omset)
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Permintaan pemilik SaaS — butuh sistem subscription normal **plus** skema bantu UMKM di mana harga mengikuti omset tenant, serta harga mengikuti jumlah pengguna/karyawan
@@ -298,6 +280,31 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-007] Endpoint Login Tanpa Rate Limit (Web Tenant, Platform, & Mobile API)
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A — diverifikasi lewat `php artisan route:list -v`
+- **Status:** Selesai (2026-07-21) — lihat `[HOTFIX] Rate Limit Endpoint Login (BL-007)` di `docs/CHANGELOG.md`
+- **Prioritas:** High (satu-satunya entri keamanan yang bisa dieksploitasi dari luar tanpa akun)
+- **Area Terdampak:**
+  - `POST /login` — tidak ada `throttle`
+  - `POST /platform/login` — tidak ada `throttle`
+  - `POST /api/v1/mobile/login` — **koreksi:** ternyata **sudah** punya `throttle:5,1`, tapi terkunci per IP saja
+- **Deskripsi:**
+  Tidak ada satu pun endpoint login **web** yang dibatasi laju percobaannya, sehingga tebak-kata-sandi otomatis tidak menemui hambatan apa pun. Bukan regresi dari Tahap A — kondisi yang sama sudah berlaku untuk login tenant sejak awal, dan baru terlihat saat memeriksa middleware panel platform. Yang menaikkan prioritasnya adalah taruhannya: satu akun platform yang jebol membuka data administratif seluruh klien sekaligus.
+- **Penyebab:** Rute login web tak pernah diberi middleware `throttle`. Endpoint mobile sudah diberi, tapi memakai bentuk `throttle:5,1` yang mengunci per IP.
+- **Perbaikan:**
+  Tiga limiter bernama di `AppServiceProvider`, semuanya berkunci **email + IP** (email dinormalkan lowercase agar ubah kapitalisasi tidak memberi jatah baru):
+  - `login` — 5/menit, dipasang di `POST /login`
+  - `platform-login` — 5/menit per email+IP **plus** 20/jam per IP, dipasang di `POST /platform/login`
+  - `mobile-login` — 5/menit, menggantikan `throttle:5,1` di `POST /api/v1/mobile/login`
+
+  Langit-langit per jam per IP **sengaja hanya di panel platform**: ia menahan penebakan lintas-email yang lolos dari kunci email+IP, dan aman di sana karena penggunanya segelintir. Menerapkannya di login tenant justru berbahaya — satu warung dengan banyak kasir di balik satu IP publik bisa saling mengunci.
+
+  Balasan saat terblokir dikembalikan sebagai **error validasi berbahasa Indonesia** di bawah kolom email (lewat `Limit::response()`), bukan halaman 429 generik — alur login memakai Inertia, dan pesan di tempat jauh lebih berguna. Endpoint mobile tetap 429 JSON karena konsumennya aplikasi.
+
+  8 test di `tests/Feature/Security/LoginThrottleTest.php`, termasuk penjaga bahwa kunci per-email tidak membuat satu akun mengunci akun lain dan bahwa langit-langit per-IP platform tidak merembet ke login tenant. Suite penuh 242 hijau.
+- **Sisa yang tidak dikerjakan (sengaja):** usulan "beri peringatan bila `login.failed` melewati ambang" belum dibuat — itu soal pemantauan, bukan penahanan, dan lebih cocok digarap bersama halaman audit log di `[BL-009]`.
 
 ### [BL-002] Dua Test Gagal (Pre-existing) di Suite
 - **Ditemukan:** 2026-07-16
