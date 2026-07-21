@@ -32,6 +32,14 @@ class Tenant extends Model
         return $this->hasMany(User::class);
     }
 
+    /**
+     * Akun owner tenant — kontak penagihan bagi pemilik SaaS.
+     */
+    public function owners(): HasMany
+    {
+        return $this->hasMany(User::class)->where('role', 'owner');
+    }
+
     public function categories(): HasMany
     {
         return $this->hasMany(Category::class);
