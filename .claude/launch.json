@@ -8,6 +8,12 @@
       "port": 8000
     },
     {
+      "name": "sapi-laravel-8001",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["artisan", "serve", "--port=8001"],
+      "port": 8001
+    },
+    {
       "name": "sapi-vite",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
