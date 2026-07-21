@@ -20,6 +20,21 @@ const userEmail = computed(() => user.value?.email ?? '');
 const userInitial = computed(() => userName.value.charAt(0).toUpperCase() || 'U');
 const isOwner = computed(() => user.value?.role === 'owner');
 
+// Owner-side modules this staff may open (Keputusan A: entry point into the
+// shared filtered sidebar shell). POS/cash-drawer live in the cashier shell and
+// are intentionally excluded here.
+const ownerModuleCatalog = [
+    { perm: 'products', label: 'Produk', href: '/owner/products' },
+    { perm: 'stock', label: 'Stok', href: '/owner/stock' },
+    { perm: 'reports', label: 'Laporan', href: '/owner/reports/daily' },
+    { perm: 'payment_methods', label: 'Pembayaran', href: '/owner/payment-methods' },
+    { perm: 'ai_analysis', label: 'AI Analysis', href: '/owner/ai-analysis' },
+];
+const staffModules = computed(() => {
+    const perms = user.value?.permissions ?? [];
+    return ownerModuleCatalog.filter((m) => perms.includes(m.perm));
+});
+
 const isActive = (href) => page.url.startsWith(href);
 
 // POS/kasir is reachable via the back button on the left, so it's omitted here.
@@ -199,6 +214,24 @@ const logout = async () => {
                             <NavIcon name="dashboard" />
                             Dashboard Owner
                         </Link>
+
+                        <!-- Staff module access (non-owner staff with granted modules) -->
+                        <template v-if="!isOwner && staffModules.length">
+                            <div class="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/40 border-t border-border">
+                                Kelola Toko
+                            </div>
+                            <Link
+                                v-for="mod in staffModules"
+                                :key="mod.href"
+                                :href="mod.href"
+                                class="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-muted flex items-center gap-2 transition-colors duration-150"
+                                role="menuitem"
+                                @click="dropdownOpen = false"
+                            >
+                                <NavIcon name="dashboard" />
+                                {{ mod.label }}
+                            </Link>
+                        </template>
 
                         <!-- Logout -->
                         <button

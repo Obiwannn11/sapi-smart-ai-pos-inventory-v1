@@ -85,38 +85,65 @@ const NavIcon = defineComponent({
 });
 
 // ── Navigation ─────────────────────────────────────────────────────────────
+// Each item carries either `perm` (spatie module permission) or `ownerOnly`
+// (routes still gated by role:owner). Owner sees everything; staff only sees
+// items whose permission they hold (Keputusan A: shared filtered sidebar).
 const sidebarGroups = [
     {
         label: null,
-        items: [{ name: 'Beranda', href: '/owner/dashboard', icon: 'home' }],
+        items: [{ name: 'Beranda', href: '/owner/dashboard', icon: 'home', ownerOnly: true }],
     },
     {
         label: 'Atur Menu',
         items: [
-            { name: 'Kategori', href: '/owner/categories', icon: 'folder' },
-            { name: 'Produk', href: '/owner/products', icon: 'cube' },
-            { name: 'Stok', href: '/owner/stock', icon: 'archive' },
-            { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments' },
+            { name: 'Kategori', href: '/owner/categories', icon: 'folder', perm: 'products' },
+            { name: 'Produk', href: '/owner/products', icon: 'cube', perm: 'products' },
+            { name: 'Stok', href: '/owner/stock', icon: 'archive', perm: 'stock' },
+            { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments', perm: 'products' },
         ],
     },
     {
         label: 'Keuangan',
         items: [
-            { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report' },
-            { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt' },
-            { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash' },
-            { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive' },
-            { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
-            { name: 'AI Analysis', href: '/owner/ai-analysis', icon: 'sparkles' },
+            { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report', perm: 'reports' },
+            { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt', perm: 'reports' },
+            { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash', perm: 'reports' },
+            { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive', ownerOnly: true },
+            { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card', perm: 'payment_methods' },
+            { name: 'AI Analysis', href: '/owner/ai-analysis', icon: 'sparkles', perm: 'ai_analysis' },
+        ],
+    },
+    {
+        label: 'Tim & Akses',
+        items: [
+            { name: 'Staf', href: '/owner/staff', icon: 'office-building', ownerOnly: true },
+            { name: 'Role', href: '/owner/roles', icon: 'adjustments', ownerOnly: true },
         ],
     },
     {
         label: 'Pengaturan',
         items: [
-            { name: 'Profil Usaha', href: '/owner/settings', icon: 'office-building' },
+            { name: 'Profil Usaha', href: '/owner/settings', icon: 'office-building', ownerOnly: true },
         ],
     },
 ];
+
+// Permission gate mirrored from the backend. Owner carries ['*'].
+const isOwner = computed(() => auth.user?.role === 'owner');
+const can = (perm) =>
+    auth.user?.permissions?.includes('*') || auth.user?.permissions?.includes(perm);
+const canShowItem = (item) => {
+    if (item.ownerOnly) return isOwner.value;
+    if (!item.perm) return true;
+    return can(item.perm);
+};
+
+// Groups/items filtered to what the current user may open.
+const visibleGroups = computed(() =>
+    sidebarGroups
+        .map((g) => ({ ...g, items: g.items.filter(canShowItem) }))
+        .filter((g) => g.items.length),
+);
 
 const isActive = (href) => {
     const url = page.url;
@@ -226,7 +253,7 @@ const logout = async () => {
 
             <!-- Nav items -->
             <nav class="flex-1 overflow-y-auto py-3 px-3 scrollbar-sidebar" aria-label="Navigasi utama">
-                <template v-for="(group, gIdx) in sidebarGroups" :key="gIdx">
+                <template v-for="(group, gIdx) in visibleGroups" :key="gIdx">
                     <!-- Group label — collapsible toggle; hidden in icon-only rail mode -->
                     <button
                         v-if="group.label && sidebarOpen"
