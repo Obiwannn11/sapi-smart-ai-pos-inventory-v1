@@ -40,6 +40,17 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Pemilik SaaS — akun di atas semua tenant, tabel & model terpisah.
+        // Perhatikan: middleware `auth:platform` memanggil Auth::shouldUse(),
+        // sehingga guard ini menjadi guard default untuk sisa request. Efeknya
+        // TenantScope membaca `tenant_id` dari PlatformUser (tidak ada → null)
+        // lalu memfilter `where tenant_id = null` → nol baris. Itu perilaku yang
+        // diinginkan: gagal menutup, bukan gagal membuka.
+        'platform' => [
+            'driver' => 'session',
+            'provider' => 'platform_users',
+        ],
     ],
 
     /*
@@ -63,6 +74,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', App\Models\User::class),
+        ],
+
+        'platform_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\PlatformUser::class,
         ],
 
         // 'users' => [
