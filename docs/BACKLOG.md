@@ -40,6 +40,157 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-006] Sistem Langganan Dua Jalur — Harga Normal (Privasi Penuh) & Subsidi UMKM (Berbasis Omset)
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Permintaan pemilik SaaS — butuh sistem subscription normal **plus** skema bantu UMKM di mana harga mengikuti omset tenant, serta harga mengikuti jumlah pengguna/karyawan
+- **Status:** Open — sudah di-plan di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` (Tahap B–D), belum dieksekusi
+- **Prioritas:** Medium (satu paket dengan BL-005; tidak bisa jalan tanpa fondasi platform console)
+- **Area Terdampak:** (semuanya baru, belum ada di kode)
+  - `database/migrations/` — belum ada `plans`, `pricing_rules`, `subscriptions`, `invoices`, `tenant_consents`, `tenant_monthly_metrics`
+  - `app/Models/Tenant.php` — perlu penanda jalur harga (`pricing_track`) & status consent
+  - `app/Http/Controllers/Owner/StaffController.php:37` (`store`) — titik penegakan batas jumlah user/seat
+  - `app/Models/Transaction.php` — sumber angka omset (hanya untuk tenant yang menyetujui); **tidak boleh** diakses untuk tenant jalur normal
+- **Deskripsi:**
+  Ada **dua jalur harga yang hidup berdampingan**, dan keduanya punya konsekuensi privasi yang berbeda:
+
+  **Jalur A — Harga Normal (default).** Tenant bayar tarif publik. Pemilik SaaS **tidak bisa melihat omset** sama sekali. Ini menjaga janji privasi di `[BL-005]` tanpa kompromi.
+
+  **Jalur B — Subsidi UMKM (opt-in).** Tenant setuju membuka data omsetnya, dan sebagai gantinya dapat harga yang menyesuaikan kemampuan bayar. Contoh dari pemilik: omset ±1 jt/bulan → harga 10k. Jadi omset bukan sekadar informasi, tapi **input penentu harga**.
+
+  Selain omset, harga juga dipengaruhi **jumlah seat**: paket dasar hanya untuk 1 user; menambah karyawan di dalam satu tenant menaikkan harga. Semua aturan ini (bracket omset, tarif per bracket, harga per seat tambahan) harus **bisa diatur sendiri oleh pemilik SaaS lewat dashboard**, bukan hard-code di kode.
+
+  Karena Jalur B membuka data yang di `[BL-005]` dinyatakan rahasia, wajib ada **halaman persetujuan khusus** yang benar-benar dibaca & disepakati tenant sebelum data omset mengalir.
+
+  > **Ketegangan inti yang harus diselesaikan sadar-sadar:** `[BL-005]` berjanji "saya tidak melihat data bisnis Anda", sementara Jalur B justru butuh melihatnya. Ini **tidak otomatis bertentangan** — asal pembukaan data itu (1) sukarela, (2) terbatas pada angka yang benar-benar dibutuhkan, (3) tercatat persetujuannya, dan (4) bisa dicabut. Kalau keempat syarat itu tidak dipenuhi, janji privasi di BL-005 jadi kosong.
+- **Usulan Perbaikan (garis besar — detail menyusul di dokumen plan tersendiri):**
+
+  **1. Omset dihitung otomatis, dan angka persisnya terlihat oleh pemilik SaaS.** *(diputuskan 2026-07-21)*
+  Omset dihitung sistem dari `transactions` — bukan dilaporkan sendiri oleh tenant — supaya tidak bisa diakali, dan angka persisnya (bukan sekadar bracket) tersedia di dashboard platform supaya penetapan harga bisa dibuktikan bila tenant menyanggah.
+
+  > **Catatan atas alasannya — perlu diketahui saat menulis plan.** Sifat anti-akal-akalan itu datang dari **"dihitung otomatis"**, bukan dari **"ditampilkan persis"**. Begitu angka dihitung sistem, tenant sudah tidak bisa memanipulasinya — mau layar menampilkan `Rp 3.847.200` atau `Bracket B`, celahnya sama-sama tertutup. Jadi menampilkan angka persis **tidak menambah** perlindungan dari kecurangan.
+  > Yang benar-benar ia tambahkan adalah **kemampuan membuktikan** saat ada sengketa — terutama untuk tenant yang omsetnya mepet batas bracket. Itu alasan yang sah, dan cukup untuk mendukung keputusan ini; hanya saja alasannya "pembuktian", bukan "anti-celah".
+  >
+  > **Penyempurnaan yang layak dipertimbangkan (belum diputuskan):** tampilkan **bracket** di halaman daftar tenant, dan sediakan angka persis lewat aksi "lihat rincian" yang tercatat di audit log. Pembuktian saat sengketa tetap bisa, tapi omset persis semua klien tidak jadi pemandangan sehari-hari di layar. Bedanya halus tapi nyata: yang pertama membuka data saat dibutuhkan, yang kedua membukanya terus-menerus.
+
+  **2. Konsekuensi yang harus diterima.** Dengan keputusan di atas, untuk tenant jalur subsidi pemilik SaaS **memang melihat omset persis**. Ini bukan masalah selama tidak diklaim sebaliknya — maka: (a) halaman consent jalur subsidi wajib menyebut ini dengan kalimat lugas, tanpa eufemisme; (b) semua materi pemasaran/landing page tidak boleh memuat klaim umum seperti "kami tidak pernah melihat data bisnis Anda" tanpa pengecualian yang jelas. Tenant jalur normal tetap tertutup penuh, dan itulah yang boleh dinyatakan tanpa syarat.
+
+  **Cakupan persisnya — final** *(diputuskan 2026-07-21)*: **hanya omset dalam angka rupiah**. Tidak ada margin/laba, tidak ada detail transaksi, tidak ada katalog produk.
+
+  > **Latar keputusan:** sempat dipertimbangkan menambahkan keuntungan dalam bentuk persentase, tapi dibatalkan karena tidak mencapai tujuannya — selama omset sudah berupa angka persis, margin persen membuat laba rupiah bisa dihitung dengan satu perkalian (`Rp 3.847.200 × 22% = Rp 846.384`), jadi efeknya sama dengan membuka laba penuh. Karena untuk penetapan harga berbasis kemampuan bayar **omset saja sudah cukup**, margin hanya akan menambah data yang harus dijaga tanpa menambah dasar penetapan harga.
+  > Konsekuensi praktis: `tenant_monthly_metrics` **tidak menyimpan kolom laba/HPP sama sekali**. Bukan disimpan lalu disembunyikan — memang tidak pernah dihitung.
+
+  **3. Tabel ringkasan bulanan, bukan query langsung.** Buat `tenant_monthly_metrics` (tenant_id, periode, bracket, dihitung_pada) yang diisi scheduled job. Dashboard platform **hanya** membaca tabel ini — tidak pernah menyentuh `transactions`. Ini sekaligus menyelesaikan dua hal: performa (tidak SUM ratusan ribu baris tiap buka halaman) dan privasi (jalur akses ke data mentah cuma satu, mudah diaudit). Job hanya memproses tenant berjalur B.
+
+  **4. Penanda jalur harga menegakkan batas secara struktural.** Kolom `tenants.pricing_track` (`normal` / `subsidized`). Job penghitung dan query dashboard **wajib** memfilter `pricing_track = 'subsidized'`. Tenant jalur normal tidak punya baris di `tenant_monthly_metrics` sama sekali — jadi datanya bukan "disembunyikan di UI", tapi memang tidak pernah ada.
+
+  **5. Halaman persetujuan (consent) yang bermakna, bukan formalitas — dan terpisah per jalur.** *(diputuskan 2026-07-21: dua dokumen consent berbeda, subsidi & normal)*
+  - **Dua dokumen terpisah**, bukan satu dokumen dengan pasal bersyarat. Consent jalur subsidi menyatakan bahwa omset dihitung otomatis dan **angka persisnya dilihat** pemilik SaaS untuk penetapan harga. Consent jalur normal menyatakan sebaliknya: data bisnis tidak dibuka sama sekali. Memisahkannya membuat masing-masing pendek, jujur, dan benar-benar terbaca — dokumen bersyarat justru mengaburkan hal terpenting.
+  - Isi wajib: **apa persisnya** yang dibagikan, **seberapa sering**, **untuk apa** (penentuan harga), **berapa lama disimpan**, **cara mencabut**, dan **apa akibatnya kalau dicabut**.
+  - Hindari dark pattern: checkbox **tidak boleh** ter-centang duluan; wajib scroll sampai bawah sebelum tombol setuju aktif; ringkasan bahasa manusia di atas, detail di bawah. Ini justru sejalan dengan niat Anda "agar betul-betul dibaca".
+  - Simpan bukti di `tenant_consents`: `tenant_id`, `user_id` yang menyetujui, `consent_version`, `disetujui_pada`, `ip`. **Versi teks wajib disimpan** — teks consent pasti berubah, dan "dia dulu setuju" harus bisa dibuktikan merujuk teks yang mana.
+  - Persetujuan harus datang dari **owner tenant**, bukan staf.
+
+  **6. Pencabutan consent perlu kebijakan eksplisit.** Kalau tenant mencabut, apakah diskon langsung hilang, atau berlaku sampai akhir periode berjalan lalu kembali ke harga normal? Saya sarankan **berlaku sampai akhir periode** — pencabutan yang langsung menaikkan tagihan terasa seperti hukuman dan membuat orang takut mencabut (yang berarti consent-nya jadi semu). Apa pun keputusannya, **harus tertulis di halaman consent sejak awal**, bukan kejutan belakangan.
+
+  **7. Aturan harga sebagai data, bukan kode.** `plans` (nama, tarif dasar, batas seat) + `pricing_rules` (bracket omset → tarif, harga per seat tambahan) + kemungkinan override harga khusus per tenant. Semua CRUD dari platform console.
+  - **Perubahan tarif jangan diam-diam menagih ulang tenant lama.** Perlu `effective_date` / grandfathering: tenant yang sudah jalan tetap di tarif lamanya sampai periode berikutnya. Tanpa ini, satu kali edit angka bisa mengubah tagihan semua orang seketika.
+  - Setiap perubahan tarif masuk audit log (`[BL-005]` poin 6).
+
+  **8. Seat / batas pengguna — penegakan keras.** *(diputuskan 2026-07-21)*
+  Menambah staf melebihi batas paket **ditolak** sampai tenant upgrade, dengan pesan yang menjelaskan batasnya dan menawarkan jalan upgrade. Alasannya: bagi UMKM, tagihan mendadak jauh lebih menyakitkan daripada tombol yang menolak dengan sopan.
+  - Titik penegakan: `StaffController@store` (baris 37), sebelum user dibuat. Menghitung seat **tidak butuh data bisnis sama sekali** — cukup `count()` di tabel `users` — jadi bagian ini aman untuk semua jalur harga.
+  - Interaksi dengan Phase RBAC: peran/role tidak dibatasi, yang dibatasi jumlah **user**. Wajib dipastikan tidak ada celah lewat jalur lain yang membuat user (seeder, API mobile, registrasi).
+  - Masih perlu diputuskan: apa definisi seat — semua user, atau hanya yang aktif? Apakah menonaktifkan staf membebaskan seat? (Kalau ya, perlu jaga-jaga terhadap pola aktif–nonaktif bergantian untuk menghindari biaya.)
+
+  **9. Trial 1 bulan gratis sebagai periode awal.** *(diputuskan 2026-07-21)*
+  Semua tenant baru mulai dengan trial gratis 1 bulan. Di akhir trial, tenant memilih: **bayar tarif normal** untuk lanjut, atau **mengajukan diskon subsidi** dengan menyetujui pembukaan data omset.
+  - **Sifat yang menguntungkan:** bulan trial sekaligus menjadi **periode pengukuran**. Saat tenant mengajukan subsidi di akhir trial, datanya sudah ada — masalah ayam-telur selesai dengan sendirinya, tanpa perlu tarif sementara atau perkiraan bracket.
+  - **Tapi ini menimbulkan syarat pada consent:** omset yang dipakai berasal dari transaksi **sebelum** tenant menyetujui apa pun. Jadi dokumen consent subsidi harus menyatakan lugas bahwa perhitungan mencakup data periode trial yang sudah lewat, bukan hanya ke depan. Kalau tidak disebut, tenant berhak merasa datanya dipakai tanpa izin.
+  - Masih perlu diputuskan: apa yang terjadi bila di akhir trial tenant **tidak memilih apa-apa**? (dibekukan, jadi read-only, atau tetap jalan sampai ditagih?) Dan berapa lama datanya disimpan sebelum boleh dihapus.
+  - **Risiko penyalahgunaan trial:** dengan signup self-serve, orang bisa mendaftar berulang kali untuk trial gratis baru. Perlu mitigasi (verifikasi nomor telepon/email, penandaan perangkat, atau persetujuan manual untuk tenant kedua dengan identitas serupa).
+
+  **10. Upgrade provisional dengan bukti transfer.** *(diputuskan 2026-07-21)*
+  Saat tenant mentok batas seat dan ingin upgrade, dia mengunggah bukti transfer dan paketnya **langsung aktif** tanpa menunggu verifikasi manual. Pemilik SaaS memverifikasi belakangan.
+  - Perlu diputuskan: **apa yang terjadi kalau bukti ditolak** (palsu, nominal kurang, atau salah unggah)? Saat itu tenant kemungkinan sudah menambahkan staf. Turunkan paketnya lalu staf mana yang dinonaktifkan? Saran: beri tenggang (mis. 3×24 jam) berisi pemberitahuan agar tenant memperbaiki, dan bila tetap gagal, kunci penambahan staf baru **tanpa** menonaktifkan staf yang sudah terlanjur dibuat — menonaktifkan akun yang sedang dipakai bekerja jauh lebih merusak kepercayaan daripada sekadar menahan penambahan berikutnya.
+  - Perlu batas wajar agar tidak jadi celah: mis. hanya boleh satu upgrade provisional yang belum terverifikasi dalam satu waktu, dan tenant yang pernah gagal verifikasi tidak lagi dapat fasilitas ini.
+
+  **11. Yang masih perlu diputuskan sebelum plan final:**
+  - Apakah bracket ditampilkan di daftar dan angka persis hanya lewat aksi tercatat? — lihat poin 1.
+  - Apa yang terjadi bila tenant tidak memilih apa pun di akhir trial? — lihat poin 9.
+  - Mitigasi pendaftaran trial berulang — lihat poin 9.
+  - Penanganan bukti transfer yang ditolak setelah upgrade provisional aktif — lihat poin 10.
+  - Pencabutan consent: diskon langsung hilang atau berlaku sampai akhir periode? (saran: akhir periode)
+  - Apakah tenant boleh pindah jalur normal ↔ subsidi kapan saja, atau ada periode minimum?
+  - Definisi seat aktif — lihat poin 8.
+  - Saat signup self-serve, apakah calon tenant memilih jalur harga di halaman itu juga, dan bagaimana mencegah semua orang memilih subsidi?
+
+### [BL-005] Platform Console — Panel Pemilik SaaS (Privacy-Preserving)
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Permintaan pemilik SaaS — butuh satu panel untuk melihat siapa saja tenant yang terdaftar, status langganan, dan riwayat pembayaran, **tanpa** bisa melihat data operasional klien
+- **Status:** Open — sudah di-plan di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` (Tahap A), belum dieksekusi
+- **Prioritas:** Medium (belum menghambat operasional tenant, tapi jadi blocker begitu tenant berbayar pertama masuk — tanpa ini penagihan & pencatatan langganan manual)
+- **Area Terdampak:** (belum ada satu pun yang eksis — semuanya baru)
+  - `app/Models/Tenant.php` — belum punya konsep plan/status langganan sama sekali (kolom saat ini hanya `name`, `slug`, `logo`, `address`, `phone`, `ai_provider`, `ai_api_key`, `ai_model`)
+  - `app/Models/User.php:31-39` — hanya kenal peran `owner`/`cashier` **di dalam** tenant; tidak ada peran di atas tenant
+  - `bootstrap/app.php:27-32` — alias middleware yang ada (`tenant`, `tenant.api`, `role`, `permission`) semuanya **mengasumsikan** user punya `tenant_id`
+  - `app/Http/Middleware/EnsureTenant.php` — memaksa scope tenant; panel platform justru harus berada **di luar** scope ini
+  - `routes/web.php` — belum ada grup rute di luar `owner`/`cashier`
+  - `database/migrations/` — belum ada tabel `plans`, `subscriptions`, `invoices`/`payments`, maupun `platform_audit_logs`
+- **Deskripsi:**
+  Saat ini aplikasi hanya mengenal dua tingkat: **tenant** dan **user di dalam tenant** (owner/cashier + RBAC modul dari Phase RBAC). Tidak ada tingkat ketiga: **pemilik platform/SaaS** yang berdiri di atas semua tenant. Akibatnya tidak ada cara melihat daftar tenant, status berbayar/gratis, atau riwayat pembayaran selain query database manual.
+
+  Kebutuhan intinya bukan sekadar "admin bisa lihat semua", tapi justru sebaliknya: **panel yang sengaja dibatasi** supaya kerahasiaan data klien tetap terjaga. Pemilik SaaS perlu data *administratif & komersial*, bukan data *operasional*.
+
+  **Yang BOLEH dilihat (data administratif/komersial):**
+  1. Daftar tenant terdaftar — nama usaha, slug, tanggal daftar, status aktif/suspend
+  2. Identitas owner tenant — nama & email owner (kontak penagihan)
+  3. Daftar akun di bawah tenant — jumlah user, nama/email/peran, kapan terakhir login (untuk hitung seat & dukung support)
+  4. Status langganan — Free / Paid, nama paket, tanggal mulai, tanggal jatuh tempo, status trial
+  5. Biaya per tenant — tarif paket, diskon/harga khusus bila ada, MRR per tenant
+  6. Riwayat pembayaran — daftar invoice, nominal, tanggal bayar, metode, status (lunas/pending/gagal)
+  7. Metrik kesehatan/pemakaian **agregat** (angka saja, bukan isi) — mis. jumlah transaksi bulan ini, jumlah produk, kuota AI terpakai (`ai_usages`), tanggal aktivitas terakhir. Berguna untuk deteksi tenant yang mau churn & kapasitas server.
+  8. Status fitur per tenant — flag yang aktif (nanti nyambung ke `PHASE-FEATURE-FLAGS`: `ai_enabled`, `self_order_enabled`, dst.)
+  9. Log tiket/catatan internal per tenant (opsional) — catatan manual pemilik SaaS
+
+  **Yang TIDAK BOLEH dilihat (data rahasia klien):**
+  - Isi transaksi (item apa, harga berapa, siapa kasirnya), omzet & laba per tenant
+    → **satu-satunya pengecualian:** tenant yang secara sukarela memilih jalur subsidi UMKM di `[BL-006]`. Untuk mereka, omset dihitung otomatis dan **angka persisnya terlihat** oleh pemilik SaaS *(diputuskan 2026-07-21)* — dinyatakan terang-terangan di dokumen consent jalur subsidi. **Laba/margin tetap tertutup** bahkan untuk jalur ini, begitu pula isi transaksi dan katalog. Tenant jalur harga normal tertutup penuh tanpa kecuali.
+  - Katalog produk, harga jual, resep/modifier, data stok
+  - Isi laporan, hasil AI Analysis, dan konteks bisnis yang dikirim ke AI
+  - `ai_api_key` tenant (sudah `encrypted` + `$hidden` di `Tenant.php:15-22` — jangan sampai bocor lewat panel ini)
+  - Password/kredensial user tenant
+
+  > Catatan penting: poin 7 (metrik agregat) adalah **garis abu-abu**. "Jumlah transaksi" = metadata pemakaian (wajar untuk billing berbasis volume). "Total omzet" = data bisnis rahasia. Perlu diputuskan sadar di tahap plan, di mana garisnya ditarik — dan konsisten di semua tampilan.
+- **Dugaan Penyebab / Kenapa belum ada:**
+  Aplikasi dibangun dari sudut pandang satu tenant ke bawah. Semua middleware & query berbasis scope tenant, dan monetisasi belum pernah dimodelkan di database — jadi tidak ada tempat untuk menyimpan "tenant ini bayar berapa".
+- **Usulan Perbaikan (garis besar — detail menyusul di dokumen plan tersendiri):**
+  1. **Identitas platform admin terpisah, bukan menumpang `users.role`.** Opsi: (a) kolom `users.is_platform_admin` + `tenant_id` nullable, atau (b) tabel/guard terpisah `platform_admins`. Opsi (b) lebih aman karena akun platform tidak pernah ikut ter-scope tenant dan tidak bisa "nyasar" masuk UI tenant, tapi menambah satu guard. Perlu keputusan.
+  2. **Rute & layout terpisah** — mis. prefix `/platform` (atau subdomain), **di luar** middleware `tenant`, dengan layout `PlatformLayout.vue` sendiri agar tidak tercampur dengan `OwnerLayout`.
+  3. **Model data langganan baru:** `plans` (nama, harga, kuota), `subscriptions` (tenant_id, plan_id, status, periode), `invoices` + `payments` (nominal, tanggal, metode, bukti). Mulai **manual/pencatatan dulu** (owner input pembayaran yang masuk), integrasi payment gateway belakangan.
+  4. **Privasi ditegakkan di lapisan query, bukan hanya UI.** Buat resource/DTO khusus platform (mis. `PlatformTenantResource`) yang hanya meng-expose field yang diizinkan — jangan pernah kirim model `Tenant`/`User` mentah ke Inertia. Menyembunyikan kolom di Vue saja tidak cukup: datanya tetap terkirim di payload dan bisa dibaca lewat DevTools.
+  5. **Larang akses lintas-tenant secara struktural.** Controller platform tidak boleh menyentuh `Transaction`, `Product`, `AiAnalysis`, dll. Ide penegakan: test arsitektur (Pest `arch()`) yang gagal bila namespace `Platform` mengimpor model operasional. Metrik agregat cukup lewat query `count()`/`sum()` terbatas atau tabel ringkasan harian.
+     **Pengecualian yang disengaja:** job penghitung metrik di `[BL-006]` poin 3 memang harus membaca `Transaction`. Itu boleh — asal job-nya berada **di luar** namespace `Platform` dan hasilnya hanya ditulis ke tabel ringkasan. Aturannya: yang dilarang menyentuh data operasional adalah **controller/halaman platform**, bukan job terjadwal. Dengan begitu tetap ada satu-satunya pintu ke data mentah, dan pintu itu mudah diaudit.
+  6. **Audit log.** Setiap akses platform admin ke data tenant dicatat (`platform_audit_logs`). Ini yang membuat janji "saya tidak melihat data Anda" bisa dibuktikan, bukan sekadar klaim.
+  7. **Impersonation: default TIDAK ADA.** Kalau nanti dibutuhkan untuk support, wajib berbasis izin eksplisit dari owner tenant + berjangka waktu + tercatat di audit log. Jangan dibuat di iterasi pertama.
+  8. **RBAC platform: pakai ulang pola modul + centang dari Phase RBAC.** *(diputuskan 2026-07-21)*
+     Panel platform punya RBAC sendiri, dengan pemilik SaaS sebagai user pertama (dan untuk sekarang satu-satunya). Polanya **sama persis** dengan yang sudah jalan di sisi tenant, jadi tidak perlu menemukan konsep baru:
+     - katalog modul di config (sisi tenant: `config/rbac.php` → `modules`), satu entri = satu permission "boleh membuka modul ini";
+     - owner membuat role lalu tinggal **mencentang** modul mana yang ikut (sisi tenant: `Owner/RoleController@store:47-52` — validasi `Rule::in(array_keys(config('rbac.modules')))` lalu `syncPermissions()`);
+     - nav & halaman difilter dari permission yang sama.
+
+     **Catatan penting soal implementasi:** jangan pakai ulang katalog `config/rbac.php` yang sekarang — isinya modul operasional tenant (POS, Stok, Produk) yang tidak relevan di panel platform. Yang dipakai ulang adalah **polanya**, dengan katalog terpisah (mis. `config/platform-rbac.php`) berisi modul platform: `tenants`, `subscriptions`, `payments`, `pricing_rules`, `audit_logs`. Perlu diperiksa juga apakah spatie perlu **guard terpisah** untuk sisi platform — RBAC tenant saat ini bergantung pada team-id per tenant, sementara akun platform tidak punya tenant, jadi ini titik yang paling rawan bocor/tabrakan dan harus dituntaskan di tahap plan.
+
+  9. **v1 tidak bisa read-only.** *(diputuskan 2026-07-21)* Rencana awal mengusulkan panel read-only di v1 demi keamanan, tapi `[BL-006]` mensyaratkan pemilik SaaS mengatur sendiri aturan harga, bracket, dan tarif seat dari dashboard. Jadi v1 **harus** punya kemampuan tulis, minimal untuk `plans`/`pricing_rules`/pencatatan pembayaran. Konsekuensinya audit log (poin 6) naik dari "bagus untuk dimiliki" menjadi **wajib ada sejak v1**.
+
+  10. **Pendaftaran self-serve.** *(diputuskan 2026-07-21)* Calon tenant mendaftar sendiri lewat halaman publik, bukan dibuat manual oleh pemilik SaaS. Konsekuensi untuk scope v1: butuh alur signup + verifikasi email + pemilihan jalur harga + halaman consent yang sesuai jalurnya, plus penanganan tenant terbengkalai (daftar lalu tidak pernah dipakai) supaya tidak mengotori daftar tenant dan metrik.
+
+  11. **Pembayaran dicatat manual di v1.** *(diputuskan 2026-07-21)* Pemilik SaaS mencatat sendiri pembayaran masuk beserta buktinya; belum ada integrasi payment gateway. Perhatikan interaksinya dengan blokir seat keras — lihat `[BL-006]` poin 9(b).
+
+  12. **Yang masih perlu diputuskan sebelum plan final:**
+     - Garis metrik agregat untuk tenant **jalur normal** — jumlah transaksi, jumlah produk, kuota AI: boleh terlihat atau tidak? (Omset sudah terjawab di `[BL-006]`, tapi ini belum.)
+     - Apakah pemilik SaaS boleh menangguhkan (suspend) tenant yang menunggak, dan apa yang terjadi pada data tenant selama masa suspend?
+     - Dengan signup self-serve, siapa yang boleh mendaftar — terbuka untuk umum, atau perlu persetujuan Anda dulu sebelum tenant aktif?
+
 ### [BL-004] Pesan Validasi Masih Bahasa Inggris di UI Berbahasa Indonesia
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Validasi live blackbox fitur RBAC — form "Tambah Staf" (`/owner/staff`), saat sengaja mengirim email duplikat + password < 8 karakter
