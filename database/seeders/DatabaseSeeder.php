@@ -12,11 +12,16 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // 0. Katalog permission modul (global, idempotent)
+        $this->call(PermissionCatalogSeeder::class);
+
         // 1. Tenant
         $tenant = Tenant::create([
             'name' => 'Kopi Nusantara',
@@ -32,13 +37,24 @@ class DatabaseSeeder extends Seeder
             'role' => 'owner',
         ]);
 
-        User::create([
+        $kasir = User::create([
             'tenant_id' => $tenant->id,
             'name' => 'Kasir Demo',
             'email' => 'kasir@sapi.test',
             'password' => Hash::make('password'),
             'role' => 'cashier',
         ]);
+
+        // 2b. Contoh role per-tenant + assign ke kasir demo.
+        app(PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
+
+        $kasirPos = Role::findOrCreate('Kasir', 'web');
+        $kasirPos->syncPermissions(['pos', 'cash_drawer']);
+
+        $kasirGudang = Role::findOrCreate('Kasir + Gudang', 'web');
+        $kasirGudang->syncPermissions(['pos', 'cash_drawer', 'stock']);
+
+        $kasir->assignRole($kasirGudang);
 
         // 3. Categories
         $kopi = Category::create(['tenant_id' => $tenant->id, 'name' => 'Kopi']);
