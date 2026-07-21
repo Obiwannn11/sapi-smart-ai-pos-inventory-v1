@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\PlatformTenantResource;
+use App\Http\Resources\Platform\TenantResource;
 use App\Models\PlatformAuditLog;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
@@ -34,7 +34,7 @@ class TenantController extends Controller
         PlatformAuditLog::record('tenants.index', meta: ['page' => $tenants->currentPage()]);
 
         return Inertia::render('Platform/Tenants/Index', [
-            'tenants' => PlatformTenantResource::collection($tenants),
+            'tenants' => TenantResource::collection($tenants),
         ]);
     }
 }

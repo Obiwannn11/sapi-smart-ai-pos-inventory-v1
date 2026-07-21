@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Resources;
+namespace App\Http\Resources\Platform;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -19,7 +19,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * @property-read \App\Models\Tenant $resource
  */
-class PlatformTenantResource extends JsonResource
+class TenantResource extends JsonResource
 {
     /**
      * @return array<string, mixed>

@@ -33,8 +33,10 @@ arch('platform controllers never touch tenant operational models')
     ->expect('App\Http\Controllers\Platform')
     ->not->toUse($operationalModels);
 
+// Berbasis NAMESPACE, bukan satu nama kelas: resource platform berikutnya ikut
+// terjaga tanpa harus ingat menambahkannya ke daftar di sini.
 arch('platform resources never touch tenant operational models')
-    ->expect('App\Http\Resources\PlatformTenantResource')
+    ->expect('App\Http\Resources\Platform')
     ->not->toUse($operationalModels);
 
 arch('platform controllers do not reach for raw database queries')
