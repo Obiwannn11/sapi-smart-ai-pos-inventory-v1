@@ -16,80 +16,98 @@ Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
-// --- Owner Routes ---
+// --- Owner Routes: modul grantable (digerbang per-permission; owner auto-lolos
+//     via Gate::before). Staf non-owner butuh permission modul yang sesuai. ---
+Route::middleware(['auth', 'tenant'])
+    ->prefix('owner')
+    ->name('owner.')
+    ->group(function () {
+        // Modul: Produk (kategori, produk, varian, modifier)
+        Route::middleware('permission:products')->group(function () {
+            Route::resource('categories', \App\Http\Controllers\Owner\CategoryController::class)
+                ->only(['index', 'store', 'update', 'destroy']);
+
+            Route::resource('products', \App\Http\Controllers\Owner\ProductController::class);
+
+            Route::post('products/{product}/variants', [\App\Http\Controllers\Owner\VariantController::class, 'store'])
+                ->name('products.variants.store');
+            Route::put('products/{product}/variants/{variant}', [\App\Http\Controllers\Owner\VariantController::class, 'update'])
+                ->name('products.variants.update');
+            Route::delete('products/{product}/variants/{variant}', [\App\Http\Controllers\Owner\VariantController::class, 'destroy'])
+                ->name('products.variants.destroy');
+
+            Route::resource('modifiers', \App\Http\Controllers\Owner\ModifierController::class)
+                ->only(['index', 'store', 'update', 'destroy'])
+                ->parameters(['modifiers' => 'modifierGroup']);
+            Route::patch('modifiers/{modifierGroup}/settings', [\App\Http\Controllers\Owner\ModifierController::class, 'updateSettings'])
+                ->name('modifiers.settings');
+        });
+
+        // Modul: Stok / Inventori
+        Route::middleware('permission:stock')->group(function () {
+            Route::get('stock', [\App\Http\Controllers\Owner\StockController::class, 'index'])
+                ->name('stock.index');
+            Route::post('stock/{variant}/restock', [\App\Http\Controllers\Owner\StockController::class, 'restock'])
+                ->name('stock.restock');
+            Route::post('stock/{variant}/adjust', [\App\Http\Controllers\Owner\StockController::class, 'adjust'])
+                ->name('stock.adjust');
+            Route::get('stock/{variant}/history', [\App\Http\Controllers\Owner\StockController::class, 'history'])
+                ->name('stock.history');
+            Route::get('stock/movements', [\App\Http\Controllers\Owner\StockController::class, 'movements'])
+                ->name('stock.movements');
+        });
+
+        // Modul: Laporan & Riwayat (laporan harian, transaksi, sesi kas)
+        Route::middleware('permission:reports')->group(function () {
+            Route::get('reports/daily', [\App\Http\Controllers\Owner\ReportController::class, 'daily'])
+                ->name('reports.daily');
+
+            Route::get('transactions', [\App\Http\Controllers\Owner\ReportController::class, 'transactions'])
+                ->name('transactions.index');
+            Route::get('transactions/{transaction}', [\App\Http\Controllers\Owner\ReportController::class, 'transactionDetail'])
+                ->name('transactions.show');
+
+            Route::get('cash-drawers', [\App\Http\Controllers\Owner\ReportController::class, 'cashDrawers'])
+                ->name('cash-drawers.index');
+        });
+
+        // Modul: Metode Pembayaran (sensitif — grantable, default tidak dicentang)
+        Route::middleware('permission:payment_methods')->group(function () {
+            Route::resource('payment-methods', \App\Http\Controllers\Owner\PaymentMethodController::class)
+                ->only(['index', 'store', 'update', 'destroy']);
+        });
+
+        // Modul: AI Analysis (sensitif — grantable, default tidak dicentang)
+        Route::middleware('permission:ai_analysis')->group(function () {
+            Route::get('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'index'])
+                ->name('ai-analysis.index');
+            Route::post('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'store'])
+                ->name('ai-analysis.store');
+            Route::get('ai-analysis/{aiAnalysis}', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'show'])
+                ->name('ai-analysis.show');
+        });
+    });
+
+// --- Owner-eksklusif: tetap role:owner (tak jadi permission grantable) ---
 Route::middleware(['auth', 'tenant', 'role:owner'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {
-        // Dashboard
+        // Dashboard (beranda owner)
         Route::get('/dashboard', [\App\Http\Controllers\Owner\DashboardController::class, 'index'])
             ->name('dashboard');
 
-        // Reports
-        Route::get('reports/daily', [\App\Http\Controllers\Owner\ReportController::class, 'daily'])
-            ->name('reports.daily');
-
-        // Transaction History
-        Route::get('transactions', [\App\Http\Controllers\Owner\ReportController::class, 'transactions'])
-            ->name('transactions.index');
-        Route::get('transactions/{transaction}', [\App\Http\Controllers\Owner\ReportController::class, 'transactionDetail'])
-            ->name('transactions.show');
-
-        // Cash Drawer History
-        Route::get('cash-drawers', [\App\Http\Controllers\Owner\ReportController::class, 'cashDrawers'])
-            ->name('cash-drawers.index');
-
-        // Categories
-        Route::resource('categories', \App\Http\Controllers\Owner\CategoryController::class)
-            ->only(['index', 'store', 'update', 'destroy']);
-
-        // Products
-        Route::resource('products', \App\Http\Controllers\Owner\ProductController::class);
-
-        // Variants (nested under products)
-        Route::post('products/{product}/variants', [\App\Http\Controllers\Owner\VariantController::class, 'store'])
-            ->name('products.variants.store');
-        Route::put('products/{product}/variants/{variant}', [\App\Http\Controllers\Owner\VariantController::class, 'update'])
-            ->name('products.variants.update');
-        Route::delete('products/{product}/variants/{variant}', [\App\Http\Controllers\Owner\VariantController::class, 'destroy'])
-            ->name('products.variants.destroy');
-
-        // Modifier Groups
-        Route::resource('modifiers', \App\Http\Controllers\Owner\ModifierController::class)
-            ->only(['index', 'store', 'update', 'destroy'])
-            ->parameters(['modifiers' => 'modifierGroup']);
-        Route::patch('modifiers/{modifierGroup}/settings', [\App\Http\Controllers\Owner\ModifierController::class, 'updateSettings'])
-            ->name('modifiers.settings');
-
-        // Payment Methods
-        Route::resource('payment-methods', \App\Http\Controllers\Owner\PaymentMethodController::class)
-            ->only(['index', 'store', 'update', 'destroy']);
-
-        // Stock Management
-        Route::get('stock', [\App\Http\Controllers\Owner\StockController::class, 'index'])
-            ->name('stock.index');
-        Route::post('stock/{variant}/restock', [\App\Http\Controllers\Owner\StockController::class, 'restock'])
-            ->name('stock.restock');
-        Route::post('stock/{variant}/adjust', [\App\Http\Controllers\Owner\StockController::class, 'adjust'])
-            ->name('stock.adjust');
-        Route::get('stock/{variant}/history', [\App\Http\Controllers\Owner\StockController::class, 'history'])
-            ->name('stock.history');
-        Route::get('stock/movements', [\App\Http\Controllers\Owner\StockController::class, 'movements'])
-            ->name('stock.movements');
-
-        // Koreksi transaksi offline yang tersinkron dengan anomali
+        // Koreksi transaksi offline yang tersinkron dengan anomali (sensitif)
         Route::get('offline-review', [\App\Http\Controllers\Owner\OfflineReviewController::class, 'index'])
             ->name('offline-review.index');
         Route::post('offline-review/{transaction}/resolve', [\App\Http\Controllers\Owner\OfflineReviewController::class, 'resolve'])
             ->name('offline-review.resolve');
 
-        // AI Analysis
-        Route::get('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'index'])
-            ->name('ai-analysis.index');
-        Route::post('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'store'])
-            ->name('ai-analysis.store');
-        Route::get('ai-analysis/{aiAnalysis}', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'show'])
-            ->name('ai-analysis.show');
+        // Manajemen Staf & Role (hanya owner)
+        Route::resource('staff', \App\Http\Controllers\Owner\StaffController::class)
+            ->only(['index', 'store', 'update', 'destroy']);
+        Route::resource('roles', \App\Http\Controllers\Owner\RoleController::class)
+            ->only(['index', 'store', 'update', 'destroy']);
 
         // Settings
         Route::get('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'index'])
