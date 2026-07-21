@@ -21,10 +21,14 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         // Alias middleware
+        // NOTE: our 'role' alias is EnsureRole (enum owner/cashier gate) and must
+        // NOT be overwritten by spatie's RoleMiddleware. Module gating uses
+        // 'permission:' (spatie) instead.
         $middleware->alias([
             'tenant' => \App\Http\Middleware\EnsureTenant::class,
             'tenant.api' => \App\Http\Middleware\EnsureTenantApi::class,
             'role' => \App\Http\Middleware\EnsureRole::class,
+            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
