@@ -21,15 +21,24 @@ return [
     | `revenue_data` (melihat omset klien jalur subsidi). Keduanya kewenangan
     | berbeda — kelak staf platform bisa diberi yang pertama tanpa yang kedua.
     |
+    | 'available' => false menandai modul yang katalognya sudah ditetapkan tapi
+    | halamannya belum dibuat (menyusul di Tahap B–D). Modul begini tidak bisa
+    | dicentang: memberikan izin yang tidak berefek apa pun hanya menyesatkan
+    | orang yang mengaturnya. Cukup ubah flag ini jadi true saat halamannya jadi.
+    |
+    | Manajemen akun platform sengaja TIDAK ada di daftar ini — ia dijaga
+    | penanda `is_owner`, bukan modul grantable, agar staf platform tak bisa
+    | mencentangkan modul sensitif untuk dirinya sendiri.
+    |
     */
 
     'modules' => [
-        'tenants' => ['label' => 'Daftar Tenant', 'sensitive' => false],
-        'subscriptions' => ['label' => 'Langganan', 'sensitive' => false],
-        'payments' => ['label' => 'Pembayaran', 'sensitive' => false],
-        'pricing_rules' => ['label' => 'Aturan Harga', 'sensitive' => true],
-        'revenue_data' => ['label' => 'Data Omset Subsidi', 'sensitive' => true],
-        'audit_logs' => ['label' => 'Log Audit', 'sensitive' => true],
+        'tenants' => ['label' => 'Daftar Tenant', 'sensitive' => false, 'available' => true],
+        'subscriptions' => ['label' => 'Langganan', 'sensitive' => false, 'available' => false],
+        'payments' => ['label' => 'Pembayaran', 'sensitive' => false, 'available' => false],
+        'pricing_rules' => ['label' => 'Aturan Harga', 'sensitive' => true, 'available' => false],
+        'revenue_data' => ['label' => 'Data Omset Subsidi', 'sensitive' => true, 'available' => false],
+        'audit_logs' => ['label' => 'Log Audit', 'sensitive' => true, 'available' => false],
     ],
 
 ];
