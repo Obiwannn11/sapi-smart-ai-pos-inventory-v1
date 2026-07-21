@@ -118,8 +118,8 @@ Satu permission = "boleh membuka modul ini". Nama dibuat stabil & dipetakan ke r
 | `products` | Produk | `owner.products.*`, `owner.categories.*`, `owner.modifiers.*` | Ya |
 | `stock` | Stok / Inventori | `owner.stock.*` | Ya |
 | `reports` | Laporan & Riwayat | `owner.reports.*`, `owner.transactions.*`, `owner.cash-drawers.*` | Ya |
-| `payment_methods` | Metode Pembayaran | `owner.payment-methods.*` | Opsional (Keputusan B) |
-| `ai_analysis` | AI Analysis | `owner.ai-analysis.*` | Opsional (Keputusan B) |
+| `payment_methods` | Metode Pembayaran | `owner.payment-methods.*` | Ya, tapi **default tidak dicentang** (Keputusan B) |
+| `ai_analysis` | AI Analysis | `owner.ai-analysis.*` | Ya, tapi **default tidak dicentang** (Keputusan B) |
 
 **Owner-eksklusif (TIDAK jadi permission grantable; tetap `role:owner`):**
 - `owner.settings.*` (profil usaha, token MCP, AI key) — sensitif.
@@ -212,6 +212,8 @@ $role->syncPermissions($validated['modules']); // subset katalog Bagian 4
 ```
 UI Vue: `Owner/Staff/Index.vue` (tabel + modal create/edit), `Owner/Roles/Index.vue` (tabel + modal dengan `Checkbox.vue` per modul). Reuse komponen `Modal.vue`, `Checkbox.vue`, `Button.vue`, `ConfirmDialog.vue` yang sudah ada.
 
+> **Default centang modul (Keputusan B):** saat modal buat role dibuka, checkbox `payment_methods` & `ai_analysis` **tidak tercentang** secara default (owner harus sengaja mencentangnya). Modul lain boleh mengikuti default yang wajar; `settings` & manajemen staf/role **tidak muncul** sebagai opsi (owner-eksklusif).
+
 ---
 
 ## Bagian 6 — Navigation Gating (menu bersyarat)
@@ -242,10 +244,12 @@ const visibleGroups = computed(() =>
 ```
 Render `visibleGroups`. Owner tak berubah (semua lolos). Staf hanya lihat modul miliknya.
 
-### 6c. Jalur staf ke modul tambahan — **Keputusan A**
-Saat ini staf memakai `CashierTopbar` (tak punya sidebar). Dua opsi agar staf sampai ke modul tambahan:
-1. **(Rekomendasi)** Staf non-owner yang punya ≥1 permission modul memakai **shell sidebar yang sama** (OwnerLayout difilter). POS tetap bisa dibuka via item nav "Kasir". Konsisten, satu komponen nav.
-2. Tambahkan link modul terpilih ke `CashierTopbar` (menu ringkas). Lebih kecil perubahannya, tapi dua sumber nav untuk dijaga.
+### 6c. Jalur staf ke modul tambahan — **Keputusan A → DIPUTUSKAN: opsi 1**
+Saat ini staf memakai `CashierTopbar` (tak punya sidebar). **Keputusan final (2026-07-21): opsi 1.**
+1. **✅ DIPILIH.** Staf non-owner yang punya ≥1 permission modul memakai **shell sidebar yang sama** (OwnerLayout difilter). POS tetap bisa dibuka via item nav "Kasir". Konsisten, satu komponen nav.
+2. ~~Tambahkan link modul terpilih ke `CashierTopbar` (menu ringkas). Lebih kecil perubahannya, tapi dua sumber nav untuk dijaga.~~ — tidak dipakai.
+
+> **Implikasi opsi 1:** staf yang **hanya** punya `pos`/`cash_drawer` (tanpa modul owner) tetap memakai `CashierTopbar` seperti sekarang — tak perlu sidebar. Begitu staf punya ≥1 modul owner (mis. `stock`), ia dialihkan ke shell `OwnerLayout` yang difilter. Ambang pemicunya: "punya minimal satu permission di luar `pos`/`cash_drawer`".
 
 Halaman **beranda** untuk staf: dashboard owner adalah `role:owner`. Untuk staf, landing default tetap `cashier.pos`. Item "Beranda"/dashboard hanya render untuk owner.
 
@@ -268,11 +272,11 @@ Halaman **beranda** untuk staf: dashboard owner adalah `role:owner`. Untuk staf,
 
 ## Bagian 8 — Keputusan Terbuka
 
-**A. Shell nav untuk staf multi-modul** (Bagian 6c). Rekomendasi: **opsi 1** (sidebar difilter dipakai bersama). Perlu konfirmasi karena mengubah pengalaman staf dari topbar → sidebar.
+**A. Shell nav untuk staf multi-modul** (Bagian 6c). ✅ **DIPUTUSKAN (2026-07-21): opsi 1** — sidebar difilter dipakai bersama. Staf hanya-POS tetap di `CashierTopbar`; staf dengan ≥1 modul owner naik ke shell `OwnerLayout` yang difilter.
 
-**B. Modul sensitif sebagai permission grantable?** `payment_methods` & `ai_analysis` — boleh diberikan ke staf atau owner-eksklusif? Rekomendasi: **grantable tapi default tidak tercentang**; `settings` tetap owner-eksklusif.
+**B. Modul sensitif sebagai permission grantable?** `payment_methods` & `ai_analysis`. ✅ **DIPUTUSKAN (2026-07-21): grantable tetapi TIDAK dicentang secara default** saat owner membuat/mengedit role. `settings` tetap owner-eksklusif.
 
-**C. Mobile API** — sertakan `permissions` di respons `MobileAuthController` & gerbang endpoint mobile per modul? Rekomendasi: **tunda** sampai app mobile butuh; saat itu pakai `permission:` versi API (JSON 403) seperti pola `feature.api` di `PHASE-FEATURE-FLAGS`.
+**C. Mobile API** — sertakan `permissions` di respons `MobileAuthController` & gerbang endpoint mobile per modul? ✅ **DIPUTUSKAN (2026-07-21): tetap dibuat, tetapi DITUNDA (backlog) sampai fitur utama RBAC (Bagian 2–9) selesai penuh.** Saat dikerjakan, pakai `permission:` versi API (JSON 403) seperti pola `feature.api` di `PHASE-FEATURE-FLAGS`, dan sertakan array `permissions` di payload auth mobile. Di-track sebagai `[BL-003]` di `docs/BACKLOG.md`.
 
 **D. Granularitas** — v1 = per-modul (buka/tidak). Aksi halus (lihat vs ubah vs hapus) ditunda. Bila nanti perlu, tambah permission `stock.manage` dst. tanpa membongkar struktur.
 
@@ -300,21 +304,25 @@ Jalankan: `php artisan test --compact --filter="ModuleAccess|Auth"`
 
 ## Bagian 10 — Checklist Eksekusi
 
-- [ ] `composer require spatie/laravel-permission` + publish config & migration (approval dependency ✔)
-- [ ] `config/permission.php`: `teams=true`, `team_foreign_key='tenant_id'`; verifikasi kolom `tenant_id` di migration
-- [ ] `migrate`; trait `HasRoles` di `User`
-- [ ] Set team-id di `EnsureTenant` (+ `EnsureTenantApi`) setelah cek tenant
-- [ ] `Gate::before` owner bypass
-- [ ] `PermissionCatalogSeeder` (7 modul, global) + daftar di `DatabaseSeeder`
-- [ ] Alias middleware `permission` di `bootstrap/app.php` (jangan timpa alias `role` lama)
-- [ ] Pecah grup route owner: modul grantable → `permission:<modul>`; sensitif → tetap `role:owner`
-- [ ] Controller + route + Vue: `Owner/Staff` (CRUD staf + assign role) & `Owner/Roles` (CRUD role + pilih modul)
-- [ ] `HandleInertiaRequests`: share `auth.user.permissions`
-- [ ] `OwnerLayout` sidebar difilter `can()`; putuskan shell staf (Keputusan A)
-- [ ] Seed role contoh di seeder demo; (opsional) assign role "Kasir" ke cashier lama via migration data
-- [ ] Tests `ModuleAccessTest` hijau + `AuthTest` lama hijau
-- [ ] `vendor/bin/pint --dirty --format agent` bersih
-- [ ] Entri `docs/CHANGELOG.md` saat fitur benar-benar diterapkan
+- [x] `composer require spatie/laravel-permission` + publish config & migration (v8.3)
+- [x] `config/permission.php`: `teams=true`, `team_foreign_key='tenant_id'`; kolom `tenant_id` terverifikasi di `roles` & pivot
+- [x] `migrate`; trait `HasRoles` di `User`
+- [x] Set team-id di `EnsureTenant` (+ `EnsureTenantApi`) setelah cek tenant
+- [x] `Gate::before` owner bypass
+- [x] `PermissionCatalogSeeder` (7 modul, global) + daftar di `DatabaseSeeder`
+- [x] Alias middleware `permission` di `bootstrap/app.php` (alias `role` lama tak diubah)
+- [x] Pecah grup route owner: modul grantable → `permission:<modul>`; sensitif/eksklusif → tetap `role:owner`
+- [x] Controller + route + Vue: `Owner/Staff` (CRUD staf + assign role) & `Owner/Roles` (CRUD role + pilih modul)
+- [x] `HandleInertiaRequests`: share `auth.user.permissions` (lazy closure via `can()` per modul)
+- [x] `OwnerLayout` sidebar difilter `can()` + grup "Tim & Akses"; staf hanya-POS tetap di `CashierTopbar` dengan jalur "Kelola Toko" (Keputusan A = opsi 1)
+- [x] UI role: `payment_methods` & `ai_analysis` ditandai "Sensitif" & default tidak dicentang (Keputusan B)
+- [ ] (Backlog `[BL-003]`) Mobile API `permissions` + gating endpoint — dikerjakan **setelah** RBAC web selesai
+- [x] Role contoh di seeder demo (`DatabaseSeeder`); assign role "Kasir + Gudang" ke cashier demo
+- [x] Tests `ModuleAccessTest` (11) hijau + suite penuh hijau (217 passed)
+- [x] `vendor/bin/pint --dirty --format agent` bersih
+- [x] Entri `docs/CHANGELOG.md` ditambahkan
+
+> **Catatan implementasi:** share permission dihitung via `can()` per modul (jalur registrar spatie), bukan `getPermissionNames()` relasi Eloquent — yang mengembalikan kosong bila dipanggil dari middleware Inertia karena kepekaan konteks team. Semua enum `role` lama tetap utuh (additive).
 
 ### Aturan emas
 Menambah **modul baru** = tambah 1 permission di katalog (Bagian 4) + 1 gerbang `permission:` di route + 1 item nav ber-`perm`. Selama gerbang route & filter nav memakai nama permission yang sama, akses & tampilan selalu sinkron. Owner tak pernah perlu disentuh (bypass by design).

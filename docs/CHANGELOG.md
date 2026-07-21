@@ -45,6 +45,57 @@
 
 ---
 
+### [HOTFIX] Lima Kendala Implementasi RBAC & Resolusinya
+- **Tanggal:** 2026-07-21
+- **Fase Terkait:** Phase RBAC (menyertai entri `[ADDITION]` RBAC di bawah)
+- **Dampak:** Middleware | Controller | Config | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Lima kendala yang ditemukan saat mengimplementasikan RBAC, semuanya sudah diselesaikan dan diverifikasi (suite penuh hijau — 218 passed):
+  1. **Inertia `share()` berjalan sebelum team-id spatie di-set.** Inertia mengevaluasi `share()` di awal middleware global, sebelum `EnsureTenant` men-set team-id → evaluasi eager `permissions` mendapat team-id `null` (kosong). **Resolusi:** `auth.user.permissions` dijadikan **lazy closure** agar diresolusi di fase render (team-id sudah benar).
+  2. **`getPermissionNames()` (relasi Eloquent) kosong dari konteks share Inertia** meski team-id benar. **Resolusi:** daftar permission share dihitung via `$user->can($module)` per modul katalog — jalur registrar/Gate spatie yang sama dengan middleware `permission:`. Terverifikasi (test `staff page role list…`) bahwa `getRoleNames()`/`getPermissionNames()` **tetap benar** di controller biasa; hanya fase-share yang rapuh.
+  3. **Kebocoran daftar role antar-tenant** di `StaffController@index` (query `Role` tak di-scope team). **Resolusi:** filter `where('tenant_id', …)` + test regresi memastikan role tenant B tak muncul di halaman staf tenant A.
+  4. **Ekspektasi test POS kasir salah** — kasir tanpa sesi kas **sengaja** di-redirect ke `cashier.cash-drawer` (baseline, bukan blokir RBAC). **Resolusi:** ekspektasi test dikoreksi (`assertRedirect`), bukan mengubah perilaku aplikasi.
+  5. **Katalog modul terkopel ke class Seeder + metadata terduplikasi** (middleware & `RoleController` meng-import `PermissionCatalogSeeder`; `RoleController` punya `MODULE_META` sendiri). **Resolusi:** katalog diekstrak ke **`config/rbac.php`** sebagai single source of truth (dipakai seeder, controller, middleware).
+- **Alasan:** Menuntaskan kendala agar tidak menyisakan workaround rapuh / hutang teknis, dan menegakkan satu sumber kebenaran untuk katalog modul.
+- **File Terdampak:**
+  - `config/rbac.php` — **baru**: katalog modul (name → label, sensitive)
+  - `app/Http/Middleware/HandleInertiaRequests.php` — lazy closure + `can()` + baca `config('rbac.modules')`
+  - `app/Http/Controllers/Owner/StaffController.php` — daftar role di-scope tenant
+  - `app/Http/Controllers/Owner/RoleController.php` — hapus `MODULE_META`, baca `config('rbac.modules')`
+  - `database/seeders/PermissionCatalogSeeder.php` — baca `config('rbac.modules')` (hapus const `MODULES`)
+  - `tests/Feature/Authorization/ModuleAccessTest.php` — test regresi isolasi role di halaman staf (kini 12 test)
+- **Catatan Migrasi:** Bila config di-cache di server, jalankan `php artisan config:clear` (atau `config:cache`) agar `config/rbac.php` termuat.
+
+---
+
+### [ADDITION] RBAC — Kontrol Akses Modul untuk Staf Non-Owner
+- **Tanggal:** 2026-07-21
+- **Fase Terkait:** Phase RBAC (`docs/phases-2/PHASE-RBAC_Module-Access-Control.md`)
+- **Dampak:** Dependency | Migration | Model | Middleware | Controller | Route | Frontend | Config
+- **Breaking Change:** Tidak (additive — enum `role` owner/cashier tetap sebagai gerbang kasar)
+- **Deskripsi:** Owner kini bisa membuat **role per-tenant** berisi kumpulan **modul** dan mengikat akun staf ke role tersebut. Staf non-owner hanya melihat & mengakses modul yang diberikan. Owner tetap super-admin (bypass semua cek permission via `Gate::before`). Implementasi memakai `spatie/laravel-permission` fitur **teams** (`team_foreign_key = tenant_id`) sehingga role terisolasi per tenant. Katalog 7 modul global: `pos`, `cash_drawer`, `products`, `stock`, `reports`, `payment_methods`, `ai_analysis`. Keputusan: shell nav staf memakai sidebar terfilter yang sama (Keputusan A); modul sensitif (`payment_methods`, `ai_analysis`) grantable tapi default tidak dicentang (Keputusan B); Mobile API ditunda ke backlog `BL-003` (Keputusan C).
+- **Alasan:** Memenuhi kebutuhan "Kasir 1 hanya POS; Kasir 2 POS + Inventori" dengan role kustom per usaha.
+- **File Terdampak:**
+  - `composer.json` — tambah dependency `spatie/laravel-permission`
+  - `config/permission.php` — `teams=true`, `team_foreign_key='tenant_id'`
+  - `config/rbac.php` — katalog modul (single source of truth; lihat entri `[HOTFIX]` di atas)
+  - `database/migrations/*_create_permission_tables.php` — tabel permission (kolom `tenant_id`)
+  - `app/Models/User.php` — trait `HasRoles`
+  - `app/Http/Middleware/EnsureTenant.php` + `EnsureTenantApi.php` — set team-id spatie setelah cek tenant
+  - `app/Providers/AppServiceProvider.php` — `Gate::before` owner bypass
+  - `bootstrap/app.php` — alias middleware `permission` (alias `role` lama tak diubah)
+  - `database/seeders/PermissionCatalogSeeder.php` — katalog 7 modul (global, idempotent); dipanggil di `DatabaseSeeder`
+  - `app/Http/Controllers/Owner/StaffController.php` + `RoleController.php` — CRUD staf & role (owner-only)
+  - `routes/web.php` — grup owner dipecah: modul grantable → `permission:<modul>`; sensitif/owner-eksklusif → tetap `role:owner`
+  - `app/Http/Middleware/HandleInertiaRequests.php` — share `auth.user.permissions` (lazy closure; owner `['*']`)
+  - `resources/js/Layouts/OwnerLayout.vue` — sidebar difilter `can()` + grup "Tim & Akses"
+  - `resources/js/Components/CashierTopbar.vue` — jalur staf ke modul owner (Keputusan A)
+  - `resources/js/Pages/Owner/Staff/Index.vue` + `Owner/Roles/Index.vue` — UI kelola staf & role
+  - `tests/Feature/Authorization/ModuleAccessTest.php` — 11 test (owner bypass, gating, isolasi tenant, share, CRUD)
+- **Catatan Migrasi:** Jalankan `php artisan migrate` lalu `php artisan db:seed --class=PermissionCatalogSeeder` (idempotent, additif). Suite penuh hijau — 218 passed. **Catatan teknis:** share permission dihitung via `can()` per modul (jalur registrar spatie), bukan relasi Eloquent `getPermissionNames()` yang rapuh terhadap konteks team saat dipanggil dari middleware Inertia.
+
+---
+
 ### [HOTFIX] Ekspektasi Dua Test Usang (BL-002)
 - **Tanggal:** 2026-07-21
 - **Fase Terkait:** Di Luar Fase (backlog `BL-002`)

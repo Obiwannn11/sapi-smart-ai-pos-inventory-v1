@@ -40,7 +40,33 @@
 
 ## Daftar Isu (Open / In Progress)
 
-_(kosong — belum ada isu terbuka)_
+### [BL-004] Pesan Validasi Masih Bahasa Inggris di UI Berbahasa Indonesia
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Validasi live blackbox fitur RBAC — form "Tambah Staf" (`/owner/staff`), saat sengaja mengirim email duplikat + password < 8 karakter
+- **Status:** Open
+- **Prioritas:** Low (kosmetik/UX, tidak mengubah data atau keamanan — validasi **berfungsi benar**, hanya bahasanya)
+- **Area Terdampak:**
+  - Seluruh aplikasi (bukan hanya RBAC) — tidak ada folder `lang/`, `config/app.php:81` → `'locale' => env('APP_LOCALE', 'en')`
+  - Teramati langsung di `resources/js/Pages/Owner/Staff/Index.vue` (modal tambah staf)
+- **Deskripsi:**
+  Pesan validasi yang tampil ke pengguna memakai teks bawaan Laravel dalam bahasa Inggris, padahal seluruh UI berbahasa Indonesia. Contoh nyata yang teramati: `"The email has already been taken."` dan `"The password field must be at least 8 characters."`. Inkonsistensi ini muncul di **semua form** aplikasi, bukan hanya form staf/role — jadi ini **bukan regresi** dari Phase RBAC, melainkan hutang lokalisasi yang sudah ada sejak awal dan baru terdokumentasi sekarang.
+- **Dugaan Penyebab:**
+  Proyek tidak pernah mem-publish file bahasa (`php artisan lang:publish`) dan `APP_LOCALE` tetap `en`, sehingga Laravel memakai pesan validasi default bahasa Inggris.
+- **Usulan Perbaikan:**
+  1. `php artisan lang:publish` lalu buat `lang/id/validation.php` berisi terjemahan Indonesia, dan set `APP_LOCALE=id` (atau `app.fallback_locale` sesuai kebutuhan).
+  2. Alternatif ringan bila tak ingin mengubah locale global: tambahkan `messages()` / `attributes()` kustom di masing-masing FormRequest/`validate()` untuk form yang menghadap pengguna.
+  3. Sertakan `attributes()` agar nama field ikut diterjemahkan (`email` → "Email", `password` → "Kata Sandi"), bukan hanya kalimat pesannya.
+
+### [BL-003] Mobile API — Permissions RBAC di Auth & Gating Endpoint
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Keputusan C plan RBAC (`docs/phases-2/PHASE-RBAC_Module-Access-Control.md`, Bagian 8)
+- **Status:** Open (ditunda by design)
+- **Prioritas:** Low (ditunda sampai fitur utama RBAC web selesai penuh)
+- **Area Terdampak:**
+  - `app/Http/Controllers/Api/MobileAuthController.php` — respons auth belum menyertakan `permissions`
+  - Endpoint mobile per modul — belum digerbang `permission:` versi API (JSON 403)
+- **Deskripsi:** Fitur ini disetujui **tetap dibuat**, tetapi sengaja ditunda sampai bagian utama RBAC (web: Bagian 2–9 di plan RBAC) selesai penuh. Setelah itu: sertakan array `permissions` di payload auth `MobileAuthController` (owner → `['*']`, staf → daftar modul), dan gerbang endpoint mobile per modul.
+- **Usulan Perbaikan:** Pakai pola `permission:` versi API yang mengembalikan JSON 403 — mengikuti pola `feature.api` di `PHASE-FEATURE-FLAGS`. Reuse katalog permission yang sama dengan web (Bagian 4 plan RBAC) agar satu sumber kebenaran.
 
 ---
 
