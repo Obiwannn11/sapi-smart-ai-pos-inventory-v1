@@ -32,6 +32,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Panel platform: gerbang modul milik pemilik SaaS. Terpisah dari
             // 'permission' karena akun platform tidak punya tenant/team-id.
             'platform.can' => \App\Http\Middleware\EnsurePlatformModule::class,
+            // Manajemen akun platform: dijaga penanda is_owner, bukan modul
+            // grantable — agar staf platform tak bisa menaikkan izinnya sendiri.
+            'platform.owner' => \App\Http\Middleware\EnsurePlatformOwner::class,
         ]);
 
         // Tamu di area platform diarahkan ke login platform, bukan login tenant.

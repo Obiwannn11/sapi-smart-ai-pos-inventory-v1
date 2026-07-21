@@ -18,7 +18,7 @@ class PlatformUser extends Authenticatable
     /** @use HasFactory<\Database\Factories\PlatformUserFactory> */
     use HasFactory;
 
-    protected $fillable = ['name', 'email', 'password'];
+    protected $fillable = ['name', 'email', 'password', 'is_owner'];
 
     protected $hidden = ['password', 'remember_token'];
 
@@ -26,6 +26,7 @@ class PlatformUser extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'is_owner' => 'boolean',
         ];
     }
 
@@ -43,17 +44,36 @@ class PlatformUser extends Authenticatable
     // --- Helpers ---
 
     /**
+     * Pemilik SaaS — setara owner di dalam tenant: akses penuh, tak perlu
+     * dicentangkan modul apa pun.
+     */
+    public function isOwner(): bool
+    {
+        // Cast eksplisit: model yang dibangun tanpa atribut ini (mis. lewat
+        // `new PlatformUser`) mengembalikan null, dan null bukan "pemilik".
+        return (bool) $this->is_owner;
+    }
+
+    /**
      * Daftar nama modul yang boleh dibuka akun ini.
+     *
+     * Owner mengembalikan seluruh katalog, bukan `['*']`: nav dan gerbang route
+     * sama-sama mencocokkan nama modul, jadi daftar konkret membuat keduanya
+     * bekerja tanpa cabang khusus.
      *
      * @return list<string>
      */
     public function moduleNames(): array
     {
+        if ($this->isOwner()) {
+            return array_keys(config('platform-rbac.modules'));
+        }
+
         return $this->modules()->pluck('module')->all();
     }
 
     public function hasModule(string $module): bool
     {
-        return $this->modules()->where('module', $module)->exists();
+        return $this->isOwner() || $this->modules()->where('module', $module)->exists();
     }
 }

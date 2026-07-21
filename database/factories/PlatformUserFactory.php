@@ -19,12 +19,24 @@ class PlatformUserFactory extends Factory
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'password' => 'password',
+            'is_owner' => false,
             'remember_token' => \Illuminate\Support\Str::random(10),
         ];
     }
 
     /**
-     * Akun dengan seluruh modul platform — dipakai untuk skenario "pemilik SaaS".
+     * Pemilik SaaS — akses penuh lewat penanda, tanpa baris modul.
+     */
+    public function owner(): static
+    {
+        return $this->state(fn () => ['is_owner' => true]);
+    }
+
+    /**
+     * Staf platform yang dicentangkan seluruh modul katalog.
+     *
+     * Beda dari owner(): aksesnya berasal dari baris `platform_user_modules`,
+     * jadi berguna untuk menguji jalur pengecekan modul itu sendiri.
      */
     public function withAllModules(): static
     {
