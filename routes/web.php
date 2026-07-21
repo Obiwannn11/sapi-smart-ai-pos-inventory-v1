@@ -164,6 +164,34 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
     ->post('/owner/transactions/{transaction}/void', [\App\Http\Controllers\Cashier\POSController::class, 'void'])
     ->name('owner.transactions.void');
 
+// --- Platform Console (pemilik SaaS) ---
+// Sengaja DI LUAR middleware 'tenant': akun platform tidak punya tenant_id.
+// Tiap modul digerbang izinnya sendiri lewat 'platform.can', bukan satu gerbang
+// kasar untuk seluruh grup — supaya kelak staf platform bisa diberi sebagian.
+Route::prefix('platform')
+    ->name('platform.')
+    ->group(function () {
+        Route::middleware('guest:platform')->group(function () {
+            Route::get('/login', [\App\Http\Controllers\Platform\AuthController::class, 'showLogin'])
+                ->name('login');
+            Route::post('/login', [\App\Http\Controllers\Platform\AuthController::class, 'login']);
+        });
+
+        Route::middleware('auth:platform')->group(function () {
+            Route::post('/logout', [\App\Http\Controllers\Platform\AuthController::class, 'logout'])
+                ->name('logout');
+
+            Route::get('/', [\App\Http\Controllers\Platform\DashboardController::class, 'index'])
+                ->name('dashboard');
+
+            // Modul: Daftar Tenant (read-only di Tahap A)
+            Route::middleware('platform.can:tenants')->group(function () {
+                Route::get('/tenants', [\App\Http\Controllers\Platform\TenantController::class, 'index'])
+                    ->name('tenants.index');
+            });
+        });
+    });
+
 // Halaman Landing
 Route::get('/', [\App\Http\Controllers\Public\LandingController::class, 'index'])->name('landing');
 
