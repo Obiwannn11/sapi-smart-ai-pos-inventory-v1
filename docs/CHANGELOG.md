@@ -45,6 +45,33 @@
 
 ---
 
+### [ADDITION] Manajemen Akun Platform (BL-008)
+- **Tanggal:** 2026-07-21
+- **Fase Terkait:** `PHASE-SAAS_Platform-Console-Subscription.md` — pelengkap Tahap A (tidak terjadwal di Tahap B–D mana pun)
+- **Dampak:** Migration | Model | Middleware | Controller | Config | Route | Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Halaman `/platform/users` untuk membuat akun platform, mengubahnya, dan mencentang modul per akun — melengkapi mekanisme `platform_user_modules` yang sudah ada sejak Tahap A tapi belum punya UI. Sebelumnya akun hanya bisa dibuat lewat seeder dan modulnya hanya bisa diubah lewat database.
+- **Alasan:** Pola "tambah akun lalu tinggal dicentang modulnya" adalah kebutuhan yang diminta sejak awal, tapi tidak masuk rencana tahap mana pun — jadi akan terlewat kalau tidak dikerjakan terpisah.
+- **File Terdampak:**
+  - `database/migrations/2026_07_21_221120_add_is_owner_to_platform_users_table.php` — kolom `is_owner` + isi mundur
+  - `app/Models/PlatformUser.php` — `isOwner()`, `moduleNames()`/`hasModule()` melewati pengecekan untuk owner
+  - `app/Http/Middleware/EnsurePlatformOwner.php` + alias `platform.owner` di `bootstrap/app.php`
+  - `app/Http/Controllers/Platform/PlatformUserController.php`, `resources/js/Pages/Platform/Users/Index.vue`
+  - `config/platform-rbac.php` — flag `available` per modul
+  - `app/Http/Resources/Platform/TenantResource.php` — dipindah dari `App\Http\Resources\PlatformTenantResource`
+  - `app/Http/Middleware/HandleInertiaRequests.php` — `auth.platformUser.is_owner`
+  - `resources/js/Layouts/PlatformLayout.vue` — nav `ownerOnly`
+  - `tests/Feature/Platform/PlatformUserManagementTest.php` — 11 test baru
+- **Keputusan teknis yang perlu diketahui:**
+  1. **Manajemen akun dijaga penanda `is_owner`, BUKAN modul grantable.** Ini keamanan, bukan gaya: modul yang bisa dicentang berarti staf platform yang memegangnya dapat mencentangkan `revenue_data` untuk dirinya sendiri, sehingga pemisahan modul sensitif kehilangan artinya. Mengikuti pola sisi tenant (`role:owner` untuk manajemen staf/role, lihat catatan di `config/rbac.php`).
+  2. **Owner tidak menyimpan baris modul sama sekali.** Aksesnya berasal dari penanda; menuliskan baris modul untuknya hanya jadi data menyesatkan yang tampak bisa dicabut padahal tidak berpengaruh. Migration ikut membersihkan baris sisa seeder Tahap A.
+  3. **Modul tanpa halaman ditandai `available => false`** dan ditolak di validasi — memberikan izin yang tidak berefek hanya menyesatkan yang mengatur.
+  4. **Arch test resource kini berbasis namespace**, bukan satu nama kelas, sehingga resource platform berikutnya otomatis terjaga.
+  5. Dua penjaga terhadap terkunci sendiri: akun sendiri tak bisa dihapus, dan akun pemilik terakhir tak bisa dihapus.
+- **Catatan Migrasi:** `php artisan migrate` (mengisi mundur `is_owner` untuk akun platform pertama) lalu `npm run build`.
+
+---
+
 ### [HOTFIX] Rate Limit Endpoint Login (BL-007)
 - **Tanggal:** 2026-07-21
 - **Fase Terkait:** Di Luar Fase (temuan review setelah Platform Console Tahap A)

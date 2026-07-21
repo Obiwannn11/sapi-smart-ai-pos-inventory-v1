@@ -79,24 +79,6 @@
   2. Pisahkan derajat kejadian: akses **rutin** (buka daftar) boleh diringkas atau tidak dicatat sama sekali, sementara akses **sensitif** (nanti: membuka omset tenant, mengubah tarif, memverifikasi pembayaran) selalu dicatat. Perlu diputuskan garisnya — dan sebaiknya diputuskan **sebelum** Tahap C, saat data omset mulai masuk.
   3. Kebijakan retensi + perintah pembersihan terjadwal.
 
-### [BL-008] Panel Platform: Lima dari Enam Modul Belum Punya Halaman & Belum Ada UI Kelola Akun
-- **Ditemukan:** 2026-07-21
-- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
-- **Status:** Open (sebagian besar memang dijadwalkan di Tahap B–D; yang **tidak** terjadwal adalah UI kelola akun/modul)
-- **Prioritas:** Medium
-- **Area Terdampak:**
-  - `config/platform-rbac.php` — 6 modul terdaftar; hanya `tenants` yang punya rute
-  - `routes/web.php` — grup platform baru berisi login, logout, dashboard, tenants
-  - `database/seeders/PlatformUserSeeder.php` — satu-satunya jalur membuat akun platform
-  - `tests/Feature/Platform/PlatformArchTest.php` — arch test resource masih berbasis **nama kelas**, bukan namespace
-- **Deskripsi:**
-  1. **Modul tanpa halaman.** `subscriptions`, `payments`, `pricing_rules`, `revenue_data`, dan `audit_logs` sudah ada di katalog izin tapi belum punya rute. Ini disengaja (menyusul di Tahap B–D), tapi berarti mencentang modul-modul itu sekarang tidak berefek apa pun — perlu diketahui agar tidak dikira bug.
-  2. **Belum ada UI kelola akun platform & modulnya.** Padahal justru pola "tambah role lalu tinggal dicentang" inilah yang diminta. Saat ini akun platform hanya bisa dibuat lewat seeder, dan modulnya hanya bisa diubah lewat database. Mekanismenya sudah siap (`platform_user_modules` + middleware `platform.can`), yang belum ada hanya halamannya. **Bagian ini tidak terjadwal di Tahap B–D mana pun** — jadi kalau tidak dicatat, ia akan terlewat.
-- **Usulan Perbaikan:**
-  1. Halaman kelola akun platform: daftar akun, tambah akun, centang modul per akun — mengikuti pola `Owner/RoleController` (validasi `Rule::in(array_keys(config('platform-rbac.modules')))`).
-  2. Beri penanda di UI untuk modul yang belum punya halaman, atau sembunyikan dari daftar centang sampai halamannya ada — mencentang sesuatu yang tidak berefek itu membingungkan.
-  3. **Saat menambah resource platform berikutnya:** pindahkan ke namespace `App\Http\Resources\Platform` dan ubah arch test agar menjaga **namespace**, bukan satu nama kelas. Bentuk sekarang (`->expect('App\Http\Resources\PlatformTenantResource')`) hanya menjaga satu file — resource platform kedua tidak akan terjaga tanpa perubahan ini.
-
 ### [BL-006] Sistem Langganan Dua Jalur — Harga Normal (Privasi Penuh) & Subsidi UMKM (Berbasis Omset)
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Permintaan pemilik SaaS — butuh sistem subscription normal **plus** skema bantu UMKM di mana harga mengikuti omset tenant, serta harga mengikuti jumlah pengguna/karyawan
@@ -280,6 +262,20 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-008] Panel Platform: Modul Tanpa Halaman & Belum Ada UI Kelola Akun
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
+- **Status:** Selesai (2026-07-21) — lihat `[ADDITION] Manajemen Akun Platform (BL-008)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Deskripsi:** Tiga hal: (1) lima dari enam modul di katalog belum punya halaman sehingga mencentangnya tidak berefek apa pun; (2) tidak ada UI untuk membuat akun platform maupun mencentang modulnya — padahal pola itulah yang diminta, dan bagian ini tidak terjadwal di Tahap B–D mana pun; (3) arch test resource masih berbasis nama kelas sehingga resource platform kedua tidak akan terjaga.
+- **Perbaikan:**
+  1. **Halaman `/platform/users`** — daftar akun, tambah akun, ubah nama/email/kata sandi, centang modul, hapus. Mengikuti pola `Owner/RoleController`.
+  2. **Dijaga penanda `is_owner`, bukan modul grantable.** Ini keputusan keamanan, bukan sekadar gaya: kalau "kelola akun" jadi modul yang bisa dicentang, staf platform yang memegangnya dapat mencentangkan `revenue_data` untuk dirinya sendiri — dan pemisahan modul sensitif jadi tak ada artinya. Mengikuti pola sisi tenant, di mana manajemen staf/role dijaga `role:owner`.
+  3. **Modul tanpa halaman ditandai `available => false`** di `config/platform-rbac.php`: checkbox-nya nonaktif, diberi keterangan "Halamannya belum ada", dan ditolak di validasi. Cukup ubah flag saat halamannya jadi.
+  4. **Resource dipindah** ke `App\Http\Resources\Platform\TenantResource`, dan arch test kini menjaga **namespace** — resource platform berikutnya ikut terjaga tanpa harus ingat mendaftarkannya.
+  5. Migration mengisi mundur `is_owner` untuk akun pertama dan membersihkan baris modul miliknya, agar pemasangan yang sudah menjalankan seeder Tahap A tidak berakhir tanpa satu pun pemilik.
+- **Sisa yang memang belum dikerjakan (bukan terlewat):** halaman untuk lima modul lain menyusul di Tahap B–D sesuai rencana.
 
 ### [BL-007] Endpoint Login Tanpa Rate Limit (Web Tenant, Platform, & Mobile API)
 - **Ditemukan:** 2026-07-21
