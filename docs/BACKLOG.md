@@ -40,6 +40,81 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-010] Akun Platform Belum Punya Pemulihan Kata Sandi, 2FA, & Variabel Env
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
+- **Status:** Open
+- **Prioritas:** Medium (belum menghambat, tapi jadi masalah nyata begitu panel dipakai di server sungguhan)
+- **Area Terdampak:**
+  - `config/auth.php` — blok `passwords` hanya punya provider `users`; tidak ada broker untuk `platform_users`
+  - `.env.example` — belum memuat `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_NAME` / `PLATFORM_ADMIN_PASSWORD`
+  - `database/seeders/PlatformUserSeeder.php` — kata sandi bawaan `password` bila env tidak diisi
+  - `app/Models/PlatformUser.php` — tanpa `email_verified_at`, tanpa 2FA
+- **Deskripsi:**
+  Tiga celah kecil yang menumpuk jadi satu risiko.
+  1. **Tidak ada jalur reset kata sandi.** Broker password hanya dikonfigurasi untuk `users`. Kalau pemilik SaaS lupa kata sandinya, satu-satunya jalan adalah mengubah langsung lewat database.
+  2. **`.env.example` tidak menyebut variabel `PLATFORM_ADMIN_*`.** Siapa pun yang clone repo lalu menjalankan seeder tidak akan tahu variabel itu ada, sehingga akun platform terbentuk dengan kata sandi bawaan `password` — dan karena tidak ada di `.env.example`, tidak ada pengingat untuk menggantinya saat deploy.
+  3. **Tanpa 2FA.** Satu akun ini memegang data administratif seluruh klien. Untuk panel sebesar itu, satu faktor terasa tipis.
+- **Usulan Perbaikan:**
+  1. Tambahkan broker `platform_users` di `config/auth.php` + alur lupa kata sandi khusus platform (tabel token terpisah agar tak bercampur dengan tenant).
+  2. Tambahkan tiga variabel `PLATFORM_ADMIN_*` ke `.env.example` dengan nilai kosong dan komentar bahwa **wajib** diisi sebelum seeding di server sungguhan. Pertimbangkan membuat seeder **gagal keras** (bukan memakai nilai bawaan) bila `APP_ENV` bukan `local`.
+  3. 2FA menyusul — catat sebagai target, jangan dikerjakan sekarang.
+
+### [BL-009] Audit Log Platform: Tercatat tapi Belum Bisa Dibaca, Berisik, & Tanpa Retensi
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
+- **Status:** Open
+- **Prioritas:** Medium (log yang tak bisa dibaca tidak memenuhi tujuannya sebagai alat pembuktian)
+- **Area Terdampak:**
+  - `config/platform-rbac.php` — modul `audit_logs` ada di katalog, tapi belum ada rute/halaman
+  - `app/Http/Controllers/Platform/TenantController.php` — `PlatformAuditLog::record('tenants.index', ...)` dipanggil setiap kali halaman dibuka
+  - `database/migrations/2026_07_21_132430_create_platform_audit_logs_table.php` — tanpa kebijakan retensi
+- **Deskripsi:**
+  Audit log sudah terisi dengan benar (terverifikasi: `login.success`, `login.failed`, `tenants.index`), tapi tiga hal belum selesai:
+  1. **Belum bisa dibaca dari UI.** Modul `audit_logs` sudah ada di katalog izin, tapi tidak ada halamannya. Log yang hanya bisa dilihat lewat query database tidak benar-benar berfungsi sebagai alat pertanggungjawaban ke klien.
+  2. **Berisik.** Setiap kali daftar tenant dibuka — termasuk refresh dan pindah halaman paginasi — satu baris baru tercatat. Dalam pemakaian normal, baris "buka daftar" akan menenggelamkan kejadian yang benar-benar penting.
+  3. **Tanpa retensi.** Tabel tumbuh selamanya tanpa kebijakan pembersihan.
+- **Usulan Perbaikan:**
+  1. Halaman `audit_logs` (read-only, digerbang `platform.can:audit_logs`) dengan filter aksi & rentang tanggal.
+  2. Pisahkan derajat kejadian: akses **rutin** (buka daftar) boleh diringkas atau tidak dicatat sama sekali, sementara akses **sensitif** (nanti: membuka omset tenant, mengubah tarif, memverifikasi pembayaran) selalu dicatat. Perlu diputuskan garisnya — dan sebaiknya diputuskan **sebelum** Tahap C, saat data omset mulai masuk.
+  3. Kebijakan retensi + perintah pembersihan terjadwal.
+
+### [BL-008] Panel Platform: Lima dari Enam Modul Belum Punya Halaman & Belum Ada UI Kelola Akun
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
+- **Status:** Open (sebagian besar memang dijadwalkan di Tahap B–D; yang **tidak** terjadwal adalah UI kelola akun/modul)
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `config/platform-rbac.php` — 6 modul terdaftar; hanya `tenants` yang punya rute
+  - `routes/web.php` — grup platform baru berisi login, logout, dashboard, tenants
+  - `database/seeders/PlatformUserSeeder.php` — satu-satunya jalur membuat akun platform
+  - `tests/Feature/Platform/PlatformArchTest.php` — arch test resource masih berbasis **nama kelas**, bukan namespace
+- **Deskripsi:**
+  1. **Modul tanpa halaman.** `subscriptions`, `payments`, `pricing_rules`, `revenue_data`, dan `audit_logs` sudah ada di katalog izin tapi belum punya rute. Ini disengaja (menyusul di Tahap B–D), tapi berarti mencentang modul-modul itu sekarang tidak berefek apa pun — perlu diketahui agar tidak dikira bug.
+  2. **Belum ada UI kelola akun platform & modulnya.** Padahal justru pola "tambah role lalu tinggal dicentang" inilah yang diminta. Saat ini akun platform hanya bisa dibuat lewat seeder, dan modulnya hanya bisa diubah lewat database. Mekanismenya sudah siap (`platform_user_modules` + middleware `platform.can`), yang belum ada hanya halamannya. **Bagian ini tidak terjadwal di Tahap B–D mana pun** — jadi kalau tidak dicatat, ia akan terlewat.
+- **Usulan Perbaikan:**
+  1. Halaman kelola akun platform: daftar akun, tambah akun, centang modul per akun — mengikuti pola `Owner/RoleController` (validasi `Rule::in(array_keys(config('platform-rbac.modules')))`).
+  2. Beri penanda di UI untuk modul yang belum punya halaman, atau sembunyikan dari daftar centang sampai halamannya ada — mencentang sesuatu yang tidak berefek itu membingungkan.
+  3. **Saat menambah resource platform berikutnya:** pindahkan ke namespace `App\Http\Resources\Platform` dan ubah arch test agar menjaga **namespace**, bukan satu nama kelas. Bentuk sekarang (`->expect('App\Http\Resources\PlatformTenantResource')`) hanya menjaga satu file — resource platform kedua tidak akan terjaga tanpa perubahan ini.
+
+### [BL-007] Endpoint Login Tanpa Rate Limit (Web Tenant, Platform, & Mobile API)
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A — diverifikasi lewat `php artisan route:list -v`
+- **Status:** Open
+- **Prioritas:** **High** (satu-satunya entri keamanan yang bisa dieksploitasi dari luar tanpa akun)
+- **Area Terdampak:**
+  - `POST /platform/login` — middleware hanya `web` + `RedirectIfAuthenticated:platform`; **tidak ada `throttle`**
+  - `POST /login` — hanya grup `guest`; **tidak ada `throttle`**
+  - `POST /api/v1/mobile/login` — perlu diperiksa ulang, kemungkinan sama
+- **Deskripsi:**
+  Tidak ada satu pun endpoint login yang dibatasi laju percobaannya, sehingga tebak-kata-sandi otomatis tidak menemui hambatan apa pun. Ini **bukan** regresi dari Tahap A — kondisi yang sama sudah berlaku untuk login tenant sejak awal dan baru terlihat saat memeriksa middleware panel platform.
+  Yang membuatnya naik prioritas adalah **taruhannya sekarang berbeda**: satu akun platform yang jebol membuka data administratif **seluruh** klien sekaligus, bukan satu tenant. Ironisnya audit log sudah rajin mencatat `login.failed` — jadi serangannya akan terekam rapi, tapi tidak ada yang menghentikannya.
+- **Usulan Perbaikan:**
+  1. Pasang `throttle` pada ketiga endpoint login. Untuk `/platform/login` pakai batas yang lebih ketat daripada login tenant.
+  2. Pertimbangkan kunci throttle per **email + IP**, bukan IP saja, agar satu jaringan bersama (mis. warnet/kantor) tidak saling mengunci.
+  3. Manfaatkan `platform_audit_logs` yang sudah ada: beri peringatan bila `login.failed` melewati ambang tertentu dalam satu rentang waktu.
+  4. Tambahkan test yang menegaskan percobaan ke-N ditolak — tanpa test, throttle mudah hilang diam-diam saat rute dirapikan.
+
 ### [BL-006] Sistem Langganan Dua Jalur — Harga Normal (Privasi Penuh) & Subsidi UMKM (Berbasis Omset)
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Permintaan pemilik SaaS — butuh sistem subscription normal **plus** skema bantu UMKM di mana harga mengikuti omset tenant, serta harga mengikuti jumlah pengguna/karyawan
@@ -199,6 +274,7 @@
 - **Area Terdampak:**
   - Seluruh aplikasi (bukan hanya RBAC) — tidak ada folder `lang/`, `config/app.php:81` → `'locale' => env('APP_LOCALE', 'en')`
   - Teramati langsung di `resources/js/Pages/Owner/Staff/Index.vue` (modal tambah staf)
+  - **Bertambah 2026-07-21:** form login panel platform (`Platform/AuthController@login`) ikut terdampak — pesan gagal autentikasi sudah bahasa Indonesia, tapi pesan validasi field masih bawaan Laravel. Tiap permukaan baru akan menambah daftar ini selama locale global belum dibereskan.
 - **Deskripsi:**
   Pesan validasi yang tampil ke pengguna memakai teks bawaan Laravel dalam bahasa Inggris, padahal seluruh UI berbahasa Indonesia. Contoh nyata yang teramati: `"The email has already been taken."` dan `"The password field must be at least 8 characters."`. Inkonsistensi ini muncul di **semua form** aplikasi, bukan hanya form staf/role — jadi ini **bukan regresi** dari Phase RBAC, melainkan hutang lokalisasi yang sudah ada sejak awal dan baru terdokumentasi sekarang.
 - **Dugaan Penyebab:**
