@@ -52,6 +52,7 @@ class HandleInertiaRequests extends Middleware
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'is_owner' => $user->is_owner,
                     'modules' => fn () => $user->moduleNames(),
                 ] : null,
             ],

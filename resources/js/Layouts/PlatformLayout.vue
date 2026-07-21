@@ -16,13 +16,18 @@ const sidebarOpen = ref(true);
 
 // Nav difilter dari daftar modul yang sama dengan gerbang route
 // (config/platform-rbac.php) — satu sumber kebenaran, bukan dua daftar.
+// `ownerOnly` untuk hal yang dijaga penanda is_owner, bukan modul grantable.
 const navItems = [
     { name: 'Beranda', href: '/platform', module: null },
     { name: 'Daftar Tenant', href: '/platform/tenants', module: 'tenants' },
+    { name: 'Akun Platform', href: '/platform/users', ownerOnly: true },
 ];
 
 const visibleNav = computed(() =>
-    navItems.filter((item) => !item.module || modules.value.includes(item.module)),
+    navItems.filter((item) => {
+        if (item.ownerOnly) return platformUser.value?.is_owner;
+        return !item.module || modules.value.includes(item.module);
+    }),
 );
 
 const isActive = (href) => {

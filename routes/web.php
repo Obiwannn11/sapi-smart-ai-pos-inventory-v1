@@ -190,6 +190,14 @@ Route::prefix('platform')
                 Route::get('/tenants', [\App\Http\Controllers\Platform\TenantController::class, 'index'])
                     ->name('tenants.index');
             });
+
+            // Manajemen akun platform — pemilik SaaS saja, bukan modul grantable
+            // (lihat EnsurePlatformOwner untuk alasannya).
+            Route::middleware('platform.owner')->group(function () {
+                Route::resource('users', \App\Http\Controllers\Platform\PlatformUserController::class)
+                    ->only(['index', 'store', 'update', 'destroy'])
+                    ->parameters(['users' => 'platformUser']);
+            });
         });
     });
 
