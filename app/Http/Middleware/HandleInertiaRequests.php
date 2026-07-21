@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\PlatformUser;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -11,14 +13,21 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
+        // Dibaca sekali: sejak ada guard `platform`, $request->user() bisa
+        // mengembalikan PlatformUser (middleware auth:platform memanggil
+        // Auth::shouldUse, sehingga guard default berpindah untuk sisa request).
+        // Keduanya dibedakan lewat instanceof — bukan sekadar cek null — karena
+        // PlatformUser tidak punya isOwner(), role, maupun tenant_id.
+        $user = $request->user();
+
         return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $request->user() ? [
-                    'id' => $request->user()->id,
-                    'name' => $request->user()->name,
-                    'email' => $request->user()->email,
-                    'role' => $request->user()->role,
-                    'tenant_id' => $request->user()->tenant_id,
+                'user' => $user instanceof User ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'tenant_id' => $user->tenant_id,
                     // Owner bypass -> ['*']; staf -> daftar modul yang dimiliki.
                     // Lazy (closure): Inertia memanggil share() di awal middleware
                     // global, sebelum EnsureTenant men-set team-id spatie. Menunda
@@ -26,12 +35,24 @@ class HandleInertiaRequests extends Middleware
                     // Cek via Gate (can) memakai registrar spatie — jalur yang sama
                     // dengan middleware permission: — bukan relasi Eloquent yang
                     // rapuh terhadap konteks team.
-                    'permissions' => fn () => $request->user()->isOwner()
+                    'permissions' => fn () => $user->isOwner()
                         ? ['*']
                         : collect(array_keys(config('rbac.modules')))
-                            ->filter(fn (string $module) => $request->user()->can($module))
+                            ->filter(fn (string $module) => $user->can($module))
                             ->values()
                             ->all(),
+                ] : null,
+
+                // Sengaja kunci terpisah, bukan menumpang `auth.user`. Kalau
+                // ditumpangkan, tiap komponen Vue yang membaca auth.user.role
+                // atau auth.user.tenant_id akan menerima null diam-diam di
+                // konteks platform — bug yang sulit dilacak. Dipisah = komponen
+                // tenant melihat auth.user null, jujur dan mudah dibaca.
+                'platformUser' => $user instanceof PlatformUser ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'modules' => fn () => $user->moduleNames(),
                 ] : null,
             ],
             'flash' => [
