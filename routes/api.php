@@ -1,13 +1,13 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\ApiOrderController;
 use App\Http\Controllers\Api\V1\ApiProductController;
 use App\Http\Controllers\Api\V1\Mobile\MobileAuthController;
-use App\Http\Controllers\Api\V1\Mobile\MobileTenantController;
 use App\Http\Controllers\Api\V1\Mobile\MobileCashDrawerController;
+use App\Http\Controllers\Api\V1\Mobile\MobileTenantController;
 use App\Http\Controllers\Api\V1\Mobile\MobileTransactionController;
 use App\Http\Controllers\Api\XenditWebhookController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,9 +36,12 @@ Route::prefix('v1')->group(function () {
 
     // ─── Mobile App POS ───────────────────────────────────────────
 
-    // Login (public, throttled)
+    // Login (public, throttled). Limiter bernama, bukan `throttle:5,1`: yang
+    // terakhir mengunci per IP saja, sehingga beberapa perangkat kasir di balik
+    // satu IP publik saling menghabiskan jatah. `mobile-login` mengunci per
+    // email + IP — lihat AppServiceProvider.
     Route::post('/mobile/login', [MobileAuthController::class, 'login'])
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:mobile-login');
 
     // Protected: auth + tenant
     Route::middleware(['auth:sanctum', 'tenant.api'])->group(function () {

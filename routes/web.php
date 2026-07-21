@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Route;
 // --- Auth (Guest) ---
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
     Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
     Route::post('/register', [AuthController::class, 'register']);
 });
@@ -174,7 +174,8 @@ Route::prefix('platform')
         Route::middleware('guest:platform')->group(function () {
             Route::get('/login', [\App\Http\Controllers\Platform\AuthController::class, 'showLogin'])
                 ->name('login');
-            Route::post('/login', [\App\Http\Controllers\Platform\AuthController::class, 'login']);
+            Route::post('/login', [\App\Http\Controllers\Platform\AuthController::class, 'login'])
+                ->middleware('throttle:platform-login');
         });
 
         Route::middleware('auth:platform')->group(function () {
