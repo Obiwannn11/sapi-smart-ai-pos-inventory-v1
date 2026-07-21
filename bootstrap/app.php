@@ -29,7 +29,18 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant.api' => \App\Http\Middleware\EnsureTenantApi::class,
             'role' => \App\Http\Middleware\EnsureRole::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            // Panel platform: gerbang modul milik pemilik SaaS. Terpisah dari
+            // 'permission' karena akun platform tidak punya tenant/team-id.
+            'platform.can' => \App\Http\Middleware\EnsurePlatformModule::class,
         ]);
+
+        // Tamu di area platform diarahkan ke login platform, bukan login tenant.
+        // Tanpa ini keduanya jatuh ke route('login') — pemilik SaaS yang sesinya
+        // habis akan mendarat di halaman masuk pemilik usaha, dan (karena akunnya
+        // ada di tabel lain) tidak akan pernah bisa masuk dari sana.
+        $middleware->redirectGuestsTo(fn (Request $request) => $request->is('platform', 'platform/*')
+            ? route('platform.login')
+            : route('login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Render a branded Inertia error page for 400/500 responses in
