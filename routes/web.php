@@ -191,6 +191,12 @@ Route::prefix('platform')
                     ->name('tenants.index');
             });
 
+            // Modul: Jejak Audit (read-only)
+            Route::middleware('platform.can:audit_logs')->group(function () {
+                Route::get('/audit-logs', [\App\Http\Controllers\Platform\AuditLogController::class, 'index'])
+                    ->name('audit-logs.index');
+            });
+
             // Manajemen akun platform — pemilik SaaS saja, bukan modul grantable
             // (lihat EnsurePlatformOwner untuk alasannya).
             Route::middleware('platform.owner')->group(function () {

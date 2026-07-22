@@ -20,6 +20,7 @@ const sidebarOpen = ref(true);
 const navItems = [
     { name: 'Beranda', href: '/platform', module: null },
     { name: 'Daftar Tenant', href: '/platform/tenants', module: 'tenants' },
+    { name: 'Jejak Audit', href: '/platform/audit-logs', module: 'audit_logs' },
     { name: 'Akun Platform', href: '/platform/users', ownerOnly: true },
 ];
 
