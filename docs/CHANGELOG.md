@@ -45,6 +45,31 @@
 
 ---
 
+### [ADDITION] Halaman & Retensi Jejak Audit (BL-009)
+- **Tanggal:** 2026-07-22
+- **Fase Terkait:** `PHASE-SAAS_Platform-Console-Subscription.md` — pelengkap Tahap A
+- **Dampak:** Migration | Model | Controller | Config | Route | Console | Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Jejak audit kini punya halaman baca (`/platform/audit-logs`) dengan filter, derajat kejadian (`routine`/`sensitive`) untuk menekan kebisingan, dan retensi berbeda per derajat yang dijalankan perintah terjadwal.
+- **Alasan:** Log yang hanya bisa dibaca lewat query database tidak berfungsi sebagai alat pertanggungjawaban ke klien. Ditambah, pencatatan setiap kali daftar dibuka membuat kejadian penting tenggelam, dan tabelnya tumbuh tanpa batas.
+- **File Terdampak:**
+  - `config/platform-audit.php` — garis rutin/sensitif, jendela deduplikasi, retensi
+  - `database/migrations/2026_07_22_011535_add_severity_to_platform_audit_logs_table.php` — kolom `severity` + isi mundur
+  - `app/Models/PlatformAuditLog.php` — `record()` (sensitif) & `recordRoutine()` (dideduplikasi)
+  - `app/Http/Controllers/Platform/AuditLogController.php`, `resources/js/Pages/Platform/AuditLogs/Index.vue`
+  - `app/Console/Commands/PrunePlatformAuditLogs.php` + jadwal harian di `routes/console.php`
+  - `config/platform-rbac.php` — `audit_logs` jadi `available => true`
+  - `tests/Feature/Platform/PlatformAuditLogTest.php` — 12 test baru
+- **Keputusan teknis yang perlu diketahui:**
+  1. **Garis rutin vs sensitif.** `routine` = akses **baca** yang wajar berulang (buka daftar, login berhasil, logout). `sensitive` = **mengubah keadaan**, membuka **data bisnis klien**, atau **kejadian keamanan** (login gagal). Pedoman untuk kejadian baru ditulis di config: *"kalau klien menuntut pertanggungjawaban, apakah baris ini yang akan saya tunjukkan?"*
+  2. **Kejadian rutin dideduplikasi, bukan dihapus.** Menghapusnya akan membuat pertanyaan "siapa membuka daftar klien saya minggu lalu?" tak terjawab — padahal itulah pertanyaan yang ingin dijawab audit log. Deduplikasi per aktor+aksi+subjek dalam 15 menit menyelesaikan kebisingan tanpa kehilangan jawabannya. Terverifikasi: empat kali membuka daftar tenant menghasilkan satu baris.
+  3. **Deduplikasi per aktor, bukan global** — kalau global, akun kedua yang membuka daftar yang sama justru tersembunyi dari jejak.
+  4. **Default kolom `severity` adalah `sensitive`.** Kejadian yang belum diklasifikasikan tidak boleh diam-diam terbuang lebih cepat oleh pemangkasan; hanya akses baca yang sengaja diturunkan derajatnya.
+  5. **Jejak bertahan meski akunnya dihapus** (FK `nullOnDelete`) — ditampilkan sebagai "Akun telah dihapus", karena justru itu gunanya.
+- **Catatan Migrasi:** `php artisan migrate` lalu `npm run build`. Pastikan penjadwal Laravel (`schedule:run`) berjalan di server agar `platform:prune-audit-logs` benar-benar dieksekusi harian; perintah ini juga bisa dipanggil manual dan punya `--dry-run`.
+
+---
+
 ### [ADDITION] Manajemen Akun Platform (BL-008)
 - **Tanggal:** 2026-07-21
 - **Fase Terkait:** `PHASE-SAAS_Platform-Console-Subscription.md` — pelengkap Tahap A (tidak terjadwal di Tahap B–D mana pun)

@@ -40,6 +40,21 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-011] Belum Ada Peringatan Saat Percobaan Masuk Gagal Menumpuk
+- **Ditemukan:** 2026-07-22
+- **Sumber:** Sisa usulan `[BL-007]` yang sengaja tidak dikerjakan di sana, dan `[BL-009]` yang menyiapkan fondasinya
+- **Status:** Open
+- **Prioritas:** Low (penahanannya sudah ada — ini lapisan **kesadaran**, bukan pertahanan)
+- **Area Terdampak:**
+  - `app/Models/PlatformAuditLog.php` — `login.failed` sudah bertanda `sensitive`, tinggal disaring
+  - Belum ada kanal notifikasi apa pun di proyek (email/Telegram) untuk peristiwa operasional
+- **Deskripsi:**
+  Percobaan masuk yang gagal sudah dibatasi lajunya (`[BL-007]`) dan sudah tercatat rapi dengan derajat `sensitive` (`[BL-009]`), tapi **tak seorang pun diberi tahu** saat percobaan itu menumpuk. Artinya serangan yang berjalan pelan — di bawah ambang throttle, tersebar berjam-jam — akan terekam lengkap dan tetap tak terlihat sampai ada yang kebetulan membuka halaman jejak audit.
+- **Usulan Perbaikan:**
+  1. Perintah terjadwal yang menghitung `login.failed` per rentang waktu; bila melewati ambang, kirim notifikasi ke pemilik SaaS.
+  2. Tentukan kanalnya dulu — proyek belum punya satu pun. Telegram sudah dipakai untuk self-order lewat n8n, jadi kemungkinan itu jalur termurah.
+  3. Bedakan dua pola: banyak gagal pada **satu email** (penebakan kata sandi) versus banyak gagal pada **banyak email dari satu IP** (penebakan akun). Keduanya perlu ambang sendiri.
+
 ### [BL-010] Akun Platform Belum Punya Pemulihan Kata Sandi, 2FA, & Variabel Env
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
@@ -59,25 +74,6 @@
   1. Tambahkan broker `platform_users` di `config/auth.php` + alur lupa kata sandi khusus platform (tabel token terpisah agar tak bercampur dengan tenant).
   2. Tambahkan tiga variabel `PLATFORM_ADMIN_*` ke `.env.example` dengan nilai kosong dan komentar bahwa **wajib** diisi sebelum seeding di server sungguhan. Pertimbangkan membuat seeder **gagal keras** (bukan memakai nilai bawaan) bila `APP_ENV` bukan `local`.
   3. 2FA menyusul — catat sebagai target, jangan dikerjakan sekarang.
-
-### [BL-009] Audit Log Platform: Tercatat tapi Belum Bisa Dibaca, Berisik, & Tanpa Retensi
-- **Ditemukan:** 2026-07-21
-- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
-- **Status:** Open
-- **Prioritas:** Medium (log yang tak bisa dibaca tidak memenuhi tujuannya sebagai alat pembuktian)
-- **Area Terdampak:**
-  - `config/platform-rbac.php` — modul `audit_logs` ada di katalog, tapi belum ada rute/halaman
-  - `app/Http/Controllers/Platform/TenantController.php` — `PlatformAuditLog::record('tenants.index', ...)` dipanggil setiap kali halaman dibuka
-  - `database/migrations/2026_07_21_132430_create_platform_audit_logs_table.php` — tanpa kebijakan retensi
-- **Deskripsi:**
-  Audit log sudah terisi dengan benar (terverifikasi: `login.success`, `login.failed`, `tenants.index`), tapi tiga hal belum selesai:
-  1. **Belum bisa dibaca dari UI.** Modul `audit_logs` sudah ada di katalog izin, tapi tidak ada halamannya. Log yang hanya bisa dilihat lewat query database tidak benar-benar berfungsi sebagai alat pertanggungjawaban ke klien.
-  2. **Berisik.** Setiap kali daftar tenant dibuka — termasuk refresh dan pindah halaman paginasi — satu baris baru tercatat. Dalam pemakaian normal, baris "buka daftar" akan menenggelamkan kejadian yang benar-benar penting.
-  3. **Tanpa retensi.** Tabel tumbuh selamanya tanpa kebijakan pembersihan.
-- **Usulan Perbaikan:**
-  1. Halaman `audit_logs` (read-only, digerbang `platform.can:audit_logs`) dengan filter aksi & rentang tanggal.
-  2. Pisahkan derajat kejadian: akses **rutin** (buka daftar) boleh diringkas atau tidak dicatat sama sekali, sementara akses **sensitif** (nanti: membuka omset tenant, mengubah tarif, memverifikasi pembayaran) selalu dicatat. Perlu diputuskan garisnya — dan sebaiknya diputuskan **sebelum** Tahap C, saat data omset mulai masuk.
-  3. Kebijakan retensi + perintah pembersihan terjadwal.
 
 ### [BL-006] Sistem Langganan Dua Jalur — Harga Normal (Privasi Penuh) & Subsidi UMKM (Berbasis Omset)
 - **Ditemukan:** 2026-07-21
@@ -262,6 +258,23 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-009] Audit Log Platform: Tercatat tapi Belum Bisa Dibaca, Berisik, & Tanpa Retensi
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
+- **Status:** Selesai (2026-07-22) — lihat `[ADDITION] Halaman & Retensi Jejak Audit (BL-009)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Deskripsi:** Jejak audit sudah terisi benar sejak Tahap A, tapi (1) tidak ada halaman untuk membacanya, (2) setiap kali daftar tenant dibuka tercatat satu baris sehingga kejadian penting tenggelam, dan (3) tabelnya tumbuh selamanya tanpa pembersihan.
+- **Perbaikan:**
+  1. **Garis rutin vs sensitif diputuskan** dan dituliskan sebagai kolom `severity` + penjelasan di `config/platform-audit.php`:
+     - `routine` — akses **baca** yang wajar berulang (buka daftar, login berhasil, logout). Tetap dicatat, tapi dideduplikasi per aktor+aksi+subjek dalam jendela 15 menit.
+     - `sensitive` — semua yang **mengubah keadaan**, semua yang membuka **data bisnis klien** (kelak omset jalur subsidi), dan **kejadian keamanan** (login gagal). Selalu dicatat.
+
+     Pedoman untuk kejadian baru ikut ditulis di config: *"kalau klien menuntut pertanggungjawaban, apakah baris ini yang akan saya tunjukkan?"* Kalau ya, ia sensitif.
+  2. **Dideduplikasi, bukan dibuang.** Menghapus pencatatan akses rutin akan membuat pertanyaan "siapa membuka daftar klien saya minggu lalu?" tak terjawab — padahal itu justru pertanyaan yang ingin dijawab audit log. Deduplikasi menyelesaikan kebisingan tanpa kehilangan jawabannya.
+  3. **Halaman `/platform/audit-logs`** (read-only, digerbang `platform.can:audit_logs`) dengan filter aksi, derajat, dan rentang tanggal. Modul `audit_logs` diubah jadi `available => true`.
+  4. **Retensi berbeda per derajat** — rutin 90 hari, sensitif 730 hari — dijalankan perintah `platform:prune-audit-logs` (punya `--dry-run`) yang dijadwalkan harian pukul 03:10.
+- **Catatan:** usulan lama "beri peringatan bila `login.failed` melewati ambang" tetap belum dikerjakan. Sekarang jauh lebih mudah karena `login.failed` sudah bertanda `sensitive` dan bisa disaring, tapi itu ranah **pemantauan/notifikasi** — dicatat ulang sebagai `[BL-011]`.
 
 ### [BL-008] Panel Platform: Modul Tanpa Halaman & Belum Ada UI Kelola Akun
 - **Ditemukan:** 2026-07-21
