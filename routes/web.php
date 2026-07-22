@@ -176,6 +176,18 @@ Route::prefix('platform')
                 ->name('login');
             Route::post('/login', [\App\Http\Controllers\Platform\AuthController::class, 'login'])
                 ->middleware('throttle:platform-login');
+
+            // Pemulihan kata sandi — broker & tabel token terpisah dari tenant.
+            Route::get('/forgot-password', [\App\Http\Controllers\Platform\PasswordResetController::class, 'showForgot'])
+                ->name('password.request');
+            Route::post('/forgot-password', [\App\Http\Controllers\Platform\PasswordResetController::class, 'sendLink'])
+                ->middleware('throttle:platform-password-reset')
+                ->name('password.email');
+            Route::get('/reset-password/{token}', [\App\Http\Controllers\Platform\PasswordResetController::class, 'showReset'])
+                ->name('password.reset');
+            Route::post('/reset-password', [\App\Http\Controllers\Platform\PasswordResetController::class, 'reset'])
+                ->middleware('throttle:platform-password-reset')
+                ->name('password.update');
         });
 
         Route::middleware('auth:platform')->group(function () {

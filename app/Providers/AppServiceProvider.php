@@ -63,6 +63,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by(self::loginThrottleKey($request));
         });
 
+        // Permintaan tautan pemulihan juga dibatasi: tanpa itu ia jadi alat
+        // membanjiri kotak masuk orang lain, sekaligus jalur menyisir alamat
+        // lewat perbedaan waktu tanggap.
+        RateLimiter::for('platform-password-reset', function (Request $request) {
+            return Limit::perMinute(3)
+                ->by(self::loginThrottleKey($request))
+                ->response(self::loginThrottleResponse(...));
+        });
+
         // Owner is super-admin within a tenant: bypass every permission check.
         // Returning null lets non-owners fall through to normal gate evaluation.
         Gate::before(function (User $user, string $ability) {
