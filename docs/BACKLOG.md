@@ -40,6 +40,34 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-013] Akun Platform Belum Punya 2FA
+- **Ditemukan:** 2026-07-22 (dipisahkan dari `[BL-010]` yang sudah ditutup)
+- **Sumber:** Poin ketiga `[BL-010]`, sejak awal ditandai "catat sebagai target, jangan dikerjakan sekarang"
+- **Status:** Open
+- **Prioritas:** Low (target jangka menengah — bukan penghalang operasional)
+- **Area Terdampak:**
+  - `app/Models/PlatformUser.php` — tanpa `email_verified_at`, tanpa kolom rahasia TOTP
+  - `app/Http/Controllers/Platform/AuthController.php` — alur masuk masih satu langkah
+- **Deskripsi:**
+  Satu akun platform memegang data administratif seluruh klien; satu faktor terasa tipis untuk kewenangan sebesar itu. Sekarang lapisannya sudah lebih baik daripada saat dicatat pertama kali — ada throttle (`[BL-007]`), jejak audit yang bisa dibaca (`[BL-009]`), dan pemulihan kata sandi yang tidak membocorkan keberadaan akun (`[BL-010]`) — tapi tetap: siapa pun yang memegang kata sandinya langsung masuk.
+- **Usulan Perbaikan:**
+  TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
+
+### [BL-012] Pengguna Tenant Juga Belum Punya Pemulihan Kata Sandi
+- **Ditemukan:** 2026-07-22
+- **Sumber:** Terlihat saat mengerjakan `[BL-010]` — memeriksa `php artisan route:list` menunjukkan **tidak ada satu pun** rute password reset di seluruh aplikasi
+- **Status:** Open
+- **Prioritas:** Medium (jumlah terdampaknya jauh lebih besar daripada sisi platform: setiap owner dan staf tenant)
+- **Area Terdampak:**
+  - `routes/web.php` — grup `guest` hanya punya login & register
+  - `config/auth.php` — broker `users` **sudah** terkonfigurasi, dan tabel `password_reset_tokens` sudah ada sejak migrasi bawaan; yang belum ada hanya rute, controller, dan halamannya
+  - `app/Http/Controllers/Auth/AuthController.php` — belum ada aksi terkait
+- **Deskripsi:**
+  Owner tenant yang lupa kata sandinya tidak punya jalan keluar sama sekali — sama seperti akun platform sebelum `[BL-010]`, tapi menimpa jauh lebih banyak orang. Staf masih bisa ditolong owner lewat halaman manajemen staf, tapi **owner tidak bisa ditolong siapa pun** selain lewat akses database langsung.
+- **Usulan Perbaikan:**
+  Tiru pola yang sudah jadi di `Platform\PasswordResetController` — brokernya (`users`) dan tabel tokennya sudah tersedia, jadi tinggal rute + controller + dua halaman Vue. Ikut sertakan: balasan seragam agar tidak jadi alat menyisir alamat, throttle pada endpoint permintaan, dan pencatatan percobaan.
+  Perhatikan `MAIL_MAILER` masih `log` di lingkungan pengembangan — fitur ini tak berarti di server sungguhan sampai pengiriman surel benar-benar dikonfigurasi.
+
 ### [BL-011] Belum Ada Peringatan Saat Percobaan Masuk Gagal Menumpuk
 - **Ditemukan:** 2026-07-22
 - **Sumber:** Sisa usulan `[BL-007]` yang sengaja tidak dikerjakan di sana, dan `[BL-009]` yang menyiapkan fondasinya
@@ -54,26 +82,6 @@
   1. Perintah terjadwal yang menghitung `login.failed` per rentang waktu; bila melewati ambang, kirim notifikasi ke pemilik SaaS.
   2. Tentukan kanalnya dulu — proyek belum punya satu pun. Telegram sudah dipakai untuk self-order lewat n8n, jadi kemungkinan itu jalur termurah.
   3. Bedakan dua pola: banyak gagal pada **satu email** (penebakan kata sandi) versus banyak gagal pada **banyak email dari satu IP** (penebakan akun). Keduanya perlu ambang sendiri.
-
-### [BL-010] Akun Platform Belum Punya Pemulihan Kata Sandi, 2FA, & Variabel Env
-- **Ditemukan:** 2026-07-21
-- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
-- **Status:** Open
-- **Prioritas:** Medium (belum menghambat, tapi jadi masalah nyata begitu panel dipakai di server sungguhan)
-- **Area Terdampak:**
-  - `config/auth.php` — blok `passwords` hanya punya provider `users`; tidak ada broker untuk `platform_users`
-  - `.env.example` — belum memuat `PLATFORM_ADMIN_EMAIL` / `PLATFORM_ADMIN_NAME` / `PLATFORM_ADMIN_PASSWORD`
-  - `database/seeders/PlatformUserSeeder.php` — kata sandi bawaan `password` bila env tidak diisi
-  - `app/Models/PlatformUser.php` — tanpa `email_verified_at`, tanpa 2FA
-- **Deskripsi:**
-  Tiga celah kecil yang menumpuk jadi satu risiko.
-  1. **Tidak ada jalur reset kata sandi.** Broker password hanya dikonfigurasi untuk `users`. Kalau pemilik SaaS lupa kata sandinya, satu-satunya jalan adalah mengubah langsung lewat database.
-  2. **`.env.example` tidak menyebut variabel `PLATFORM_ADMIN_*`.** Siapa pun yang clone repo lalu menjalankan seeder tidak akan tahu variabel itu ada, sehingga akun platform terbentuk dengan kata sandi bawaan `password` — dan karena tidak ada di `.env.example`, tidak ada pengingat untuk menggantinya saat deploy.
-  3. **Tanpa 2FA.** Satu akun ini memegang data administratif seluruh klien. Untuk panel sebesar itu, satu faktor terasa tipis.
-- **Usulan Perbaikan:**
-  1. Tambahkan broker `platform_users` di `config/auth.php` + alur lupa kata sandi khusus platform (tabel token terpisah agar tak bercampur dengan tenant).
-  2. Tambahkan tiga variabel `PLATFORM_ADMIN_*` ke `.env.example` dengan nilai kosong dan komentar bahwa **wajib** diisi sebelum seeding di server sungguhan. Pertimbangkan membuat seeder **gagal keras** (bukan memakai nilai bawaan) bila `APP_ENV` bukan `local`.
-  3. 2FA menyusul — catat sebagai target, jangan dikerjakan sekarang.
 
 ### [BL-006] Sistem Langganan Dua Jalur — Harga Normal (Privasi Penuh) & Subsidi UMKM (Berbasis Omset)
 - **Ditemukan:** 2026-07-21
@@ -258,6 +266,17 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-010] Akun Platform Belum Punya Pemulihan Kata Sandi, 2FA, & Variabel Env
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Review sisa pekerjaan setelah Platform Console Tahap A
+- **Status:** Selesai sebagian (2026-07-22) — lihat `[ADDITION] Pemulihan Kata Sandi Akun Platform (BL-010)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Perbaikan:**
+  1. **Pemulihan kata sandi platform** — broker `platform_users` dengan **tabel token sendiri** (`platform_password_reset_tokens`), notifikasi sendiri agar tautannya mengarah ke `/platform/reset-password` (bawaan Laravel memakai rute tenant), empat rute, dan dua halaman. Balasan permintaan **selalu seragam** agar halaman ini tidak jadi alat memeriksa keberadaan akun. Endpoint-nya di-throttle, dan permintaan serta penyelesaiannya dicatat sebagai kejadian `sensitive`.
+  2. **`.env.example`** kini memuat `PLATFORM_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` beserta peringatannya, dan **seeder gagal keras** di luar `APP_ENV` lokal bila kata sandinya masih bawaan.
+- **Yang TIDAK dikerjakan (sengaja, sesuai catatan awal entri ini):** **2FA**. Tetap jadi target, dicatat ulang di bawah supaya tidak hilang bersama entri yang sudah ditutup.
+- **Turunan yang lahir dari pengerjaan ini:** `[BL-012]` — ternyata pengguna **tenant** juga tak punya pemulihan kata sandi sama sekali.
 
 ### [BL-009] Audit Log Platform: Tercatat tapi Belum Bisa Dibaca, Berisik, & Tanpa Retensi
 - **Ditemukan:** 2026-07-21

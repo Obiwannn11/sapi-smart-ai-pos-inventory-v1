@@ -45,6 +45,32 @@
 
 ---
 
+### [ADDITION] Pemulihan Kata Sandi Akun Platform (BL-010)
+- **Tanggal:** 2026-07-22
+- **Fase Terkait:** `PHASE-SAAS_Platform-Console-Subscription.md` — pelengkap Tahap A
+- **Dampak:** Migration | Model | Notification | Controller | Config | Route | Frontend | Seeder | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Akun platform kini punya alur lupa/atur-ulang kata sandi sendiri. Selain itu `.env.example` memuat variabel `PLATFORM_ADMIN_*`, dan seeder menolak berjalan dengan kata sandi bawaan di luar lingkungan lokal.
+- **Alasan:** Sebelumnya, pemilik SaaS yang lupa kata sandinya hanya bisa ditolong lewat akses database langsung. Ditambah, seeder diam-diam memakai kata sandi `password` bila env tidak diisi — tanpa satu pun pengingat, karena variabelnya juga tidak ada di `.env.example`.
+- **File Terdampak:**
+  - `database/migrations/2026_07_22_012951_create_platform_password_reset_tokens_table.php`
+  - `config/auth.php` — broker `platform_users`
+  - `app/Notifications/PlatformResetPassword.php`, `app/Models/PlatformUser.php` (`sendPasswordResetNotification`, trait `Notifiable`)
+  - `app/Http/Controllers/Platform/PasswordResetController.php`, `routes/web.php`
+  - `app/Providers/AppServiceProvider.php` — limiter `platform-password-reset`
+  - `resources/js/Pages/Platform/{ForgotPassword,ResetPassword}.vue`, tautan di `Login.vue`
+  - `.env.example`, `database/seeders/PlatformUserSeeder.php`
+  - `tests/Feature/Platform/PlatformPasswordResetTest.php` — 10 test baru
+- **Keputusan teknis yang perlu diketahui:**
+  1. **Tabel token terpisah dari tenant.** Alamat email yang sama bisa terdaftar di kedua dunia; kalau tokennya ditumpuk di satu tabel, permintaan di satu sisi menimpa token sisi lain, dan token yang bocor dari satu sisi bisa dipakai di sisi lain. Terverifikasi lewat test: email tenant tidak pernah menerima tautan platform.
+  2. **Notifikasi sendiri, bukan bawaan Laravel.** Yang bawaan menyusun tautan lewat `route('password.reset')` milik tenant; penerimanya akan mendarat di halaman yang tak akan pernah mengenali akunnya. Terverifikasi di log surel: tautannya mengarah ke `/platform/reset-password/...`.
+  3. **Balasan permintaan selalu seragam**, terdaftar atau tidak. Membedakan keduanya akan mengubah halaman ini jadi alat memeriksa keberadaan akun pada panel yang memegang data seluruh klien. Statusnya tetap dicatat di jejak audit — penyisir terekam tanpa mendapat petunjuk dari layar.
+  4. **Seeder gagal keras di luar `APP_ENV` lokal** bila `PLATFORM_ADMIN_PASSWORD` masih bawaan. Perhatikan `env()` mengembalikan null saat config di-cache — tanpa gerbang ini, deploy yang sudah rapi pun bisa berakhir memakai kata sandi `password`.
+- **Belum dikerjakan:** 2FA (dicatat sebagai `[BL-011]`… lihat `[BL-013]` di BACKLOG).
+- **Catatan Migrasi:** `php artisan migrate` lalu `npm run build`. **`MAIL_MAILER` masih `log`** di lingkungan pengembangan — di server sungguhan wajib dikonfigurasi ke pengirim nyata, atau tautan pemulihan tidak akan pernah sampai.
+
+---
+
 ### [ADDITION] Halaman & Retensi Jejak Audit (BL-009)
 - **Tanggal:** 2026-07-22
 - **Fase Terkait:** `PHASE-SAAS_Platform-Console-Subscription.md` — pelengkap Tahap A
