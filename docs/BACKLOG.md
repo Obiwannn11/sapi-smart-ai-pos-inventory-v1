@@ -53,21 +53,6 @@
 - **Usulan Perbaikan:**
   TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
 
-### [BL-012] Pengguna Tenant Juga Belum Punya Pemulihan Kata Sandi
-- **Ditemukan:** 2026-07-22
-- **Sumber:** Terlihat saat mengerjakan `[BL-010]` — memeriksa `php artisan route:list` menunjukkan **tidak ada satu pun** rute password reset di seluruh aplikasi
-- **Status:** Open
-- **Prioritas:** Medium (jumlah terdampaknya jauh lebih besar daripada sisi platform: setiap owner dan staf tenant)
-- **Area Terdampak:**
-  - `routes/web.php` — grup `guest` hanya punya login & register
-  - `config/auth.php` — broker `users` **sudah** terkonfigurasi, dan tabel `password_reset_tokens` sudah ada sejak migrasi bawaan; yang belum ada hanya rute, controller, dan halamannya
-  - `app/Http/Controllers/Auth/AuthController.php` — belum ada aksi terkait
-- **Deskripsi:**
-  Owner tenant yang lupa kata sandinya tidak punya jalan keluar sama sekali — sama seperti akun platform sebelum `[BL-010]`, tapi menimpa jauh lebih banyak orang. Staf masih bisa ditolong owner lewat halaman manajemen staf, tapi **owner tidak bisa ditolong siapa pun** selain lewat akses database langsung.
-- **Usulan Perbaikan:**
-  Tiru pola yang sudah jadi di `Platform\PasswordResetController` — brokernya (`users`) dan tabel tokennya sudah tersedia, jadi tinggal rute + controller + dua halaman Vue. Ikut sertakan: balasan seragam agar tidak jadi alat menyisir alamat, throttle pada endpoint permintaan, dan pencatatan percobaan.
-  Perhatikan `MAIL_MAILER` masih `log` di lingkungan pengembangan — fitur ini tak berarti di server sungguhan sampai pengiriman surel benar-benar dikonfigurasi.
-
 ### [BL-011] Belum Ada Peringatan Saat Percobaan Masuk Gagal Menumpuk
 - **Ditemukan:** 2026-07-22
 - **Sumber:** Sisa usulan `[BL-007]` yang sengaja tidak dikerjakan di sana, dan `[BL-009]` yang menyiapkan fondasinya
@@ -266,6 +251,16 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-012] Pengguna Tenant Juga Belum Punya Pemulihan Kata Sandi
+- **Ditemukan:** 2026-07-22
+- **Sumber:** Terlihat saat mengerjakan `[BL-010]` — `php artisan route:list` menunjukkan tidak ada satu pun rute password reset di seluruh aplikasi
+- **Status:** Selesai (2026-07-22) — lihat `[ADDITION] Pemulihan Kata Sandi Pengguna Tenant (BL-012)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium (menimpa setiap owner dan staf tenant, jauh lebih banyak daripada sisi platform)
+- **Deskripsi:** Owner tenant yang lupa kata sandi tidak punya jalan keluar sama sekali. Staf masih bisa ditolong owner lewat manajemen staf, tapi owner tidak bisa ditolong siapa pun selain lewat akses database langsung.
+- **Perbaikan:**
+  Empat rute + controller + dua halaman, mengikuti pola `Platform\PasswordResetController`. Ternyata **tidak perlu migration**: tabel `password_reset_tokens` sudah ada sejak migrasi bawaan Laravel, broker `users` sudah terkonfigurasi, `User` sudah memakai trait `Notifiable`, dan `users.email` unik global sehingga tak ada tabrakan antar tenant. Yang benar-benar hilang hanya rute, controller, dan halamannya.
+  Disertai: balasan seragam agar tidak jadi alat menyisir alamat, limiter `password-reset` **terpisah** dari milik platform, notifikasi berbahasa Indonesia, dan pencatatan permintaan ke log aplikasi (sisi tenant tak punya tabel audit sendiri, dan membuatnya akan jadi perluasan lingkup).
 
 ### [BL-010] Akun Platform Belum Punya Pemulihan Kata Sandi, 2FA, & Variabel Env
 - **Ditemukan:** 2026-07-21

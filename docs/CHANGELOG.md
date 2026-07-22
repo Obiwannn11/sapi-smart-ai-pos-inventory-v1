@@ -45,6 +45,29 @@
 
 ---
 
+### [ADDITION] Pemulihan Kata Sandi Pengguna Tenant (BL-012)
+- **Tanggal:** 2026-07-22
+- **Fase Terkait:** Di Luar Fase (temuan saat mengerjakan `[BL-010]`)
+- **Dampak:** Model | Notification | Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Owner dan staf tenant kini punya alur lupa/atur-ulang kata sandi. Sebelumnya **tidak ada satu pun** rute password reset di aplikasi — owner yang lupa kata sandi hanya bisa ditolong lewat akses database langsung.
+- **Alasan:** Dampaknya lebih besar daripada sisi platform: staf masih bisa ditolong owner lewat manajemen staf, tapi owner tidak bisa ditolong siapa pun.
+- **File Terdampak:**
+  - `app/Notifications/TenantResetPassword.php`, `app/Models/User.php` (`sendPasswordResetNotification`)
+  - `app/Http/Controllers/Auth/PasswordResetController.php`, `routes/web.php`
+  - `app/Providers/AppServiceProvider.php` — limiter `password-reset`
+  - `resources/js/Pages/Auth/{ForgotPassword,ResetPassword}.vue`, tautan di `Login.vue`
+  - `tests/Feature/Auth/PasswordResetTest.php` — 12 test baru
+- **Keputusan teknis yang perlu diketahui:**
+  1. **Tidak perlu migration.** Tabel `password_reset_tokens` sudah ada sejak migrasi bawaan Laravel, broker `users` sudah terkonfigurasi, dan `User` sudah memakai `Notifiable` — yang benar-benar hilang hanya rute, controller, dan halamannya. `users.email` unik global, jadi tak ada tabrakan token antar tenant.
+  2. **Nama rute `password.reset` dipertahankan untuk sisi tenant**, karena itulah yang dirujuk kontrak `CanResetPassword` bawaan Laravel. Sisi platform memakai `platform.password.reset` dengan notifikasinya sendiri.
+  3. **Limiter terpisah dari platform** (`password-reset` vs `platform-password-reset`): kasir yang menghabiskan jatah percobaan tidak boleh ikut mengunci jalur pemulihan pemilik SaaS. Ada test untuk batas itu.
+  4. **Balasan permintaan selalu seragam**, sama seperti sisi platform, agar halaman ini tidak jadi alat memeriksa apakah sebuah email punya akun.
+  5. **Pencatatan ke log aplikasi**, bukan tabel audit. Sisi tenant belum punya tabel jejak audit sendiri, dan membuatnya khusus untuk ini akan jadi perluasan lingkup.
+- **Catatan Migrasi:** Tidak ada migration. `npm run build` untuk halaman barunya. Sama seperti `[BL-010]`: **`MAIL_MAILER` masih `log`** — di server sungguhan wajib dikonfigurasi ke pengirim nyata, atau tautan pemulihan tidak akan pernah sampai.
+
+---
+
 ### [ADDITION] Pemulihan Kata Sandi Akun Platform (BL-010)
 - **Tanggal:** 2026-07-22
 - **Fase Terkait:** `PHASE-SAAS_Platform-Console-Subscription.md` — pelengkap Tahap A
