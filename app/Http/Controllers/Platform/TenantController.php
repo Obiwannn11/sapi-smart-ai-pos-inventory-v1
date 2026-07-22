@@ -28,10 +28,10 @@ class TenantController extends Controller
             ->paginate(25)
             ->withQueryString();
 
-        // Dicatat sejak Tahap A: kebiasaan mencatat akses harus terbentuk saat
-        // datanya masih administratif, bukan baru dipasang nanti ketika data
-        // omset sudah ikut terlihat.
-        PlatformAuditLog::record('tenants.index', meta: ['page' => $tenants->currentPage()]);
+        // Rutin: membuka daftar itu wajar berulang, jadi dideduplikasi per
+        // jendela waktu. Tanpa itu satu sesi menengok menghasilkan puluhan
+        // baris identik yang menenggelamkan kejadian penting.
+        PlatformAuditLog::recordRoutine('tenants.index');
 
         return Inertia::render('Platform/Tenants/Index', [
             'tenants' => TenantResource::collection($tenants),

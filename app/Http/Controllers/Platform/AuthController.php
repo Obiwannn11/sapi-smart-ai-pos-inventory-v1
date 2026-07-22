@@ -27,8 +27,11 @@ class AuthController extends Controller
         if (! Auth::guard('platform')->attempt($credentials, $request->boolean('remember'))) {
             // Percobaan gagal ikut dicatat: pola percobaan masuk ke panel yang
             // memegang data seluruh klien adalah hal yang perlu terlihat.
+            // Sensitif: percobaan masuk yang gagal ke panel pemegang data
+            // seluruh klien adalah sinyal keamanan, bukan kebisingan.
             PlatformAuditLog::create([
                 'action' => 'login.failed',
+                'severity' => PlatformAuditLog::SEVERITY_SENSITIVE,
                 'meta' => ['email' => $credentials['email']],
                 'ip' => $request->ip(),
             ]);
@@ -38,14 +41,16 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        PlatformAuditLog::record('login.success');
+        // Rutin: masuk berkali-kali dalam sehari itu wajar. Yang perlu menonjol
+        // adalah kegagalannya, bukan keberhasilannya.
+        PlatformAuditLog::recordRoutine('login.success');
 
         return redirect()->intended(route('platform.dashboard'));
     }
 
     public function logout(Request $request): RedirectResponse
     {
-        PlatformAuditLog::record('logout');
+        PlatformAuditLog::recordRoutine('logout');
 
         Auth::guard('platform')->logout();
         $request->session()->invalidate();
