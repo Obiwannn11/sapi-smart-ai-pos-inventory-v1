@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Notifications\TenantResetPassword;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -25,6 +26,17 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
         ];
+    }
+
+    // --- Notifications ---
+
+    /**
+     * Kirim tautan pemulihan berbahasa Indonesia, bukan bawaan Laravel yang
+     * berbahasa Inggris — seluruh antarmuka lain sudah berbahasa Indonesia.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $this->notify(new TenantResetPassword($token));
     }
 
     // --- Helpers ---
