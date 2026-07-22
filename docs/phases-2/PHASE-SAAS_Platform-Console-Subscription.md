@@ -1,6 +1,6 @@
 # PHASE SAAS — Platform Console & Langganan Dua Jalur
 
-**Status:** Rencana — belum dikerjakan
+**Status:** **Tahap A SELESAI** (2026-07-21/22) — Tahap B–D masih rencana. Lihat checklist di Bagian 13.
 **Estimasi:** Besar — dipecah jadi 4 tahap yang bisa dikerjakan berurutan (Tahap A paling kecil & mandiri)
 **Dependency:** `PHASE-RBAC_Module-Access-Control` (sudah selesai — pola modul+centang dipakai ulang), `spatie/laravel-permission` (sudah ada). Belum butuh dependency baru.
 **Output:** Panel khusus pemilik SaaS untuk mengelola tenant, langganan, dan pembayaran — dengan batas privasi yang ditegakkan di lapisan query, plus skema harga dua jalur (normal & subsidi UMKM berbasis omset).
@@ -108,7 +108,7 @@ Dua pelajaran dari tabel ini, dan keduanya penting:
 **Karena itu isolasi tidak boleh bergantung pada `TenantScope`, melainkan pada tiga lapis:**
 
 1. **Arch test** (Bagian 11) yang gagal bila namespace `Platform` mengimpor model operasional. Ini pertahanan utama.
-2. **Resource/DTO khusus** — controller platform hanya boleh mengembalikan `PlatformTenantResource` dkk., tidak pernah model mentah.
+2. **Resource/DTO khusus** — controller platform hanya boleh mengembalikan resource di namespace `AppHttpResourcesPlatform`, tidak pernah model mentah.
 3. **Filter `tenant_id` eksplisit** di job metrik (Bagian 5), ditulis dengan `withoutGlobalScopes()` supaya niatnya terbaca, bukan bergantung pada scope yang kebetulan tidak aktif.
 
 > Alternatif yang **ditolak**: memperketat `TenantScope` agar melempar exception bila tidak ada auth. Terdengar aman, tapi akan merusak seeder, factory, dan semua job yang ada sekarang. Risikonya lebih besar daripada manfaatnya; arch test memberi perlindungan yang setara dengan biaya jauh lebih kecil.
@@ -154,7 +154,7 @@ Perbaikan (dikerjakan di Tahap A, sebelum halaman platform pertama):
 'user' => $request->user() instanceof \App\Models\User ? [ /* ...seperti sekarang... */ ] : null,
 'platformUser' => $request->user() instanceof \App\Models\PlatformUser ? [
     'id' => ..., 'name' => ..., 'email' => ...,
-    'modules' => fn () => $request->user()->modules(),   // dari platform_user_modules
+    'modules' => fn () => $request->user()->moduleNames(),   // dari platform_user_modules
 ] : null,
 ```
 
@@ -410,8 +410,15 @@ Belum menghalangi Tahap A, tapi **harus** selesai sebelum Tahap C/D:
 - [x] Middleware `platform.can:{module}`
 - [x] `PlatformLayout.vue` + rute `/platform`
 - [x] `platform_audit_logs` + pencatatan login (sukses **dan** gagal) serta akses daftar tenant
-- [x] Daftar tenant read-only via `PlatformTenantResource` (nama, owner, jumlah user, tanggal daftar)
+- [x] Daftar tenant read-only via `App\Http\Resources\Platform\TenantResource` (nama, owner, jumlah user, tanggal daftar)
 - [x] **`PlatformArchTest` & `PlatformIsolationTest`** — 16 test platform, suite penuh 234 hijau
+
+**Tambahan setelah Tahap A ditutup** — lahir dari review backlog, bukan dari rencana ini:
+- [x] Rate limit seluruh endpoint login (`[BL-007]`)
+- [x] Manajemen akun platform + penanda `is_owner` + flag `available` per modul (`[BL-008]`)
+- [x] Halaman jejak audit, derajat rutin/sensitif, retensi terjadwal (`[BL-009]`) — modul `audit_logs` sudah `available`
+- [x] Pemulihan kata sandi akun platform + gerbang seeder (`[BL-010]`)
+- [x] Pemulihan kata sandi pengguna tenant (`[BL-012]`)
 
 > **Temuan saat eksekusi (di luar rencana):** tamu di `/platform/*` semula diarahkan ke `route('login')` — halaman masuk **tenant**. Karena akun platform ada di tabel lain, pemilik SaaS yang sesinya habis tidak akan pernah bisa masuk dari sana. Diperbaiki dengan `redirectGuestsTo()` bersyarat di `bootstrap/app.php`. Ini bukan sekadar ekspektasi test yang meleset, melainkan jalan buntu nyata bagi pengguna.
 

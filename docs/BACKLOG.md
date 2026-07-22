@@ -73,7 +73,7 @@
 - **Sumber:** Permintaan pemilik SaaS — butuh sistem subscription normal **plus** skema bantu UMKM di mana harga mengikuti omset tenant, serta harga mengikuti jumlah pengguna/karyawan
 - **Status:** Open — sudah di-plan di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` (Tahap B–D), belum dieksekusi
 - **Prioritas:** Medium (satu paket dengan BL-005; tidak bisa jalan tanpa fondasi platform console)
-- **Area Terdampak:** (semuanya baru, belum ada di kode)
+- **Area Terdampak:** (tabel langganannya semua baru; berkas di bawah sudah ada dan akan disentuh) *(rujukan baris diverifikasi 2026-07-22)*
   - `database/migrations/` — belum ada `plans`, `pricing_rules`, `subscriptions`, `invoices`, `tenant_consents`, `tenant_monthly_metrics`
   - `app/Models/Tenant.php` — perlu penanda jalur harga (`pricing_track`) & status consent
   - `app/Http/Controllers/Owner/StaffController.php:37` (`store`) — titik penegakan batas jumlah user/seat
@@ -157,13 +157,18 @@
 - **Sumber:** Permintaan pemilik SaaS — butuh satu panel untuk melihat siapa saja tenant yang terdaftar, status langganan, dan riwayat pembayaran, **tanpa** bisa melihat data operasional klien
 - **Status:** In Progress — **Tahap A selesai 2026-07-21** (lihat `[ADDITION] Platform Console — Fondasi Panel Pemilik SaaS` di `docs/CHANGELOG.md`). Sisa Tahap B–D di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md`
 - **Prioritas:** Medium (belum menghambat operasional tenant, tapi jadi blocker begitu tenant berbayar pertama masuk — tanpa ini penagihan & pencatatan langganan manual)
-- **Area Terdampak:** (belum ada satu pun yang eksis — semuanya baru)
-  - `app/Models/Tenant.php` — belum punya konsep plan/status langganan sama sekali (kolom saat ini hanya `name`, `slug`, `logo`, `address`, `phone`, `ai_provider`, `ai_api_key`, `ai_model`)
-  - `app/Models/User.php:31-39` — hanya kenal peran `owner`/`cashier` **di dalam** tenant; tidak ada peran di atas tenant
-  - `bootstrap/app.php:27-32` — alias middleware yang ada (`tenant`, `tenant.api`, `role`, `permission`) semuanya **mengasumsikan** user punya `tenant_id`
-  - `app/Http/Middleware/EnsureTenant.php` — memaksa scope tenant; panel platform justru harus berada **di luar** scope ini
-  - `routes/web.php` — belum ada grup rute di luar `owner`/`cashier`
-  - `database/migrations/` — belum ada tabel `plans`, `subscriptions`, `invoices`/`payments`, maupun `platform_audit_logs`
+- **Area Terdampak:** *(diperbarui 2026-07-22 — Tahap A sudah mendarat, daftar di bawah dipisah agar tidak menyesatkan)*
+
+  **Sudah ada (Tahap A):**
+  - `app/Models/PlatformUser.php` + guard `platform` — tingkat ketiga di atas tenant, sudah berdiri
+  - `platform_users`, `platform_user_modules`, `platform_audit_logs`, `platform_password_reset_tokens`
+  - `bootstrap/app.php` — alias `platform.can` & `platform.owner`, plus `redirectGuestsTo()` bersyarat
+  - `routes/web.php` — grup `/platform` di luar middleware `tenant`
+  - Panel: beranda, daftar tenant (read-only), jejak audit, manajemen akun
+
+  **Belum ada (Tahap B–D):**
+  - `app/Models/Tenant.php` — belum punya konsep plan/status langganan sama sekali
+  - `database/migrations/` — belum ada `plans`, `pricing_rules`, `subscriptions`, `invoices`, `tenant_consents`, `tenant_monthly_metrics`
 - **Deskripsi:**
   Saat ini aplikasi hanya mengenal dua tingkat: **tenant** dan **user di dalam tenant** (owner/cashier + RBAC modul dari Phase RBAC). Tidak ada tingkat ketiga: **pemilik platform/SaaS** yang berdiri di atas semua tenant. Akibatnya tidak ada cara melihat daftar tenant, status berbayar/gratis, atau riwayat pembayaran selain query database manual.
 
@@ -192,10 +197,13 @@
 - **Dugaan Penyebab / Kenapa belum ada:**
   Aplikasi dibangun dari sudut pandang satu tenant ke bawah. Semua middleware & query berbasis scope tenant, dan monetisasi belum pernah dimodelkan di database — jadi tidak ada tempat untuk menyimpan "tenant ini bayar berapa".
 - **Usulan Perbaikan (garis besar — detail menyusul di dokumen plan tersendiri):**
-  1. **Identitas platform admin terpisah, bukan menumpang `users.role`.** Opsi: (a) kolom `users.is_platform_admin` + `tenant_id` nullable, atau (b) tabel/guard terpisah `platform_admins`. Opsi (b) lebih aman karena akun platform tidak pernah ikut ter-scope tenant dan tidak bisa "nyasar" masuk UI tenant, tapi menambah satu guard. Perlu keputusan.
+
+  > **Status poin-poin di bawah** *(disegarkan 2026-07-22)*: poin **1, 2, 4, 5, 6, 8** sudah **dikerjakan** di Tahap A — dibiarkan tertulis sebagai catatan alasan, bukan pekerjaan tersisa. Poin **3, 7, 9, 10, 11** menunggu Tahap B–D. Poin **12** benar-benar masih terbuka.
+
+  1. **Identitas platform admin terpisah, bukan menumpang `users.role`.** ✅ *Dikerjakan:* dipilih opsi (b) — tabel `platform_users` + guard `platform`. Ternyata pilihan ini punya sisi tajam yang tak terduga di tahap plan: `TenantScope` tidak aktif di job/command/seeder, jadi isolasi tidak boleh bersandar padanya (lihat poin 5).
   2. **Rute & layout terpisah** — mis. prefix `/platform` (atau subdomain), **di luar** middleware `tenant`, dengan layout `PlatformLayout.vue` sendiri agar tidak tercampur dengan `OwnerLayout`.
   3. **Model data langganan baru:** `plans` (nama, harga, kuota), `subscriptions` (tenant_id, plan_id, status, periode), `invoices` + `payments` (nominal, tanggal, metode, bukti). Mulai **manual/pencatatan dulu** (owner input pembayaran yang masuk), integrasi payment gateway belakangan.
-  4. **Privasi ditegakkan di lapisan query, bukan hanya UI.** Buat resource/DTO khusus platform (mis. `PlatformTenantResource`) yang hanya meng-expose field yang diizinkan — jangan pernah kirim model `Tenant`/`User` mentah ke Inertia. Menyembunyikan kolom di Vue saja tidak cukup: datanya tetap terkirim di payload dan bisa dibaca lewat DevTools.
+  4. **Privasi ditegakkan di lapisan query, bukan hanya UI.** ✅ *Dikerjakan:* `App\Http\Resources\Platform\TenantResource` memakai **daftar putih** eksplisit (bukan `parent::toArray()`), sehingga kolom baru di tabel `tenants` tidak ikut bocor dengan sendirinya. Resource khusus platform hanya meng-expose field yang diizinkan — jangan pernah kirim model `Tenant`/`User` mentah ke Inertia. Menyembunyikan kolom di Vue saja tidak cukup: datanya tetap terkirim di payload dan bisa dibaca lewat DevTools.
   5. **Larang akses lintas-tenant secara struktural.** Controller platform tidak boleh menyentuh `Transaction`, `Product`, `AiAnalysis`, dll. Ide penegakan: test arsitektur (Pest `arch()`) yang gagal bila namespace `Platform` mengimpor model operasional. Metrik agregat cukup lewat query `count()`/`sum()` terbatas atau tabel ringkasan harian.
      **Pengecualian yang disengaja:** job penghitung metrik di `[BL-006]` poin 3 memang harus membaca `Transaction`. Itu boleh — asal job-nya berada **di luar** namespace `Platform` dan hasilnya hanya ditulis ke tabel ringkasan. Aturannya: yang dilarang menyentuh data operasional adalah **controller/halaman platform**, bukan job terjadwal. Dengan begitu tetap ada satu-satunya pintu ke data mentah, dan pintu itu mudah diaudit.
   6. **Audit log.** Setiap akses platform admin ke data tenant dicatat (`platform_audit_logs`). Ini yang membuat janji "saya tidak melihat data Anda" bisa dibuktikan, bukan sekadar klaim.
@@ -206,7 +214,7 @@
      - owner membuat role lalu tinggal **mencentang** modul mana yang ikut (sisi tenant: `Owner/RoleController@store:47-52` — validasi `Rule::in(array_keys(config('rbac.modules')))` lalu `syncPermissions()`);
      - nav & halaman difilter dari permission yang sama.
 
-     **Catatan penting soal implementasi:** jangan pakai ulang katalog `config/rbac.php` yang sekarang — isinya modul operasional tenant (POS, Stok, Produk) yang tidak relevan di panel platform. Yang dipakai ulang adalah **polanya**, dengan katalog terpisah (mis. `config/platform-rbac.php`) berisi modul platform: `tenants`, `subscriptions`, `payments`, `pricing_rules`, `audit_logs`. Perlu diperiksa juga apakah spatie perlu **guard terpisah** untuk sisi platform — RBAC tenant saat ini bergantung pada team-id per tenant, sementara akun platform tidak punya tenant, jadi ini titik yang paling rawan bocor/tabrakan dan harus dituntaskan di tahap plan.
+     **Hasil sebenarnya** *(terjawab pasti 2026-07-21)*: katalog terpisah `config/platform-rbac.php` memang dipakai — tapi **spatie tidak bisa dipakai sama sekali** di sisi platform. Pivot `model_has_roles` menuntut `tenant_id` non-null karena kolom itu bagian dari primary key-nya, sedangkan akun platform tak punya tenant. Ini bukan "perlu diperiksa" melainkan mustahil secara struktur. Diganti tabel sendiri `platform_user_modules`; pola UI modul+centang tetap sama. Manajemen akunnya sendiri dijaga penanda `is_owner`, bukan modul grantable — kalau grantable, staf platform bisa mencentangkan `revenue_data` untuk dirinya sendiri.
 
   9. **v1 tidak bisa read-only.** *(diputuskan 2026-07-21)* Rencana awal mengusulkan panel read-only di v1 demi keamanan, tapi `[BL-006]` mensyaratkan pemilik SaaS mengatur sendiri aturan harga, bracket, dan tarif seat dari dashboard. Jadi v1 **harus** punya kemampuan tulis, minimal untuk `plans`/`pricing_rules`/pencatatan pembayaran. Konsekuensinya audit log (poin 6) naik dari "bagus untuk dimiliki" menjadi **wajib ada sejak v1**.
 
