@@ -113,6 +113,16 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+
+        // Broker terpisah untuk akun platform. Tabel tokennya sendiri: alamat
+        // email yang sama bisa terdaftar di kedua dunia, dan token satu sisi
+        // tidak boleh berlaku di sisi lain.
+        'platform_users' => [
+            'provider' => 'platform_users',
+            'table' => 'platform_password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
     ],
 
     /*

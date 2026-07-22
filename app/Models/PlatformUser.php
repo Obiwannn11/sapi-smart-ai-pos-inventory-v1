@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Notifications\PlatformResetPassword;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
 /**
  * Akun pemilik SaaS — berdiri di atas semua tenant.
@@ -16,7 +18,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 class PlatformUser extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\PlatformUserFactory> */
-    use HasFactory;
+    use HasFactory, Notifiable;
 
     protected $fillable = ['name', 'email', 'password', 'is_owner'];
 
@@ -39,6 +41,19 @@ class PlatformUser extends Authenticatable
     public function auditLogs(): HasMany
     {
         return $this->hasMany(PlatformAuditLog::class);
+    }
+
+    // --- Notifications ---
+
+    /**
+     * Kirim tautan pemulihan yang mengarah ke panel platform.
+     *
+     * Bawaan Laravel menyusun tautan lewat route('password.reset') milik tenant;
+     * akun ini ada di tabel lain, jadi tautannya harus dialihkan.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $this->notify(new PlatformResetPassword($token));
     }
 
     // --- Helpers ---
