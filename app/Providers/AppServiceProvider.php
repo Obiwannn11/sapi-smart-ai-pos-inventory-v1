@@ -66,6 +66,12 @@ class AppServiceProvider extends ServiceProvider
         // Permintaan tautan pemulihan juga dibatasi: tanpa itu ia jadi alat
         // membanjiri kotak masuk orang lain, sekaligus jalur menyisir alamat
         // lewat perbedaan waktu tanggap.
+        RateLimiter::for('password-reset', function (Request $request) {
+            return Limit::perMinute(3)
+                ->by(self::loginThrottleKey($request))
+                ->response(self::loginThrottleResponse(...));
+        });
+
         RateLimiter::for('platform-password-reset', function (Request $request) {
             return Limit::perMinute(3)
                 ->by(self::loginThrottleKey($request))

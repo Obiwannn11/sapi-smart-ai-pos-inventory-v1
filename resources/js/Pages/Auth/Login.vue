@@ -186,6 +186,15 @@ const submit = () => {
                         >
                             {{ form.errors.password }}
                         </p>
+
+                        <div class="mt-2 text-right">
+                            <Link
+                                href="/forgot-password"
+                                class="text-sm text-muted-foreground hover:text-foreground transition-colors duration-150"
+                            >
+                                Lupa kata sandi?
+                            </Link>
+                        </div>
                     </div>
 
                     <!-- Submit -->
