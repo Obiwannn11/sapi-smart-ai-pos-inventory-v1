@@ -1,6 +1,6 @@
 # PHASE SAAS — Platform Console & Langganan Dua Jalur
 
-**Status:** **Tahap A SELESAI** (2026-07-21/22) — Tahap B–D masih rencana. Lihat checklist di Bagian 13.
+**Status:** **Tahap A & B SELESAI** (A: 2026-07-21/22, B: 2026-07-25) — Tahap C–D masih rencana. Lihat checklist di Bagian 13.
 **Estimasi:** Besar — dipecah jadi 4 tahap yang bisa dikerjakan berurutan (Tahap A paling kecil & mandiri)
 **Dependency:** `PHASE-RBAC_Module-Access-Control` (sudah selesai — pola modul+centang dipakai ulang), `spatie/laravel-permission` (sudah ada). Belum butuh dependency baru.
 **Output:** Panel khusus pemilik SaaS untuk mengelola tenant, langganan, dan pembayaran — dengan batas privasi yang ditegakkan di lapisan query, plus skema harga dua jalur (normal & subsidi UMKM berbasis omset).
@@ -388,16 +388,20 @@ Append-only — tidak ada UI hapus/edit. Log yang bisa disunting tidak membuktik
 
 ## Bagian 12 — Keputusan Terbuka
 
-Belum menghalangi Tahap A, tapi **harus** selesai sebelum Tahap C/D:
+**Sudah ditutup saat Tahap B** *(2026-07-25 — rinciannya di checklist Bagian 13)*:
 
-1. Apa yang terjadi bila tenant tidak memilih apa pun di akhir trial — dibekukan, read-only, atau tetap jalan sampai ditagih? Dan berapa lama datanya disimpan.
-2. Mitigasi pendaftaran berulang demi trial gratis baru (verifikasi telepon? persetujuan manual untuk identitas serupa?).
+1. ~~Apa yang terjadi bila tenant tidak memilih apa pun di akhir trial~~ → hanya-baca 30 hari, lalu ditangguhkan.
+2. ~~Mitigasi pendaftaran berulang~~ → ditunda sadar-sadar ke `[BL-014]`.
+5. ~~Metrik agregat untuk tenant jalur normal~~ → boleh terlihat; dinyatakan di dokumen consent.
+6. ~~Definisi seat~~ → pengguna aktif, dengan `seat_high_water` sebagai dasar tagihan.
+8. ~~Boleh suspend tenant yang menunggak~~ → ya, lewat `grace` dulu. Data tidak dihapus dan tetap bisa dibaca selama masa tenggang.
+
+**Masih terbuka — semuanya khas jalur subsidi, jadi WAJIB dijawab sebelum Tahap C/D:**
+
 3. Pencabutan consent subsidi: diskon langsung hilang atau berlaku sampai akhir periode? (saran: **akhir periode** — pencabutan yang langsung menaikkan tagihan membuat orang takut mencabut, dan consent yang tidak bisa dicabut dengan tenang bukan consent).
 4. Apakah daftar tenant menampilkan bracket saja, dengan angka persis dibuka lewat aksi "lihat rincian" yang tercatat di audit log?
-5. Metrik agregat untuk tenant **jalur normal** — jumlah transaksi, jumlah produk, kuota AI: boleh terlihat atau tidak?
-6. Definisi seat: semua user atau hanya yang aktif? Apakah menonaktifkan staf membebaskan seat (dan bagaimana mencegah pola aktif–nonaktif bergantian)?
 7. Boleh pindah jalur normal ↔ subsidi kapan saja, atau ada periode minimum?
-8. Boleh suspend tenant yang menunggak? Apa yang terjadi pada datanya selama suspend?
+9. *(baru)* Berapa lama data omset di `tenant_monthly_metrics` disimpan, dan apa yang terjadi padanya saat consent dicabut — dihapus, atau dibekukan?
 
 ---
 
@@ -422,13 +426,25 @@ Belum menghalangi Tahap A, tapi **harus** selesai sebelum Tahap C/D:
 
 > **Temuan saat eksekusi (di luar rencana):** tamu di `/platform/*` semula diarahkan ke `route('login')` — halaman masuk **tenant**. Karena akun platform ada di tabel lain, pemilik SaaS yang sesinya habis tidak akan pernah bisa masuk dari sana. Diperbaiki dengan `redirectGuestsTo()` bersyarat di `bootstrap/app.php`. Ini bukan sekadar ekspektasi test yang meleset, melainkan jalan buntu nyata bagi pengguna.
 
-### Tahap B — Langganan dasar (jalur normal)
-- [ ] `plans`, `subscriptions`, `invoices` + `tenants.status`/`pricing_track`
-- [ ] Trial 1 bulan saat registrasi
-- [ ] Consent `normal` + halaman persetujuan
-- [ ] Pencatatan pembayaran manual + verifikasi
-- [ ] Batas seat keras di `StaffController@store` + tutup jalur lain
-- [ ] Upgrade provisional dengan bukti transfer
+### Tahap B — Langganan dasar (jalur normal) — ✅ SELESAI 2026-07-25
+- [x] `plans`, `subscriptions`, `invoices` + `tenants.status`/`pricing_track`
+- [x] Trial 1 bulan saat registrasi
+- [x] Consent `normal` + halaman persetujuan (anti dark pattern, berversi)
+- [x] Pencatatan pembayaran manual + verifikasi (`/platform/invoices`)
+- [x] Batas seat keras di `StaffController@store` + jalur lain ditutup
+- [x] Upgrade provisional dengan bukti transfer
+
+**Keputusan yang ditutup saat eksekusi** (sebelumnya terbuka di Bagian 12):
+- **Definisi seat = pengguna aktif.** Kolom `users.is_active` ditambahkan; menonaktifkan staf membebaskan seat. Pola aktif–nonaktif bergantian tidak menguntungkan karena tagihan mengikuti `subscriptions.seat_high_water`, bukan jumlah aktif saat ditagih.
+- **Akhir trial tanpa pilihan = hanya-baca lalu ditangguhkan.** Keadaan `grace` ditambahkan di antara aktif dan tertangguh, 30 hari, diatur di `config/subscription.php`.
+- **Metrik agregat jalur normal boleh terlihat** — jumlah transaksi, produk, pengguna, aktivitas terakhir, kuota AI. Dinyatakan lugas di `resources/consents/normal-v1.md`; yang tertutup tetap isi dan nilainya. *(Halaman yang menampilkannya belum dibuat — baru izinnya yang diputuskan.)*
+- **Mitigasi trial berulang ditunda** ke `[BL-014]`, supaya Tahap B tidak melebar ke verifikasi surel.
+
+**Penyimpangan dari rencana di atas** (disengaja — alasan lengkap di `docs/CHANGELOG.md`):
+- `subscriptions` **tidak** punya kolom `status`; keadaan operasional hanya di `tenants.status`.
+- `tenant` & `tenant.api` berubah dari alias jadi **grup middleware** agar gerbang langganan tak bisa terlupakan grup rute baru.
+
+**Yang belum dikerjakan di Tahap B (bukan terlewat):** notifikasi in-app menjelang akhir trial (Bagian 7 poin 4) — belum ada kanal notifikasi apa pun di proyek ini, sama seperti yang dicatat di `[BL-011]`.
 
 ### Tahap C — Jalur subsidi
 - [ ] `tenant_monthly_metrics` + `ComputeTenantMonthlyRevenue` + jadwal

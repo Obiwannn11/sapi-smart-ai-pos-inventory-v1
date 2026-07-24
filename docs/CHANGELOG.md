@@ -45,6 +45,32 @@
 
 ---
 
+### [ADDITION] Langganan Dasar Jalur Normal — PHASE SAAS Tahap B (BL-005)
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` — Tahap B
+- **Dampak:** Migration | Model | Service | Middleware | Controller | Route | Config | Frontend | Test
+- **Breaking Change:** Tidak — tenant yang sudah ada diisi mundur ke `active` dengan seat selebar pemakaiannya sekarang
+- **Deskripsi:** Tenant kini punya siklus hidup komersial: trial 1 bulan saat mendaftar, masa tenggang hanya-baca saat periodenya lewat, penangguhan bila tenggangnya habis. Batas seat ditegakkan keras, staf bisa dinonaktifkan alih-alih dihapus, ada dokumen persetujuan jalur normal berversi, dan pemilik SaaS punya halaman langganan & pembayaran dengan verifikasi bukti transfer manual.
+- **Alasan:** Tahap A hanya membangun identitas dan panel baca. Tanpa model langganan, tidak ada cara menagih, membatasi, atau mengakhiri layanan selain lewat database.
+- **File Terdampak (ringkas):**
+  - Migrasi: `plans`, `subscriptions`, `invoices`, `tenant_consents`; kolom `tenants.status`, `tenants.pricing_track`, `users.is_active`, `invoices.kind|grants_seats|previous_seats`, `subscriptions.provisional_blocked`
+  - `app/Services/SubscriptionService.php`, `app/Services/ConsentService.php`
+  - `app/Http/Middleware/EnsureSubscriptionActive.php` — digabung ke grup `tenant` & `tenant.api`
+  - `app/Console/Commands/AdvanceSubscriptionLifecycle.php` — terjadwal harian 03:30
+  - `app/Http/Controllers/Billing/{SubscriptionController,ConsentController,UpgradeController}.php`
+  - `app/Http/Controllers/Platform/{SubscriptionController,InvoiceController}.php` + dua resource daftar-putih
+  - `resources/consents/normal-v1.md`, `config/subscription.php`
+  - 5 berkas test baru di `tests/Feature/Subscription/` + `tests/Feature/Platform/PlatformBillingTest.php` — suite penuh 358 hijau
+
+- **Penyimpangan dari dokumen plan (disengaja, dicatat agar tidak terbaca sebagai kelalaian):**
+  1. **`subscriptions` tidak punya kolom `status`.** Bagian 4 plan memuat status di dua tabel sekaligus. Keadaan operasional akhirnya hanya hidup di `tenants.status` — middleware membacanya di tiap request, dan dua kolom status berdampingan pasti melenceng satu sama lain cepat atau lambat.
+  2. **Keadaan `grace` ditambahkan** di antara aktif dan tertangguh, sebagai wujud keputusan "read-only + tenggang" yang diambil 2026-07-25.
+  3. **`tenant`/`tenant.api` diubah dari alias jadi grup middleware**, supaya gerbang langganan tidak bisa terlupakan saat ada grup rute baru.
+  4. **Definisi seat = pengguna aktif**, dengan `seat_high_water` sebagai dasar tagihan. Plan menyisakan definisi seat sebagai keputusan terbuka; ditutup 2026-07-25.
+- **Catatan Migrasi:** Jalankan `php artisan migrate`. Migrasi `add_upgrade_columns_to_invoices_table` membuat indeks unik baru sebelum membuang yang lama — urutan sebaliknya ditolak MySQL karena foreign key `tenant_id` bersandar pada indeks lama itu.
+
+---
+
 ### [ADDITION] Pemulihan Kata Sandi Pengguna Tenant (BL-012)
 - **Tanggal:** 2026-07-22
 - **Fase Terkait:** Di Luar Fase (temuan saat mengerjakan `[BL-010]`)

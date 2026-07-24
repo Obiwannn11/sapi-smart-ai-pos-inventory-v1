@@ -40,6 +40,21 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-014] Pendaftaran Berulang Demi Trial Gratis Baru
+- **Ditemukan:** 2026-07-25
+- **Sumber:** Ditunda sadar-sadar saat mengerjakan Tahap B — lihat `[BL-005]`
+- **Status:** Open
+- **Prioritas:** Medium (belum menggigit selama tenant sedikit; jadi masalah nyata begitu pendaftaran ramai)
+- **Area Terdampak:**
+  - `app/Http/Controllers/Auth/AuthController.php:26` (`register`) — tak ada penyaring apa pun
+  - `users.email_verified_at` — kolomnya ada sejak migrasi bawaan Laravel, **tidak pernah dipakai**
+- **Deskripsi:**
+  Registrasi self-serve memberi trial 1 bulan tanpa syarat. Siapa pun bisa mendaftar berulang kali dengan alamat surel baru dan memakai layanan gratis selamanya. Tahap B sengaja tidak menanganinya supaya lingkupnya tetap pada model langganan.
+- **Usulan Perbaikan:**
+  1. Verifikasi surel wajib sebelum tenant bisa dipakai. Kontrak `MustVerifyEmail` sudah tersedia di Laravel dan kolomnya sudah ada — yang belum ada notifikasi, halaman, middleware, dan penanganan tenant yang tak pernah verifikasi.
+  2. Pertimbangkan verifikasi nomor telepon; untuk UMKM Indonesia, nomor jauh lebih mahal dibuat berulang daripada alamat surel.
+  3. Penandaan identitas serupa (nama usaha + telepon) untuk ditinjau manual, bukan diblokir otomatis — memblokir otomatis akan menjegal warung yang benar-benar punya dua cabang.
+
 ### [BL-013] Akun Platform Belum Punya 2FA
 - **Ditemukan:** 2026-07-22 (dipisahkan dari `[BL-010]` yang sudah ditutup)
 - **Sumber:** Poin ketiga `[BL-010]`, sejak awal ditandai "catat sebagai target, jangan dikerjakan sekarang"
@@ -155,7 +170,7 @@
 ### [BL-005] Platform Console — Panel Pemilik SaaS (Privacy-Preserving)
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Permintaan pemilik SaaS — butuh satu panel untuk melihat siapa saja tenant yang terdaftar, status langganan, dan riwayat pembayaran, **tanpa** bisa melihat data operasional klien
-- **Status:** In Progress — **Tahap A selesai 2026-07-21** (lihat `[ADDITION] Platform Console — Fondasi Panel Pemilik SaaS` di `docs/CHANGELOG.md`). Sisa Tahap B–D di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md`
+- **Status:** In Progress — **Tahap A selesai 2026-07-21**, **Tahap B selesai 2026-07-25** (lihat dua entri `[ADDITION]` terkait di `docs/CHANGELOG.md`). Sisa Tahap C–D di `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md`
 - **Prioritas:** Medium (belum menghambat operasional tenant, tapi jadi blocker begitu tenant berbayar pertama masuk — tanpa ini penagihan & pencatatan langganan manual)
 - **Area Terdampak:** *(diperbarui 2026-07-22 — Tahap A sudah mendarat, daftar di bawah dipisah agar tidak menyesatkan)*
 
