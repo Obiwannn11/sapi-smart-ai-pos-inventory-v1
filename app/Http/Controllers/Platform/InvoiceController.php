@@ -8,11 +8,14 @@ use App\Models\Invoice;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Tagihan & pembayaran — dicatat MANUAL di v1, belum ada payment gateway.
@@ -24,6 +27,8 @@ use Inertia\Response;
  */
 class InvoiceController extends Controller
 {
+    public function __construct(private readonly SubscriptionService $subscriptions) {}
+
     public function index(Request $request): Response
     {
         $filter = $request->string('status')->toString();
@@ -119,21 +124,33 @@ class InvoiceController extends Controller
         ]);
 
         $subscription = $invoice->subscription;
-        $periodStart = now()->startOfDay();
 
-        $subscription->update([
-            // Harga DIKUNCI dari nominal yang benar-benar dibayar, bukan dibaca
-            // ulang dari tabel tarif. Inilah grandfathering: mengubah tarif
-            // besok tidak boleh mengubah apa yang sudah disepakati hari ini.
-            'price_locked' => $invoice->amount,
-            'current_period_start' => $periodStart->toDateString(),
-            'current_period_end' => $periodStart->copy()->addMonth()->toDateString(),
-            // Puncak seat direset di awal periode baru — ia mengukur pemakaian
-            // periode berjalan, bukan sepanjang masa.
-            'seat_high_water' => $subscription->activeSeatsUsed(),
-        ]);
+        if ($invoice->isUpgrade()) {
+            // Upgrade hanya menambah seat. Ia TIDAK memperpanjang periode dan
+            // TIDAK mengubah tarif bulanan — biaya sekali-bayar untuk kasir
+            // tambahan bukan harga langganan, dan menukar keduanya akan membuat
+            // tagihan bulan depan salah.
+            if ($invoice->grants_seats !== null) {
+                $subscription->update(['seats' => $invoice->grants_seats]);
+            }
+        } else {
+            $periodStart = now()->startOfDay();
 
-        $invoice->tenant->update(['status' => Tenant::STATUS_ACTIVE]);
+            $subscription->update([
+                // Harga DIKUNCI dari nominal yang benar-benar dibayar, bukan
+                // dibaca ulang dari tabel tarif. Inilah grandfathering:
+                // mengubah tarif besok tidak boleh mengubah apa yang sudah
+                // disepakati hari ini.
+                'price_locked' => $invoice->amount,
+                'current_period_start' => $periodStart->toDateString(),
+                'current_period_end' => $periodStart->copy()->addMonth()->toDateString(),
+                // Puncak seat direset di awal periode baru — ia mengukur
+                // pemakaian periode berjalan, bukan sepanjang masa.
+                'seat_high_water' => $subscription->activeSeatsUsed(),
+            ]);
+
+            $invoice->tenant->update(['status' => Tenant::STATUS_ACTIVE]);
+        }
 
         PlatformAuditLog::record('invoices.verify', $invoice, [
             'tenant_id' => $invoice->tenant_id,
@@ -167,7 +184,12 @@ class InvoiceController extends Controller
             'rejection_reason' => $validated['reason'],
             'verified_by' => $request->user()->id,
             'verified_at' => now(),
+            // Tenggang 3×24 jam untuk memperbaiki. Tenant yang salah unggah
+            // butuh waktu memperbaikinya, bukan hukuman seketika.
+            'due_date' => now()->addDays(3)->toDateString(),
         ]);
+
+        $this->subscriptions->revertUpgrade($invoice);
 
         PlatformAuditLog::record('invoices.reject', $invoice, [
             'tenant_id' => $invoice->tenant_id,
@@ -176,5 +198,25 @@ class InvoiceController extends Controller
         ]);
 
         return back()->with('success', 'Bukti bayar ditolak, tenant akan diberi tahu.');
+    }
+
+    /**
+     * Buka berkas bukti transfer.
+     *
+     * Disimpan di disk privat, jadi hanya bisa dibaca lewat rute ini — yang
+     * digerbang `platform.can:payments`. Bukti transfer memuat nama dan nomor
+     * rekening; URL yang bisa ditebak siapa saja bukan tempatnya.
+     */
+    public function proof(Invoice $invoice): StreamedResponse
+    {
+        abort_if($invoice->proof_path === null, 404);
+        abort_unless(Storage::disk('local')->exists($invoice->proof_path), 404);
+
+        PlatformAuditLog::record('invoices.proof.view', $invoice, [
+            'tenant_id' => $invoice->tenant_id,
+            'period' => $invoice->period,
+        ]);
+
+        return Storage::disk('local')->response($invoice->proof_path);
     }
 }

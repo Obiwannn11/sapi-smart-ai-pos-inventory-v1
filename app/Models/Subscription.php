@@ -26,12 +26,14 @@ class Subscription extends Model
 
     protected $fillable = [
         'tenant_id', 'plan_id', 'pricing_track', 'seats', 'seat_high_water',
-        'price_locked', 'trial_ends_at', 'current_period_start', 'current_period_end',
+        'provisional_blocked', 'price_locked', 'trial_ends_at',
+        'current_period_start', 'current_period_end',
     ];
 
     protected function casts(): array
     {
         return [
+            'provisional_blocked' => 'boolean',
             'price_locked' => 'decimal:2',
             'trial_ends_at' => 'datetime',
             'current_period_start' => 'date',

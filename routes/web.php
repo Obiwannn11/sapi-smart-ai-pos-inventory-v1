@@ -47,6 +47,15 @@ Route::middleware(['auth', 'tenant'])
         Route::post('/langganan/persetujuan', [\App\Http\Controllers\Billing\ConsentController::class, 'store'])
             ->middleware('role:owner')
             ->name('consent.store');
+
+        // Penambahan pengguna & bukti bayar — keputusan komersial, jadi owner
+        // saja. Staf tidak menaikkan tagihan usaha tempatnya bekerja.
+        Route::middleware('role:owner')->group(function () {
+            Route::post('/langganan/tambah-pengguna', [\App\Http\Controllers\Billing\UpgradeController::class, 'store'])
+                ->name('upgrade.store');
+            Route::post('/langganan/tagihan/{invoice}/bukti', [\App\Http\Controllers\Billing\UpgradeController::class, 'storeProof'])
+                ->name('proof.store');
+        });
     });
 
 // --- Owner Routes: modul grantable (digerbang per-permission; owner auto-lolos
@@ -255,6 +264,8 @@ Route::prefix('platform')
                     ->name('invoices.verify');
                 Route::post('/invoices/{invoice}/reject', [\App\Http\Controllers\Platform\InvoiceController::class, 'reject'])
                     ->name('invoices.reject');
+                Route::get('/invoices/{invoice}/proof', [\App\Http\Controllers\Platform\InvoiceController::class, 'proof'])
+                    ->name('invoices.proof');
             });
 
             // Modul: Jejak Audit (read-only)

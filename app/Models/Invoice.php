@@ -23,11 +23,20 @@ class Invoice extends Model
     /** Bukti ditolak — palsu, nominal kurang, atau salah unggah. */
     public const STATUS_REJECTED = 'rejected';
 
+    /** Tagihan langganan berkala. */
+    public const KIND_SUBSCRIPTION = 'subscription';
+
+    /** Tagihan penambahan seat di tengah periode. */
+    public const KIND_UPGRADE = 'upgrade';
+
     protected $fillable = [
-        'tenant_id', 'subscription_id', 'period', 'amount', 'status', 'due_date',
+        'tenant_id', 'subscription_id', 'period', 'kind', 'grants_seats',
+        'previous_seats', 'amount', 'status', 'due_date',
         'proof_path', 'submitted_at', 'paid_at', 'verified_by', 'verified_at',
         'rejection_reason',
     ];
+
+    protected $attributes = ['kind' => self::KIND_SUBSCRIPTION];
 
     protected function casts(): array
     {
@@ -69,5 +78,10 @@ class Invoice extends Model
     public function isAwaitingVerification(): bool
     {
         return $this->status === self::STATUS_AWAITING_VERIFICATION;
+    }
+
+    public function isUpgrade(): bool
+    {
+        return $this->kind === self::KIND_UPGRADE;
     }
 }

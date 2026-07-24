@@ -1,11 +1,13 @@
 <script setup>
-import { computed } from 'vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     tenant: { type: Object, required: true },
     subscription: { type: Object, required: true },
     consent: { type: Object, required: true },
+    invoices: { type: Array, required: true },
+    upgrade: { type: Object, required: true },
 });
 
 const page = usePage();
@@ -95,6 +97,38 @@ const trialDaysLeft = computed(() =>
 );
 
 const backHref = computed(() => (props.tenant.is_owner ? '/owner/dashboard' : '/cashier/pos'));
+
+// --- Tambah pengguna ---
+const upgradeForm = useForm({ additional_seats: 1 });
+
+const submitUpgrade = () => upgradeForm.post('/langganan/tambah-pengguna', { preserveScroll: true });
+
+const upgradeCost = computed(() => formatRupiah(props.upgrade.extra_seat_price * upgradeForm.additional_seats));
+
+// --- Unggah bukti bayar ---
+const proofTarget = ref(null);
+const proofForm = useForm({ proof: null });
+
+const openProof = (invoice) => {
+    proofForm.reset();
+    proofForm.clearErrors();
+    proofTarget.value = invoice;
+};
+
+const submitProof = () => {
+    proofForm.post(`/langganan/tagihan/${proofTarget.value.id}/bukti`, {
+        preserveScroll: true,
+        forceFormData: true,
+        onSuccess: () => { proofTarget.value = null; },
+    });
+};
+
+const invoiceStatusLabels = {
+    unpaid: 'Belum dibayar',
+    awaiting_verification: 'Menunggu diperiksa',
+    paid: 'Lunas',
+    rejected: 'Ditolak',
+};
 </script>
 
 <template>
@@ -163,10 +197,123 @@ const backHref = computed(() => (props.tenant.is_owner ? '/owner/dashboard' : '/
                 </Link>
             </div>
 
+            <!-- Tambah pengguna -->
+            <div v-if="tenant.is_owner" class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
+                <p class="text-sm font-medium text-foreground">Tambah pengguna</p>
+
+                <p v-if="upgrade.is_provisional_blocked" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    Bukti bayar Anda pernah ditolak, jadi penambahan pengguna kini baru berlaku setelah bukti
+                    transfernya kami periksa.
+                </p>
+                <p v-else class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    Unggah bukti transfernya dan penggunanya langsung aktif — pemeriksaan menyusul.
+                </p>
+
+                <p v-if="upgrade.has_open_request" class="mt-3 text-sm text-foreground">
+                    Ada permintaan penambahan yang belum selesai. Selesaikan tagihannya di bawah dulu.
+                </p>
+
+                <form v-else class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitUpgrade">
+                    <div>
+                        <label for="additional-seats" class="block text-xs font-medium text-muted-foreground mb-1">Jumlah</label>
+                        <input
+                            id="additional-seats"
+                            v-model.number="upgradeForm.additional_seats"
+                            type="number"
+                            min="1"
+                            max="20"
+                            class="w-24 px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        :disabled="upgradeForm.processing"
+                        class="px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                    >
+                        Terbitkan tagihan · {{ upgradeCost }}
+                    </button>
+                </form>
+
+                <p v-if="upgradeForm.errors.additional_seats" role="alert" class="mt-2 text-xs text-destructive">
+                    {{ upgradeForm.errors.additional_seats }}
+                </p>
+            </div>
+
+            <!-- Tagihan -->
+            <div class="mt-6 rounded-xl border border-border bg-card overflow-hidden">
+                <p class="px-5 pt-4 text-sm font-medium text-foreground">Tagihan</p>
+
+                <ul class="mt-2 divide-y divide-border">
+                    <li v-for="invoice in invoices" :key="invoice.id" class="px-5 py-3.5">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <div>
+                                <p class="text-sm font-medium text-foreground">
+                                    {{ invoice.kind === 'upgrade' ? 'Tambah pengguna' : 'Langganan' }} · {{ invoice.period }}
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ invoiceStatusLabels[invoice.status] }} · jatuh tempo {{ formatDate(invoice.due_date) }}
+                                </p>
+                                <p v-if="invoice.rejection_reason" class="mt-1 text-xs text-destructive">
+                                    {{ invoice.rejection_reason }}
+                                </p>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="text-sm font-medium text-foreground tabular-nums">{{ formatRupiah(invoice.amount) }}</p>
+                                <button
+                                    v-if="tenant.is_owner && invoice.status !== 'paid'"
+                                    class="mt-1 text-xs font-medium text-primary hover:text-primary/80"
+                                    @click="openProof(invoice)"
+                                >
+                                    {{ invoice.has_proof ? 'Unggah ulang bukti' : 'Unggah bukti transfer' }}
+                                </button>
+                            </div>
+                        </div>
+                    </li>
+
+                    <li v-if="invoices.length === 0" class="px-5 py-6 text-sm text-muted-foreground">
+                        Belum ada tagihan.
+                    </li>
+                </ul>
+            </div>
+
             <p class="mt-6 text-xs text-muted-foreground leading-relaxed">
-                Pembayaran masih dicatat manual. Hubungi pengelola layanan untuk menyelesaikan tagihan —
-                pencatatan mandiri dari halaman ini menyusul.
+                Pembayaran masih dicatat manual: transfer, lalu unggah buktinya di sini. Kami periksa dan
+                mengonfirmasi menyusul.
             </p>
+
+            <!-- Unggah bukti -->
+            <Teleport to="body">
+                <div v-if="proofTarget" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div class="absolute inset-0 bg-black/50" @click="proofTarget = null" />
+                    <div class="relative w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl">
+                        <h3 class="text-lg font-semibold text-foreground mb-1">Unggah Bukti Transfer</h3>
+                        <p class="text-sm text-muted-foreground mb-4">
+                            {{ proofTarget.period }} · {{ formatRupiah(proofTarget.amount) }}
+                        </p>
+
+                        <form class="space-y-4" @submit.prevent="submitProof">
+                            <input
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.pdf"
+                                class="w-full text-sm text-foreground file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:border-border file:bg-card file:text-sm file:text-foreground"
+                                @input="proofForm.proof = $event.target.files[0]"
+                            />
+                            <p v-if="proofForm.errors.proof" role="alert" class="text-xs text-destructive">
+                                {{ proofForm.errors.proof }}
+                            </p>
+
+                            <div class="flex justify-end gap-3">
+                                <button type="button" class="px-4 py-2 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-accent/40" @click="proofTarget = null">
+                                    Batal
+                                </button>
+                                <button type="submit" :disabled="proofForm.processing" class="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50">
+                                    {{ proofForm.processing ? 'Mengunggah...' : 'Unggah' }}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </Teleport>
 
             <p v-if="tenant.status !== 'suspended'" class="mt-8 text-sm">
                 <Link :href="backHref" class="font-medium text-primary hover:text-primary/80 transition-colors duration-150">

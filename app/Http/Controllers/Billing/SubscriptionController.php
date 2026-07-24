@@ -56,6 +56,28 @@ class SubscriptionController extends Controller
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),
             ],
+            'invoices' => $tenant->invoices()
+                ->latest('id')
+                ->take(12)
+                ->get()
+                ->map(fn ($invoice) => [
+                    'id' => $invoice->id,
+                    'period' => $invoice->period,
+                    'kind' => $invoice->kind,
+                    'amount' => (float) $invoice->amount,
+                    'status' => $invoice->status,
+                    'due_date' => $invoice->due_date?->toDateString(),
+                    'rejection_reason' => $invoice->rejection_reason,
+                    'has_proof' => $invoice->proof_path !== null,
+                ]),
+            'upgrade' => [
+                'extra_seat_price' => (float) $subscription->plan->extra_seat_price,
+                'has_open_request' => $subscriptions->openUpgradeInvoice($tenant) !== null,
+                // Dinyatakan terus terang, bukan disembunyikan: tenant berhak
+                // tahu bahwa penambahan pengguna kini menunggu pemeriksaan, dan
+                // kenapa.
+                'is_provisional_blocked' => $subscription->provisional_blocked,
+            ],
         ]);
     }
 }

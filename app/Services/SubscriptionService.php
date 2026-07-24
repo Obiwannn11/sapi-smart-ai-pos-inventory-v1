@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Invoice;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
@@ -99,6 +100,87 @@ class SubscriptionService
             .'Nonaktifkan salah satu staf, atau tingkatkan paket dari halaman Langganan.',
             $subscription->seats,
         );
+    }
+
+    /**
+     * Terbitkan tagihan penambahan seat untuk tenant.
+     *
+     * Tagihan upgrade sengaja dipisahkan dari tagihan langganan lewat kolom
+     * `kind`: warung yang butuh kasir tambahan di pertengahan bulan harus tetap
+     * bisa membayar meski tagihan bulanannya sudah terbit.
+     */
+    public function requestSeatUpgrade(Tenant $tenant, int $additionalSeats): Invoice
+    {
+        $subscription = $this->ensureFor($tenant);
+        $subscription->loadMissing('plan');
+
+        return Invoice::create([
+            'tenant_id' => $tenant->id,
+            'subscription_id' => $subscription->id,
+            'period' => now()->format('Y-m'),
+            'kind' => Invoice::KIND_UPGRADE,
+            'grants_seats' => $subscription->seats + $additionalSeats,
+            'previous_seats' => $subscription->seats,
+            'amount' => $subscription->plan->extra_seat_price * $additionalSeats,
+            'status' => Invoice::STATUS_UNPAID,
+            'due_date' => now()->addDays(7)->toDateString(),
+        ]);
+    }
+
+    /**
+     * Tagihan upgrade yang masih terbuka, bila ada.
+     *
+     * Dipakai untuk membatasi satu upgrade berjalan dalam satu waktu. Tanpa
+     * batas itu, seat bisa dinaikkan berkali-kali hanya dengan mengunggah
+     * berkas apa pun dan tak pernah membayar.
+     */
+    public function openUpgradeInvoice(Tenant $tenant): ?Invoice
+    {
+        return $tenant->invoices()
+            ->where('kind', Invoice::KIND_UPGRADE)
+            ->whereIn('status', [Invoice::STATUS_UNPAID, Invoice::STATUS_AWAITING_VERIFICATION])
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * Berlakukan upgrade sebelum buktinya diperiksa.
+     *
+     * Fasilitas ini dicabut untuk tenant yang buktinya pernah ditolak — mereka
+     * tetap boleh naik paket, hanya saja seat-nya baru berlaku setelah
+     * diperiksa.
+     */
+    public function applyProvisionalUpgrade(Invoice $invoice): bool
+    {
+        $subscription = $invoice->subscription;
+
+        if (! $invoice->isUpgrade() || $subscription->provisional_blocked) {
+            return false;
+        }
+
+        $subscription->update(['seats' => $invoice->grants_seats]);
+
+        return true;
+    }
+
+    /**
+     * Kembalikan seat ke angka semula setelah bukti bayar ditolak.
+     *
+     * Akun staf yang terlanjur dibuat sengaja TIDAK disentuh. Akibatnya jumlah
+     * pengguna aktif bisa melampaui seat — dan justru itu yang diinginkan:
+     * penambahan berikutnya tertutup sendirinya, tanpa mengusir siapa pun dari
+     * pekerjaannya.
+     */
+    public function revertUpgrade(Invoice $invoice): void
+    {
+        if (! $invoice->isUpgrade() || $invoice->previous_seats === null) {
+            return;
+        }
+
+        $invoice->subscription->update([
+            'seats' => $invoice->previous_seats,
+            'provisional_blocked' => true,
+        ]);
     }
 
     /**
