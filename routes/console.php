@@ -16,3 +16,13 @@ Schedule::command('platform:prune-audit-logs')->dailyAt('03:10');
 // tenant yang jatuh ke masa tenggang mengetahuinya di awal hari, bukan di
 // tengah antrean pembeli.
 Schedule::command('subscriptions:advance-lifecycle')->dailyAt('03:30');
+
+// Omset tenant jalur subsidi, dihitung atas bulan yang baru saja tutup.
+// Tanggal 1 pukul 04:00 — cukup lewat dari tengah malam agar transaksi terakhir
+// bulan lalu sudah pasti tersimpan, termasuk yang masuk dari sinkronisasi
+// offline larut malam.
+Schedule::command('subscriptions:compute-revenue')->monthlyOn(1, '04:00');
+
+// Pemangkasan ringkasan omset yang lewat retensi. Bulanan sudah cukup — datanya
+// pun hanya bertambah sebulan sekali.
+Schedule::command('subscriptions:prune-metrics')->monthlyOn(1, '04:30');
