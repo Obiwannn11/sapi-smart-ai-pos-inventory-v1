@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,7 @@ class AuthController extends Controller
         return Inertia::render('Auth/Register');
     }
 
-    public function register(Request $request)
+    public function register(Request $request, SubscriptionService $subscriptions)
     {
         $validated = $request->validate([
             'business_name' => 'required|string|max:255',
@@ -32,7 +33,7 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $user = DB::transaction(function () use ($validated) {
+        $user = DB::transaction(function () use ($validated, $subscriptions) {
             $slug = Str::slug($validated['business_name']);
             $baseSlug = $slug;
             $suffix = 1;
@@ -45,7 +46,14 @@ class AuthController extends Controller
             $tenant = Tenant::create([
                 'name' => $validated['business_name'],
                 'slug' => $slug,
+                'status' => Tenant::STATUS_TRIAL,
             ]);
+
+            // Masa coba dibuka di transaksi yang sama dengan pendaftarannya.
+            // Kalau langganan gagal dibuat, tenant-nya pun tidak jadi — lebih
+            // baik daripada tenant yang hidup tanpa langganan sama sekali dan
+            // lolos dari setiap batas.
+            $subscriptions->startTrial($tenant);
 
             return User::create([
                 'tenant_id' => $tenant->id,

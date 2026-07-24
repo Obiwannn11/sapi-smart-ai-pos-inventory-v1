@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -22,11 +23,16 @@ class DatabaseSeeder extends Seeder
         // 0. Katalog permission modul (global, idempotent)
         $this->call(PermissionCatalogSeeder::class);
 
-        // 1. Tenant
+        // 1. Tenant — demo dianggap sudah berlangganan, bukan trial, supaya
+        // tidak kedaluwarsa sebulan setelah seed dijalankan.
         $tenant = Tenant::create([
             'name' => 'Kopi Nusantara',
             'slug' => 'kopi-nusantara',
+            'status' => Tenant::STATUS_ACTIVE,
         ]);
+
+        // 1b. Langganan — seat dibuka untuk owner + kasir demo di bawah.
+        app(SubscriptionService::class)->startTrial($tenant)->update(['seats' => 5]);
 
         // 2. Users
         User::create([
