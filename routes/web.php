@@ -238,6 +238,25 @@ Route::prefix('platform')
                     ->name('tenants.index');
             });
 
+            // Modul: Langganan (read-only — perubahan tarif menyusul di Tahap D)
+            Route::middleware('platform.can:subscriptions')->group(function () {
+                Route::get('/subscriptions', [\App\Http\Controllers\Platform\SubscriptionController::class, 'index'])
+                    ->name('subscriptions.index');
+            });
+
+            // Modul: Pembayaran — satu-satunya modul Tahap B yang bisa MENULIS.
+            // Tiap tindakannya dicatat sebagai kejadian sensitif.
+            Route::middleware('platform.can:payments')->group(function () {
+                Route::get('/invoices', [\App\Http\Controllers\Platform\InvoiceController::class, 'index'])
+                    ->name('invoices.index');
+                Route::post('/invoices', [\App\Http\Controllers\Platform\InvoiceController::class, 'store'])
+                    ->name('invoices.store');
+                Route::post('/invoices/{invoice}/verify', [\App\Http\Controllers\Platform\InvoiceController::class, 'verify'])
+                    ->name('invoices.verify');
+                Route::post('/invoices/{invoice}/reject', [\App\Http\Controllers\Platform\InvoiceController::class, 'reject'])
+                    ->name('invoices.reject');
+            });
+
             // Modul: Jejak Audit (read-only)
             Route::middleware('platform.can:audit_logs')->group(function () {
                 Route::get('/audit-logs', [\App\Http\Controllers\Platform\AuditLogController::class, 'index'])
