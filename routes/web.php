@@ -131,6 +131,8 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         // Manajemen Staf & Role (hanya owner)
         Route::resource('staff', \App\Http\Controllers\Owner\StaffController::class)
             ->only(['index', 'store', 'update', 'destroy']);
+        Route::patch('staff/{staff}/active', [\App\Http\Controllers\Owner\StaffController::class, 'toggleActive'])
+            ->name('staff.toggle-active');
         Route::resource('roles', \App\Http\Controllers\Owner\RoleController::class)
             ->only(['index', 'store', 'update', 'destroy']);
 

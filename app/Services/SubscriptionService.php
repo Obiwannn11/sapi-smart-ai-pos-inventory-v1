@@ -70,6 +70,38 @@ class SubscriptionService
     }
 
     /**
+     * Apakah tenant masih punya sisa seat untuk satu pengguna aktif lagi.
+     *
+     * Satu-satunya tempat aturan batas seat dituliskan. Titik penegakannya ada
+     * dua — menambah staf dan mengaktifkan kembali staf — dan keduanya harus
+     * memanggil ini, bukan menyalin logikanya. Aturan yang disalin akan
+     * bercabang begitu salah satunya diperbaiki.
+     *
+     * Pendaftaran tenant baru sengaja TIDAK memanggilnya: owner pertama adalah
+     * pengguna ke-0, jadi ia selalu muat, dan memanggilnya di sana hanya
+     * menambah query tanpa menutup celah apa pun.
+     */
+    public function hasSeatFor(Tenant $tenant): bool
+    {
+        return $this->ensureFor($tenant)->hasSeatAvailable();
+    }
+
+    /**
+     * Kalimat penolakan saat seat habis — menyebut angkanya dan menunjuk jalan
+     * keluar. Penolakan tanpa jalan keluar hanya membuat orang buntu.
+     */
+    public function seatLimitMessage(Tenant $tenant): string
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        return sprintf(
+            'Paket Anda mencakup %d pengguna aktif dan semuanya sudah terpakai. '
+            .'Nonaktifkan salah satu staf, atau tingkatkan paket dari halaman Langganan.',
+            $subscription->seats,
+        );
+    }
+
+    /**
      * Pindahkan tenant ke keadaan berikutnya bila tenggatnya sudah lewat.
      *
      * Dua perpindahan, keduanya digerakkan oleh `current_period_end` — kolom

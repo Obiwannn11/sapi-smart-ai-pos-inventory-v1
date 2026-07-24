@@ -21,6 +21,14 @@ class User extends Authenticatable
 
     protected $hidden = ['password', 'remember_token'];
 
+    /**
+     * Kembaran dari default kolom di migrasi. Tanpa ini, instance yang baru
+     * dibuat memegang `is_active` bernilai null sampai dibaca ulang dari
+     * database — dan gerbang "pengguna nonaktif tidak boleh masuk" akan
+     * menolak pengguna yang baru saja dibuat.
+     */
+    protected $attributes = ['is_active' => true];
+
     protected function casts(): array
     {
         return [

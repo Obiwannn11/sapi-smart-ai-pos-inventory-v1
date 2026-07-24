@@ -10,7 +10,10 @@ defineOptions({ layout: OwnerLayout });
 const props = defineProps({
     staff: Array,
     roles: Array,
+    seats: Object,
 });
+
+const seatsFull = computed(() => props.seats.used >= props.seats.total);
 
 const roleOptions = computed(() => [
     { value: '', label: 'Tanpa role (POS saja)' },
@@ -79,6 +82,13 @@ const doDelete = () => {
     });
 };
 const cancelDelete = () => { deleteTarget.value = null; };
+
+// --- Aktif / nonaktif ---
+const toggleForm = useForm({});
+
+const toggleActive = (member) => {
+    toggleForm.patch(`/owner/staff/${member.id}/active`, { preserveScroll: true });
+};
 </script>
 
 <template>
@@ -89,11 +99,18 @@ const cancelDelete = () => { deleteTarget.value = null; };
         <div class="flex items-center justify-between mb-6">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Staf</h1>
-                <p class="text-sm text-gray-500 mt-1">Kelola akun kasir dan role akses modulnya</p>
+                <p class="text-sm text-gray-500 mt-1">
+                    Kelola akun kasir dan role akses modulnya ·
+                    <span :class="seatsFull ? 'font-medium text-destructive' : ''">
+                        {{ seats.used }} dari {{ seats.total }} pengguna aktif
+                    </span>
+                </p>
             </div>
             <button
                 @click="openCreate"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors"
+                :disabled="seatsFull"
+                :title="seatsFull ? 'Semua seat paket Anda sudah terpakai' : undefined"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -205,7 +222,15 @@ const cancelDelete = () => { deleteTarget.value = null; };
                 <tbody class="divide-y divide-gray-200">
                     <tr v-for="member in staff" :key="member.id" class="hover:bg-gray-50 transition-colors">
                         <td class="px-5 py-4">
-                            <span class="text-sm font-medium text-gray-900">{{ member.name }}</span>
+                            <span class="text-sm font-medium" :class="member.is_active ? 'text-gray-900' : 'text-gray-400'">
+                                {{ member.name }}
+                            </span>
+                            <span
+                                v-if="!member.is_active"
+                                class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-muted text-muted-foreground"
+                            >
+                                Nonaktif
+                            </span>
                         </td>
                         <td class="px-5 py-4">
                             <span class="text-sm text-gray-600">{{ member.email }}</span>
@@ -225,6 +250,14 @@ const cancelDelete = () => { deleteTarget.value = null; };
                             <div class="flex items-center justify-end gap-2">
                                 <button @click="openEdit(member)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
                                     Edit
+                                </button>
+                                <button
+                                    @click="toggleActive(member)"
+                                    :disabled="!member.is_active && seatsFull"
+                                    :title="!member.is_active && seatsFull ? 'Semua seat paket Anda sudah terpakai' : undefined"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-100"
+                                >
+                                    {{ member.is_active ? 'Nonaktifkan' : 'Aktifkan' }}
                                 </button>
                                 <button @click="confirmDelete(member)" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
                                     Hapus

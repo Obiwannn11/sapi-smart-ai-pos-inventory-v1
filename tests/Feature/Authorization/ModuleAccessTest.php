@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
 use Database\Seeders\PermissionCatalogSeeder;
@@ -23,6 +24,11 @@ beforeEach(function () {
 function rbacContext(): array
 {
     $tenant = Tenant::factory()->create();
+
+    // Seat dilonggarkan supaya berkas ini menguji RBAC, bukan batas seat.
+    // Tanpa ini paket dasar (1 seat) menolak staf kedua, dan kegagalannya akan
+    // terbaca seolah-olah izin modul yang rusak.
+    Subscription::factory()->seats(10)->create(['tenant_id' => $tenant->id]);
 
     return [
         'tenant' => $tenant,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -13,11 +14,14 @@ use Spatie\Permission\Models\Role;
 
 class StaffController extends Controller
 {
+    public function __construct(private readonly SubscriptionService $subscriptions) {}
+
     public function index(Request $request): Response
     {
-        $tenantId = $request->user()->tenant_id;
+        $tenant = $request->user()->tenant;
+        $subscription = $this->subscriptions->ensureFor($tenant);
 
-        $staff = User::where('tenant_id', $tenantId)
+        $staff = User::where('tenant_id', $tenant->id)
             ->where('role', 'cashier')
             ->orderBy('name')
             ->get()
@@ -25,28 +29,43 @@ class StaffController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'is_active' => $user->is_active,
                 'roles' => $user->getRoleNames(),
             ]);
 
         return Inertia::render('Owner/Staff/Index', [
             'staff' => $staff,
-            'roles' => Role::where('tenant_id', $tenantId)->orderBy('name')->pluck('name'),
+            'roles' => Role::where('tenant_id', $tenant->id)->orderBy('name')->pluck('name'),
+            // Angka seat ditampilkan sebelum tombol ditekan, bukan hanya di
+            // pesan penolakan. Batas yang baru terlihat saat dilanggar terasa
+            // seperti jebakan.
+            'seats' => [
+                'used' => $subscription->activeSeatsUsed(),
+                'total' => $subscription->seats,
+            ],
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $tenantId = $request->user()->tenant_id;
+        $tenant = $request->user()->tenant;
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
-            'role_name' => ['nullable', 'string', Rule::exists('roles', 'name')->where('tenant_id', $tenantId)],
+            'role_name' => ['nullable', 'string', Rule::exists('roles', 'name')->where('tenant_id', $tenant->id)],
         ]);
 
+        // Penegakan keras SEBELUM user dibuat. Menolak dengan sopan jauh lebih
+        // baik daripada menerima lalu menagih: bagi UMKM, tagihan yang naik
+        // tanpa diminta jauh lebih menyakitkan daripada tombol yang menolak.
+        if (! $this->subscriptions->hasSeatFor($tenant)) {
+            return back()->with('error', $this->subscriptions->seatLimitMessage($tenant));
+        }
+
         $user = User::create([
-            'tenant_id' => $tenantId,
+            'tenant_id' => $tenant->id,
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => $validated['password'], // cast 'hashed'
@@ -56,6 +75,8 @@ class StaffController extends Controller
         if (! empty($validated['role_name'])) {
             $user->syncRoles([$validated['role_name']]); // team-id set oleh middleware tenant
         }
+
+        $this->subscriptions->ensureFor($tenant)->recordSeatUsage();
 
         return back()->with('success', 'Akun staf berhasil dibuat.');
     }
@@ -82,6 +103,37 @@ class StaffController extends Controller
         $staff->syncRoles(array_filter([$validated['role_name'] ?? null]));
 
         return back()->with('success', 'Akun staf berhasil diperbarui.');
+    }
+
+    /**
+     * Aktifkan atau nonaktifkan akun staf.
+     *
+     * Menonaktifkan menggantikan kebiasaan menghapus: staf yang keluar
+     * kehilangan akses, tapi jejaknya di transaksi lama tetap utuh — dan
+     * seat-nya kembali bebas untuk penggantinya.
+     */
+    public function toggleActive(Request $request, User $staff): RedirectResponse
+    {
+        $tenant = $request->user()->tenant;
+        $this->authorizeStaff($staff, $tenant->id);
+
+        if ($staff->is_active) {
+            $staff->update(['is_active' => false]);
+
+            return back()->with('success', "Akun {$staff->name} dinonaktifkan.");
+        }
+
+        // Mengaktifkan kembali menempati seat, jadi ia melewati gerbang yang
+        // sama dengan menambah staf baru. Tanpa ini batas seat bisa dilewati
+        // dengan menonaktifkan lalu mengaktifkan beramai-ramai.
+        if (! $this->subscriptions->hasSeatFor($tenant)) {
+            return back()->with('error', $this->subscriptions->seatLimitMessage($tenant));
+        }
+
+        $staff->update(['is_active' => true]);
+        $this->subscriptions->ensureFor($tenant)->recordSeatUsage();
+
+        return back()->with('success', "Akun {$staff->name} diaktifkan.");
     }
 
     public function destroy(Request $request, User $staff): RedirectResponse

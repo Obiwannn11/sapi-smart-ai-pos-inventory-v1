@@ -78,9 +78,20 @@ class AuthController extends Controller
         ]);
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            $request->session()->regenerate();
-
             $user = Auth::user();
+
+            // Diperiksa SETELAH kata sandi cocok, bukan sebelumnya: memeriksa
+            // lebih dulu akan membuat halaman ini bisa dipakai memastikan
+            // sebuah akun ada tanpa mengetahui kata sandinya.
+            if (! $user->is_active) {
+                Auth::logout();
+
+                return back()->withErrors([
+                    'email' => 'Akun ini dinonaktifkan. Hubungi pemilik usaha Anda.',
+                ]);
+            }
+
+            $request->session()->regenerate();
 
             // Redirect berdasarkan role
             if ($user->isOwner()) {
