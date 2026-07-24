@@ -27,4 +27,25 @@ return [
 
     'grace_days' => 30,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Dokumen Persetujuan
+    |--------------------------------------------------------------------------
+    |
+    | Satu dokumen per jalur harga — sengaja terpisah, bukan satu dokumen dengan
+    | pasal bersyarat. Dokumen bersyarat justru mengaburkan hal terpentingnya:
+    | jalur normal tidak membuka data bisnis sama sekali, jalur subsidi membuka
+    | omset. Dipisah membuat masing-masing pendek dan benar-benar terbaca.
+    |
+    | Teksnya tinggal di `resources/consents/` dan TIDAK PERNAH disunting di
+    | tempat. Versi baru = berkas baru + naikkan `version` di sini. Menyunting
+    | teks yang sudah disetujui orang akan membuat catatan persetujuannya
+    | menunjuk ke kalimat yang tidak pernah mereka baca.
+    |
+    */
+
+    'consents' => [
+        'normal' => ['version' => '1', 'file' => 'normal-v1.md'],
+    ],
+
 ];

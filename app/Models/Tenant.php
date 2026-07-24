@@ -85,6 +85,11 @@ class Tenant extends Model
         return $this->hasMany(Invoice::class);
     }
 
+    public function consents(): HasMany
+    {
+        return $this->hasMany(TenantConsent::class);
+    }
+
     public function aiUsages(): HasMany
     {
         return $this->hasMany(AiUsage::class);

@@ -39,6 +39,14 @@ Route::middleware(['auth', 'tenant'])
     ->group(function () {
         Route::get('/langganan', [\App\Http\Controllers\Billing\SubscriptionController::class, 'show'])
             ->name('show');
+
+        Route::get('/langganan/persetujuan', [\App\Http\Controllers\Billing\ConsentController::class, 'show'])
+            ->name('consent.show');
+        // Hanya owner yang boleh menyetujui — staf tidak mengikat usaha pada
+        // perjanjian apa pun.
+        Route::post('/langganan/persetujuan', [\App\Http\Controllers\Billing\ConsentController::class, 'store'])
+            ->middleware('role:owner')
+            ->name('consent.store');
     });
 
 // --- Owner Routes: modul grantable (digerbang per-permission; owner auto-lolos

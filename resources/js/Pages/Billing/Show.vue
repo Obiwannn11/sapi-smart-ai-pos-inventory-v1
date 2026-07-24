@@ -5,6 +5,7 @@ import { Head, Link, usePage } from '@inertiajs/vue3';
 const props = defineProps({
     tenant: { type: Object, required: true },
     subscription: { type: Object, required: true },
+    consent: { type: Object, required: true },
 });
 
 const page = usePage();
@@ -143,6 +144,24 @@ const backHref = computed(() => (props.tenant.is_owner ? '/owner/dashboard' : '/
                     </dd>
                 </div>
             </dl>
+
+            <div class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
+                <p class="text-sm font-medium text-foreground">Persetujuan langganan</p>
+                <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    <template v-if="consent.agreed">
+                        Sudah disetujui. Anda bisa membacanya kembali kapan saja.
+                    </template>
+                    <template v-else>
+                        Belum disetujui. Dokumen ini menjelaskan apa yang kami lihat dan apa yang tidak.
+                    </template>
+                </p>
+                <Link
+                    href="/langganan/persetujuan"
+                    class="mt-3 inline-block text-sm font-medium text-primary hover:text-primary/80 transition-colors duration-150"
+                >
+                    {{ consent.agreed ? 'Baca dokumen persetujuan' : 'Baca dan setujui' }}
+                </Link>
+            </div>
 
             <p class="mt-6 text-xs text-muted-foreground leading-relaxed">
                 Pembayaran masih dicatat manual. Hubungi pengelola layanan untuk menyelesaikan tagihan —

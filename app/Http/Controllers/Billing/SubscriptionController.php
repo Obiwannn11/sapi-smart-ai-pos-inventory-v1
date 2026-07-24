@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
+use App\Models\TenantConsent;
+use App\Services\ConsentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Inertia\Response;
@@ -19,7 +21,7 @@ use Inertia\Response;
  */
 class SubscriptionController extends Controller
 {
-    public function show(Request $request, SubscriptionService $subscriptions): Response
+    public function show(Request $request, SubscriptionService $subscriptions, ConsentService $consents): Response
     {
         $tenant = $request->user()->tenant;
         $subscription = $subscriptions->ensureFor($tenant);
@@ -50,6 +52,9 @@ class SubscriptionController extends Controller
                         ->addDays(SubscriptionService::graceDays())
                         ->toDateString()
                     : null,
+            ],
+            'consent' => [
+                'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),
             ],
         ]);
     }
