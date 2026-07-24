@@ -20,13 +20,26 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\HandleInertiaRequests::class,
         ]);
 
+        // 'tenant' dan 'tenant.api' sengaja GRUP, bukan alias: gerbang langganan
+        // harus ikut di setiap rute bertenant, dan menuliskannya satu per satu
+        // di tujuh grup rute berarti grup kedelapan pasti akan melupakannya.
+        // Menempelkannya di sini membuat "punya konteks tenant" dan "langganan
+        // masih berlaku" tak terpisahkan.
+        $middleware->group('tenant', [
+            \App\Http\Middleware\EnsureTenant::class,
+            \App\Http\Middleware\EnsureSubscriptionActive::class,
+        ]);
+
+        $middleware->group('tenant.api', [
+            \App\Http\Middleware\EnsureTenantApi::class,
+            \App\Http\Middleware\EnsureSubscriptionActive::class,
+        ]);
+
         // Alias middleware
         // NOTE: our 'role' alias is EnsureRole (enum owner/cashier gate) and must
         // NOT be overwritten by spatie's RoleMiddleware. Module gating uses
         // 'permission:' (spatie) instead.
         $middleware->alias([
-            'tenant' => \App\Http\Middleware\EnsureTenant::class,
-            'tenant.api' => \App\Http\Middleware\EnsureTenantApi::class,
             'role' => \App\Http\Middleware\EnsureRole::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             // Panel platform: gerbang modul milik pemilik SaaS. Terpisah dari

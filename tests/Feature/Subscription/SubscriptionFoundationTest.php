@@ -39,7 +39,7 @@ test('ensureFor membuka trial sebulan dan tidak membuat langganan kedua', functi
         ->and(Subscription::where('tenant_id', $tenant->id)->count())->toBe(1)
         ->and($first->pricing_track)->toBe(Subscription::TRACK_NORMAL)
         ->and($first->trial_ends_at->toDateString())
-        ->toBe(now()->addDays(SubscriptionService::TRIAL_DAYS)->toDateString());
+        ->toBe(now()->addDays(SubscriptionService::trialDays())->toDateString());
 });
 
 test('jalur subsidi tidak pernah jadi keadaan awal', function () {

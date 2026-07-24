@@ -30,6 +30,17 @@ Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
+// --- Langganan (sisi tenant) ---
+// Satu-satunya halaman bertenant yang tetap terbuka saat tenant ditangguhkan —
+// lihat daftar ALWAYS_ALLOWED di EnsureSubscriptionActive. Menutupnya berarti
+// tenant tak punya jalan keluar dari penangguhan, termasuk dengan membayar.
+Route::middleware(['auth', 'tenant'])
+    ->name('billing.')
+    ->group(function () {
+        Route::get('/langganan', [\App\Http\Controllers\Billing\SubscriptionController::class, 'show'])
+            ->name('show');
+    });
+
 // --- Owner Routes: modul grantable (digerbang per-permission; owner auto-lolos
 //     via Gate::before). Staf non-owner butuh permission modul yang sesuai. ---
 Route::middleware(['auth', 'tenant'])

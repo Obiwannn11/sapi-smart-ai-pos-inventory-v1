@@ -28,7 +28,7 @@ test('registrasi membuka masa coba sebulan di paket dasar jalur normal', functio
         ->and($subscription->plan->slug)->toBe(Plan::SLUG_DEFAULT)
         ->and($subscription->pricing_track)->toBe(Subscription::TRACK_NORMAL)
         ->and($subscription->trial_ends_at->toDateString())
-        ->toBe(now()->addDays(SubscriptionService::TRIAL_DAYS)->toDateString());
+        ->toBe(now()->addDays(SubscriptionService::trialDays())->toDateString());
 });
 
 test('tenant hasil registrasi berstatus trial', function () {
