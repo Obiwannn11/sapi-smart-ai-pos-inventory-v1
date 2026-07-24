@@ -37,7 +37,7 @@ return [
         'subscriptions' => ['label' => 'Langganan', 'sensitive' => false, 'available' => true],
         'payments' => ['label' => 'Pembayaran', 'sensitive' => false, 'available' => true],
         'pricing_rules' => ['label' => 'Aturan Harga', 'sensitive' => true, 'available' => false],
-        'revenue_data' => ['label' => 'Data Omset Subsidi', 'sensitive' => true, 'available' => false],
+        'revenue_data' => ['label' => 'Data Omset Subsidi', 'sensitive' => true, 'available' => true],
         'audit_logs' => ['label' => 'Log Audit', 'sensitive' => true, 'available' => true],
     ],
 

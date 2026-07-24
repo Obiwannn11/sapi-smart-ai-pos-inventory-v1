@@ -1,9 +1,11 @@
 <script setup>
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 
 defineProps({
     subscriptions: { type: Object, required: true },
+    brackets: { type: Object, required: true },
+    can_view_revenue: { type: Boolean, required: true },
 });
 
 const statusLabels = {
@@ -60,6 +62,17 @@ const formatRupiah = (value) =>
                             <td class="px-4 py-3 text-foreground">{{ row.plan_name ?? '—' }}</td>
                             <td class="px-4 py-3 text-muted-foreground">
                                 {{ row.pricing_track === 'subsidized' ? 'Subsidi' : 'Normal' }}
+                                <template v-if="row.pricing_track === 'subsidized' && can_view_revenue">
+                                    <span class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                                        {{ brackets[row.tenant?.id] ?? '—' }}
+                                    </span>
+                                    <Link
+                                        :href="`/platform/revenue/${row.tenant?.id}`"
+                                        class="ml-1.5 text-xs font-medium text-primary hover:text-primary/80"
+                                    >
+                                        rincian
+                                    </Link>
+                                </template>
                             </td>
                             <td class="px-4 py-3 text-right tabular-nums text-foreground">
                                 {{ row.seats }}
@@ -83,8 +96,9 @@ const formatRupiah = (value) =>
 
         <p class="mt-4 text-xs text-muted-foreground leading-relaxed max-w-2xl">
             Semua angka di halaman ini adalah keterangan komersial — paket, tarif, dan seat yang kita tetapkan sendiri.
-            Tidak satu pun berasal dari penjualan klien. Omset jalur subsidi menyusul di tahap berikutnya, dan akan
-            digerbang izinnya sendiri.
+            Tidak satu pun berasal dari penjualan klien. Untuk tenant jalur subsidi, yang tampil hanya
+            <span class="font-medium">kelompok harganya</span>; angka omzet rupiahnya dibuka lewat "rincian",
+            dan setiap pembukaan itu tercatat di jejak audit.
         </p>
     </PlatformLayout>
 </template>

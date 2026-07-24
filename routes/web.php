@@ -258,6 +258,14 @@ Route::prefix('platform')
                     ->name('subscriptions.index');
             });
 
+            // Modul: Data Omset Subsidi — sengaja TERPISAH dari `subscriptions`.
+            // Kelak staf platform bisa diberi daftar langganan tanpa diberi
+            // angka omzet kliennya.
+            Route::middleware('platform.can:revenue_data')->group(function () {
+                Route::get('/revenue/{tenant}', [\App\Http\Controllers\Platform\RevenueController::class, 'show'])
+                    ->name('revenue.show');
+            });
+
             // Modul: Pembayaran — satu-satunya modul Tahap B yang bisa MENULIS.
             // Tiap tindakannya dicatat sebagai kejadian sensitif.
             Route::middleware('platform.can:payments')->group(function () {

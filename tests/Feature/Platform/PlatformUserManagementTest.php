@@ -62,12 +62,14 @@ test('a created account is never an owner even if the payload says so', function
 test('modules without a page cannot be granted', function () {
     actingAs(PlatformUser::factory()->owner()->create(), 'platform');
 
-    // `revenue_data` ada di katalog tapi halamannya belum dibuat (Tahap C).
+    // `pricing_rules` ada di katalog tapi halamannya belum dibuat (Tahap D).
+    // Sebelumnya contoh yang dipakai di sini `revenue_data`; halamannya sudah
+    // jadi di Tahap C, jadi contohnya bergeser ke modul yang masih tersisa.
     post('/platform/users', [
         'name' => 'Staf',
         'email' => 'staf@sapi.test',
         'password' => 'rahasia123',
-        'modules' => ['revenue_data'],
+        'modules' => ['pricing_rules'],
     ])->assertSessionHasErrors('modules.0');
 });
 
@@ -122,7 +124,7 @@ test('the module catalog marks which modules have no page yet', function () {
 
     get('/platform/users')->assertInertia(fn (Assert $page) => $page
         ->where('modules', fn ($modules) => collect($modules)->firstWhere('name', 'tenants')['available'] === true
-            && collect($modules)->firstWhere('name', 'revenue_data')['available'] === false));
+            && collect($modules)->firstWhere('name', 'pricing_rules')['available'] === false));
 });
 
 test('account changes are written to the audit log', function () {
