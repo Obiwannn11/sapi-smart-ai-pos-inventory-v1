@@ -16,7 +16,7 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     protected $fillable = [
-        'tenant_id', 'name', 'email', 'password', 'role',
+        'tenant_id', 'name', 'email', 'password', 'role', 'is_active',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -25,6 +25,7 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
