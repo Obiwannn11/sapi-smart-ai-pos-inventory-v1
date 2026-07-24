@@ -75,4 +75,21 @@ class ConsentService
             'ip' => $ip,
         ]);
     }
+
+    /**
+     * Cabut seluruh persetujuan aktif tenant untuk jalur ini.
+     *
+     * Barisnya TIDAK dihapus — hanya ditandai `revoked_at`. Riwayat "dulu dia
+     * setuju, lalu mencabutnya" adalah bagian dari buktinya, dan bukti yang
+     * bisa lenyap tidak membuktikan apa pun.
+     *
+     * @return int jumlah persetujuan yang tercabut
+     */
+    public function revoke(Tenant $tenant, string $type): int
+    {
+        return $tenant->consents()
+            ->active()
+            ->where('type', $type)
+            ->update(['revoked_at' => now()]);
+    }
 }

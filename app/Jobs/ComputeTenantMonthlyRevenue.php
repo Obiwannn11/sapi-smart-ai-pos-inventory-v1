@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Tenant;
+use App\Models\TenantConsent;
 use App\Models\TenantMonthlyMetric;
 use App\Models\Transaction;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -35,9 +36,17 @@ class ComputeTenantMonthlyRevenue implements ShouldQueue
             : now()->subMonth()->startOfMonth();
 
         Tenant::query()
-            // GERBANG PRIVASI. Tenant jalur normal tidak pernah tersentuh, dan
-            // karenanya tidak pernah punya baris di tabel ringkasan sama sekali.
-            ->where('pricing_track', 'subsidized')
+            // GERBANG PRIVASI, dua lapis. Tenant jalur normal tidak pernah
+            // tersentuh, dan karenanya tidak pernah punya baris di tabel
+            // ringkasan sama sekali.
+            ->where('pricing_track', TenantConsent::TYPE_SUBSIDIZED)
+            // Lapis kedua: persetujuan yang MASIH BERLAKU. Kolom jalur belum
+            // berubah sampai akhir periode setelah consent dicabut — kalau
+            // hanya kolom itu yang disaring, pengumpulan data akan terus jalan
+            // sebulan penuh setelah tenant menarik izinnya.
+            ->whereHas('consents', fn ($query) => $query
+                ->whereNull('revoked_at')
+                ->where('type', TenantConsent::TYPE_SUBSIDIZED))
             ->each(function (Tenant $tenant) use ($period) {
                 $this->computeFor($tenant, $period);
             });

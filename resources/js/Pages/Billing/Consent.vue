@@ -3,10 +3,14 @@ import { ref, computed, onMounted } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
+    type: { type: String, required: true },
     document: { type: Object, required: true },
     agreement: { type: Object, default: null },
     can_agree: { type: Boolean, required: true },
+    blocked_reason: { type: String, default: null },
 });
+
+const isSubsidized = computed(() => props.type === 'subsidized');
 
 const scroller = ref(null);
 const readToEnd = ref(false);
@@ -45,7 +49,7 @@ const canSubmit = computed(() => props.can_agree && readToEnd.value && form.agre
 
 const submit = () => {
     if (!canSubmit.value) return;
-    form.post('/langganan/persetujuan', { preserveScroll: true });
+    form.post(`/langganan/persetujuan/${props.type}`, { preserveScroll: true });
 };
 
 const alreadyCurrent = computed(() => props.agreement?.is_current === true);
@@ -64,7 +68,7 @@ const alreadyCurrent = computed(() => props.agreement?.is_current === true);
 
             <h1 class="mt-8 text-2xl font-bold text-foreground tracking-tight">Persetujuan Langganan</h1>
             <p class="mt-1.5 text-sm text-muted-foreground">
-                Jalur harga normal · versi {{ document.version }}
+                {{ isSubsidized ? 'Jalur subsidi UMKM' : 'Jalur harga normal' }} · versi {{ document.version }}
             </p>
 
             <div
@@ -120,6 +124,10 @@ const alreadyCurrent = computed(() => props.agreement?.is_current === true);
                     {{ form.processing ? 'Menyimpan...' : 'Saya Setuju' }}
                 </button>
             </form>
+
+            <p v-else-if="blocked_reason" class="mt-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-3 text-sm text-foreground">
+                {{ blocked_reason }}
+            </p>
 
             <p v-else class="mt-6 rounded-lg border border-border bg-card px-3.5 py-3 text-sm text-muted-foreground">
                 Persetujuan ini hanya bisa diberikan oleh pemilik usaha.

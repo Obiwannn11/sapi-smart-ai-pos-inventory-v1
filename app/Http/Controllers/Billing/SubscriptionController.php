@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\TenantConsent;
 use App\Services\ConsentService;
+use App\Services\PricingService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Inertia\Response;
@@ -21,8 +22,12 @@ use Inertia\Response;
  */
 class SubscriptionController extends Controller
 {
-    public function show(Request $request, SubscriptionService $subscriptions, ConsentService $consents): Response
-    {
+    public function show(
+        Request $request,
+        SubscriptionService $subscriptions,
+        ConsentService $consents,
+        PricingService $pricing,
+    ): Response {
         $tenant = $request->user()->tenant;
         $subscription = $subscriptions->ensureFor($tenant);
         $subscription->loadMissing('plan');
@@ -55,6 +60,19 @@ class SubscriptionController extends Controller
             ],
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),
+            ],
+            'subsidy' => [
+                'is_active' => $subscription->isSubsidized(),
+                'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_SUBSIDIZED),
+                'can_switch' => $subscriptions->canSwitchTrack($tenant),
+                'switch_available_at' => $subscriptions->trackSwitchAvailableAt($tenant)?->toDateString(),
+                'reverts_at' => $subscription->track_reverts_at?->toDateString(),
+                // Tenant selalu boleh melihat omzetnya sendiri berikut angka
+                // persisnya — ini datanya. Yang dibatasi adalah pandangan
+                // pengelola layanan, bukan pandangan pemiliknya.
+                'bracket' => $subscription->isSubsidized()
+                    ? $pricing->currentBracketFor($tenant)
+                    : null,
             ],
             'invoices' => $tenant->invoices()
                 ->latest('id')

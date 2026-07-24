@@ -6,6 +6,8 @@ use App\Models\Invoice;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Models\TenantMonthlyMetric;
+use Illuminate\Support\Carbon;
 
 class SubscriptionService
 {
@@ -103,6 +105,84 @@ class SubscriptionService
     }
 
     /**
+     * Jarak minimum antar perpindahan jalur harga, dalam bulan.
+     */
+    public static function trackSwitchMinimumMonths(): int
+    {
+        return (int) config('subscription.track_switch_minimum_months');
+    }
+
+    /**
+     * Boleh pindah jalur sekarang?
+     *
+     * Perpindahan pertama selalu boleh — `track_changed_at` masih kosong. Jarak
+     * minimum baru berlaku setelahnya, supaya tenant tidak bolak-balik ke jalur
+     * subsidi mengikuti bulan ramai dan sepi.
+     */
+    public function canSwitchTrack(Tenant $tenant): bool
+    {
+        $changedAt = $this->ensureFor($tenant)->track_changed_at;
+
+        return $changedAt === null
+            || $changedAt->lte(now()->subMonths(self::trackSwitchMinimumMonths()));
+    }
+
+    /**
+     * Tanggal paling awal tenant boleh pindah jalur lagi.
+     */
+    public function trackSwitchAvailableAt(Tenant $tenant): ?Carbon
+    {
+        $changedAt = $this->ensureFor($tenant)->track_changed_at;
+
+        return $changedAt?->copy()->addMonths(self::trackSwitchMinimumMonths());
+    }
+
+    /**
+     * Pindahkan tenant ke jalur subsidi.
+     *
+     * Dipanggil HANYA setelah persetujuan jalur subsidi tercatat. Kolom
+     * `pricing_track` di `tenants` ikut diubah karena di sanalah gerbang privasi
+     * job penghitung omset membaca — filter itu harus tanpa join, sesederhana
+     * dan semurah mungkin.
+     */
+    public function switchToSubsidized(Tenant $tenant): void
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $subscription->update([
+            'pricing_track' => Subscription::TRACK_SUBSIDIZED,
+            'track_changed_at' => now(),
+            'track_reverts_at' => null,
+        ]);
+
+        $tenant->update(['pricing_track' => Subscription::TRACK_SUBSIDIZED]);
+    }
+
+    /**
+     * Jadwalkan kembalinya tenant ke jalur normal setelah consent dicabut.
+     *
+     * Jalurnya BELUM berubah sekarang: harga subsidi tetap berlaku sampai
+     * periode berjalan habis, persis seperti yang dijanjikan dokumen consent.
+     * Yang berhenti seketika hanyalah pengumpulan datanya — job penghitung omset
+     * menyaring berdasarkan persetujuan yang masih aktif, bukan berdasarkan
+     * kolom jalur.
+     *
+     * Ringkasan omset yang sudah ada dihapus di sini juga. Harga yang sedang
+     * berjalan tetap bisa dipertanggungjawabkan karena angkanya sudah tersimpan
+     * di `price_locked` — jadi tak ada alasan menahan datanya lebih lama.
+     */
+    public function scheduleTrackRevert(Tenant $tenant): void
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $subscription->update([
+            'track_reverts_at' => $subscription->current_period_end ?? now()->toDateString(),
+        ]);
+
+        TenantMonthlyMetric::where('tenant_id', $tenant->id)->delete();
+    }
+
+    /**
      * Terbitkan tagihan penambahan seat untuk tenant.
      *
      * Tagihan upgrade sengaja dipisahkan dari tagihan langganan lewat kolom
@@ -193,7 +273,12 @@ class SubscriptionService
      *   trial|active  → grace      begitu periodenya lewat
      *   grace         → suspended  setelah masa tenggang habis
      *
-     * @return array{expired: int, suspended: int}
+     * Sekalian memproses kembalinya tenant ke jalur normal setelah consent
+     * subsidinya dicabut — keduanya sama-sama "tenggat yang sudah lewat", dan
+     * memisahkannya jadi dua perintah terjadwal hanya menambah satu hal lagi
+     * yang bisa lupa dipasang.
+     *
+     * @return array{expired: int, suspended: int, reverted: int}
      */
     public function advanceLifecycle(bool $dryRun = false): array
     {
@@ -208,8 +293,28 @@ class SubscriptionService
             ->where('status', Tenant::STATUS_GRACE)
             ->whereHas('subscription', fn ($query) => $query->whereDate('current_period_end', '<', $graceCutoff));
 
+        $reverting = fn () => Subscription::query()
+            ->whereNotNull('track_reverts_at')
+            ->whereDate('track_reverts_at', '<=', $today);
+
         $expiredCount = $expiring()->count();
         $suspendedCount = $suspending()->count();
+        $revertedCount = $reverting()->count();
+
+        if (! $dryRun) {
+            foreach ($reverting()->get() as $subscription) {
+                $subscription->update([
+                    'pricing_track' => Subscription::TRACK_NORMAL,
+                    'track_reverts_at' => null,
+                    // `track_changed_at` sengaja TIDAK disetel ulang di sini.
+                    // Jarak minimum dihitung dari perpindahan yang dipilih
+                    // tenant, bukan dari kembalinya otomatis — kalau tidak,
+                    // mencabut consent malah memperpanjang masa tunggunya.
+                ]);
+
+                $subscription->tenant->update(['pricing_track' => Subscription::TRACK_NORMAL]);
+            }
+        }
 
         if (! $dryRun) {
             // Penangguhan dijalankan LEBIH DULU. Dengan urutan sebaliknya, tenant
@@ -221,6 +326,10 @@ class SubscriptionService
             $expiring()->update(['status' => Tenant::STATUS_GRACE]);
         }
 
-        return ['expired' => $expiredCount, 'suspended' => $suspendedCount];
+        return [
+            'expired' => $expiredCount,
+            'suspended' => $suspendedCount,
+            'reverted' => $revertedCount,
+        ];
     }
 }

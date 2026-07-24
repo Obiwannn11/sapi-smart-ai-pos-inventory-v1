@@ -2,6 +2,7 @@
 
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Models\TenantConsent;
 use App\Models\TenantMonthlyMetric;
 use App\Models\Transaction;
 use App\Models\User;
@@ -16,11 +17,20 @@ function makeMetricContext(string $track = Subscription::TRACK_SUBSIDIZED): arra
 {
     $tenant = Tenant::factory()->active()->create(['pricing_track' => $track]);
     Subscription::factory()->create(['tenant_id' => $tenant->id, 'pricing_track' => $track]);
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
 
-    return [
-        'tenant' => $tenant,
-        'owner' => User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']),
-    ];
+    // Persetujuan yang masih berlaku adalah gerbang kedua job penghitung omzet.
+    // Tanpa barisnya, tenant berjalur subsidi pun tidak dihitung — dan memang
+    // begitu seharusnya: tak ada izin, tak ada pengumpulan data.
+    if ($track === Subscription::TRACK_SUBSIDIZED) {
+        TenantConsent::factory()->create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $owner->id,
+            'type' => TenantConsent::TYPE_SUBSIDIZED,
+        ]);
+    }
+
+    return ['tenant' => $tenant, 'owner' => $owner];
 }
 
 function makeSale(Tenant $tenant, User $user, float $amount, string $status, ?Carbon\Carbon $occurredAt = null): Transaction

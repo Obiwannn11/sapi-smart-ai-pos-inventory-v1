@@ -35,6 +35,12 @@ class AdvanceSubscriptionLifecycle extends Command
             $dryRun ? ' (dry-run)' : ''
         ));
 
+        $this->line(sprintf(
+            'Consent dicabut → jalur normal : %d tenant%s',
+            $result['reverted'],
+            $dryRun ? ' (dry-run)' : ''
+        ));
+
         $this->info($dryRun
             ? 'Tidak ada yang diubah.'
             : 'Selesai.');

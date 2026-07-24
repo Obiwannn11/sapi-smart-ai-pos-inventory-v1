@@ -40,13 +40,18 @@ Route::middleware(['auth', 'tenant'])
         Route::get('/langganan', [\App\Http\Controllers\Billing\SubscriptionController::class, 'show'])
             ->name('show');
 
-        Route::get('/langganan/persetujuan', [\App\Http\Controllers\Billing\ConsentController::class, 'show'])
+        // `{type?}` = normal | subsidized. Dua dokumen terpisah dengan halaman
+        // yang sama; tipe yang tak dikenal jatuh ke 404.
+        Route::get('/langganan/persetujuan/{type?}', [\App\Http\Controllers\Billing\ConsentController::class, 'show'])
             ->name('consent.show');
         // Hanya owner yang boleh menyetujui — staf tidak mengikat usaha pada
         // perjanjian apa pun.
-        Route::post('/langganan/persetujuan', [\App\Http\Controllers\Billing\ConsentController::class, 'store'])
+        Route::post('/langganan/persetujuan/{type?}', [\App\Http\Controllers\Billing\ConsentController::class, 'store'])
             ->middleware('role:owner')
             ->name('consent.store');
+        Route::post('/langganan/subsidi/cabut', [\App\Http\Controllers\Billing\ConsentController::class, 'revokeSubsidy'])
+            ->middleware('role:owner')
+            ->name('subsidy.revoke');
 
         // Penambahan pengguna & bukti bayar — keputusan komersial, jadi owner
         // saja. Staf tidak menaikkan tagihan usaha tempatnya bekerja.

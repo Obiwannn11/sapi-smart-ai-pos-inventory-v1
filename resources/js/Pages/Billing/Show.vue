@@ -6,6 +6,7 @@ const props = defineProps({
     tenant: { type: Object, required: true },
     subscription: { type: Object, required: true },
     consent: { type: Object, required: true },
+    subsidy: { type: Object, required: true },
     invoices: { type: Array, required: true },
     upgrade: { type: Object, required: true },
 });
@@ -123,6 +124,17 @@ const submitProof = () => {
     });
 };
 
+// --- Jalur subsidi ---
+const revokeForm = useForm({});
+const confirmingRevoke = ref(false);
+
+const revokeSubsidy = () => {
+    revokeForm.post('/langganan/subsidi/cabut', {
+        preserveScroll: true,
+        onSuccess: () => { confirmingRevoke.value = false; },
+    });
+};
+
 const invoiceStatusLabels = {
     unpaid: 'Belum dibayar',
     awaiting_verification: 'Menunggu diperiksa',
@@ -195,6 +207,77 @@ const invoiceStatusLabels = {
                 >
                     {{ consent.agreed ? 'Baca dokumen persetujuan' : 'Baca dan setujui' }}
                 </Link>
+            </div>
+
+            <!-- Jalur subsidi -->
+            <div class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
+                <p class="text-sm font-medium text-foreground">
+                    {{ subsidy.is_active ? 'Jalur subsidi UMKM' : 'Harga menyesuaikan kemampuan bayar' }}
+                </p>
+
+                <template v-if="subsidy.is_active">
+                    <p v-if="subsidy.bracket" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        Kelompok <span class="font-medium text-foreground">{{ subsidy.bracket.label }}</span>
+                        berdasarkan omzet {{ formatRupiah(subsidy.bracket.revenue) }} pada periode
+                        {{ subsidy.bracket.period }} — tarif {{ formatRupiah(subsidy.bracket.price) }}/bulan.
+                    </p>
+                    <p v-else class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        Omzet Anda belum dihitung. Perhitungan pertama berjalan di awal bulan berikutnya.
+                    </p>
+
+                    <p v-if="subsidy.reverts_at" class="mt-2 text-sm text-foreground">
+                        Persetujuan sudah dicabut. Tarif subsidi berlaku sampai {{ formatDate(subsidy.reverts_at) }},
+                        setelah itu kembali ke tarif normal.
+                    </p>
+
+                    <div v-else-if="tenant.is_owner" class="mt-3">
+                        <button
+                            v-if="!confirmingRevoke"
+                            class="text-sm font-medium text-destructive hover:text-destructive/80"
+                            @click="confirmingRevoke = true"
+                        >
+                            Cabut persetujuan subsidi
+                        </button>
+
+                        <div v-else class="rounded-lg border border-destructive/40 bg-destructive/10 px-3.5 py-3">
+                            <p class="text-sm text-foreground leading-relaxed">
+                                Ringkasan omzet Anda dihapus seketika. Tarif subsidi tetap berlaku sampai akhir
+                                periode berjalan, jadi tagihan Anda tidak naik mendadak.
+                            </p>
+                            <div class="mt-3 flex gap-3">
+                                <button
+                                    :disabled="revokeForm.processing"
+                                    class="px-3 py-1.5 text-xs font-medium bg-destructive text-white rounded-lg hover:bg-destructive/90 disabled:opacity-50"
+                                    @click="revokeSubsidy"
+                                >
+                                    Ya, cabut
+                                </button>
+                                <button class="px-3 py-1.5 text-xs font-medium text-foreground border border-border rounded-lg hover:bg-accent/40" @click="confirmingRevoke = false">
+                                    Batal
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        Anda bisa mengajukan harga subsidi. Sebagai gantinya, omzet bulanan Anda dihitung otomatis
+                        dan angka persisnya bisa dilihat pengelola layanan untuk menentukan tarif. Bacalah
+                        dokumennya sebelum memutuskan.
+                    </p>
+
+                    <p v-if="!subsidy.can_switch" class="mt-2 text-sm text-foreground">
+                        Perpindahan jalur berikutnya bisa diajukan mulai {{ formatDate(subsidy.switch_available_at) }}.
+                    </p>
+                    <Link
+                        v-else-if="tenant.is_owner"
+                        href="/langganan/persetujuan/subsidized"
+                        class="mt-3 inline-block text-sm font-medium text-primary hover:text-primary/80 transition-colors duration-150"
+                    >
+                        Baca ketentuan subsidi
+                    </Link>
+                </template>
             </div>
 
             <!-- Tambah pengguna -->

@@ -25,9 +25,9 @@ class Subscription extends Model
     public const TRACK_SUBSIDIZED = 'subsidized';
 
     protected $fillable = [
-        'tenant_id', 'plan_id', 'pricing_track', 'seats', 'seat_high_water',
-        'provisional_blocked', 'price_locked', 'trial_ends_at',
-        'current_period_start', 'current_period_end',
+        'tenant_id', 'plan_id', 'pricing_track', 'track_changed_at', 'track_reverts_at',
+        'seats', 'seat_high_water', 'provisional_blocked', 'price_locked',
+        'trial_ends_at', 'current_period_start', 'current_period_end',
     ];
 
     protected function casts(): array
@@ -35,6 +35,8 @@ class Subscription extends Model
         return [
             'provisional_blocked' => 'boolean',
             'price_locked' => 'decimal:2',
+            'track_changed_at' => 'datetime',
+            'track_reverts_at' => 'date',
             'trial_ends_at' => 'datetime',
             'current_period_start' => 'date',
             'current_period_end' => 'date',
