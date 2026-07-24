@@ -258,6 +258,20 @@ Route::prefix('platform')
                     ->name('subscriptions.index');
             });
 
+            // Modul: Aturan Harga — tarif sebagai data, bukan konstanta di kode.
+            Route::middleware('platform.can:pricing_rules')->group(function () {
+                Route::get('/pricing-rules', [\App\Http\Controllers\Platform\PricingRuleController::class, 'index'])
+                    ->name('pricing-rules.index');
+                Route::post('/pricing-rules', [\App\Http\Controllers\Platform\PricingRuleController::class, 'storeRule'])
+                    ->name('pricing-rules.store');
+                Route::delete('/pricing-rules/{rule}', [\App\Http\Controllers\Platform\PricingRuleController::class, 'destroyRule'])
+                    ->name('pricing-rules.destroy');
+                Route::post('/plans', [\App\Http\Controllers\Platform\PricingRuleController::class, 'storePlan'])
+                    ->name('plans.store');
+                Route::put('/plans/{plan}', [\App\Http\Controllers\Platform\PricingRuleController::class, 'updatePlan'])
+                    ->name('plans.update');
+            });
+
             // Modul: Data Omset Subsidi — sengaja TERPISAH dari `subscriptions`.
             // Kelak staf platform bisa diberi daftar langganan tanpa diberi
             // angka omzet kliennya.

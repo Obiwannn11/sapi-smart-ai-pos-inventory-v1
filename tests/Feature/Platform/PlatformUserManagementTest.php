@@ -62,14 +62,17 @@ test('a created account is never an owner even if the payload says so', function
 test('modules without a page cannot be granted', function () {
     actingAs(PlatformUser::factory()->owner()->create(), 'platform');
 
-    // `pricing_rules` ada di katalog tapi halamannya belum dibuat (Tahap D).
-    // Sebelumnya contoh yang dipakai di sini `revenue_data`; halamannya sudah
-    // jadi di Tahap C, jadi contohnya bergeser ke modul yang masih tersisa.
+    // Sejak Tahap D SELURUH modul di katalog sudah punya halaman, jadi tidak
+    // ada lagi contoh alami untuk diuji. Flag-nya ditandai di sini supaya
+    // mekanismenya tetap terjaga untuk modul berikutnya yang katalognya
+    // ditetapkan lebih dulu daripada halamannya.
+    config()->set('platform-rbac.modules.tenants.available', false);
+
     post('/platform/users', [
         'name' => 'Staf',
         'email' => 'staf@sapi.test',
         'password' => 'rahasia123',
-        'modules' => ['pricing_rules'],
+        'modules' => ['tenants'],
     ])->assertSessionHasErrors('modules.0');
 });
 
@@ -122,9 +125,24 @@ test('the last owner account cannot be deleted', function () {
 test('the module catalog marks which modules have no page yet', function () {
     actingAs(PlatformUser::factory()->owner()->create(), 'platform');
 
+    config()->set('platform-rbac.modules.pricing_rules.available', false);
+
     get('/platform/users')->assertInertia(fn (Assert $page) => $page
         ->where('modules', fn ($modules) => collect($modules)->firstWhere('name', 'tenants')['available'] === true
             && collect($modules)->firstWhere('name', 'pricing_rules')['available'] === false));
+});
+
+test('every module in the catalog now has a page', function () {
+    // Penjaga arah sebaliknya: sejak Tahap D tidak ada lagi modul yang
+    // katalognya ada tapi halamannya belum. Kalau kelak ada modul baru yang
+    // ditambahkan lebih dulu ke katalog, test ini merah dan mengingatkan untuk
+    // menandainya `available => false` — bukan membiarkannya bisa dicentang
+    // tanpa berefek apa pun.
+    $tanpaHalaman = collect(config('platform-rbac.modules'))
+        ->reject(fn (array $module) => $module['available'])
+        ->keys();
+
+    expect($tanpaHalaman)->toBeEmpty();
 });
 
 test('account changes are written to the audit log', function () {

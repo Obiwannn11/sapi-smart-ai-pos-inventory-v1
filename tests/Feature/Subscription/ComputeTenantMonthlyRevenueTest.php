@@ -164,7 +164,7 @@ test('bracket berjalan tenant dibaca dari tabel ringkasan', function () {
     $bracket = app(PricingService::class)->currentBracketFor($tenant);
 
     expect($bracket['label'])->toBe('B')
-        ->and($bracket['price'])->toBe(25_000)
+        ->and($bracket['price'])->toBe(25_000.0)
         ->and($bracket['revenue'])->toBe(3_500_000.0);
 });
 

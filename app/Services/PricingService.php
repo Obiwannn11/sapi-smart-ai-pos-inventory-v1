@@ -2,35 +2,53 @@
 
 namespace App\Services;
 
+use App\Models\PricingRule;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
+use Illuminate\Support\Carbon;
 
 /**
- * Penetapan harga jalur subsidi: omset bulanan → bracket → tarif.
+ * Penetapan harga jalur subsidi: omzet bulanan → bracket → tarif.
  *
- * Bracket-nya masih dibaca dari `config/subscription.php`. Tahap D
- * memindahkannya ke tabel `pricing_rules` supaya pemilik SaaS bisa mengubahnya
- * sendiri; bentuk pengembalian method di sini sengaja dibuat sama dengan bentuk
- * baris tabel itu agar perpindahannya tidak menyentuh pemanggilnya.
+ * Aturannya dibaca dari tabel `pricing_rules`, yang di-CRUD pemilik SaaS dari
+ * platform console. Tidak ada satu pun angka tarif yang hidup di kode.
  */
 class PricingService
 {
     /**
-     * Bracket yang memuat angka omset ini.
+     * Bracket yang memuat angka omzet ini, menurut aturan yang berlaku pada
+     * tanggal tertentu.
      *
-     * @return array{label: string, min: int, max: int|null, price: int}|null
+     * `$asOf` ada demi grandfathering: menghitung ulang periode lama harus
+     * memakai aturan yang berlaku SAAT ITU, bukan aturan hari ini. Tanpa
+     * parameter ini, satu kali edit tarif akan diam-diam menulis ulang sejarah
+     * penetapan harga seluruh klien.
+     *
+     * @return array{label: string, min: float, max: float|null, price: float}|null
      */
-    public function bracketFor(float $revenue): ?array
+    public function bracketFor(float $revenue, ?Carbon $asOf = null): ?array
     {
-        foreach (config('subscription.revenue_brackets') as $bracket) {
-            $dibawahBatasAtas = $bracket['max'] === null || $revenue < $bracket['max'];
+        $rule = PricingRule::query()
+            ->effectiveOn($asOf)
+            ->orderByDesc('effective_from')
+            ->orderBy('min_revenue')
+            ->get()
+            // Beberapa aturan bisa menutupi rentang yang sama dengan tanggal
+            // berlaku berbeda; yang menang adalah yang tanggalnya paling baru
+            // namun sudah lewat — karena itu urutannya menurun di atas.
+            ->unique(fn (PricingRule $rule) => $rule->label)
+            ->first(fn (PricingRule $rule) => $rule->covers($revenue));
 
-            if ($revenue >= $bracket['min'] && $dibawahBatasAtas) {
-                return $bracket;
-            }
+        if ($rule === null) {
+            return null;
         }
 
-        return null;
+        return [
+            'label' => $rule->label,
+            'min' => (float) $rule->min_revenue,
+            'max' => $rule->max_revenue === null ? null : (float) $rule->max_revenue,
+            'price' => (float) $rule->price,
+        ];
     }
 
     /**
@@ -52,7 +70,7 @@ class PricingService
      * butuh menampilkan daftar cukup memakai `label`, dan `revenue` hanya
      * disentuh di jalur yang memang tercatat di audit log.
      *
-     * @return array{period: string, label: string|null, price: int|null, revenue: float}|null
+     * @return array{period: string, label: string|null, price: float|null, revenue: float}|null
      */
     public function currentBracketFor(Tenant $tenant): ?array
     {

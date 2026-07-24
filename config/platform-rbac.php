@@ -36,7 +36,7 @@ return [
         'tenants' => ['label' => 'Daftar Tenant', 'sensitive' => false, 'available' => true],
         'subscriptions' => ['label' => 'Langganan', 'sensitive' => false, 'available' => true],
         'payments' => ['label' => 'Pembayaran', 'sensitive' => false, 'available' => true],
-        'pricing_rules' => ['label' => 'Aturan Harga', 'sensitive' => true, 'available' => false],
+        'pricing_rules' => ['label' => 'Aturan Harga', 'sensitive' => true, 'available' => true],
         'revenue_data' => ['label' => 'Data Omset Subsidi', 'sensitive' => true, 'available' => true],
         'audit_logs' => ['label' => 'Log Audit', 'sensitive' => true, 'available' => true],
     ],

@@ -54,9 +54,12 @@ return [
     | Jalur Subsidi UMKM
     |--------------------------------------------------------------------------
     |
-    | `revenue_brackets` — omset bulanan → tarif. Sementara ini di config; Tahap
-    | D memindahkannya ke tabel `pricing_rules` agar pemilik SaaS bisa mengubah
-    | sendiri dari dashboard. `max` bernilai null berarti tanpa batas atas.
+    | `revenue_brackets` — SUDAH TIDAK DIBACA aplikasi. Sumber aturan harga kini
+    | tabel `pricing_rules`, yang di-CRUD pemilik SaaS dari platform console.
+    | Daftar di bawah tinggal sebagai benih migrasi `create_pricing_rules_table`
+    | — dibiarkan agar pemasangan baru tetap punya bracket awal yang masuk akal.
+    | Mengubah angka di sini tidak berpengaruh apa pun pada pemasangan yang
+    | tabelnya sudah terisi.
     |
     | `metrics_retention_months` — omset lebih tua dari ini dipangkas. Dua tahun
     | cukup untuk membuktikan penetapan harga bila disengketakan; lebih dari itu

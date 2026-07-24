@@ -22,6 +22,7 @@ const navItems = [
     { name: 'Daftar Tenant', href: '/platform/tenants', module: 'tenants' },
     { name: 'Langganan', href: '/platform/subscriptions', module: 'subscriptions' },
     { name: 'Pembayaran', href: '/platform/invoices', module: 'payments' },
+    { name: 'Aturan Harga', href: '/platform/pricing-rules', module: 'pricing_rules' },
     { name: 'Jejak Audit', href: '/platform/audit-logs', module: 'audit_logs' },
     { name: 'Akun Platform', href: '/platform/users', ownerOnly: true },
 ];
