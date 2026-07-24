@@ -10,18 +10,30 @@ const props = defineProps({
 const page = usePage();
 const flashError = computed(() => page.props.flash?.error);
 
+/**
+ * Server mengirim tanggal kalender polos ('2026-08-21'). `new Date(string)`
+ * membacanya sebagai tengah malam UTC, sehingga tampilannya bergantung pada
+ * zona waktu peramban — di zona yang di belakang UTC hasilnya mundur sehari.
+ * Zona Indonesia kebetulan aman, tapi tanggal jatuh tempo yang benar hanya
+ * karena kebetulan bukan tanggal yang benar. Komponennya dirakit sendiri agar
+ * selalu dibaca sebagai tanggal lokal.
+ */
+const parseDate = (value) => {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
 const formatDate = (value) =>
-    value
-        ? new Date(value).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-        : null;
+    parseDate(value)?.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) ?? null;
 
 const formatRupiah = (value) =>
     new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value ?? 0);
 
 const daysUntil = (value) => {
-    if (!value) return null;
-    const diff = new Date(value).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0);
-    return Math.ceil(diff / 86400000);
+    const date = parseDate(value);
+    if (!date) return null;
+    return Math.ceil((date - new Date().setHours(0, 0, 0, 0)) / 86400000);
 };
 
 /**
