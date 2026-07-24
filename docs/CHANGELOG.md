@@ -45,6 +45,33 @@
 
 ---
 
+### [ADDITION] Jalur Subsidi & Aturan Harga Dinamis — PHASE SAAS Tahap C & D (BL-005, BL-006)
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` — Tahap C & D (menutup fase ini seluruhnya)
+- **Dampak:** Migration | Model | Service | Job | Command | Controller | Route | Config | Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Jalur subsidi UMKM berjalan penuh — omzet dihitung otomatis ke tabel ringkasan, dokumen persetujuan sendiri, pengajuan & pencabutan mandiri, tampilan bracket di panel platform dengan angka persis lewat aksi tercatat. Aturan harga berpindah dari config ke tabel yang di-CRUD pemilik SaaS, dengan grandfathering lewat `effective_from`.
+- **Alasan:** Menutup `[BL-006]` (sistem langganan dua jalur) dan sisa `[BL-005]`.
+- **File Terdampak (ringkas):**
+  - Migrasi: `tenant_monthly_metrics`, `pricing_rules`, kolom `subscriptions.track_changed_at|track_reverts_at`
+  - `app/Jobs/ComputeTenantMonthlyRevenue.php` — di luar namespace `Platform`, satu-satunya pintu ke `transactions`
+  - `app/Console/Commands/{ComputeTenantRevenue,PruneTenantMetrics}.php` — terjadwal tanggal 1
+  - `app/Services/PricingService.php`, penambahan di `SubscriptionService` & `ConsentService`
+  - `app/Http/Controllers/Platform/{RevenueController,PricingRuleController}.php`
+  - `resources/consents/subsidized-v1.md`
+  - 3 berkas test baru — suite penuh **402 hijau**
+
+- **Keputusan yang MEMBATALKAN keputusan sebelumnya:**
+  **Daftar tenant menampilkan bracket, bukan angka persis.** Keputusan 2026-07-21 menyatakan angka rupiah tampil langsung di daftar. Diganti 2026-07-25: daftar hanya menampilkan kelompok harga, dan angka persis dibuka di `/platform/revenue/{tenant}` yang tiap kunjungannya tercatat `sensitive` **tanpa deduplikasi**. Alasannya ditulis di dokumen consent klien dan bisa mereka tuntut buktinya.
+
+- **Penyimpangan dari plan (disengaja):**
+  1. **Job penghitung menyaring dua hal**, bukan satu: `pricing_track = subsidized` **dan** persetujuan yang masih aktif. Dengan pencabutan yang baru berlaku di akhir periode, saringan tunggal akan terus mengumpulkan data sebulan penuh setelah tenant menarik izinnya.
+  2. **`config('subscription.revenue_brackets')` tidak lagi dibaca aplikasi** — hanya benih migrasi `pricing_rules`.
+  3. **Perpindahan jalur diberi jarak minimum 3 bulan** (`subscriptions.track_changed_at`) — plan menyisakannya sebagai pertanyaan terbuka.
+- **Catatan Migrasi:** `php artisan migrate`. Pemasangan lama otomatis mendapat bracket awal dari config, dengan `effective_from` 2000-01-01 agar tenant berjalan tidak kehilangan bracket-nya.
+
+---
+
 ### [ADDITION] Langganan Dasar Jalur Normal — PHASE SAAS Tahap B (BL-005)
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` — Tahap B

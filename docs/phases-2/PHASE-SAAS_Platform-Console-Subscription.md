@@ -1,6 +1,6 @@
 # PHASE SAAS — Platform Console & Langganan Dua Jalur
 
-**Status:** **Tahap A & B SELESAI** (A: 2026-07-21/22, B: 2026-07-25) — Tahap C–D masih rencana. Lihat checklist di Bagian 13.
+**Status:** **SELESAI SELURUHNYA** — Tahap A (2026-07-21/22), Tahap B, C, dan D (2026-07-25). Lihat checklist di Bagian 13.
 **Estimasi:** Besar — dipecah jadi 4 tahap yang bisa dikerjakan berurutan (Tahap A paling kecil & mandiri)
 **Dependency:** `PHASE-RBAC_Module-Access-Control` (sudah selesai — pola modul+centang dipakai ulang), `spatie/laravel-permission` (sudah ada). Belum butuh dependency baru.
 **Output:** Panel khusus pemilik SaaS untuk mengelola tenant, langganan, dan pembayaran — dengan batas privasi yang ditegakkan di lapisan query, plus skema harga dua jalur (normal & subsidi UMKM berbasis omset).
@@ -396,12 +396,14 @@ Append-only — tidak ada UI hapus/edit. Log yang bisa disunting tidak membuktik
 6. ~~Definisi seat~~ → pengguna aktif, dengan `seat_high_water` sebagai dasar tagihan.
 8. ~~Boleh suspend tenant yang menunggak~~ → ya, lewat `grace` dulu. Data tidak dihapus dan tetap bisa dibaca selama masa tenggang.
 
-**Masih terbuka — semuanya khas jalur subsidi, jadi WAJIB dijawab sebelum Tahap C/D:**
+**Ditutup saat Tahap C** *(2026-07-25)*:
 
-3. Pencabutan consent subsidi: diskon langsung hilang atau berlaku sampai akhir periode? (saran: **akhir periode** — pencabutan yang langsung menaikkan tagihan membuat orang takut mencabut, dan consent yang tidak bisa dicabut dengan tenang bukan consent).
-4. Apakah daftar tenant menampilkan bracket saja, dengan angka persis dibuka lewat aksi "lihat rincian" yang tercatat di audit log?
-7. Boleh pindah jalur normal ↔ subsidi kapan saja, atau ada periode minimum?
-9. *(baru)* Berapa lama data omset di `tenant_monthly_metrics` disimpan, dan apa yang terjadi padanya saat consent dicabut — dihapus, atau dibekukan?
+3. ~~Pencabutan consent subsidi~~ → berlaku sampai akhir periode; ringkasan omzet dihapus seketika.
+4. ~~Bracket saja di daftar?~~ → ya. **Membatalkan** keputusan 2026-07-21 yang menyatakan angka persis tampil langsung.
+7. ~~Boleh pindah jalur kapan saja?~~ → boleh, dengan jarak minimum 3 bulan.
+9. ~~Retensi omzet~~ → 24 bulan; dihapus saat consent dicabut.
+
+**Tidak ada lagi keputusan terbuka di dokumen ini.**
 
 ---
 
@@ -446,16 +448,29 @@ Append-only — tidak ada UI hapus/edit. Log yang bisa disunting tidak membuktik
 
 **Yang belum dikerjakan di Tahap B (bukan terlewat):** notifikasi in-app menjelang akhir trial (Bagian 7 poin 4) — belum ada kanal notifikasi apa pun di proyek ini, sama seperti yang dicatat di `[BL-011]`.
 
-### Tahap C — Jalur subsidi
-- [ ] `tenant_monthly_metrics` + `ComputeTenantMonthlyRevenue` + jadwal
-- [ ] Consent `subsidized` (termasuk klausul data trial)
-- [ ] Alur pengajuan subsidi di akhir trial
-- [ ] Tampilan omset di platform console (digerbang `revenue_data` + audit log)
+### Tahap C — Jalur subsidi — ✅ SELESAI 2026-07-25
+- [x] `tenant_monthly_metrics` + `ComputeTenantMonthlyRevenue` + jadwal bulanan
+- [x] Consent `subsidized` (termasuk klausul data trial)
+- [x] Alur pengajuan & pencabutan subsidi dari halaman langganan
+- [x] Tampilan omzet di platform console (digerbang `revenue_data` + audit log)
+- [x] Retensi 24 bulan (`subscriptions:prune-metrics`)
 
-### Tahap D — Aturan harga dinamis
-- [ ] `pricing_rules` + CRUD di platform console
-- [ ] `price_locked` + grandfathering
-- [ ] Audit log untuk tiap perubahan tarif
+**Keputusan yang ditutup** *(2026-07-25)*:
+- **Daftar menampilkan bracket; angka persis lewat aksi tercatat.** Ini **mengubah** keputusan 2026-07-21 yang menyatakan angka persis tampil langsung di daftar. Halaman `/platform/revenue/{tenant}` adalah satu-satunya tempat angka rupiah terlihat, dan tiap kunjungan tercatat `sensitive` **tanpa deduplikasi**.
+- **Pencabutan consent berlaku sampai akhir periode**, tapi ringkasan omzet dihapus **seketika**. Harga berjalan tetap bisa dipertanggungjawabkan lewat `price_locked`, jadi tak ada alasan menahan datanya.
+- **Pindah jalur bebas dengan jarak minimum 3 bulan** (`subscriptions.track_changed_at`).
+- **Retensi 24 bulan**, dipangkas bulanan.
+
+**Penyimpangan yang perlu diketahui:** job penghitung menyaring **dua** hal — `pricing_track = subsidized` **dan** persetujuan yang masih aktif. Rencana awal hanya menyebut yang pertama; dengan pencabutan yang baru berlaku di akhir periode, saringan tunggal akan membuat pengumpulan data terus jalan sebulan penuh setelah tenant menarik izinnya.
+
+### Tahap D — Aturan harga dinamis — ✅ SELESAI 2026-07-25
+- [x] `pricing_rules` + CRUD di platform console (`/platform/pricing-rules`)
+- [x] `price_locked` + grandfathering lewat `effective_from`
+- [x] Audit log untuk tiap perubahan tarif, mencatat nilai lama **dan** baru
+
+**Catatan:** `config('subscription.revenue_brackets')` **tidak lagi dibaca aplikasi** — ia tinggal sebagai benih migrasi. Aturan yang sudah berlaku tidak bisa dihapus; mengubah tarif berarti menerbitkan aturan baru dengan tanggal berlaku ke depan.
+
+Seluruh enam modul di `config/platform-rbac.php` kini `available => true`.
 
 ### Aturan emas
 - Kerjakan **Tahap A sampai selesai berikut testnya** sebelum menyentuh Tahap B. Arch test dan isolation test adalah fondasi yang menjaga semua tahap berikutnya — dibuat belakangan artinya tidak pernah dibuat.
