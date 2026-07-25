@@ -45,6 +45,33 @@
 
 ---
 
+### [ADDITION] Peringatan Login Gagal & Verifikasi Email (BL-011, BL-014)
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** Di Luar Fase — dua entri backlog yang dikerjakan bersama karena berbagi kanal peringatan
+- **Dampak:** Migration | Model | Service | Notification | Middleware | Controller | Command | Route | Config | Frontend | Test
+- **Breaking Change:** Tidak — pengguna yang sudah ada diisi mundur sebagai terverifikasi
+- **Deskripsi:**
+  **`[BL-011]`** — percobaan masuk yang gagal ke panel platform kini memicu peringatan surel ke pemilik SaaS. Dua pola dengan ambang sendiri: banyak kegagalan pada satu alamat (penebakan kata sandi) dan banyak alamat berbeda dari satu IP (penebakan akun). Berjalan tiap jam.
+  **`[BL-014]`** — pemilik usaha yang mendaftar sendiri wajib memverifikasi alamat surelnya sebelum aplikasi bisa dipakai. IP pendaftaran dicatat, dan pendaftaran berulang dari satu IP **ditandai untuk ditinjau** — bukan diblokir.
+- **Alasan:** Keduanya butuh hal yang sama: cara memberi tahu pemilik SaaS bahwa ada yang perlu ia lihat. Dikerjakan bersama supaya mekanismenya satu, bukan dua yang mirip.
+- **KOREKSI atas catatan lama:** `[BL-011]` menyatakan *"belum ada kanal notifikasi apa pun di proyek (email/Telegram)"*. **Itu sudah tidak benar sejak `[BL-010]`/`[BL-012]`** — surel sudah jadi kanal yang bekerja lewat notifikasi pemulihan kata sandi. Jadi tidak ada kanal baru yang dibangun; Telegram/n8n tidak diperlukan.
+- **File Terdampak:**
+  - Fondasi bersama: `config/platform-alerts.php`, `app/Notifications/PlatformAlert.php`, `app/Services/PlatformAlertService.php`
+  - BL-011: `app/Console/Commands/AlertFailedLogins.php` (terjadwal per jam)
+  - BL-014: migrasi `add_signup_tracking_to_tenants_table`, `app/Http/Middleware/EnsureEmailVerified.php`, `app/Http/Controllers/Auth/EmailVerificationController.php`, `app/Notifications/TenantVerifyEmail.php`, `app/Services/SignupGuardService.php`, `resources/js/Pages/Auth/VerifyEmail.vue`
+  - `app/Console/Commands/PruneAbandonedTenants.php` — **sengaja tidak dijadwalkan**
+  - `tests/Feature/Platform/FailedLoginAlertTest.php`, `tests/Feature/Auth/EmailVerificationTest.php` — suite penuh **430 hijau**
+- **Keputusan yang perlu diketahui:**
+  1. **Peringatan sejenis dijeda** (`cooldown_minutes`, default 3 jam). Kotak masuk yang penuh peringatan identik dibaca persis sama seperti kotak masuk tanpa peringatan. Baris audit `alert.sent` yang mencatat pengiriman itu pula yang jadi dasar jedanya — satu sumber, bukan dua.
+  2. **Staf platform tidak menerima peringatan keamanan**, hanya akun `is_owner`. Staf bisa saja hanya dipercaya satu modul.
+  3. **Pendaftaran berulang ditandai, bukan diblokir.** Satu IP publik bisa dipakai bersama satu kompleks pertokoan.
+  4. **Staf buatan owner langsung terverifikasi.** Kasir warung kecil kerap tak punya alamat surel sendiri.
+  5. **Pemangkasan tenant terbengkalai tidak dijadwalkan**, memakai `ConfirmableTrait` dan `--dry-run`. Syaratnya sempit: tak pernah diverifikasi, tak pernah bertransaksi, lebih tua dari 30 hari.
+- **Cakupan yang perlu disadari:** peringatan login gagal hanya mencakup **panel platform**. Login tenant yang gagal belum dicatat di mana pun — sisi tenant tidak punya tabel audit sendiri.
+- **Catatan Migrasi:** `php artisan migrate`. Di lingkungan lokal `MAIL_MAILER=log`, jadi surel verifikasi mendarat di `storage/logs/laravel.log`. Isi `PLATFORM_ALERT_EMAIL` bila peringatan sebaiknya masuk ke kotak surel operasional.
+
+---
+
 ### [ADDITION] Jalur Subsidi & Aturan Harga Dinamis — PHASE SAAS Tahap C & D (BL-005, BL-006)
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** `docs/phases-2/PHASE-SAAS_Platform-Console-Subscription.md` — Tahap C & D (menutup fase ini seluruhnya)

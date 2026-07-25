@@ -40,21 +40,6 @@
 
 ## Daftar Isu (Open / In Progress)
 
-### [BL-014] Pendaftaran Berulang Demi Trial Gratis Baru
-- **Ditemukan:** 2026-07-25
-- **Sumber:** Ditunda sadar-sadar saat mengerjakan Tahap B — lihat `[BL-005]` di Riwayat Selesai
-- **Status:** Open
-- **Prioritas:** Medium (belum menggigit selama tenant sedikit; jadi masalah nyata begitu pendaftaran ramai)
-- **Area Terdampak:**
-  - `app/Http/Controllers/Auth/AuthController.php:26` (`register`) — tak ada penyaring apa pun
-  - `users.email_verified_at` — kolomnya ada sejak migrasi bawaan Laravel, **tidak pernah dipakai**
-- **Deskripsi:**
-  Registrasi self-serve memberi trial 1 bulan tanpa syarat. Siapa pun bisa mendaftar berulang kali dengan alamat surel baru dan memakai layanan gratis selamanya. Tahap B sengaja tidak menanganinya supaya lingkupnya tetap pada model langganan.
-- **Usulan Perbaikan:**
-  1. Verifikasi surel wajib sebelum tenant bisa dipakai. Kontrak `MustVerifyEmail` sudah tersedia di Laravel dan kolomnya sudah ada — yang belum ada notifikasi, halaman, middleware, dan penanganan tenant yang tak pernah verifikasi.
-  2. Pertimbangkan verifikasi nomor telepon; untuk UMKM Indonesia, nomor jauh lebih mahal dibuat berulang daripada alamat surel.
-  3. Penandaan identitas serupa (nama usaha + telepon) untuk ditinjau manual, bukan diblokir otomatis — memblokir otomatis akan menjegal warung yang benar-benar punya dua cabang.
-
 ### [BL-013] Akun Platform Belum Punya 2FA
 - **Ditemukan:** 2026-07-22 (dipisahkan dari `[BL-010]` yang sudah ditutup)
 - **Sumber:** Poin ketiga `[BL-010]`, sejak awal ditandai "catat sebagai target, jangan dikerjakan sekarang"
@@ -67,21 +52,6 @@
   Satu akun platform memegang data administratif seluruh klien; satu faktor terasa tipis untuk kewenangan sebesar itu. Sekarang lapisannya sudah lebih baik daripada saat dicatat pertama kali — ada throttle (`[BL-007]`), jejak audit yang bisa dibaca (`[BL-009]`), dan pemulihan kata sandi yang tidak membocorkan keberadaan akun (`[BL-010]`) — tapi tetap: siapa pun yang memegang kata sandinya langsung masuk.
 - **Usulan Perbaikan:**
   TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
-
-### [BL-011] Belum Ada Peringatan Saat Percobaan Masuk Gagal Menumpuk
-- **Ditemukan:** 2026-07-22
-- **Sumber:** Sisa usulan `[BL-007]` yang sengaja tidak dikerjakan di sana, dan `[BL-009]` yang menyiapkan fondasinya
-- **Status:** Open
-- **Prioritas:** Low (penahanannya sudah ada — ini lapisan **kesadaran**, bukan pertahanan)
-- **Area Terdampak:**
-  - `app/Models/PlatformAuditLog.php` — `login.failed` sudah bertanda `sensitive`, tinggal disaring
-  - Belum ada kanal notifikasi apa pun di proyek (email/Telegram) untuk peristiwa operasional
-- **Deskripsi:**
-  Percobaan masuk yang gagal sudah dibatasi lajunya (`[BL-007]`) dan sudah tercatat rapi dengan derajat `sensitive` (`[BL-009]`), tapi **tak seorang pun diberi tahu** saat percobaan itu menumpuk. Artinya serangan yang berjalan pelan — di bawah ambang throttle, tersebar berjam-jam — akan terekam lengkap dan tetap tak terlihat sampai ada yang kebetulan membuka halaman jejak audit.
-- **Usulan Perbaikan:**
-  1. Perintah terjadwal yang menghitung `login.failed` per rentang waktu; bila melewati ambang, kirim notifikasi ke pemilik SaaS.
-  2. Tentukan kanalnya dulu — proyek belum punya satu pun. Telegram sudah dipakai untuk self-order lewat n8n, jadi kemungkinan itu jalur termurah.
-  3. Bedakan dua pola: banyak gagal pada **satu email** (penebakan kata sandi) versus banyak gagal pada **banyak email dari satu IP** (penebakan akun). Keduanya perlu ambang sendiri.
 
 ### [BL-004] Pesan Validasi Masih Bahasa Inggris di UI Berbahasa Indonesia
 - **Ditemukan:** 2026-07-21
@@ -115,6 +85,26 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-014] Pendaftaran Berulang Demi Trial Gratis Baru
+- **Ditemukan:** 2026-07-25
+- **Sumber:** Ditunda sadar-sadar saat mengerjakan PHASE SAAS Tahap B
+- **Status:** Selesai (2026-07-25) — lihat `[ADDITION] Peringatan Login Gagal & Verifikasi Email` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Perbaikan:**
+  Dua lapis. **Verifikasi surel wajib** untuk owner yang mendaftar sendiri — inilah penghalang utamanya, karena akun tanpa alamat yang benar-benar bisa dibuka tidak berguna untuk apa pun. Staf buatan owner dikecualikan (owner yang menjaminnya, dan kasir warung kecil kerap tak punya surel sendiri). **Penandaan pendaftaran berulang** dari satu IP sebagai lapis kedua, untuk pola yang lolos dari lapis pertama.
+- **Keputusan yang layak diingat:** ditandai, **bukan diblokir**. Satu IP publik bisa dipakai bersama satu kompleks pertokoan — memblokir otomatis akan menjegal warung sebelah yang tidak melakukan kesalahan apa pun.
+- **Yang TIDAK dikerjakan (sengaja):** verifikasi nomor telepon. Untuk UMKM Indonesia nomor jauh lebih mahal dibuat berulang daripada alamat surel, jadi ia sinyal yang lebih kuat — tapi formulir pendaftaran belum meminta nomor sama sekali, dan memintanya adalah perubahan alur tersendiri berikut kebutuhan penyedia SMS.
+
+### [BL-011] Belum Ada Peringatan Saat Percobaan Masuk Gagal Menumpuk
+- **Ditemukan:** 2026-07-22
+- **Sumber:** Sisa usulan `[BL-007]`, dengan fondasi dari `[BL-009]`
+- **Status:** Selesai (2026-07-25) — lihat `[ADDITION] Peringatan Login Gagal & Verifikasi Email` di `docs/CHANGELOG.md`
+- **Prioritas:** Low
+- **Perbaikan:**
+  Perintah terjadwal per jam yang menyaring `login.failed` dari jejak audit. Dua pola dengan ambang sendiri sesuai usulan aslinya: banyak kegagalan pada **satu alamat** (penebakan kata sandi) versus banyak alamat berbeda dari **satu IP** (penebakan akun, yang lolos dari kunci per-email justru karena tiap alamat dicoba sedikit). Peringatan sejenis dijeda supaya satu serangan semalaman tidak menghasilkan satu surel tiap jam.
+- **KOREKSI atas isi entri ini:** poin 2 usulan aslinya menyebut *"tentukan kanalnya dulu — proyek belum punya satu pun"* dan menyarankan Telegram lewat n8n. **Itu sudah tidak benar sejak `[BL-010]`/`[BL-012]`**: surel sudah jadi kanal yang bekerja lewat notifikasi pemulihan kata sandi. Jadi tidak ada kanal baru yang perlu dibangun.
+- **Cakupan yang perlu disadari:** hanya percobaan masuk ke **panel platform**. Login tenant yang gagal belum dicatat di mana pun karena sisi tenant tidak punya tabel audit sendiri — membuatnya adalah pekerjaan tersendiri yang belum ada di backlog.
 
 ### [BL-005] Platform Console — Panel Pemilik SaaS (Privacy-Preserving)
 - **Ditemukan:** 2026-07-21
