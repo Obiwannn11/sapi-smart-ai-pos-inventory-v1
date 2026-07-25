@@ -45,6 +45,29 @@
 
 ---
 
+### [ADDITION] Hub Dokumentasi Publik — Dua Jalur
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** Di Luar Fase — permintaan pemilik SaaS
+- **Dampak:** Config | Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Hub dokumentasi publik di `/dokumentasi` dengan dua jalur — **Panduan Penggunaan** (pemilik usaha & kasir, 6 halaman) dan **Dokumentasi Developer** (integrator & AI, 3 halaman). Ditautkan dari nav dan footer landing page.
+- **Alasan:** Permintaan langsung. Sekaligus memperbaiki hal yang tidak disadari: `/api-docs` sudah ada sejak lama tapi **tidak ditautkan dari mana pun** — dokumentasi yang tidak bisa ditemukan sama saja dengan tidak ada.
+- **File Terdampak:**
+  - `config/docs.php` — manifes: menggerakkan hub, sidebar, dan validasi rute
+  - `app/Http/Controllers/Public/DocsController.php`
+  - `resources/docs/{panduan,developer}/*.md` — 9 halaman
+  - `resources/views/public/docs/{layout,index,page}.blade.php`
+  - `resources/views/public/landing.blade.php` — tautan di nav (desktop + mobile) dan footer
+  - `tests/Feature/Public/DocsTest.php` — 9 test, suite penuh **461 hijau**
+- **Keputusan:**
+  1. **Isi berupa markdown** di `resources/docs/`, dirender server-side — pola yang sama dengan dokumen persetujuan. Jauh lebih ramah ditulis dan ditinjau daripada Blade untuk teks yang memang prosa.
+  2. **Manifes di config adalah gerbangnya, bukan keberadaan berkas.** Halaman yang tidak terdaftar tidak bisa dibuka meski berkasnya ada; kalau dibalik, segmen `{page}` dari URL berubah jadi jalan menyusuri sistem berkas.
+  3. **`/api-docs` dibiarkan berdiri sendiri.** Kartu endpoint dan badge method-nya tidak terwakili markdown, dan halamannya sudah baik — hub menautkannya, bukan menyerapnya.
+  4. **CSS dokumentasi ditulis terpisah**, tidak diambil dari berkas `api-docs.blade.php` yang 1.800 baris. Paletnya disalin agar sekeluarga, tapi komponen khusus endpoint tidak ikut.
+- **Catatan:** halaman ini publik dan tidak menuntut login — calon pelanggan membacanya sebelum punya akun.
+
+---
+
 ### [ADDITION] Permissions RBAC di Mobile API (BL-003)
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase — sisa Keputusan C plan RBAC
