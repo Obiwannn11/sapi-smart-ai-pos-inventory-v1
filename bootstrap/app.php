@@ -47,6 +47,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            // Kembaran JSON dari 'permission' untuk API: katalog dan Gate yang
+            // sama, hanya jawabannya yang berbeda bentuk.
+            'permission.api' => \App\Http\Middleware\EnsureModuleApi::class,
             // Panel platform: gerbang modul milik pemilik SaaS. Terpisah dari
             // 'permission' karena akun platform tidak punya tenant/team-id.
             'platform.can' => \App\Http\Middleware\EnsurePlatformModule::class,

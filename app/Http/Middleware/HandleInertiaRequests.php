@@ -32,15 +32,9 @@ class HandleInertiaRequests extends Middleware
                     // Lazy (closure): Inertia memanggil share() di awal middleware
                     // global, sebelum EnsureTenant men-set team-id spatie. Menunda
                     // resolusi ke fase render memastikan team-id sudah benar.
-                    // Cek via Gate (can) memakai registrar spatie — jalur yang sama
-                    // dengan middleware permission: — bukan relasi Eloquent yang
-                    // rapuh terhadap konteks team.
-                    'permissions' => fn () => $user->isOwner()
-                        ? ['*']
-                        : collect(array_keys(config('rbac.modules')))
-                            ->filter(fn (string $module) => $user->can($module))
-                            ->values()
-                            ->all(),
+                    // Perhitungannya sendiri ada di User::modulePermissions(),
+                    // dipakai bersama payload autentikasi mobile.
+                    'permissions' => fn () => $user->modulePermissions(),
                 ] : null,
 
                 // Sengaja kunci terpisah, bukan menumpang `auth.user`. Kalau

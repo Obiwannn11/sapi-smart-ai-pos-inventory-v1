@@ -65,6 +65,35 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->role === 'owner';
     }
 
+    /**
+     * Modul yang boleh dibuka pengguna ini.
+     *
+     * Owner mengembalikan `['*']` — ia melewati seluruh gerbang lewat
+     * Gate::before, jadi menyusun daftar lengkap untuknya hanya akan
+     * menyesatkan pembacanya seolah-olah daftar itu yang menentukan.
+     *
+     * Satu-satunya sumber jawaban ini, dipakai bersama oleh sisi web
+     * (HandleInertiaRequests) dan sisi mobile (payload autentikasi). Dua
+     * perhitungan yang mirip pasti bercabang begitu salah satunya diperbaiki.
+     *
+     * Diperiksa lewat Gate (`can`), bukan relasi Eloquent: itulah jalur yang
+     * sama dengan middleware `permission:`, dan ia menghormati konteks team
+     * spatie yang di aplikasi ini berarti tenant.
+     *
+     * @return list<string>
+     */
+    public function modulePermissions(): array
+    {
+        if ($this->isOwner()) {
+            return ['*'];
+        }
+
+        return collect(array_keys(config('rbac.modules')))
+            ->filter(fn (string $module) => $this->can($module))
+            ->values()
+            ->all();
+    }
+
     public function isCashier(): bool
     {
         return $this->role === 'cashier';

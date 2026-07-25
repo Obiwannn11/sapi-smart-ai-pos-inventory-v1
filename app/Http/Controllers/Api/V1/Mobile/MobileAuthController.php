@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\PermissionRegistrar;
 
 class MobileAuthController extends Controller
 {
@@ -41,6 +42,12 @@ class MobileAuthController extends Controller
 
         $tenant = $user->tenant;
 
+        // Konteks team spatie disetel manual di sini. Endpoint login berada di
+        // LUAR middleware `tenant.api` — ia harus terbuka untuk yang belum
+        // punya token — jadi tidak ada yang menyetelnya untuk kita, dan tanpa
+        // itu daftar izinnya akan pulang kosong untuk setiap staf.
+        app(PermissionRegistrar::class)->setPermissionsTeamId($user->tenant_id);
+
         return response()->json([
             'token' => $token,
             'user' => [
@@ -48,6 +55,9 @@ class MobileAuthController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role,
+                // Owner -> ['*'], staf -> daftar modul yang dimiliki. Sumber
+                // perhitungannya sama persis dengan yang dipakai sisi web.
+                'permissions' => $user->modulePermissions(),
             ],
             'tenant' => $tenant ? [
                 'id' => $tenant->id,
