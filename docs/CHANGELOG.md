@@ -45,6 +45,29 @@
 
 ---
 
+### [ADDITION] Pesan Validasi Berbahasa Indonesia (BL-004)
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Config | Lang | Controller | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Seluruh pesan validasi bawaan Laravel kini berbahasa Indonesia, berikut nama kolomnya. Berlaku di **semua form** sekaligus — web tenant, panel platform, dan API mobile — bukan per-form.
+- **Alasan:** Seluruh antarmuka aplikasi ini berbahasa Indonesia; pesan validasi adalah satu-satunya tempat yang masih berbahasa Inggris.
+- **File Terdampak:**
+  - `lang/id/{validation,auth,passwords,pagination}.php` — terjemahan lengkap; `lang/en/*` ikut dipublikasikan sebagai fallback
+  - `config/app.php` — `locale` default jadi `'id'`, `fallback_locale` tetap `'en'`
+  - `.env` & `.env.example` — `APP_LOCALE=id`
+  - Tiga controller autentikasi — pesan kredensial salah dipindah ke `__('auth.failed')`
+  - `tests/Feature/LocalizationTest.php` — 11 test, suite penuh **441 hijau**
+- **Keputusan yang perlu diketahui:**
+  1. **Ditempuh lewat locale global** (usulan 1 di backlog), bukan `messages()` per FormRequest (usulan 2). Sekali kerja untuk semua form, dan form baru ikut terjemahan dengan sendirinya.
+  2. **Daftar `attributes` disusun dari kolom yang benar-benar divalidasi aplikasi ini**, bukan daftar umum. Tanpa daftar itu, pesannya berbunyi "Kolom business_name wajib diisi" — separuh jadi, dan justru lebih janggal daripada tidak diterjemahkan.
+  3. **Default locale ditaruh di `config/app.php`**, bukan hanya `.env`, supaya berlaku juga saat test berjalan dan di pemasangan yang lupa mengisinya.
+  4. **Fallback tetap `'en'`.** Kunci yang terlewat lebih baik muncul sebagai kalimat Inggris daripada sebagai `validation.required`.
+- **Efek samping yang menguntungkan:** tanggal yang dirender lewat `translatedFormat()` ikut berbahasa Indonesia — mis. tenggat penangguhan di halaman langganan kini berbunyi "20 Agustus 2026".
+- **Catatan Migrasi:** Tidak ada migrasi. Jalankan `php artisan config:clear` bila config sempat di-cache.
+
+---
+
 ### [ADDITION] Peringatan Login Gagal & Verifikasi Email (BL-011, BL-014)
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase — dua entri backlog yang dikerjakan bersama karena berbagi kanal peringatan

@@ -53,24 +53,6 @@
 - **Usulan Perbaikan:**
   TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
 
-### [BL-004] Pesan Validasi Masih Bahasa Inggris di UI Berbahasa Indonesia
-- **Ditemukan:** 2026-07-21
-- **Sumber:** Validasi live blackbox fitur RBAC — form "Tambah Staf" (`/owner/staff`), saat sengaja mengirim email duplikat + password < 8 karakter
-- **Status:** Open
-- **Prioritas:** Low (kosmetik/UX, tidak mengubah data atau keamanan — validasi **berfungsi benar**, hanya bahasanya)
-- **Area Terdampak:**
-  - Seluruh aplikasi (bukan hanya RBAC) — tidak ada folder `lang/`, `config/app.php:81` → `'locale' => env('APP_LOCALE', 'en')`
-  - Teramati langsung di `resources/js/Pages/Owner/Staff/Index.vue` (modal tambah staf)
-  - **Bertambah 2026-07-21:** form login panel platform (`Platform/AuthController@login`) ikut terdampak — pesan gagal autentikasi sudah bahasa Indonesia, tapi pesan validasi field masih bawaan Laravel. Tiap permukaan baru akan menambah daftar ini selama locale global belum dibereskan.
-- **Deskripsi:**
-  Pesan validasi yang tampil ke pengguna memakai teks bawaan Laravel dalam bahasa Inggris, padahal seluruh UI berbahasa Indonesia. Contoh nyata yang teramati: `"The email has already been taken."` dan `"The password field must be at least 8 characters."`. Inkonsistensi ini muncul di **semua form** aplikasi, bukan hanya form staf/role — jadi ini **bukan regresi** dari Phase RBAC, melainkan hutang lokalisasi yang sudah ada sejak awal dan baru terdokumentasi sekarang.
-- **Dugaan Penyebab:**
-  Proyek tidak pernah mem-publish file bahasa (`php artisan lang:publish`) dan `APP_LOCALE` tetap `en`, sehingga Laravel memakai pesan validasi default bahasa Inggris.
-- **Usulan Perbaikan:**
-  1. `php artisan lang:publish` lalu buat `lang/id/validation.php` berisi terjemahan Indonesia, dan set `APP_LOCALE=id` (atau `app.fallback_locale` sesuai kebutuhan).
-  2. Alternatif ringan bila tak ingin mengubah locale global: tambahkan `messages()` / `attributes()` kustom di masing-masing FormRequest/`validate()` untuk form yang menghadap pengguna.
-  3. Sertakan `attributes()` agar nama field ikut diterjemahkan (`email` → "Email", `password` → "Kata Sandi"), bukan hanya kalimat pesannya.
-
 ### [BL-003] Mobile API — Permissions RBAC di Auth & Gating Endpoint
 - **Ditemukan:** 2026-07-21
 - **Sumber:** Keputusan C plan RBAC (`docs/phases-2/PHASE-RBAC_Module-Access-Control.md`, Bagian 8)
@@ -85,6 +67,17 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-004] Pesan Validasi Masih Bahasa Inggris di UI Berbahasa Indonesia
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Validasi live blackbox fitur RBAC — form "Tambah Staf", email duplikat + kata sandi < 8 karakter
+- **Status:** Selesai (2026-07-25) — lihat `[ADDITION] Pesan Validasi Berbahasa Indonesia (BL-004)` di `docs/CHANGELOG.md`
+- **Prioritas:** Low
+- **Perbaikan:**
+  Ditempuh lewat **usulan 1** (locale global), bukan usulan 2 (`messages()` per FormRequest): sekali kerja untuk semua form, dan form baru ikut terjemahan dengan sendirinya. `lang/id/{validation,auth,passwords,pagination}.php` lengkap, `APP_LOCALE=id`, dengan fallback tetap `en` supaya kunci yang terlewat muncul sebagai kalimat Inggris — bukan sebagai `validation.required`.
+- **Usulan 3 (`attributes`) ikut dikerjakan, dan ternyata bagian terpentingnya.** Tanpa daftar nama kolom, hasilnya berbunyi "Kolom business_name wajib diisi" — separuh jadi, dan justru lebih janggal daripada tidak diterjemahkan sama sekali. Daftarnya disusun dari kolom yang benar-benar divalidasi aplikasi ini.
+- **Dua permukaan yang dicatat di entri ini sudah diverifikasi langsung:** form tambah staf (skenario asli backlog) lewat test, dan form login lewat peramban — keduanya kini menyebut "Kolom Email" dan "Kolom Kata Sandi".
+- **Efek samping yang menguntungkan:** nama bulan pada tanggal yang dirender `translatedFormat()` ikut berbahasa Indonesia.
 
 ### [BL-014] Pendaftaran Berulang Demi Trial Gratis Baru
 - **Ditemukan:** 2026-07-25
