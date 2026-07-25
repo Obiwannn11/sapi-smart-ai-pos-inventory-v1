@@ -25,13 +25,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // di tujuh grup rute berarti grup kedelapan pasti akan melupakannya.
         // Menempelkannya di sini membuat "punya konteks tenant" dan "langganan
         // masih berlaku" tak terpisahkan.
+        // Urutannya disengaja: verifikasi surel lebih dulu daripada gerbang
+        // langganan. Akun yang alamatnya belum terbukti tidak perlu sampai ke
+        // pertanyaan "langganannya masih berlaku atau tidak".
         $middleware->group('tenant', [
             \App\Http\Middleware\EnsureTenant::class,
+            \App\Http\Middleware\EnsureEmailVerified::class,
             \App\Http\Middleware\EnsureSubscriptionActive::class,
         ]);
 
         $middleware->group('tenant.api', [
             \App\Http\Middleware\EnsureTenantApi::class,
+            \App\Http\Middleware\EnsureEmailVerified::class,
             \App\Http\Middleware\EnsureSubscriptionActive::class,
         ]);
 

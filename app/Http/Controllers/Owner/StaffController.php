@@ -70,6 +70,11 @@ class StaffController extends Controller
             'email' => $validated['email'],
             'password' => $validated['password'], // cast 'hashed'
             'role' => 'cashier',
+            // Staf langsung terverifikasi: owner-lah yang menjaminnya, dan
+            // kata sandinya pun diberikan langsung. Menuntut verifikasi di
+            // sini akan mengunci kasir yang tidak punya alamat surel sendiri —
+            // hal yang lumrah di warung kecil.
+            'email_verified_at' => now(),
         ]);
 
         if (! empty($validated['role_name'])) {

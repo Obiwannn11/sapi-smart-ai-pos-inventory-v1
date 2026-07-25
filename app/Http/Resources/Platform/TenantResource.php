@@ -32,6 +32,13 @@ class TenantResource extends JsonResource
             'slug' => $this->slug,
             'registered_at' => $this->created_at?->toDateString(),
             'user_count' => $this->users_count,
+            // Penanda administratif, bukan data bisnis: apakah pendaftarnya
+            // sudah membuktikan alamat surelnya, dan apakah pola pendaftarannya
+            // perlu ditinjau. Keduanya soal keabsahan akun, bukan soal isi
+            // usahanya.
+            'is_verified' => $this->whenLoaded('owners', fn () => $this->owners->first()?->hasVerifiedEmail() ?? false),
+            'flagged_at' => $this->flagged_at?->toDateString(),
+            'flag_reason' => $this->flag_reason,
             'owner' => $this->whenLoaded('owners', fn () => $this->owners->map(fn ($owner) => [
                 'name' => $owner->name,
                 'email' => $owner->email,

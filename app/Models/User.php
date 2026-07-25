@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Notifications\TenantResetPassword;
+use App\Notifications\TenantVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,12 +13,12 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     protected $fillable = [
-        'tenant_id', 'name', 'email', 'password', 'role', 'is_active',
+        'tenant_id', 'name', 'email', 'password', 'role', 'is_active', 'email_verified_at',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -34,6 +36,7 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'email_verified_at' => 'datetime',
         ];
     }
 
@@ -46,6 +49,14 @@ class User extends Authenticatable
     public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
     {
         $this->notify(new TenantResetPassword($token));
+    }
+
+    /**
+     * Sama alasannya: seluruh antarmuka lain sudah berbahasa Indonesia.
+     */
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new TenantVerifyEmail);
     }
 
     // --- Helpers ---

@@ -23,7 +23,10 @@ class TenantController extends Controller
     {
         $tenants = Tenant::query()
             ->withCount('users')
-            ->with('owners:id,tenant_id,name,email')
+            ->with('owners:id,tenant_id,name,email,email_verified_at')
+            // Yang ditandai naik ke atas: itulah satu-satunya baris di halaman
+            // ini yang menunggu penilaian seseorang.
+            ->orderByRaw('CASE WHEN flagged_at IS NULL THEN 1 ELSE 0 END')
             ->orderBy('name')
             ->paginate(25)
             ->withQueryString();

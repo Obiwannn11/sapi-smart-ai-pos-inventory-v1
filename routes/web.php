@@ -30,6 +30,21 @@ Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
 
+// --- Verifikasi Email ---
+// Di bawah 'auth' saja, DI LUAR grup 'tenant': grup itu memuat gerbang
+// verifikasi, jadi menaruh halaman verifikasinya di dalam sana akan
+// mengalihkan orang ke halaman yang sedang ia buka.
+Route::middleware('auth')->group(function () {
+    Route::get('/verifikasi-email', [\App\Http\Controllers\Auth\EmailVerificationController::class, 'notice'])
+        ->name('verification.notice');
+    Route::get('/verifikasi-email/{id}/{hash}', [\App\Http\Controllers\Auth\EmailVerificationController::class, 'verify'])
+        ->middleware(['signed', 'throttle:6,1'])
+        ->name('verification.verify');
+    Route::post('/verifikasi-email/kirim-ulang', [\App\Http\Controllers\Auth\EmailVerificationController::class, 'send'])
+        ->middleware('throttle:6,1')
+        ->name('verification.send');
+});
+
 // --- Langganan (sisi tenant) ---
 // Satu-satunya halaman bertenant yang tetap terbuka saat tenant ditangguhkan —
 // lihat daftar ALWAYS_ALLOWED di EnsureSubscriptionActive. Menutupnya berarti

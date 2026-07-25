@@ -27,6 +27,17 @@ return [
 
     'grace_days' => 30,
 
+    /**
+     * Umur minimum tenant terbengkalai sebelum boleh dipangkas, dalam hari.
+     *
+     * "Terbengkalai" bermakna sempit dan sengaja: pemiliknya tidak pernah
+     * memverifikasi alamat surelnya, DAN tidak ada satu pun transaksi. Dua
+     * syarat itu bersama-sama berarti akunnya tidak pernah benar-benar dipakai.
+     *
+     * Pemangkasannya TIDAK dijadwalkan — lihat `platform:prune-abandoned-tenants`.
+     */
+    'abandoned_after_days' => 30,
+
     /*
     |--------------------------------------------------------------------------
     | Dokumen Persetujuan

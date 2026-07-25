@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\SignupGuardService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +25,7 @@ class AuthController extends Controller
         return Inertia::render('Auth/Register');
     }
 
-    public function register(Request $request, SubscriptionService $subscriptions)
+    public function register(Request $request, SubscriptionService $subscriptions, SignupGuardService $signupGuard)
     {
         $validated = $request->validate([
             'business_name' => 'required|string|max:255',
@@ -64,10 +65,20 @@ class AuthController extends Controller
             ]);
         });
 
+        // Di LUAR transaksi: penandaan dan peringatannya mengirim surel, dan
+        // kegagalan mengirim surel tidak boleh membatalkan pendaftaran yang
+        // sudah sah.
+        $signupGuard->record($user->tenant, $request->ip());
+
+        $user->sendEmailVerificationNotification();
+
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->intended('/owner/dashboard');
+        // Diarahkan ke halaman verifikasi, bukan ke dashboard: gerbangnya akan
+        // mengalihkan ke sana juga, dan mendarat langsung di sana jauh lebih
+        // jelas daripada mendarat di dashboard sekejap lalu terlempar.
+        return redirect()->route('verification.notice');
     }
 
     public function login(Request $request)

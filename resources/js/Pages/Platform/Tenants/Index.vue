@@ -27,8 +27,24 @@ defineProps({
                     <tbody class="divide-y divide-border">
                         <tr v-for="tenant in tenants.data" :key="tenant.id" class="hover:bg-accent/30 transition-colors">
                             <td class="px-4 py-3">
-                                <p class="font-medium text-foreground">{{ tenant.name }}</p>
+                                <p class="font-medium text-foreground">
+                                    {{ tenant.name }}
+                                    <span
+                                        v-if="!tenant.is_verified"
+                                        class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+                                        title="Pemiliknya belum memverifikasi alamat emailnya"
+                                    >
+                                        belum verifikasi
+                                    </span>
+                                    <span
+                                        v-if="tenant.flagged_at"
+                                        class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-700"
+                                    >
+                                        perlu ditinjau
+                                    </span>
+                                </p>
                                 <p class="text-xs text-muted-foreground">{{ tenant.slug }}</p>
+                                <p v-if="tenant.flag_reason" class="text-xs text-amber-700 mt-0.5">{{ tenant.flag_reason }}</p>
                             </td>
                             <td class="px-4 py-3">
                                 <template v-if="tenant.owner">

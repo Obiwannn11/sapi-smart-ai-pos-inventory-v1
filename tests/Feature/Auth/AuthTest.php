@@ -97,14 +97,16 @@ test('register page is accessible', function () {
     get('/register')->assertStatus(200);
 });
 
-test('a new user can register a tenant and is redirected to owner dashboard', function () {
+test('a new user can register a tenant and is sent to verify their email', function () {
+    // Sejak [BL-014] pendaftaran mendarat di halaman verifikasi, bukan di
+    // dashboard: alamat yang belum terbukti tidak boleh langsung dipakai.
     post('/register', [
         'business_name' => 'Warung Sapi',
         'name' => 'Budi',
         'email' => 'budi@example.com',
         'password' => 'password',
         'password_confirmation' => 'password',
-    ])->assertRedirect('/owner/dashboard');
+    ])->assertRedirect('/verifikasi-email');
 
     $user = User::where('email', 'budi@example.com')->first();
 

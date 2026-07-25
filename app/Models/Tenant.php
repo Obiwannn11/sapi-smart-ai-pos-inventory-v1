@@ -30,6 +30,7 @@ class Tenant extends Model
 
     protected $fillable = [
         'name', 'slug', 'logo', 'address', 'phone', 'status', 'pricing_track',
+        'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
     ];
 
@@ -50,6 +51,7 @@ class Tenant extends Model
     {
         return [
             'ai_api_key' => 'encrypted',
+            'flagged_at' => 'datetime',
         ];
     }
 

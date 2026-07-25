@@ -35,12 +35,16 @@ class DatabaseSeeder extends Seeder
         app(SubscriptionService::class)->startTrial($tenant)->update(['seats' => 5]);
 
         // 2. Users
+        // Akun demo ditandai terverifikasi: tanpa itu, seed di lingkungan lokal
+        // (MAIL_MAILER=log) berakhir dengan akun yang tak bisa dipakai sampai
+        // seseorang menggali tautannya dari berkas log.
         User::create([
             'tenant_id' => $tenant->id,
             'name' => 'Owner Demo',
             'email' => 'owner@sapi.test',
             'password' => Hash::make('password'),
             'role' => 'owner',
+            'email_verified_at' => now(),
         ]);
 
         $kasir = User::create([
@@ -49,6 +53,7 @@ class DatabaseSeeder extends Seeder
             'email' => 'kasir@sapi.test',
             'password' => Hash::make('password'),
             'role' => 'cashier',
+            'email_verified_at' => now(),
         ]);
 
         // 2b. Contoh role per-tenant + assign ke kasir demo.
