@@ -126,6 +126,7 @@
                         <a href="#fitur" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Fitur AI</a>
                         <a href="#demo" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Demo</a>
                         <a href="#pricing" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Harga</a>
+                        <a href="{{ route('docs.index') }}" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Dokumentasi</a>
                     </div>
                     <div class="h-6 w-px bg-gray-100 hidden md:block"></div>
                     <a href="/login" class="hidden sm:block bg-primary text-white px-8 py-3 rounded-full text-[14px] font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/10 hover:shadow-primary/20 hover:-translate-y-0.5">
@@ -154,6 +155,7 @@
             <a @click="open = false" href="#fitur" class="block text-lg font-black text-gray-900 hover:text-primary">Fitur AI</a>
             <a @click="open = false" href="#demo" class="block text-lg font-black text-gray-900 hover:text-primary">Demo</a>
             <a @click="open = false" href="#pricing" class="block text-lg font-black text-gray-900 hover:text-primary">Harga</a>
+            <a @click="open = false" href="{{ route('docs.index') }}" class="block text-lg font-black text-gray-900 hover:text-primary">Dokumentasi</a>
             <div class="pt-4 border-t border-gray-100">
                 <a @click="open = false" href="/login" class="block w-full bg-primary text-white text-center py-4 rounded-2xl font-black shadow-xl shadow-primary/10">Login / Daftar Gratis</a>
             </div>
@@ -1026,7 +1028,13 @@
                 <p class="text-gray-400 font-bold text-lg max-w-md">Smart AI POS & Inventory. Dibuat khusus untuk kemajuan UMKM Indonesia.</p>
             </div>
 
-            <div class="flex justify-center gap-10 mb-12 text-gray-500 font-black text-sm uppercase tracking-widest">
+            <div class="flex flex-wrap justify-center gap-x-10 gap-y-4 mb-8 text-gray-500 font-black text-sm uppercase tracking-widest">
+                <a href="{{ route('docs.show', ['track' => 'panduan']) }}" class="hover:text-primary transition-all">Panduan Penggunaan</a>
+                <a href="{{ route('docs.show', ['track' => 'developer']) }}" class="hover:text-primary transition-all">Dokumentasi Developer</a>
+                <a href="{{ route('api-docs') }}" class="hover:text-primary transition-all">Referensi API</a>
+            </div>
+
+            <div class="flex justify-center gap-10 mb-12 text-gray-400 font-black text-sm uppercase tracking-widest">
                 <a href="#" class="hover:text-primary transition-all">Instagram</a>
                 <a href="#" class="hover:text-primary transition-all">Twitter</a>
                 <a href="#" class="hover:text-primary transition-all">LinkedIn</a>

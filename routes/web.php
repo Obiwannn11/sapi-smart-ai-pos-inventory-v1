@@ -329,5 +329,11 @@ Route::prefix('platform')
 // Halaman Landing
 Route::get('/', [\App\Http\Controllers\Public\LandingController::class, 'index'])->name('landing');
 
-// Halaman API Docs
+// Halaman API Docs — referensi endpoint REST, berdiri sendiri karena punya
+// komponen yang tidak terwakili markdown (kartu endpoint, badge method).
 Route::get('/api-docs', [\App\Http\Controllers\Public\LandingController::class, 'docs'])->name('api-docs');
+
+// Hub Dokumentasi — dua jalur: panduan penggunaan & dokumentasi developer.
+Route::get('/dokumentasi', [\App\Http\Controllers\Public\DocsController::class, 'index'])->name('docs.index');
+Route::get('/dokumentasi/{track}/{page?}', [\App\Http\Controllers\Public\DocsController::class, 'show'])
+    ->name('docs.show');
