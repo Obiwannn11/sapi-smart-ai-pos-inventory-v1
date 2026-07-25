@@ -45,6 +45,31 @@
 
 ---
 
+### [ADDITION] Permissions RBAC di Mobile API (BL-003)
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** Di Luar Fase — sisa Keputusan C plan RBAC
+- **Dampak:** Model | Middleware | Controller | Config | Test
+- **Breaking Change:** Tidak — payload autentikasi bertambah field, tidak ada yang berubah bentuk
+- **Deskripsi:** Payload login mobile dan `/mobile/tenant/profile` kini menyertakan `permissions` (owner → `['*']`, staf → daftar modul). Middleware `permission.api` tersedia sebagai kembaran JSON dari `permission:` milik web.
+- **File Terdampak:**
+  - `app/Models/User.php` — `modulePermissions()`, satu sumber untuk web & mobile
+  - `app/Http/Middleware/HandleInertiaRequests.php` — memakai method yang sama
+  - `app/Http/Middleware/EnsureModuleApi.php` + alias `permission.api`
+  - `MobileAuthController`, `MobileTenantController`
+  - `tests/Feature/Api/MobilePermissionsTest.php` — 11 test, suite penuh **452 hijau**
+
+- **TEMUAN yang mengubah lingkup, dan keputusan atasnya** *(2026-07-25)*:
+  Entri backlog mengandaikan endpoint mobile bisa digerbang per modul. Kenyataannya **tidak satu pun endpoint mobile yang ada saat ini punya padanan bergerbang modul di web** — semuanya POS, laci kas, dan riwayat kasir, yang di web sengaja hanya digerbang `role:cashier,owner`. Test RBAC menuliskannya terang-terangan: *"Cashier routes are never RBAC-gated"*.
+
+  **Keputusan pemilik SaaS:** `pos` dan `cash_drawer` tetap jadi **penanda menu**, bukan gerbang rute — di web maupun mobile. Alasannya: menggerbangnya di mobile akan mengunci staf yang dibuat lewat pilihan "Tanpa role (POS saja)" (opsi pertama di form tambah staf), sekaligus membuat orang yang sama ditolak aplikasi tapi diterima peramban.
+
+  Akibatnya `permission.api` **belum menggerbang endpoint apa pun** hari ini. Ia tetap dipasang dan diuji, siap untuk endpoint mobile berikutnya yang memang bermodul (mis. bila kelak ada endpoint laporan atau stok).
+
+- **Lubang yang tersingkap dan SENGAJA dibiarkan:** di web, kasir ber-role "Gudang" (hanya `stock`) masih bisa mengetik `/cashier/pos` dan berjualan, karena rute kasir tak pernah digerbang modul. Menutupnya adalah perubahan perilaku bagi staf yang sudah ada, dan diputuskan tidak dikerjakan sekarang.
+- **Yang ikut membaik:** perhitungan izin sisi web tidak lagi ditulis inline di `HandleInertiaRequests` — dua perhitungan mirip pasti bercabang begitu salah satunya diperbaiki.
+
+---
+
 ### [ADDITION] Pesan Validasi Berbahasa Indonesia (BL-004)
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase

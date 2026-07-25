@@ -53,20 +53,20 @@
 - **Usulan Perbaikan:**
   TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
 
-### [BL-003] Mobile API — Permissions RBAC di Auth & Gating Endpoint
-- **Ditemukan:** 2026-07-21
-- **Sumber:** Keputusan C plan RBAC (`docs/phases-2/PHASE-RBAC_Module-Access-Control.md`, Bagian 8)
-- **Status:** Open (ditunda by design)
-- **Prioritas:** Low (ditunda sampai fitur utama RBAC web selesai penuh)
-- **Area Terdampak:**
-  - `app/Http/Controllers/Api/MobileAuthController.php` — respons auth belum menyertakan `permissions`
-  - Endpoint mobile per modul — belum digerbang `permission:` versi API (JSON 403)
-- **Deskripsi:** Fitur ini disetujui **tetap dibuat**, tetapi sengaja ditunda sampai bagian utama RBAC (web: Bagian 2–9 di plan RBAC) selesai penuh. Setelah itu: sertakan array `permissions` di payload auth `MobileAuthController` (owner → `['*']`, staf → daftar modul), dan gerbang endpoint mobile per modul.
-- **Usulan Perbaikan:** Pakai pola `permission:` versi API yang mengembalikan JSON 403 — mengikuti pola `feature.api` di `PHASE-FEATURE-FLAGS`. Reuse katalog permission yang sama dengan web (Bagian 4 plan RBAC) agar satu sumber kebenaran.
-
 ---
 
 ## Riwayat Selesai
+
+### [BL-003] Mobile API — Permissions RBAC di Auth & Gating Endpoint
+- **Ditemukan:** 2026-07-21
+- **Sumber:** Keputusan C plan RBAC (`docs/phases-2/PHASE-RBAC_Module-Access-Control.md`, Bagian 8)
+- **Status:** Selesai (2026-07-25) — lihat `[ADDITION] Permissions RBAC di Mobile API (BL-003)` di `docs/CHANGELOG.md`
+- **Prioritas:** Low
+- **Perbaikan:**
+  Bagian pertama dikerjakan penuh: `permissions` kini ada di payload login **dan** di `/mobile/tenant/profile` — yang kedua supaya aplikasi bisa menyegarkan izin tanpa login ulang, sebab token mobile bertahan berminggu-minggu sementara owner bisa mengubah role kapan saja. Perhitungannya dipindah ke `User::modulePermissions()`, satu sumber untuk web dan mobile.
+- **Bagian kedua ("gerbang endpoint per modul") ternyata belum punya sasaran.** Tidak satu pun endpoint mobile yang ada saat ini punya padanan bergerbang modul di web: semuanya POS, laci kas, dan riwayat kasir, yang di web sengaja hanya digerbang `role:cashier,owner`. Middleware `permission.api` tetap dibuat dan diuji, siap untuk endpoint bermodul berikutnya.
+- **Keputusan pemilik SaaS (2026-07-25):** `pos` dan `cash_drawer` tetap **penanda menu**, bukan gerbang rute — di web maupun mobile. Menggerbangnya di mobile saja akan mengunci staf "Tanpa role (POS saja)" sekaligus membuat orang yang sama ditolak aplikasi tapi diterima peramban.
+- **Lubang yang tersingkap dan sengaja dibiarkan:** kasir ber-role "Gudang" (hanya `stock`) masih bisa mengetik `/cashier/pos` di peramban dan berjualan. Menutupnya mengubah perilaku staf yang sudah ada, jadi diputuskan tidak sekarang.
 
 ### [BL-004] Pesan Validasi Masih Bahasa Inggris di UI Berbahasa Indonesia
 - **Ditemukan:** 2026-07-21
