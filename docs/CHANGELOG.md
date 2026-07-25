@@ -45,6 +45,20 @@
 
 ---
 
+### [ADDITION] Pemisahan README ↔ Panduan Demo
+- **Tanggal:** 2026-07-25
+- **Fase Terkait:** Di Luar Fase — pemeliharaan dokumentasi
+- **Dampak:** Dokumentasi
+- **Breaking Change:** Tidak
+- **Deskripsi:** `README.md` ditulis ulang sebagai penjelasan garis besar sistem, dan seluruh isi yang bersifat operasional-demo dipindah ke berkas baru `PANDUAN-DEMO.md` di akar repo. Keduanya saling menaut.
+- **Alasan:** README sebelumnya sudah menyimpang jadi dua hal sekaligus dan keduanya tidak dilayani dengan baik. Pertama, ia menumpuk lima blok "Update Terbaru" berurutan tanggal — itu pekerjaan `CHANGELOG.md`, dan menduplikasinya di README berarti dua tempat yang harus disamakan setiap kali ada perubahan. Kedua, daftar fiturnya berhenti di sekitar 2026-07-11: tidak menyebut RBAC modul, Platform Console, sistem langganan dua jalur, Analisis AI, PWA offline, maupun edit transaksi — padahal semuanya sudah terpasang. Sementara itu kredensial demo dan urutan seeder tidak tertulis di mana pun, jadi setiap sesi demo dimulai dengan menggali seeder.
+- **File Terdampak:**
+  - `README.md` — ditulis ulang: gambaran umum tiga jenis pengguna, arsitektur (dua lapis auth, isolasi tenant, grup middleware bertenant), fitur per peran, model langganan, kontrol akses, API, MCP, Analisis AI, instalasi, pengujian, struktur direktori. Blok "Update Terbaru" dibuang — isinya sudah ada di berkas ini.
+  - `PANDUAN-DEMO.md` — **baru**: kredensial tiap akun, isi data kedua tenant demo, urutan seeder beserta mana yang idempotent, kondisi langganan, alur demo lima babak, dan batasan yang perlu diketahui sebelum presentasi.
+- **Catatan:** Dua hal yang terverifikasi saat penulisan dan layak dicatat karena mudah salah diingat: (1) `gudang@sapi.test` dibuat lewat UI Staf, bukan seeder — kata sandinya tidak ada di kode mana pun; (2) kedua seeder transaksi menyemai sampai `now()` **saat dijalankan**, jadi seed yang sudah lama membuat kartu "Omzet Hari Ini" kosong. Keduanya didokumentasikan di `PANDUAN-DEMO.md` beserta perintah pemulihannya.
+
+---
+
 ### [ADDITION] Hub Dokumentasi Publik — Dua Jalur
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase — permintaan pemilik SaaS
