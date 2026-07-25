@@ -17,6 +17,11 @@ Schedule::command('platform:prune-audit-logs')->dailyAt('03:10');
 // tengah antrean pembeli.
 Schedule::command('subscriptions:advance-lifecycle')->dailyAt('03:30');
 
+// Peringatan percobaan masuk yang menumpuk. Tiap jam, bukan harian: serangan
+// yang baru diberitahukan besok pagi sudah kehilangan gunanya sebagai
+// peringatan. Jeda antar surat sejenis diatur di config/platform-alerts.php.
+Schedule::command('platform:alert-failed-logins')->hourly();
+
 // Omset tenant jalur subsidi, dihitung atas bulan yang baru saja tutup.
 // Tanggal 1 pukul 04:00 — cukup lewat dari tengah malam agar transaksi terakhir
 // bulan lalu sudah pasti tersimpan, termasuk yang masuk dari sinkronisasi
