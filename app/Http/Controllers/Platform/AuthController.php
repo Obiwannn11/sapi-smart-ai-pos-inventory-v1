@@ -36,7 +36,7 @@ class AuthController extends Controller
                 'ip' => $request->ip(),
             ]);
 
-            return back()->withErrors(['email' => 'Email atau password salah.']);
+            return back()->withErrors(['email' => __('auth.failed')]);
         }
 
         $request->session()->regenerate();

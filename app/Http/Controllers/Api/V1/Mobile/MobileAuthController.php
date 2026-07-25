@@ -22,7 +22,7 @@ class MobileAuthController extends Controller
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['Email atau password salah.'],
+                'email' => [__('auth.failed')],
             ]);
         }
 

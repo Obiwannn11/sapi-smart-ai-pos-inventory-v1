@@ -78,8 +78,16 @@ return [
     |
     */
 
-    'locale' => env('APP_LOCALE', 'en'),
+    // Default 'id', bukan 'en': seluruh antarmuka aplikasi ini berbahasa
+    // Indonesia, jadi pesan validasi bawaan Laravel pun harus mengikutinya.
+    // Ditaruh sebagai default di config — bukan hanya di .env — supaya berlaku
+    // juga saat test berjalan dan di pemasangan yang lupa mengisinya.
+    'locale' => env('APP_LOCALE', 'id'),
 
+    // Fallback tetap 'en'. Bila suatu saat ada kunci terjemahan yang terlewat,
+    // pengguna melihat kalimat bahasa Inggris — janggal, tapi masih terbaca.
+    // Tanpa fallback, yang muncul adalah kunci mentahnya seperti
+    // "validation.required".
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
 
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
