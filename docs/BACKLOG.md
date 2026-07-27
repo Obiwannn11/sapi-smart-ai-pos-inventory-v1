@@ -40,6 +40,70 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-017] Peringatan Stok Belum Berkembang Jadi Upsell (FITUR BESAR)
+- **Ditemukan:** 2026-07-25
+- **Sumber:** Saran yang diterima setelah sesi pitching — "sudah ada peringatan stok dll, kalau bisa kembangkan fiturnya jadi upsell"
+- **Status:** Open
+- **Prioritas:** Medium (bernilai jual tinggi, tapi bukan penambal lubang — sistem sekarang tidak rusak tanpanya)
+- **Area Terdampak:**
+  - `app/Services/BadgeHelperService.php` — enam badge sudah dihitung di sini, tapi berhenti sebagai peringatan
+  - `app/Http/Controllers/Owner/DashboardController.php` + `resources/js/Pages/Owner/Dashboard.vue` — satu-satunya permukaan badge
+  - `app/Services/AiContextService.php` — badge sudah ikut masuk konteks AI
+  - `resources/js/Pages/Cashier/POS.vue` — layar tempat upsell seharusnya muncul, hari ini tidak tahu apa pun soal badge
+  - `app/Http/Controllers/Api/V1/ApiOrderController.php` — jalur self-order, permukaan kedua
+- **Yang SUDAH ada (jangan dibangun ulang):**
+  Pondasinya jauh lebih matang daripada kesan "baru ada peringatan". `BadgeHelperService` sudah menghitung enam sinyal — stok kritis (≤5), stok habis, dead stock (nol penjualan 30 hari), sudah expired, mendekati expired (7 hari), dan transaksi offline perlu koreksi — semuanya ter-scope tenant lewat `product.tenant_id`. Sinyal-sinyal itu bahkan sudah dikirim ke AI lewat `AiContextService`.
+  **Mekanisme add-on juga sudah berdiri penuh:** `ModifierGroup`/`Modifier` punya `extra_price`, terpasang ke produk lewat `product_modifier_groups`, dan tersimpan sebagai snapshot di `transaction_item_modifiers`. Artinya "tambah topping / ukuran besar" — bentuk upsell paling umum di F&B — **tidak menuntut tabel baru sama sekali**; yang belum ada hanyalah yang menyarankannya.
+  Data untuk "sering dibeli bersama" juga sudah lengkap di `transaction_items` (tiap baris tahu transaksi dan variannya), jadi ko-okurensi bisa diturunkan tanpa menambah pencatatan apa pun.
+- **Deskripsi masalahnya:**
+  Peringatan yang ada hari ini **menghadap ke arah yang salah untuk berjualan**. Badge muncul di dashboard owner, dilihat entah kapan, dan tidak menawarkan tindakan apa pun selain "restock". Padahal momen upsell terjadi di layar kasir saat pelanggan masih berdiri di depan meja — dan `POS.vue` sama sekali tidak tahu bahwa ada 12 roti yang kedaluwarsa besok.
+  Jadi ini bukan "bangun fitur upsell dari nol", melainkan **memutar arah sinyal yang sudah ada**: dari laporan untuk owner jadi saran untuk kasir dan pelanggan.
+- **Usulan Perbaikan:**
+  1. **Pisahkan mesin sinyal dari permukaannya.** `BadgeHelperService` sekarang mengembalikan array badge siap-tampil (`title`, `message`, `severity`) — bentuk yang terikat dashboard. Upsell butuh sinyal yang sama dalam bentuk yang bisa dinilai per varian dan menerima **konteks keranjang**. Kembangkan jadi layanan rekomendasi tersendiri; dashboard tetap memakai jalur lamanya.
+  2. **Tiga jenis saran, dan bedakan sungguh-sungguh — ketiganya menjawab pertanyaan berbeda:**
+     - **Attach / add-on** — modifier yang paling sering menyertai item di keranjang. Paling murah dibangun, karena mekanismenya sudah ada.
+     - **Bundling barang tertekan** — item ber-badge `near_expiry`/`dead_stock` ditawarkan bersama item laris. Inilah yang menyambung ke `[BL-018]`, karena bundling tanpa potongan harga jarang mempan.
+     - **Naik ukuran/varian** — varian lain dari produk yang sama dengan harga lebih tinggi. Perlu penanda urutan varian yang belum ada di `product_variants`.
+  3. **Kandidat wajib disaring stok dan kelayakan jual.** Menyarankan barang yang stoknya nol adalah cacat yang langsung terlihat pelanggan. Dan item ber-badge `expired` **tidak boleh masuk kandidat dalam bentuk apa pun** — itu bukan barang tertekan, itu barang yang tidak boleh dijual.
+  4. **Batasi jumlah saran per transaksi.** Kasir yang diberi tiga pop-up tiap penjualan akan menutup semuanya tanpa membaca, dan fiturnya mati diam-diam sambil tetap terlihat "ada" saat didemokan.
+  5. **Catat diterima atau tidaknya saran sejak hari pertama.** Tanpa itu tak akan pernah terjawab apakah upsell-nya benar-benar menaikkan penjualan atau hanya memperlambat antrean — dan pertanyaan itu pasti muncul di pitching berikutnya. Butuh penanda pada `transaction_items` atau tabel kejadian tersendiri; putuskan **sebelum** implementasi, karena menambal pencatatan belakangan berarti kehilangan periode awal justru saat datanya paling dibutuhkan.
+  6. **Self-order adalah permukaan kedua yang justru lebih mudah.** Di `ApiOrderController` tak ada kasir yang harus mengucapkan tawaran, tak ada antrean yang melambat, dan penerimaan/penolakan terekam dengan sendirinya. Pertimbangkan menggarapnya lebih dulu sebagai uji murah sebelum menyentuh POS.
+- **Catatan:** dikerjakan **setelah** `[BL-018]`, atau setidaknya setelah keputusan harganya diambil di sana. Bundling adalah bentuk upsell paling menarik untuk barang mendekati kedaluwarsa, dan ia mustahil dijalankan sebelum sistem punya cara sah mencatat harga di bawah harga katalog.
+
+### [BL-018] Diskon Dinamis Barang Mendekati Habis/Kedaluwarsa dengan Penjaga Margin
+- **Ditemukan:** 2026-07-25
+- **Sumber:** Saran yang diterima setelah sesi pitching — diskon yang "harganya ditentukan dan menyesuaikan sembari tetap untung, melihat harga modal dan harga jual"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `database/migrations/2026_03_06_000011_create_transactions_table.php` & `..._000013_create_transaction_items_table.php` — **tak ada satu pun kolom diskon** di kedua tabel
+  - `app/Services/TransactionService.php:335` — checkout selalu memakai `$variant->price`; harga dari klien diabaikan
+  - `app/Services/TransactionService.php:569` — sinkronisasi offline menandai `needs_review` bila harga bayar ≠ harga katalog
+  - `app/Services/TransactionEditService.php:168` — pengeditan transaksi **menghitung ulang** dari `$variant->price`
+  - `app/Http/Controllers/Owner/OfflineReviewController.php:95` — selisih harga ditampilkan ke owner sebagai anomali
+  - `app/Services/ProfitService.php` — margin per varian, sumber angka penjaga untung
+  - `resources/js/composables/useCatalogCache.js` — katalog offline dipanen dari props Inertia
+- **Yang SUDAH ada (jangan dibangun ulang):**
+  **Angka untuk menjaga untung sudah lengkap dan tidak perlu diturunkan dari mana pun.** `product_variants` menyimpan `cost_price` dan `price` berdampingan, plus `expiry_date` dan `stock` — jadi lantai harga tiap varian bisa dihitung langsung, tanpa tabel baru. `ProfitService::profitByProduct()` bahkan sudah menghitung margin per varian, dan docblock-nya sudah menyebut "untuk saran diskon".
+  Sisi sarannya juga sudah jalan: `AiAnalysis::TYPE_DISCOUNT` sudah bertanya *"item mana yang sebaiknya didiskon dan berapa besarannya"* dengan margin per item sebagai konteks. Yang dihasilkannya **teks nasihat untuk owner**, bukan harga yang benar-benar berlaku di kasir.
+- **Deskripsi masalahnya — penghalang utamanya bukan rumus harga:**
+  Menghitung "diskon berapa persen supaya tetap untung" justru bagian yang mudah; `cost_price` dan `price` sudah tersedia. **Yang belum ada adalah tempat sah untuk menaruh harga diskonnya.** Seluruh sistem hari ini memperlakukan `product_variants.price` sebagai satu-satunya kebenaran harga:
+  - Checkout menimpa harga apa pun dari klien dengan harga katalog (`TransactionService:335`). Diskon yang diketik kasir hilang tanpa jejak.
+  - Menurunkan `price` varian sebagai "cara mendiskon" membuat potongan itu **tak bisa dibedakan dari perubahan harga permanen** — laporan tak akan pernah bisa menjawab "berapa yang kita korbankan untuk menghabiskan stok bulan ini".
+  - `TransactionEditService:168` menghitung ulang dari `$variant->price`. Transaksi yang terjual diskon lalu diedit karena alasan lain akan **diam-diam naik kembali ke harga katalog** — riwayat berubah sendiri, persis jenis kesalahan yang paling sulit disadari.
+  - Penjualan offline berharga diskon akan menabrak `amountsMatch()` (`TransactionService:569`) dan membanjiri `needs_review` — sinyal yang dibangun untuk menangkap anomali sungguhan jadi berisik lalu berhenti dipercaya.
+- **Usulan Perbaikan:**
+  1. **Diskon harus jadi entitas tersendiri, bukan pengubah `price`.** Minimal: aturan diskon (varian/kriteria, besaran, alasan, masa berlaku) + kolom pada `transaction_items` yang mencatat harga asli, potongan, dan aturan mana yang dipakai. Dengan begitu harga katalog tetap utuh, laporan bisa memisahkan omzet normal dari omzet diskon, dan tiap potongan bisa dipertanggungjawabkan.
+  2. **Lantai harga dihitung dari `cost_price`, dan ambang untungnya milik owner — bukan konstanta.** Bentuknya `cost_price × (1 + margin minimum)`; sistem tak pernah menyarankan apalagi menerapkan di bawah lantai itu. Perlu diputuskan apakah lantai boleh ditembus manual untuk barang yang sudah pasti terbuang — menjual rugi tipis tetap lebih baik daripada dibuang total, tapi kalau boleh, itu harus tindakan sadar dengan alasan tercatat, bukan efek samping rumus.
+  3. **Pendalaman diskon mengikuti waktu, bukan sekali tetap.** "Menyesuaikan" pada permintaannya berarti potongan membesar seiring `expiry_date` mendekat, lalu berhenti di lantai margin. Untuk `dead_stock` pemicunya bukan tanggal melainkan lama tak terjual.
+  4. **Barang `expired` tidak masuk skema ini sama sekali.** Diskon hanya untuk `near_expiry`. Ini batas keamanan pangan, bukan pilihan bisnis, jadi harus dijaga di lapisan aturan diskonnya — bukan diserahkan pada kedisiplinan kasir.
+  5. **Pembulatan harus membulat ke ATAS.** Rp 18.750 jadi Rp 19.000, bukan Rp 18.500. Pembulatan ke bawah bisa menembus lantai margin yang baru saja susah payah dihitung — pembulatan yang salah arah membuat seluruh penjaga untungnya sia-sia.
+  6. **Mulai dari "sarankan lalu owner menyetujui", bukan otomatis.** Harga yang turun sendiri secara keliru adalah uang yang keluar dan sukar ditarik kembali; begitu owner percaya sarannya, otomatisasi bisa menyusul sebagai pilihan.
+  7. **Tiga jalur yang wajib ikut diperbarui bersama, dan ketiganya mudah terlewat:** pengeditan transaksi (jangan hitung ulang ke harga katalog), sinkronisasi offline (harga diskon yang sah bukan anomali), dan katalog offline di `useCatalogCache` — snapshot dipanen dari props saat perangkat masih online, jadi **diskon bermasa-berlaku bisa kedaluwarsa di dalam snapshot tanpa diketahui perangkatnya**. Perangkat yang seharian offline akan menjual dengan diskon yang sudah berakhir semalam. Bersinggungan langsung dengan `[BL-016]`.
+- **Catatan:**
+  - **Jangan tertukar dengan `[BL-015]`.** Tabel `pricing_rules` yang sudah ada adalah harga **langganan SaaS** yang dibayar tenant ke pemilik platform — sama sekali bukan harga jual produk ke pelanggan tenant. Pakai penamaan yang tidak menyerempet supaya keduanya tak pernah tercampur.
+  - **Satu keterbatasan yang sudah tercatat jadi jauh lebih tajam di sini:** `ProfitService` memakai `cost_price` **saat ini**, bukan biaya historis saat transaksi (lihat docblock-nya). Selama COGS hanya dipakai untuk laporan, itu ketidaktepatan yang bisa ditolerir. Begitu `cost_price` jadi dasar klaim "diskon ini tetap untung", perubahan harga modal di kemudian hari akan **mengubah klaim atas penjualan yang sudah lewat**. Simpan `cost_price` yang berlaku saat itu bersama barisnya.
+
 ### [BL-013] Akun Platform Belum Punya 2FA
 - **Ditemukan:** 2026-07-22 (dipisahkan dari `[BL-010]` yang sudah ditutup)
 - **Sumber:** Poin ketiga `[BL-010]`, sejak awal ditandai "catat sebagai target, jangan dikerjakan sekarang"
@@ -56,6 +120,22 @@
 ---
 
 ## Riwayat Selesai
+
+### [BL-015] Dimensi Penetapan Harga Masih Terbatas Omzet & Seat
+- **Ditemukan:** 2026-07-25
+- **Sumber:** Permintaan pemilik SaaS — "harga akan beda-beda berdasarkan omzet **dan berbagai kategori lainnya**, dan nilainya harus bisa diubah dari panel platform, bukan tertanam di kode/data bawaan"
+- **Status:** Selesai (2026-07-27) — lihat `[SCHEMA] Dimensi Harga Bebas — Aturan Berkriteria (BL-015)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Perbaikan:**
+  Ditempuh lewat **usulan 1**: `min_revenue`/`max_revenue` dibuang, dan aturan kini punya banyak syarat (`dimensi`, `operator`, `nilai`) plus `priority`. Bracket lama **dipindahkan** oleh migration, bukan disemai ulang dari config — menyemai ulang akan membuang tarif yang sudah disunting pemilik SaaS lewat panel sejak Tahap D.
+  **Usulan 2 terbukti benar dan dijalankan apa adanya:** katalog dimensi tinggal di `config/pricing-dimensions.php` karena tiap dimensi butuh sumber angkanya. Yang bebas sepenuhnya adalah ambang dan tarifnya.
+  **Usulan 3 tidak jadi dipisah.** Rencananya dimensi atribut digarap belakangan, tapi pemilik memilih **tipe usaha** ikut di jalur pertama — jadi kolom `tenants.business_type`, pertanyaan di form pendaftaran, dan pengubahnya di panel dikerjakan sekaligus.
+- **Empat penjaga usulan 4 tetap utuh dan masih diuji.** Saran "simpan jejak aturan yang menang" di poin yang sama **ikut dikerjakan**, dan ternyata bukan sekadar pelengkap: dengan banyak syarat per aturan, "aturan mana yang berlaku waktu itu" tak lagi bisa direka ulang dari satu angka omzet. `invoices.pricing_rule_id` + `pricing_context` menjawabnya.
+- **Batas privasi usulan 5 ditegakkan di kode, bukan di kedisiplinan panel:** `DimensionRegistry` jadi satu-satunya pintu ke nilai dimensi dan menolak menghitung yang consent-nya tidak aktif — sehingga aturan berdimensi omzet tak pernah cocok untuk tenant jalur normal.
+- **KOREKSI atas usulan 5.** Kalimat "teks consent naik versi" di sana keliru bila dibaca sebagai syarat pemakaian data. Memakai pemeriksaan versi-terkini sebagai gerbang berarti satu kali menaikkan versi teks akan memadamkan dimensi itu bagi **seluruh** tenant sekaligus — harga mereka berubah diam-diam pada hari revisi terbit, tanpa satu pun dari mereka melakukan apa-apa. Gerbangnya adalah persetujuan yang **masih aktif**; kenaikan versi tetap memicu permintaan menyetujui ulang, tapi itu urusan UI, bukan urusan kelayakan data. Kenaikan versi tetap wajib untuk dimensi yang benar-benar membuka data baru.
+- **Keputusan pemilik SaaS (2026-07-27)** yang menjawab catatan penutup entri ini: dimensi jalur pertama adalah **volume transaksi**, **jumlah pengguna aktif**, dan **tipe usaha**. Dua yang pertama nol biaya privasi — `transaction_count` sudah dikumpulkan dan sudah tercakup consent subsidi yang berlaku, dan seat hanya `count()` di `users`.
+- **Temuan yang mengubah bentuk pekerjaan ini:** mesin harga ternyata **tidak pernah menentukan tagihan siapa pun**. `bracketFor()` hanya dipanggil tiga permukaan tampilan; nominal tagihan diketik tangan di `InvoiceController`. Karena itu menambah dimensi saja tidak akan terasa, dan atas keputusan pemilik hasilnya kini **mengisi otomatis** kolom nominal — tetap bisa diketik ulang, dan aturannya hanya dicatat bila nominal yang terbit benar-benar sama dengan tarif aturannya.
+- **Yang TIDAK dikerjakan (sengaja):** dimensi **wilayah**, **jumlah outlet**, dan **durasi langganan**. Outlet belum punya tabelnya; durasi menuntut keputusan siklus penagihan tersendiri karena periode satu bulan tertanam di `current_period_end` dan beberapa tempat lain.
 
 ### [BL-003] Mobile API — Permissions RBAC di Auth & Gating Endpoint
 - **Ditemukan:** 2026-07-21
