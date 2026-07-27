@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\TransactionPayment;
+use App\Models\UpsellEvent;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -141,6 +142,65 @@ class ReportController extends Controller
                 'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
                 'category:id,name',
             ])
+            ->get();
+    }
+
+    /**
+     * Laporan konversi saran upsell.
+     *
+     * Menjawab persis pertanyaan yang akan datang di pitching berikutnya:
+     * apakah saran ini menaikkan penjualan, atau hanya memperlambat antrean?
+     * Rincian per jenis ada supaya jenis yang tidak pernah diterima bisa
+     * dimatikan lewat `config/upsell.php`, bukan ditebak.
+     */
+    public function upsell(Request $request): Response
+    {
+        $from = $request->input('from', now()->subDays(29)->toDateString());
+        $to = $request->input('to', now()->toDateString());
+
+        $scoped = fn () => UpsellEvent::query()
+            ->whereDate('created_at', '>=', $from)
+            ->whereDate('created_at', '<=', $to);
+
+        $shown = $scoped()->count();
+        $accepted = $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->count();
+        $extraRevenue = (float) $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->sum('extra_amount');
+
+        return Inertia::render('Owner/Reports/Upsell', [
+            'filters' => ['from' => $from, 'to' => $to],
+            'summary' => [
+                'shown' => $shown,
+                'accepted' => $accepted,
+                'conversion_rate' => $shown > 0 ? round($accepted / $shown * 100, 1) : 0,
+                'extra_revenue' => $extraRevenue,
+            ],
+            'byType' => $this->upsellBreakdown($scoped(), 'type'),
+            'bySurface' => $this->upsellBreakdown($scoped(), 'surface'),
+            'topSuggestions' => $scoped()
+                ->selectRaw('label, type, COUNT(*) as shown')
+                ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as accepted', [UpsellEvent::STATUS_ACCEPTED])
+                ->selectRaw('SUM(extra_amount) as extra_revenue')
+                ->groupBy('label', 'type')
+                ->orderByDesc('shown')
+                ->take(15)
+                ->get(),
+        ]);
+    }
+
+    /**
+     * Rekap tampil/diterima/omzet untuk satu kolom pengelompokan.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<UpsellEvent>  $query
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function upsellBreakdown($query, string $column)
+    {
+        return $query
+            ->selectRaw("{$column} as bucket, COUNT(*) as shown")
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as accepted', [UpsellEvent::STATUS_ACCEPTED])
+            ->selectRaw('SUM(extra_amount) as extra_revenue')
+            ->groupBy($column)
+            ->orderByDesc('shown')
             ->get();
     }
 

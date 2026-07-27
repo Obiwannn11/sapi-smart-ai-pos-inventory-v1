@@ -106,6 +106,7 @@ const sidebarGroups = [
         label: 'Keuangan',
         items: [
             { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report', perm: 'reports' },
+            { name: 'Saran Jual', href: '/owner/reports/upsell', icon: 'sparkles', perm: 'reports' },
             { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt', perm: 'reports' },
             { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash', perm: 'reports' },
             { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive', ownerOnly: true },

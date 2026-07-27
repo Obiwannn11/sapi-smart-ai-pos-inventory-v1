@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\ApiOrderController;
 use App\Http\Controllers\Api\V1\ApiProductController;
+use App\Http\Controllers\Api\V1\ApiUpsellController;
 use App\Http\Controllers\Api\V1\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\V1\Mobile\MobileCashDrawerController;
 use App\Http\Controllers\Api\V1\Mobile\MobileTenantController;
@@ -29,6 +30,8 @@ Route::prefix('v1')->group(function () {
     // --- Self Order / n8n (Sanctum) ---
     Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/products', [ApiProductController::class, 'index']);
+        Route::post('/upsell/suggestions', [ApiUpsellController::class, 'suggestions'])
+            ->middleware('throttle:120,1');
         Route::post('/orders', [ApiOrderController::class, 'store'])
             ->middleware('throttle:60,1');
         Route::patch('/orders/{transaction}/fulfillment', [ApiOrderController::class, 'updateFulfillment']);

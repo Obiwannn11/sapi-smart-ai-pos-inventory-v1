@@ -82,7 +82,7 @@ export function useOfflineQueue() {
      * @returns {Promise<boolean>} false when storage is unavailable — the caller
      *   MUST treat that as "the sale was not saved" and keep the cart.
      */
-    async function enqueue({ clientUuid, items, payments, totalAmount, notes = null }) {
+    async function enqueue({ clientUuid, items, payments, totalAmount, notes = null, upsellEvents = [] }) {
         if (!isOfflineStorageSupported()) return false;
 
         const record = {
@@ -97,6 +97,9 @@ export function useOfflineQueue() {
             payments: toPlain(payments),
             total_amount: totalAmount,
             notes,
+            // Nasib saran upsell menumpang baris ini. Tanpa itu, periode offline
+            // akan terlihat seolah tidak ada upsell sama sekali.
+            upsell_events: toPlain(upsellEvents ?? []),
             status: STATUS_QUEUED,
             attempts: 0,
             last_error: null,
@@ -268,6 +271,8 @@ function toPayload(entry) {
         notes: entry.notes,
         items: entry.items,
         payments: entry.payments,
+        // Baris lama (diantre sebelum fitur upsell ada) tidak punya field ini.
+        upsell_events: entry.upsell_events ?? [],
     };
 }
 

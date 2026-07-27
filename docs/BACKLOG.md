@@ -40,36 +40,6 @@
 
 ## Daftar Isu (Open / In Progress)
 
-### [BL-017] Peringatan Stok Belum Berkembang Jadi Upsell (FITUR BESAR)
-- **Ditemukan:** 2026-07-25
-- **Sumber:** Saran yang diterima setelah sesi pitching — "sudah ada peringatan stok dll, kalau bisa kembangkan fiturnya jadi upsell"
-- **Status:** Open
-- **Prioritas:** Medium (bernilai jual tinggi, tapi bukan penambal lubang — sistem sekarang tidak rusak tanpanya)
-- **Area Terdampak:**
-  - `app/Services/BadgeHelperService.php` — enam badge sudah dihitung di sini, tapi berhenti sebagai peringatan
-  - `app/Http/Controllers/Owner/DashboardController.php` + `resources/js/Pages/Owner/Dashboard.vue` — satu-satunya permukaan badge
-  - `app/Services/AiContextService.php` — badge sudah ikut masuk konteks AI
-  - `resources/js/Pages/Cashier/POS.vue` — layar tempat upsell seharusnya muncul, hari ini tidak tahu apa pun soal badge
-  - `app/Http/Controllers/Api/V1/ApiOrderController.php` — jalur self-order, permukaan kedua
-- **Yang SUDAH ada (jangan dibangun ulang):**
-  Pondasinya jauh lebih matang daripada kesan "baru ada peringatan". `BadgeHelperService` sudah menghitung enam sinyal — stok kritis (≤5), stok habis, dead stock (nol penjualan 30 hari), sudah expired, mendekati expired (7 hari), dan transaksi offline perlu koreksi — semuanya ter-scope tenant lewat `product.tenant_id`. Sinyal-sinyal itu bahkan sudah dikirim ke AI lewat `AiContextService`.
-  **Mekanisme add-on juga sudah berdiri penuh:** `ModifierGroup`/`Modifier` punya `extra_price`, terpasang ke produk lewat `product_modifier_groups`, dan tersimpan sebagai snapshot di `transaction_item_modifiers`. Artinya "tambah topping / ukuran besar" — bentuk upsell paling umum di F&B — **tidak menuntut tabel baru sama sekali**; yang belum ada hanyalah yang menyarankannya.
-  Data untuk "sering dibeli bersama" juga sudah lengkap di `transaction_items` (tiap baris tahu transaksi dan variannya), jadi ko-okurensi bisa diturunkan tanpa menambah pencatatan apa pun.
-- **Deskripsi masalahnya:**
-  Peringatan yang ada hari ini **menghadap ke arah yang salah untuk berjualan**. Badge muncul di dashboard owner, dilihat entah kapan, dan tidak menawarkan tindakan apa pun selain "restock". Padahal momen upsell terjadi di layar kasir saat pelanggan masih berdiri di depan meja — dan `POS.vue` sama sekali tidak tahu bahwa ada 12 roti yang kedaluwarsa besok.
-  Jadi ini bukan "bangun fitur upsell dari nol", melainkan **memutar arah sinyal yang sudah ada**: dari laporan untuk owner jadi saran untuk kasir dan pelanggan.
-- **Usulan Perbaikan:**
-  1. **Pisahkan mesin sinyal dari permukaannya.** `BadgeHelperService` sekarang mengembalikan array badge siap-tampil (`title`, `message`, `severity`) — bentuk yang terikat dashboard. Upsell butuh sinyal yang sama dalam bentuk yang bisa dinilai per varian dan menerima **konteks keranjang**. Kembangkan jadi layanan rekomendasi tersendiri; dashboard tetap memakai jalur lamanya.
-  2. **Tiga jenis saran, dan bedakan sungguh-sungguh — ketiganya menjawab pertanyaan berbeda:**
-     - **Attach / add-on** — modifier yang paling sering menyertai item di keranjang. Paling murah dibangun, karena mekanismenya sudah ada.
-     - **Bundling barang tertekan** — item ber-badge `near_expiry`/`dead_stock` ditawarkan bersama item laris. Inilah yang menyambung ke `[BL-018]`, karena bundling tanpa potongan harga jarang mempan.
-     - **Naik ukuran/varian** — varian lain dari produk yang sama dengan harga lebih tinggi. Perlu penanda urutan varian yang belum ada di `product_variants`.
-  3. **Kandidat wajib disaring stok dan kelayakan jual.** Menyarankan barang yang stoknya nol adalah cacat yang langsung terlihat pelanggan. Dan item ber-badge `expired` **tidak boleh masuk kandidat dalam bentuk apa pun** — itu bukan barang tertekan, itu barang yang tidak boleh dijual.
-  4. **Batasi jumlah saran per transaksi.** Kasir yang diberi tiga pop-up tiap penjualan akan menutup semuanya tanpa membaca, dan fiturnya mati diam-diam sambil tetap terlihat "ada" saat didemokan.
-  5. **Catat diterima atau tidaknya saran sejak hari pertama.** Tanpa itu tak akan pernah terjawab apakah upsell-nya benar-benar menaikkan penjualan atau hanya memperlambat antrean — dan pertanyaan itu pasti muncul di pitching berikutnya. Butuh penanda pada `transaction_items` atau tabel kejadian tersendiri; putuskan **sebelum** implementasi, karena menambal pencatatan belakangan berarti kehilangan periode awal justru saat datanya paling dibutuhkan.
-  6. **Self-order adalah permukaan kedua yang justru lebih mudah.** Di `ApiOrderController` tak ada kasir yang harus mengucapkan tawaran, tak ada antrean yang melambat, dan penerimaan/penolakan terekam dengan sendirinya. Pertimbangkan menggarapnya lebih dulu sebagai uji murah sebelum menyentuh POS.
-- **Catatan:** dikerjakan **setelah** `[BL-018]`, atau setidaknya setelah keputusan harganya diambil di sana. Bundling adalah bentuk upsell paling menarik untuk barang mendekati kedaluwarsa, dan ia mustahil dijalankan sebelum sistem punya cara sah mencatat harga di bawah harga katalog.
-
 ### [BL-018] Diskon Dinamis Barang Mendekati Habis/Kedaluwarsa dengan Penjaga Margin
 - **Ditemukan:** 2026-07-25
 - **Sumber:** Saran yang diterima setelah sesi pitching — diskon yang "harganya ditentukan dan menyesuaikan sembari tetap untung, melihat harga modal dan harga jual"
@@ -102,6 +72,7 @@
   7. **Tiga jalur yang wajib ikut diperbarui bersama, dan ketiganya mudah terlewat:** pengeditan transaksi (jangan hitung ulang ke harga katalog), sinkronisasi offline (harga diskon yang sah bukan anomali), dan katalog offline di `useCatalogCache` — snapshot dipanen dari props saat perangkat masih online, jadi **diskon bermasa-berlaku bisa kedaluwarsa di dalam snapshot tanpa diketahui perangkatnya**. Perangkat yang seharian offline akan menjual dengan diskon yang sudah berakhir semalam. Bersinggungan langsung dengan `[BL-016]`.
 - **Catatan:**
   - **Jangan tertukar dengan `[BL-015]`.** Tabel `pricing_rules` yang sudah ada adalah harga **langganan SaaS** yang dibayar tenant ke pemilik platform — sama sekali bukan harga jual produk ke pelanggan tenant. Pakai penamaan yang tidak menyerempet supaya keduanya tak pernah tercampur.
+  - **Sejak `[BL-017]` selesai (2026-07-27), entri ini adalah satu-satunya penghalang bundling berdiskon.** Mesin saran, permukaan kasir, permukaan self-order, dan pencatatan konversinya sudah berdiri; `pressed_stock` menawarkan barang tertekan pada harga katalog karena belum ada tempat sah untuk harga di bawahnya. Begitu entri ini selesai, yang tersisa hanyalah menyambungkan potongan harga ke kandidat yang sudah ada — dan lantai margin di poin 2 **wajib** ikut ditegakkan di sisi saran, bukan hanya di sisi harga.
   - **Satu keterbatasan yang sudah tercatat jadi jauh lebih tajam di sini:** `ProfitService` memakai `cost_price` **saat ini**, bukan biaya historis saat transaksi (lihat docblock-nya). Selama COGS hanya dipakai untuk laporan, itu ketidaktepatan yang bisa ditolerir. Begitu `cost_price` jadi dasar klaim "diskon ini tetap untung", perubahan harga modal di kemudian hari akan **mengubah klaim atas penjualan yang sudah lewat**. Simpan `cost_price` yang berlaku saat itu bersama barisnya.
 
 ### [BL-016] Printer Bluetooth & Jaminan Transaksi Offline Menabrak Batas PWA — Butuh Lapisan Native (Android)
@@ -226,6 +197,23 @@ Urutannya disusun supaya **yang paling mungkin menggagalkan rencana diuji paling
 ---
 
 ## Riwayat Selesai
+
+### [BL-017] Peringatan Stok Belum Berkembang Jadi Upsell (FITUR BESAR)
+- **Ditemukan:** 2026-07-25
+- **Sumber:** Saran yang diterima setelah sesi pitching — "sudah ada peringatan stok dll, kalau bisa kembangkan fiturnya jadi upsell"
+- **Status:** Selesai (2026-07-27) — lihat `[ADDITION] Saran Jual dari Sinyal Stok (BL-017)` di `docs/CHANGELOG.md` dan `docs/phases-2/PHASE-UPSELL_Stock-Signal-To-Upsell.md`
+- **Prioritas:** Medium
+- **Perbaikan:**
+  Enam usulan di entri ini dikerjakan apa adanya, dengan satu bagian sengaja ditahan.
+  **Usulan 1 dijalankan penuh:** `BadgeHelperService` **tidak disentuh sama sekali** — dashboard owner tetap persis seperti sebelumnya. Mesin rekomendasi berdiri terpisah di `app/Services/Upsell/`, dengan penjaga kandidat di satu tempat (`SellableVariantQuery`) dan tiga strategi di baliknya.
+  **Usulan 2 dibedakan sungguhan:** `attach` (ko-okurensi modifier), `pressed_stock` (barang tertekan), dan `upsize` (naik ukuran) punya kandidat, alasan, dan skornya masing-masing.
+  **Usulan 3, 4 diuji, bukan sekadar dipatuhi:** varian `expired`, stok nol, dan produk nonaktif tidak pernah lolos jadi kandidat, dan jumlah saran dibatasi `upsell.max_per_transaction` (default 2).
+  **Usulan 5 dikerjakan PERTAMA, bukan terakhir** — tabel `upsell_events` lahir sebelum permukaannya, tepat karena periode awal tidak bisa ditambal belakangan.
+  **Usulan 6 diambil sebagai permukaan kedua**, bukan pengganti POS: `POST /api/v1/upsell/suggestions` plus `upsell_events` opsional di `POST /api/v1/orders`.
+- **KOREKSI atas usulan 2.** Kalimat "perlu penanda urutan varian yang belum ada di `product_variants`" ternyata keliru. `price` **sudah** mendefinisikan urutan yang dimaksud "naik ukuran", dan menambah kolom urutan yang harus diisi manual justru akan membuat fiturnya mati diam-diam pada tenant yang tidak pernah mengisinya. Tidak ada kolom baru di `product_variants`.
+- **Keputusan yang tidak ada di entri asli — saran dihitung di server, dipilih di client.** Indeks saran ikut props POS (bukan endpoint per perubahan keranjang) supaya ia ikut ter-snapshot `useCatalogCache` dan **tetap hidup saat perangkat offline**. Endpoint per-keranjang akan mati justru di warung yang sinyalnya paling buruk — properti offline yang sudah dibayar mahal di PHASE PWA tidak boleh dirusak fitur baru.
+- **Yang DITAHAN, sesuai catatan penutup entri ini:** bundling **berdiskon**. `pressed_stock` hari ini menawarkan barang tertekan pada **harga katalog, tanpa potongan** — itu yang bisa dilakukan tanpa tempat sah untuk harga di bawah katalog. Versi berdiskonnya menunggu `[BL-018]`; `upsell_events.extra_amount` dan `reason` sudah disiapkan supaya tinggal disambung.
+- **Batas yang diterima sadar:** event ikut payload checkout, jadi saran pada keranjang yang **dibatalkan** tidak tercatat. Yang diukur adalah "dari saran yang muncul pada transaksi yang jadi, berapa yang diambil". Endpoint terpisah bisa menghitung keranjang batal, tapi tidak akan selamat melewati mode offline.
 
 ### [BL-015] Dimensi Penetapan Harga Masih Terbatas Omzet & Seat
 - **Ditemukan:** 2026-07-25

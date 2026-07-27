@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Product;
+use App\Models\UpsellEvent;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -69,6 +70,22 @@ class StoreTransactionRequest extends FormRequest
 
             // Idempotency key (client-generated per checkout)
             'client_uuid' => 'nullable|uuid',
+
+            // Nasib saran upsell yang muncul pada keranjang ini.
+            //
+            // Sengaja TIDAK memakai Rule::exists: kepemilikan tenant diperiksa
+            // di UpsellEventRecorder, yang menolkan FK asing alih-alih menolak
+            // request. Statistik upsell tidak boleh punya kuasa menggagalkan
+            // penjualan yang sah.
+            'upsell_events' => 'nullable|array|max:20',
+            'upsell_events.*.type' => 'required|string|in:'.implode(',', UpsellEvent::types()),
+            'upsell_events.*.status' => 'required|string|in:'.UpsellEvent::STATUS_ACCEPTED.','.UpsellEvent::STATUS_IGNORED,
+            'upsell_events.*.reason' => 'nullable|string|max:50',
+            'upsell_events.*.label' => 'required|string|max:255',
+            'upsell_events.*.extra_amount' => 'nullable|numeric|min:0',
+            'upsell_events.*.trigger_variant_id' => 'nullable|integer',
+            'upsell_events.*.suggested_variant_id' => 'nullable|integer',
+            'upsell_events.*.suggested_modifier_id' => 'nullable|integer',
         ];
     }
 

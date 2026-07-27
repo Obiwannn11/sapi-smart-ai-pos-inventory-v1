@@ -38,13 +38,18 @@ export function useCatalogCache() {
      * must stay identical to the props. Vue refs/proxies cannot be structured-
      * cloned into IndexedDB, hence the JSON round-trip to get plain objects.
      */
-    async function saveSnapshot({ products, categories, paymentMethods }) {
+    async function saveSnapshot({ products, categories, paymentMethods, upsell = null }) {
         if (!isOfflineStorageSupported()) return false;
 
         const record = {
             products: toPlain(products ?? []),
             categories: toPlain(categories ?? []),
             paymentMethods: toPlain(paymentMethods ?? []),
+            // Indeks saran upsell ikut menumpang snapshot ini. Ia sengaja
+            // dianggap sama umurnya dengan katalog: saran basi paling buruk
+            // hanya jadi tidak relevan, sedangkan HARGA basi akan merugikan —
+            // dan karena itu indeks ini tidak pernah membawa harga diskon.
+            upsell: upsell === null ? null : toPlain(upsell),
             cachedAt: new Date().toISOString(),
         };
 

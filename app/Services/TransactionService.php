@@ -7,7 +7,9 @@ use App\Models\PaymentMethod;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use App\Models\Transaction;
+use App\Models\UpsellEvent;
 use App\Models\User;
+use App\Services\Upsell\UpsellEventRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +18,8 @@ use Illuminate\Support\Str;
 class TransactionService
 {
     public function __construct(
-        private StockService $stockService
+        private StockService $stockService,
+        private UpsellEventRecorder $upsellEventRecorder,
     ) {}
 
     /**
@@ -82,6 +85,15 @@ class TransactionService
             $transaction->update([
                 'total_amount' => $totalAmount,
             ]);
+
+            // 5b. Nasib saran upsell yang dilihat kasir pada keranjang ini.
+            //     Dicatat sebelum cabang open bill agar tagihan tertunda tidak
+            //     kehilangan datanya.
+            $this->upsellEventRecorder->record(
+                $transaction,
+                $data['upsell_events'] ?? [],
+                UpsellEvent::SURFACE_POS,
+            );
 
             // 6. Jika open bill → selesai, tetap pending tanpa pembayaran
             if ($isOpenBill) {
@@ -150,6 +162,12 @@ class TransactionService
             $transaction->update([
                 'total_amount' => $totalAmount,
             ]);
+
+            $this->upsellEventRecorder->record(
+                $transaction,
+                $data['upsell_events'] ?? [],
+                UpsellEvent::SURFACE_SELF_ORDER,
+            );
 
             return $transaction->load(['items.modifiers']);
         });
@@ -514,6 +532,15 @@ class TransactionService
                     'amount' => $payment['amount'],
                 ]);
             }
+
+            // Saran yang muncul saat perangkat offline ikut menumpang outbox.
+            // Tanpa ini, periode offline akan terlihat seolah tidak ada upsell
+            // sama sekali — justru di tempat yang sinyalnya paling buruk.
+            $this->upsellEventRecorder->record(
+                $transaction,
+                $data['upsell_events'] ?? [],
+                UpsellEvent::SURFACE_POS,
+            );
 
             return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
         });

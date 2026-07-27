@@ -45,6 +45,36 @@
 
 ---
 
+### [ADDITION] Saran Jual dari Sinyal Stok (BL-017)
+- **Tanggal:** 2026-07-27
+- **Fase Terkait:** Di Luar Fase — PHASE UPSELL Tahap A–E, menutup `[BL-017]`
+- **Dampak:** Migration | Model | Service | Controller | Route | Config | Frontend | Test
+- **Breaking Change:** Tidak — `BadgeHelperService`, dashboard owner, dan harga produk tidak disentuh sama sekali
+- **Deskripsi:** Sinyal stok yang selama ini hanya jadi peringatan di dashboard owner kini juga muncul sebagai **saran jual di layar kasir dan di jalur self-order**. Tiga jenis saran: `attach` (add-on yang paling sering menyertai item, dari riwayat ko-okurensi modifier), `pressed_stock` (barang mendekati kedaluwarsa / tak terjual sebulan), dan `upsize` (varian sama-produk dengan harga setingkat di atasnya). Nasib tiap saran — diambil atau diabaikan — dicatat di tabel baru `upsell_events` dan dirangkum di laporan `/owner/reports/upsell`.
+- **Alasan:** Saran yang diterima setelah sesi pitching. Peringatan yang ada menghadap ke arah yang salah untuk berjualan: badge muncul di dashboard owner, dilihat entah kapan, dan tidak menawarkan tindakan selain "restock" — padahal momen upsell terjadi di layar kasir saat pelanggan masih berdiri di depan meja.
+- **File Terdampak:**
+  - `database/migrations/2026_07_27_100000_create_upsell_events_table.php` — tabel kejadian; `transaction_id` sengaja `nullOnDelete` agar menghapus transaksi tidak diam-diam memperbaiki angka konversi
+  - `app/Models/UpsellEvent.php`, `database/factories/UpsellEventFactory.php`
+  - `config/upsell.php` — saklar, batas tampilan, ambang tiap jenis saran
+  - `app/Services/Upsell/` — `SellableVariantQuery` (penjaga kandidat), `Suggestion` (DTO), `UpsellIndexBuilder`, `UpsellEventRecorder`, dan tiga strategi di `Strategies/`
+  - `app/Http/Controllers/Cashier/POSController.php` — prop `upsell`
+  - `app/Services/TransactionService.php` — pencatatan event di `checkout()`, `createSelfOrder()`, dan `commitOffline()`
+  - `app/Http/Requests/StoreTransactionRequest.php` & `SyncOfflineTransactionsRequest.php` — validasi `upsell_events`
+  - `app/Http/Controllers/Api/V1/ApiUpsellController.php` + `ApiOrderController.php` + `routes/api.php`
+  - `app/Http/Controllers/Owner/ReportController.php` + `resources/js/Pages/Owner/Reports/Upsell.vue` + `routes/web.php` + `resources/js/Layouts/OwnerLayout.vue`
+  - `resources/js/composables/useUpsell.js`, `resources/js/Components/UpsellStrip.vue`, `resources/js/Pages/Cashier/POS.vue`
+  - `resources/js/composables/useCatalogCache.js` & `useOfflineQueue.js` — indeks ikut snapshot, event ikut outbox
+  - `tests/Feature/Upsell/UpsellSuggestionTest.php` & `UpsellEventTest.php` — 26 test
+- **Keputusan arsitektur yang perlu diingat:**
+  - **Kandidat dihitung server, penyaringan dilakukan client.** Indeks saran ikut props POS, bukan endpoint per perubahan keranjang — dengan begitu ia ikut ter-snapshot `useCatalogCache` dan **tetap hidup saat perangkat offline**. Endpoint per-keranjang akan mati justru di warung yang sinyalnya paling buruk.
+  - **Tidak ada perubahan harga apa pun di sini.** `pressed_stock` menawarkan barang tertekan pada harga katalog. Bundling **berdiskon** ditahan sampai `[BL-018]` menyediakan tempat sah untuk harga di bawah katalog.
+  - **Varian `expired` tidak pernah jadi kandidat**, ditegakkan di `SellableVariantQuery` dan diuji — batas keamanan pangan, bukan pilihan bisnis.
+  - **Tidak ada kolom urutan varian baru.** `price` sudah mendefinisikan urutan "naik ukuran"; kolom manual akan membuat fiturnya mati diam-diam pada tenant yang tidak mengisinya.
+  - **Statistik upsell tidak pernah menggagalkan penjualan.** `UpsellEventRecorder` membuang payload cacat (dengan log) dan menolkan FK milik tenant lain, alih-alih melempar exception.
+- **Catatan Migrasi:** `php artisan migrate` lalu `npm run build`. Fitur bisa dimatikan seluruhnya lewat `UPSELL_ENABLED=false`, atau per jenis lewat `config/upsell.php`.
+
+---
+
 ### [ADDITION] Pemisahan README ↔ Panduan Demo
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase — pemeliharaan dokumentasi

@@ -56,6 +56,18 @@ class SyncOfflineTransactionsRequest extends FormRequest
             'transactions.*.payments' => 'required|array|min:1',
             'transactions.*.payments.*.payment_method_id' => 'required|integer',
             'transactions.*.payments.*.amount' => 'required|numeric|min:0',
+
+            // Nasib saran upsell yang menumpang outbox. Bentuk saja, seperti
+            // sisa payload ini — isinya disaring UpsellEventRecorder.
+            'transactions.*.upsell_events' => 'nullable|array|max:20',
+            'transactions.*.upsell_events.*.type' => 'required|string|max:30',
+            'transactions.*.upsell_events.*.status' => 'required|string|max:20',
+            'transactions.*.upsell_events.*.reason' => 'nullable|string|max:50',
+            'transactions.*.upsell_events.*.label' => 'required|string|max:255',
+            'transactions.*.upsell_events.*.extra_amount' => 'nullable|numeric|min:0',
+            'transactions.*.upsell_events.*.trigger_variant_id' => 'nullable|integer',
+            'transactions.*.upsell_events.*.suggested_variant_id' => 'nullable|integer',
+            'transactions.*.upsell_events.*.suggested_modifier_id' => 'nullable|integer',
         ];
     }
 

@@ -11,6 +11,7 @@ use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Transaction;
 use App\Services\TransactionService;
+use App\Services\Upsell\UpsellIndexBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,7 +23,8 @@ use Inertia\Response;
 class POSController extends Controller
 {
     public function __construct(
-        private TransactionService $transactionService
+        private TransactionService $transactionService,
+        private UpsellIndexBuilder $upsellIndexBuilder,
     ) {}
 
     public function index(): Response|RedirectResponse
@@ -67,6 +69,10 @@ class POSController extends Controller
             'cashDrawer' => $openDrawer,
             'openBills' => $openBills,
             'tenantName' => Auth::user()->tenant->name,
+            // Indeks saran upsell ikut props, bukan endpoint tersendiri: dengan
+            // begitu ia ikut ter-snapshot useCatalogCache dan tetap hidup saat
+            // perangkat offline — lihat PHASE-UPSELL §Tahap C.
+            'upsell' => $this->upsellIndexBuilder->build($user->tenant),
         ]);
     }
 

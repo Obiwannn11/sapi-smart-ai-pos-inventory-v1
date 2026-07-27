@@ -124,6 +124,9 @@ Route::middleware(['auth', 'tenant'])
             Route::get('reports/daily', [\App\Http\Controllers\Owner\ReportController::class, 'daily'])
                 ->name('reports.daily');
 
+            Route::get('reports/upsell', [\App\Http\Controllers\Owner\ReportController::class, 'upsell'])
+                ->name('reports.upsell');
+
             Route::get('transactions', [\App\Http\Controllers\Owner\ReportController::class, 'transactions'])
                 ->name('transactions.index');
             Route::get('transactions/{transaction}', [\App\Http\Controllers\Owner\ReportController::class, 'transactionDetail'])
@@ -265,6 +268,10 @@ Route::prefix('platform')
             Route::middleware('platform.can:tenants')->group(function () {
                 Route::get('/tenants', [\App\Http\Controllers\Platform\TenantController::class, 'index'])
                     ->name('tenants.index');
+                // Satu-satunya tulisan di modul ini: tipe usaha adalah dasar
+                // penetapan harga, dan tenant lama tak punya jalan lain mengisinya.
+                Route::put('/tenants/{tenant}/business-type', [\App\Http\Controllers\Platform\TenantController::class, 'updateBusinessType'])
+                    ->name('tenants.business-type.update');
             });
 
             // Modul: Langganan (read-only — perubahan tarif menyusul di Tahap D)
@@ -300,6 +307,12 @@ Route::prefix('platform')
             Route::middleware('platform.can:payments')->group(function () {
                 Route::get('/invoices', [\App\Http\Controllers\Platform\InvoiceController::class, 'index'])
                     ->name('invoices.index');
+                // Usulan nominal dari aturan harga yang berlaku. Terpisah dari
+                // `index` dengan sengaja: menghitungnya untuk SELURUH tenant di
+                // halaman daftar berarti satu rangkaian query per tenant, hanya
+                // demi angka yang paling banyak dipakai satu kali per kunjungan.
+                Route::get('/invoices/suggestion', [\App\Http\Controllers\Platform\InvoiceController::class, 'suggestion'])
+                    ->name('invoices.suggestion');
                 Route::post('/invoices', [\App\Http\Controllers\Platform\InvoiceController::class, 'store'])
                     ->name('invoices.store');
                 Route::post('/invoices/{invoice}/verify', [\App\Http\Controllers\Platform\InvoiceController::class, 'verify'])

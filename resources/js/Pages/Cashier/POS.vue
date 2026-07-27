@@ -10,9 +10,11 @@ import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
+import UpsellStrip from '@/Components/UpsellStrip.vue';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useCatalogCache } from '@/composables/useCatalogCache';
 import { useOfflineQueue } from '@/composables/useOfflineQueue';
+import { useUpsell } from '@/composables/useUpsell';
 
 const props = defineProps({
     categories: Array,
@@ -21,6 +23,7 @@ const props = defineProps({
     cashDrawer: Object,
     openBills: { type: Array, default: () => [] },
     tenantName: { type: String, default: 'SAPI POS' },
+    upsell: { type: Object, default: null },
 });
 
 const { show: showFlash } = useFlash();
@@ -44,6 +47,15 @@ const catalogCategories = computed(() =>
 );
 const catalogPaymentMethods = computed(() =>
     usingCachedCatalog.value ? (snapshot.value.paymentMethods ?? []) : (props.paymentMethods ?? [])
+);
+
+// Saran upsell ikut katalog — dan ikut snapshot-nya. Harganya: indeks berumur
+// sama dengan katalognya. Untuk SARAN itu pertukaran yang benar (saran basi
+// paling buruk hanya jadi tidak relevan, dan stok tetap diverifikasi ulang saat
+// masuk keranjang); untuk HARGA tidak, dan karena itu fase ini tidak menyentuh
+// harga sama sekali.
+const catalogUpsell = computed(() =>
+    usingCachedCatalog.value ? (snapshot.value.upsell ?? null) : (props.upsell ?? null)
 );
 
 // Offline payments are cash-only, enforced here AND on the server. Card/QRIS
@@ -72,6 +84,7 @@ onMounted(() => {
             products: props.products,
             categories: props.categories,
             paymentMethods: props.paymentMethods,
+            upsell: props.upsell,
         });
     } else {
         loadSnapshot();
@@ -287,6 +300,89 @@ const removeCartItem = (index) => {
     cart.value.splice(index, 1);
 };
 
+// --- Upsell ---
+const {
+    suggestions: upsellSuggestions,
+    accept: acceptUpsell,
+    dismiss: dismissUpsell,
+    collectEvents: collectUpsellEvents,
+    reset: resetUpsell,
+} = useUpsell(catalogUpsell, cart, { getVariantStock, getCartQtyForVariant });
+
+/**
+ * Terapkan saran ke keranjang, lalu catat tambahan omzet yang BENAR-BENAR
+ * terjadi — bukan angka indikatif dari indeks, yang tidak tahu qty barisnya.
+ *
+ * Tiga jenis saran menyentuh keranjang dengan cara berbeda: add-on menempel ke
+ * baris yang sudah ada, naik ukuran MENUKAR variannya, dan barang tertekan
+ * menambah baris baru.
+ */
+const applyUpsell = (suggestion) => {
+    if (suggestion.type === 'attach') {
+        const line = cart.value.find((item) => item.variant_id === suggestion.trigger_variant_id);
+        if (!line) return;
+
+        line.modifiers = [
+            ...(line.modifiers ?? []),
+            {
+                id: suggestion.suggested_modifier_id,
+                name: suggestion.label,
+                extra_price: Number(suggestion.extra_amount),
+            },
+        ];
+
+        acceptUpsell(suggestion, Number(suggestion.extra_amount) * line.qty);
+
+        return;
+    }
+
+    if (suggestion.type === 'upsize') {
+        const line = cart.value.find((item) => item.variant_id === suggestion.trigger_variant_id);
+        if (!line) return;
+
+        // Varian tujuan harus muat sebanyak qty baris ini — kalau tidak, tawaran
+        // yang diterima kasir akan gagal justru saat pelanggan sudah setuju.
+        const stock = getVariantStock(suggestion.suggested_variant_id);
+        const reserved = getCartQtyForVariant(suggestion.suggested_variant_id);
+
+        if (reserved + line.qty > stock) {
+            showFlash(`Stok ${suggestion.label} tidak cukup untuk ditukar.`, 'error');
+
+            return;
+        }
+
+        const previousPrice = Number(line.unit_price);
+
+        line.variant_id = suggestion.suggested_variant_id;
+        line.variant_name = suggestion.suggested_variant_name ?? suggestion.label;
+        line.unit_price = Number(suggestion.suggested_variant_price ?? previousPrice);
+
+        acceptUpsell(suggestion, (line.unit_price - previousPrice) * line.qty);
+
+        return;
+    }
+
+    // pressed_stock — baris baru, harga katalog. Tanpa potongan: sistem belum
+    // punya tempat sah untuk menaruh harga di bawah katalog (lihat [BL-018]).
+    const price = Number(suggestion.suggested_variant_price ?? suggestion.extra_amount);
+    const before = cart.value.length;
+
+    addToCart({
+        variant_id: suggestion.suggested_variant_id,
+        variant_name: suggestion.suggested_variant_name ?? suggestion.label,
+        unit_price: price,
+        qty: 1,
+        modifiers: [],
+        notes: '',
+    });
+
+    // addToCart menolak diam-diam saat stok tak cukup; jangan catat sebagai
+    // diterima kalau barangnya tidak benar-benar masuk keranjang.
+    if (cart.value.length === before) return;
+
+    acceptUpsell(suggestion, price);
+};
+
 // --- Inline "Kosongkan" confirmation ---
 const confirmingClear = ref(false);
 let _clearTimer = null;
@@ -304,6 +400,7 @@ const cancelClearCart = () => {
 
 const clearCart = () => {
     cart.value = [];
+    resetUpsell();
     confirmingClear.value = false;
     clearTimeout(_clearTimer);
 };
@@ -342,6 +439,7 @@ const queueOfflineSale = async (payments) => {
         items: cartToItems(),
         payments,
         totalAmount: cartTotal.value,
+        upsellEvents: collectUpsellEvents(),
     });
 
     if (!stored) {
@@ -355,6 +453,7 @@ const queueOfflineSale = async (payments) => {
 
     showPaymentModal.value = false;
     cart.value = [];
+    resetUpsell();
     checkoutUuid.value = null;
     showFlash('Tersimpan offline. Akan tersinkron otomatis saat kembali online.', 'success');
 
@@ -377,6 +476,7 @@ const handlePayment = async (payments) => {
         payments: payments,
         notes: null,
         client_uuid: getCheckoutUuid(),
+        upsell_events: collectUpsellEvents(),
     };
 
     router.post('/cashier/transactions', data, {
@@ -389,6 +489,7 @@ const handlePayment = async (payments) => {
                 showSuccessModal.value = true;
             }
             cart.value = [];
+            resetUpsell();
             checkoutUuid.value = null;
         },
         // navigator.onLine said we were online but the request never landed
@@ -450,12 +551,14 @@ const confirmSaveOpenBill = () => {
         is_open_bill: true,
         customer_name: openBillCustomerName.value.trim() || null,
         client_uuid: getCheckoutUuid(),
+        upsell_events: collectUpsellEvents(),
     };
 
     router.post('/cashier/transactions', data, {
         preserveScroll: true,
         onSuccess: () => {
             cart.value = [];
+            resetUpsell();
             checkoutUuid.value = null;
         },
         onFinish: () => {
@@ -823,6 +926,14 @@ onUnmounted(stopResizeCart);
 
                 <!-- Cart Footer -->
                 <div class="border-t border-border p-4 space-y-3 flex-shrink-0">
+                    <!-- Saran jual: strip tipis, bukan pop-up (lihat UpsellStrip.vue) -->
+                    <UpsellStrip
+                        :suggestions="upsellSuggestions"
+                        :disabled="processing"
+                        @accept="applyUpsell"
+                        @dismiss="dismissUpsell"
+                    />
+
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-600">Total</span>
                         <span class="text-xl font-bold text-gray-800">{{ formatCurrency(cartTotal) }}</span>
