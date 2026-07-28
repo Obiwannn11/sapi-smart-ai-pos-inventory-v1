@@ -4,7 +4,9 @@ use App\Models\PlatformAuditLog;
 use App\Models\PlatformUser;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Models\TenantConsent;
 use App\Models\TenantMonthlyMetric;
+use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -21,6 +23,18 @@ function makePlatformRevenueContext(): array
     ]);
 
     Subscription::factory()->subsidized()->create(['tenant_id' => $tenant->id]);
+
+    // Persetujuan yang masih aktif adalah syarat omzet boleh DIPAKAI, bukan
+    // hanya syarat ia boleh dikumpulkan (`[BL-015]`). Tanpa baris ini fixture-nya
+    // menggambarkan keadaan yang tak bisa terjadi di produksi — job penghitung
+    // omzet tidak akan pernah menghasilkan ringkasan bagi tenant tanpa consent.
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    TenantConsent::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+        'type' => TenantConsent::TYPE_SUBSIDIZED,
+    ]);
 
     TenantMonthlyMetric::factory()
         ->revenue(3_500_000)

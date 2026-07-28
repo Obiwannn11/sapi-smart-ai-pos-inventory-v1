@@ -31,10 +31,8 @@ test('bracket bawaan pindah dari config ke tabel saat migrasi', function () {
 
 test('bracket dibaca dari tabel, bukan dari config', function () {
     PricingRule::query()->delete();
-    PricingRule::factory()->create([
+    PricingRule::factory()->revenueBetween(0)->create([
         'label' => 'Z',
-        'min_revenue' => 0,
-        'max_revenue' => null,
         'price' => 7777,
     ]);
 
@@ -64,13 +62,17 @@ test('aturan yang belum berlaku tidak ikut menentukan harga', function () {
 
     post('/platform/pricing-rules', [
         'label' => 'X',
-        'min_revenue' => 0,
-        'max_revenue' => 100_000_000,
+        'priority' => 100,
         'price' => 999_000,
         'effective_from' => now()->addMonth()->toDateString(),
+        'conditions' => [
+            ['dimension' => 'monthly_revenue', 'operator' => 'gte', 'value' => '0'],
+            ['dimension' => 'monthly_revenue', 'operator' => 'lt', 'value' => '100000000'],
+        ],
     ])->assertSessionHas('success');
 
-    // Aturan masa depan tidak boleh menyentuh perhitungan hari ini.
+    // Aturan masa depan tidak boleh menyentuh perhitungan hari ini — meski
+    // prioritasnya jauh lebih tinggi daripada bracket yang sedang berlaku.
     expect(app(PricingService::class)->bracketFor(1_000_000)['label'])->toBe('A');
 });
 
@@ -79,10 +81,12 @@ test('aturan berlaku surut ditolak', function () {
 
     post('/platform/pricing-rules', [
         'label' => 'Y',
-        'min_revenue' => 0,
-        'max_revenue' => 1_000_000,
+        'priority' => 0,
         'price' => 5000,
         'effective_from' => now()->subDay()->toDateString(),
+        'conditions' => [
+            ['dimension' => 'monthly_revenue', 'operator' => 'lt', 'value' => '1000000'],
+        ],
     ])->assertSessionHasErrors('effective_from');
 });
 
@@ -151,10 +155,12 @@ test('setiap perubahan tarif tercatat sebagai kejadian sensitif', function () {
 
     post('/platform/pricing-rules', [
         'label' => 'X',
-        'min_revenue' => 0,
-        'max_revenue' => 1_000_000,
+        'priority' => 0,
         'price' => 12_000,
         'effective_from' => now()->addDay()->toDateString(),
+        'conditions' => [
+            ['dimension' => 'monthly_revenue', 'operator' => 'lt', 'value' => '1000000'],
+        ],
     ]);
 
     $log = PlatformAuditLog::where('action', 'pricing-rules.create')->first();

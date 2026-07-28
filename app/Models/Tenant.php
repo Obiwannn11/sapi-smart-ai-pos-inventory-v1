@@ -29,7 +29,7 @@ class Tenant extends Model
     public const STATUS_SUSPENDED = 'suspended';
 
     protected $fillable = [
-        'name', 'slug', 'logo', 'address', 'phone', 'status', 'pricing_track',
+        'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
     ];

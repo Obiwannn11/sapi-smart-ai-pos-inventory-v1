@@ -2,8 +2,13 @@
 import { ref } from 'vue';
 import { useForm, Head, Link } from '@inertiajs/vue3';
 
+defineProps({
+    businessTypes: { type: Object, default: () => ({}) },
+});
+
 const form = useForm({
     business_name: '',
+    business_type: '',
     name: '',
     email: '',
     password: '',
@@ -113,6 +118,44 @@ const submit = () => {
                             class="mt-1.5 text-xs text-destructive"
                         >
                             {{ form.errors.business_name }}
+                        </p>
+                    </div>
+
+                    <!-- Business Type -->
+                    <div class="mt-5">
+                        <label
+                            for="register-business-type"
+                            class="block text-sm font-medium text-foreground mb-1.5"
+                        >
+                            Jenis Usaha
+                            <span class="font-normal text-muted-foreground">(opsional)</span>
+                        </label>
+                        <select
+                            id="register-business-type"
+                            v-model="form.business_type"
+                            :aria-invalid="!!form.errors.business_type"
+                            aria-describedby="business-type-error"
+                            :class="[
+                                'w-full px-3 py-2.5 bg-card text-sm text-foreground',
+                                'border rounded-lg transition-colors duration-150',
+                                'focus:outline-none focus:ring-2 focus:ring-offset-1',
+                                form.errors.business_type
+                                    ? 'border-destructive focus:ring-destructive/50'
+                                    : 'border-border hover:border-muted-foreground/35 focus:ring-ring'
+                            ]"
+                        >
+                            <option value="">Belum ditentukan</option>
+                            <option v-for="(label, value) in businessTypes" :key="value" :value="value">
+                                {{ label }}
+                            </option>
+                        </select>
+                        <p
+                            v-if="form.errors.business_type"
+                            id="business-type-error"
+                            role="alert"
+                            class="mt-1.5 text-xs text-destructive"
+                        >
+                            {{ form.errors.business_type }}
                         </p>
                     </div>
 

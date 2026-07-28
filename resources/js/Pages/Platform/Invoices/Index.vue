@@ -41,6 +41,57 @@ const createForm = useForm({
     due_date: '',
 });
 
+// --- Usulan nominal dari aturan harga ---
+// Diisikan, bukan dipaksakan: nominalnya tetap bisa diketik ulang. Aturan yang
+// menyarankan lebih berguna daripada aturan yang memutuskan — harga yang turun
+// atau naik sendiri secara keliru adalah uang yang sudah terlanjur ditagihkan.
+const suggestion = ref(null);
+const suggestionState = ref('idle');
+
+const fetchSuggestion = async () => {
+    suggestion.value = null;
+
+    if (!createForm.tenant_id || !/^\d{4}-\d{2}$/.test(createForm.period)) {
+        suggestionState.value = 'idle';
+
+        return;
+    }
+
+    suggestionState.value = 'loading';
+
+    try {
+        const params = new URLSearchParams({
+            tenant_id: createForm.tenant_id,
+            period: createForm.period,
+        });
+        const response = await fetch(`/platform/invoices/suggestion?${params}`, {
+            headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) {
+            throw new Error('gagal');
+        }
+
+        const data = await response.json();
+        suggestion.value = data;
+        suggestionState.value = data.matched ? 'matched' : 'unmatched';
+
+        // Hanya mengisi kolom yang masih kosong. Menimpa angka yang sudah
+        // diketik akan membuang keputusan yang baru saja diambil orangnya.
+        if (data.matched && createForm.amount === '') {
+            createForm.amount = data.amount;
+        }
+    } catch {
+        suggestionState.value = 'error';
+    }
+};
+
+const applySuggestion = () => {
+    if (suggestion.value?.matched) {
+        createForm.amount = suggestion.value.amount;
+    }
+};
+
 const submitCreate = () => {
     createForm.post('/platform/invoices', {
         preserveScroll: true,
@@ -187,6 +238,7 @@ const submitReject = () => {
                             <select
                                 v-model="createForm.tenant_id"
                                 class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                @change="fetchSuggestion"
                             >
                                 <option value="">Pilih tenant</option>
                                 <option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">{{ tenant.name }}</option>
@@ -201,6 +253,7 @@ const submitReject = () => {
                                 type="text"
                                 placeholder="2026-08"
                                 class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                @blur="fetchSuggestion"
                             />
                             <p v-if="createForm.errors.period" class="mt-1 text-xs text-destructive">{{ createForm.errors.period }}</p>
                         </div>
@@ -214,6 +267,24 @@ const submitReject = () => {
                                 class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                             />
                             <p v-if="createForm.errors.amount" class="mt-1 text-xs text-destructive">{{ createForm.errors.amount }}</p>
+
+                            <p v-if="suggestionState === 'loading'" class="mt-1 text-xs text-muted-foreground">
+                                Menghitung usulan tarif...
+                            </p>
+                            <p v-else-if="suggestionState === 'matched'" class="mt-1 text-xs text-muted-foreground">
+                                Aturan <span class="font-medium text-foreground">{{ suggestion.label }}</span> menyarankan
+                                {{ formatRupiah(suggestion.amount) }}.
+                                <button type="button" class="font-medium text-primary hover:underline" @click="applySuggestion">
+                                    Pakai angka ini
+                                </button>
+                            </p>
+                            <p v-else-if="suggestionState === 'unmatched'" class="mt-1 text-xs text-amber-700">
+                                Tidak ada aturan harga yang cocok untuk tenant ini pada periode tersebut — nominalnya
+                                perlu ditetapkan sendiri.
+                            </p>
+                            <p v-else-if="suggestionState === 'error'" class="mt-1 text-xs text-amber-700">
+                                Usulan tarif gagal diambil. Nominalnya tetap bisa diisi manual.
+                            </p>
                         </div>
 
                         <div>

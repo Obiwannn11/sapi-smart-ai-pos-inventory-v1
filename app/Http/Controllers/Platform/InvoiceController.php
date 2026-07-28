@@ -8,9 +8,12 @@ use App\Models\Invoice;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Services\PricingService;
 use App\Services\SubscriptionService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -27,7 +30,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class InvoiceController extends Controller
 {
-    public function __construct(private readonly SubscriptionService $subscriptions) {}
+    public function __construct(
+        private readonly SubscriptionService $subscriptions,
+        private readonly PricingService $pricing,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -60,6 +66,32 @@ class InvoiceController extends Controller
     }
 
     /**
+     * Nominal yang disarankan aturan harga untuk satu tenant & periode.
+     *
+     * Sengaja mengembalikan HANYA tarif dan nama kelompoknya. Konteks yang
+     * menghasilkannya memuat omzet dan cacah transaksi — data bisnis, yang
+     * jalur sahnya cuma halaman omzet beraudit. Nominal dan label kelompok
+     * setara dengan yang sudah terlihat di daftar tenant sejak Tahap C, jadi
+     * tidak ada yang terbuka lebih lebar di sini.
+     */
+    public function suggestion(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tenant_id' => ['required', Rule::exists('tenants', 'id')],
+            'period' => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
+        ]);
+
+        $tenant = Tenant::findOrFail($validated['tenant_id']);
+        $resolved = $this->pricing->resolveFor($tenant, $this->periodStart($validated['period']));
+
+        return response()->json([
+            'amount' => $resolved['price'],
+            'label' => $resolved['label'],
+            'matched' => $resolved['rule'] !== null,
+        ]);
+    }
+
+    /**
      * Terbitkan tagihan untuk satu tenant.
      */
     public function store(Request $request): RedirectResponse
@@ -88,11 +120,29 @@ class InvoiceController extends Controller
             return back()->with('error', "Tagihan periode {$validated['period']} untuk tenant ini sudah ada.");
         }
 
+        $resolved = $this->pricing->resolveFor(
+            $subscription->tenant,
+            $this->periodStart($validated['period']),
+        );
+
+        // Nominalnya tetap milik pemilik SaaS — aturan menyarankan, ia yang
+        // memutuskan. Karena itu aturannya dicatat HANYA bila nominal yang
+        // terbit benar-benar sama dengan tarif aturannya. Menautkan aturan pada
+        // nominal yang diketik ulang akan melahirkan jejak yang berbohong:
+        // seolah harga itu keluar dari aturan, padahal aturannya ditolak.
+        $mengikutiAturan = $resolved['rule'] !== null
+            && abs((float) $validated['amount'] - $resolved['price']) < 0.01;
+
         $invoice = Invoice::create([
             'tenant_id' => $validated['tenant_id'],
             'subscription_id' => $subscription->id,
             'period' => $validated['period'],
             'amount' => $validated['amount'],
+            'pricing_rule_id' => $mengikutiAturan ? $resolved['rule']->id : null,
+            // Konteksnya disimpan apa pun keputusan nominalnya. Justru saat
+            // pemilik SaaS menyimpang dari aturan, "keadaan tenant seperti apa
+            // waktu itu" adalah pertanyaan yang paling mungkin ditanyakan.
+            'pricing_context' => $resolved['context'],
             'status' => Invoice::STATUS_UNPAID,
             'due_date' => $validated['due_date'],
         ]);
@@ -101,9 +151,24 @@ class InvoiceController extends Controller
             'tenant_id' => $invoice->tenant_id,
             'period' => $invoice->period,
             'amount' => (float) $invoice->amount,
+            'pricing_rule' => $resolved['label'],
+            'follows_rule' => $mengikutiAturan,
         ]);
 
         return back()->with('success', 'Tagihan diterbitkan.');
+    }
+
+    /**
+     * Awal bulan periode tagihan, sebagai titik waktu penetapan harga.
+     *
+     * Awal periode, bukan akhirnya: aturan yang mulai berlaku di tengah bulan
+     * tidak boleh mengubah harga bulan yang sudah berjalan. Yang dipakai adalah
+     * aturan yang sudah berdiri saat periodenya dibuka — itulah yang akan
+     * dikatakan kepada tenant bila ia bertanya.
+     */
+    protected function periodStart(string $period): Carbon
+    {
+        return Carbon::createFromFormat('Y-m', $period)->startOfMonth();
     }
 
     /**

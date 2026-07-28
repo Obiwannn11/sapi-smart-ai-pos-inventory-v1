@@ -31,17 +31,27 @@ class Invoice extends Model
 
     protected $fillable = [
         'tenant_id', 'subscription_id', 'period', 'kind', 'grants_seats',
-        'previous_seats', 'amount', 'status', 'due_date',
+        'previous_seats', 'amount', 'pricing_rule_id', 'pricing_context', 'status', 'due_date',
         'proof_path', 'submitted_at', 'paid_at', 'verified_by', 'verified_at',
         'rejection_reason',
     ];
 
     protected $attributes = ['kind' => self::KIND_SUBSCRIPTION];
 
+    /**
+     * `pricing_context` memuat data bisnis untuk tenant jalur subsidi (omzet,
+     * cacah transaksi). Ia disembunyikan dari serialisasi supaya tidak ikut
+     * terbawa oleh `toArray()` mana pun; `InvoiceResource` adalah daftar putih
+     * dan tak pernah menyebutnya, tapi lapis kedua ini murah dan menutup jalur
+     * yang tidak lewat resource.
+     */
+    protected $hidden = ['pricing_context'];
+
     protected function casts(): array
     {
         return [
             'amount' => 'decimal:2',
+            'pricing_context' => 'array',
             'due_date' => 'date',
             'submitted_at' => 'datetime',
             'paid_at' => 'datetime',

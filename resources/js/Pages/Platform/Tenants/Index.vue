@@ -1,10 +1,21 @@
 <script setup>
-import { Head } from '@inertiajs/vue3';
+import { router, Head } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 
 defineProps({
     tenants: { type: Object, required: true },
+    business_types: { type: Object, default: () => ({}) },
 });
+
+// Disimpan seketika saat dipilih, tanpa tombol simpan: satu kolom, satu
+// keputusan. Perubahannya tercatat di jejak audit karena ia dasar penetapan
+// harga, bukan sekadar keterangan.
+const updateBusinessType = (tenant, value) =>
+    router.put(
+        `/platform/tenants/${tenant.id}/business-type`,
+        { business_type: value || null },
+        { preserveScroll: true },
+    );
 </script>
 
 <template>
@@ -20,6 +31,7 @@ defineProps({
                         <tr class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                             <th class="px-4 py-3">Nama Usaha</th>
                             <th class="px-4 py-3">Pemilik</th>
+                            <th class="px-4 py-3">Jenis Usaha</th>
                             <th class="px-4 py-3 text-right">Akun</th>
                             <th class="px-4 py-3">Terdaftar</th>
                         </tr>
@@ -53,12 +65,24 @@ defineProps({
                                 </template>
                                 <span v-else class="text-xs text-muted-foreground">—</span>
                             </td>
+                            <td class="px-4 py-3">
+                                <select
+                                    :value="tenant.business_type ?? ''"
+                                    class="w-full max-w-[10rem] px-2 py-1.5 border border-border rounded-lg text-xs bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                    @change="updateBusinessType(tenant, $event.target.value)"
+                                >
+                                    <option value="">Belum ditentukan</option>
+                                    <option v-for="(label, value) in business_types" :key="value" :value="value">
+                                        {{ label }}
+                                    </option>
+                                </select>
+                            </td>
                             <td class="px-4 py-3 text-right tabular-nums text-foreground">{{ tenant.user_count }}</td>
                             <td class="px-4 py-3 text-muted-foreground">{{ tenant.registered_at }}</td>
                         </tr>
 
                         <tr v-if="tenants.data.length === 0">
-                            <td colspan="4" class="px-4 py-10 text-center text-sm text-muted-foreground">
+                            <td colspan="5" class="px-4 py-10 text-center text-sm text-muted-foreground">
                                 Belum ada tenant terdaftar.
                             </td>
                         </tr>

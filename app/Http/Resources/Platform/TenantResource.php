@@ -30,6 +30,10 @@ class TenantResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'slug' => $this->slug,
+            // Dasar penetapan harga, bukan data operasional: ia tidak
+            // mengungkap penjualan, produk, maupun laba. Setara dengan nama
+            // usaha, yang sudah terlihat di sini sejak Tahap A.
+            'business_type' => $this->business_type,
             'registered_at' => $this->created_at?->toDateString(),
             'user_count' => $this->users_count,
             // Penanda administratif, bukan data bisnis: apakah pendaftarnya

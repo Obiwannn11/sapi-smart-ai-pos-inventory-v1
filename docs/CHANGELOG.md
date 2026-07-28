@@ -75,6 +75,39 @@
 
 ---
 
+### [SCHEMA] Dimensi Harga Bebas — Aturan Berkriteria (BL-015)
+- **Tanggal:** 2026-07-27
+- **Fase Terkait:** Di Luar Fase — lanjutan PHASE SAAS Tahap D, menutup `[BL-015]`
+- **Dampak:** Migration | Model | Service | Controller | Route | Config | Frontend | Test
+- **Breaking Change:** Ya — `pricing_rules.min_revenue` & `max_revenue` dibuang; `PricingService::bracketFor()` tidak lagi mengembalikan `min`/`max`
+- **Deskripsi:** Aturan harga berpindah dari **kolom tetap** ke **baris berkriteria**. Satu aturan kini punya banyak syarat (`dimensi`, `operator`, `nilai`) plus `priority`; kategori harga baru cukup ditulis sebagai baris baru dari `/platform/pricing-rules`, tanpa migration dan tanpa deploy. Empat dimensi tersedia di jalur pertama: omzet bulanan, jumlah transaksi/bulan, pengguna aktif, dan tipe usaha.
+- **Alasan:** Permintaan pemilik SaaS — harga harus bisa dibedakan oleh "berbagai kategori", bukan omzet dan seat saja. Sebelum ini, kategori ketiga menuntut migration + ubah service + ubah form + deploy.
+- **File Terdampak:**
+  - `database/migrations/2026_07_26_180115_create_pricing_rule_conditions_table.php` — tabel syarat, kolom `priority`, backfill bracket lama, pembuangan dua kolom omzet
+  - `database/migrations/2026_07_26_180117_add_business_type_to_tenants_table.php`
+  - `database/migrations/2026_07_26_180118_add_pricing_trail_to_invoices_table.php` — `pricing_rule_id` + `pricing_context`
+  - `config/pricing-dimensions.php` — katalog dimensi berikut penanda consent-nya
+  - `app/Services/Pricing/` — `DimensionResolver` + empat resolver + `DimensionRegistry`
+  - `app/Services/PricingService.php` — `matchContext()`, `resolveFor()`, `publishRule()`
+  - `app/Models/PricingRule.php`, `app/Models/PricingRuleCondition.php`
+  - `app/Http/Controllers/Platform/{PricingRuleController,InvoiceController,TenantController}.php`
+  - `app/Http/Controllers/Auth/AuthController.php`, `resources/js/Pages/Auth/Register.vue`
+  - `resources/js/Pages/Platform/{PricingRules,Invoices,Tenants}/Index.vue`
+  - `tests/Feature/Platform/PricingDimensionTest.php` — 22 test; suite penuh **483 hijau**
+- **Keputusan:**
+  1. **Katalog dimensi tetap tinggal di kode, dan itu bukan kompromi yang bisa dihindari.** Tiap dimensi butuh sumber angkanya; nilai yang tidak bisa dihitung aplikasi tidak akan pernah bisa jadi dasar harga sebebas apa pun panelnya. Yang bebas sepenuhnya adalah **ambang dan tarifnya** — daftar dimensi tumbuh sekali per jenis data, bukan sekali per skema harga.
+  2. **Gagal menutup, bukan gagal membuka.** Syarat yang dimensinya tak bisa dihitung — belum disetujui, belum pernah dihitung, atau dicabut dari katalog — membuat aturannya **tidak cocok**. Kebalikannya akan membuat aturan bersyarat justru berlaku paling luas bagi tenant yang datanya paling sedikit diketahui.
+  3. **Penjaga consent dipindahkan ke `DimensionRegistry`, satu pintu untuk semua pemanggil.** Syaratnya persetujuan yang **masih aktif**, sengaja bukan `hasAgreedToCurrent()`: memakai pemeriksaan versi-terkini berarti satu kali menaikkan versi teks consent akan memadamkan dimensi ini bagi seluruh tenant sekaligus — harga mereka berubah diam-diam pada hari revisi teks terbit. Pencabutan tetap memadamkannya seketika.
+  4. **Hasilnya disambungkan ke penerbitan tagihan, tapi hanya sebagai usulan.** Kolom nominal terisi sendiri dan tetap bisa diketik ulang. `pricing_rule_id` dicatat **hanya bila nominal yang terbit sama dengan tarif aturannya** — menautkan aturan pada angka yang diketik ulang akan melahirkan jejak yang berbohong.
+  5. **`pricing_context` dibekukan di tiap tagihan.** Dengan banyak syarat per aturan, "aturan mana yang berlaku waktu itu" tak lagi bisa direka ulang dari satu angka omzet — dan menghitungnya ulang hanya mengembalikan nilai hari ini. Kolomnya `$hidden` karena memuat data bisnis.
+  6. **Tipe usaha ditanyakan saat pendaftaran, opsional.** Menanyakannya belakangan berarti seluruh tenant yang mendaftar lebih dulu tak pernah punya nilainya; mewajibkannya akan menjegal pendaftaran demi pertanyaan yang jawabannya bisa "belum jelas".
+  7. **`Platform\TenantController` mendapat satu tulisan pertamanya** — koreksi tipe usaha. Bukan kemudahan melainkan kebutuhan: tanpa jalan mengisinya, dimensi itu tak berguna selamanya bagi tenant yang sudah terdaftar.
+- **Yang TIDAK dikerjakan (sengaja):** dimensi **wilayah**, **jumlah outlet**, dan **durasi langganan**. Outlet belum punya tabelnya; durasi menuntut keputusan siklus penagihan tersendiri karena periode satu bulan tertanam di `current_period_end` dan beberapa tempat lain.
+- **Catatan:** empat penjaga PHASE SAAS Tahap D tetap utuh dan masih diuji — `effective_from`, `price_locked`, `bracketFor($asOf)`, dan larangan menghapus aturan yang sudah berlaku. `PricingGrandfatherTest` disesuaikan ke bentuk baru tanpa mengubah niat satu pun test-nya.
+- **Temuan sampingan yang ikut diperbaiki:** fixture `PlatformRevenueTest` membuat ringkasan omzet **tanpa** baris persetujuan — kombinasi yang tak bisa terjadi di produksi, karena job penghitung omzet menyaring berdasarkan consent. Sebelumnya lolos karena tampilan bracket memang belum memeriksa consent.
+
+---
+
 ### [ADDITION] Pemisahan README ↔ Panduan Demo
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase — pemeliharaan dokumentasi

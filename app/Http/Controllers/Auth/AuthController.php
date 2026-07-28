@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class AuthController extends Controller
@@ -22,13 +23,24 @@ class AuthController extends Controller
 
     public function showRegister()
     {
-        return Inertia::render('Auth/Register');
+        return Inertia::render('Auth/Register', [
+            // Pilihannya datang dari katalog dimensi harga — satu daftar untuk
+            // form ini, panel platform, dan penyusunan aturan harga.
+            'businessTypes' => config('pricing-dimensions.business_type.options', []),
+        ]);
     }
 
     public function register(Request $request, SubscriptionService $subscriptions, SignupGuardService $signupGuard)
     {
         $validated = $request->validate([
             'business_name' => 'required|string|max:255',
+            // Ditanyakan sejak awal karena ia dasar penetapan harga, dan
+            // menanyakannya belakangan berarti seluruh tenant yang mendaftar
+            // lebih dulu tak pernah punya nilainya. `nullable` agar pendaftaran
+            // tidak dijegal oleh pertanyaan yang jawabannya bisa "belum jelas" —
+            // aturan harga yang menyebut dimensi ini cukup tidak cocok untuk
+            // mereka, dan itu perilaku yang benar.
+            'business_type' => ['nullable', Rule::in(array_keys(config('pricing-dimensions.business_type.options', [])))],
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
@@ -46,6 +58,7 @@ class AuthController extends Controller
 
             $tenant = Tenant::create([
                 'name' => $validated['business_name'],
+                'business_type' => $validated['business_type'] ?? null,
                 'slug' => $slug,
                 'status' => Tenant::STATUS_TRIAL,
             ]);

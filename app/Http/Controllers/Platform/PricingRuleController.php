@@ -6,15 +6,25 @@ use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\PricingRule;
+use App\Models\PricingRuleCondition;
+use App\Services\Pricing\DimensionRegistry;
+use App\Services\PricingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Validator;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Aturan harga sebagai data: paket jalur normal, dan bracket omzet jalur
- * subsidi.
+ * Aturan harga sebagai data: paket jalur normal, dan aturan bersyarat yang
+ * menentukan tarif jalur subsidi.
+ *
+ * Sejak `[BL-015]` sebuah aturan tidak lagi terikat pada satu sumbu omzet. Ia
+ * punya sekumpulan syarat bebas — kategori harga baru cukup ditulis sebagai
+ * baris baru dari halaman ini, tanpa migration dan tanpa deploy. Yang tetap
+ * tinggal di kode hanyalah daftar dimensi yang bisa dihitung aplikasi.
  *
  * Setiap perubahan tarif dicatat sebagai kejadian `sensitive` berikut nilai
  * lama dan barunya. Angka tarif yang berubah tanpa jejak adalah hal yang tidak
@@ -27,6 +37,11 @@ use Inertia\Response;
  */
 class PricingRuleController extends Controller
 {
+    public function __construct(
+        private readonly DimensionRegistry $dimensions,
+        private readonly PricingService $pricing,
+    ) {}
+
     public function index(): Response
     {
         PlatformAuditLog::recordRoutine('pricing-rules.index');
@@ -41,17 +56,25 @@ class PricingRuleController extends Controller
                 'extra_seat_price' => (float) $plan->extra_seat_price,
                 'is_active' => $plan->is_active,
             ]),
-            'rules' => PricingRule::orderBy('min_revenue')
+            // Katalog dimensi menggerakkan form: pilihan dimensi, operator yang
+            // masuk akal per tipe, dan nilai sah untuk dimensi beratribut. Panel
+            // tidak menyalin daftar ini — ia menerimanya, sehingga dimensi baru
+            // di config langsung muncul tanpa menyentuh Vue.
+            'dimensions' => $this->dimensions->forPanel(),
+            'rules' => PricingRule::query()
+                ->with('conditions')
+                ->orderByDesc('priority')
                 ->orderByDesc('effective_from')
+                ->orderBy('label')
                 ->get()
                 ->map(fn (PricingRule $rule) => [
                     'id' => $rule->id,
                     'label' => $rule->label,
-                    'min_revenue' => (float) $rule->min_revenue,
-                    'max_revenue' => $rule->max_revenue === null ? null : (float) $rule->max_revenue,
+                    'priority' => $rule->priority,
                     'price' => (float) $rule->price,
                     'effective_from' => $rule->effective_from->toDateString(),
                     'is_effective' => $rule->effective_from->isPast(),
+                    'conditions' => $rule->conditionSummary(),
                 ]),
         ]);
     }
@@ -60,21 +83,37 @@ class PricingRuleController extends Controller
     {
         $validated = $request->validate([
             'label' => ['required', 'string', 'max:20'],
-            'min_revenue' => ['required', 'numeric', 'min:0'],
-            'max_revenue' => ['nullable', 'numeric', 'gt:min_revenue'],
+            // Menang yang tertinggi. Aturan umum sebaiknya berprioritas rendah
+            // supaya aturan yang lebih spesifik bisa mendahuluinya tanpa harus
+            // menuliskan syarat penyangkal di aturan umumnya.
+            'priority' => ['required', 'integer', 'min:0', 'max:1000'],
             'price' => ['required', 'numeric', 'min:0'],
             // Tidak boleh mundur ke masa lalu. Aturan yang berlaku surut akan
             // mengubah dasar harga periode yang sudah ditagihkan — persis hal
             // yang seluruh mekanisme ini dibangun untuk mencegahnya.
             'effective_from' => ['required', 'date', 'after_or_equal:today'],
+            // `present`, bukan `required`: aturan tanpa syarat itu sah — ia
+            // tarif bawaan yang cocok untuk siapa pun — tapi ketiadaannya harus
+            // disengaja, bukan akibat field yang lupa dikirim.
+            'conditions' => ['present', 'array', 'max:10'],
+            'conditions.*.dimension' => ['required', 'string', Rule::in($this->dimensions->names())],
+            'conditions.*.operator' => ['required', 'string', Rule::in(PricingRuleCondition::allOperators())],
+            'conditions.*.value' => ['required', 'string', 'max:255'],
         ]);
 
-        $rule = PricingRule::create($validated);
+        $this->validateConditionShapes($validated['conditions']);
+
+        $rule = $this->pricing->publishRule($validated, $validated['conditions']);
 
         PlatformAuditLog::record('pricing-rules.create', $rule, [
             'label' => $rule->label,
             'price' => (float) $rule->price,
+            'priority' => $rule->priority,
             'effective_from' => $rule->effective_from->toDateString(),
+            // Syaratnya ikut dicatat, bukan hanya tarifnya. "Aturan X seharga
+            // sekian" tidak menjawab apa pun tanpa "berlaku untuk siapa" —
+            // dan syaratnya bisa berubah lewat penerbitan revisi berikutnya.
+            'conditions' => $rule->conditionSummary(),
         ]);
 
         return back()->with('success', "Aturan {$rule->label} berlaku mulai {$rule->effective_from->toDateString()}.");
@@ -90,10 +129,13 @@ class PricingRuleController extends Controller
             return back()->with('error', 'Aturan yang sudah berlaku tidak bisa dihapus. Terbitkan aturan baru dengan tanggal berlaku ke depan.');
         }
 
+        $rule->loadMissing('conditions');
+
         PlatformAuditLog::record('pricing-rules.delete', $rule, [
             'label' => $rule->label,
             'price' => (float) $rule->price,
             'effective_from' => $rule->effective_from->toDateString(),
+            'conditions' => $rule->conditionSummary(),
         ]);
 
         $rule->delete();
@@ -153,5 +195,84 @@ class PricingRuleController extends Controller
         ]);
 
         return back()->with('success', 'Paket baru dibuat.');
+    }
+
+    /**
+     * Syarat yang bentuknya sah tapi isinya mustahil ditolak di sini.
+     *
+     * Dimensi dan operatornya sudah dipastikan ada di katalog oleh aturan
+     * `Rule::in` di atas; yang belum diperiksa adalah apakah keduanya cocok
+     * SATU SAMA LAIN. "Tipe usaha lebih besar dari kuliner" lolos tiap
+     * pemeriksaan per-field namun tidak akan pernah cocok dengan tenant mana
+     * pun — dan aturan yang diam-diam tak pernah berlaku jauh lebih merugikan
+     * daripada aturan yang ditolak saat diketik.
+     *
+     * @param  array<int, array{dimension: string, operator: string, value: string}>  $conditions
+     */
+    protected function validateConditionShapes(array $conditions): void
+    {
+        /** @var Validator $validator */
+        $validator = validator([], []);
+
+        foreach ($conditions as $index => $condition) {
+            $definition = $this->dimensions->definition($condition['dimension']);
+
+            if ($definition === null) {
+                continue;
+            }
+
+            $diizinkan = PricingRuleCondition::operatorsForType($definition['type']);
+
+            if (! in_array($condition['operator'], $diizinkan, true)) {
+                $validator->errors()->add(
+                    "conditions.{$index}.operator",
+                    "Operator ini tidak berlaku untuk dimensi {$definition['label']}.",
+                );
+
+                continue;
+            }
+
+            $this->validateConditionValue($validator, $index, $condition, $definition);
+        }
+
+        if ($validator->errors()->isNotEmpty()) {
+            throw new ValidationException($validator);
+        }
+    }
+
+    /**
+     * @param  array{dimension: string, operator: string, value: string}  $condition
+     * @param  array<string, mixed>  $definition
+     */
+    protected function validateConditionValue(Validator $validator, int $index, array $condition, array $definition): void
+    {
+        $key = "conditions.{$index}.value";
+
+        if ($definition['type'] === 'metric' && ! is_numeric($condition['value'])) {
+            $validator->errors()->add($key, "Nilai untuk dimensi {$definition['label']} harus berupa angka.");
+
+            return;
+        }
+
+        $options = $definition['options'] ?? null;
+
+        if ($options === null) {
+            return;
+        }
+
+        // Untuk `in`, tiap bagian daftarnya diperiksa sendiri — satu nilai
+        // salah ketik di tengah daftar akan membuat sebagian tenant terlewat
+        // tanpa pesan galat apa pun.
+        $values = $condition['operator'] === PricingRuleCondition::OP_IN
+            ? array_map('trim', explode(',', $condition['value']))
+            : [$condition['value']];
+
+        foreach ($values as $value) {
+            if (! array_key_exists($value, $options)) {
+                $validator->errors()->add($key, "Nilai '{$value}' bukan pilihan sah untuk dimensi {$definition['label']}.");
+
+                return;
+            }
+        }
     }
 }
