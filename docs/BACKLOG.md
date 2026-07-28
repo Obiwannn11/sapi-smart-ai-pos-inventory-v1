@@ -40,6 +40,99 @@
 
 ## Daftar Isu (Open / In Progress)
 
+### [BL-020] Grup API Self-Order Tidak Melewati Gerbang Langganan — Perlu Diverifikasi
+- **Ditemukan:** 2026-07-28
+- **Sumber:** Terlihat saat menulis ulang `PHASE-FEATURE-FLAGS` — memetakan middleware tiap permukaan
+- **Status:** Open
+- **Prioritas:** Medium bila terbukti (menyangkut penagihan), Low bila ternyata disengaja
+- **BELUM DIVERIFIKASI.** Temuan ini dibaca dari susunan middleware, bukan dari percobaan. Buktikan dengan test lebih dulu — jangan mengubah rute berdasarkan entri ini saja.
+- **Area Terdampak:**
+  - `routes/api.php:31` — grup self-order hanya memakai `auth:sanctum`
+  - `routes/api.php:50` — grup mobile memakai `auth:sanctum` + `tenant.api`
+  - `bootstrap/app.php:37` — `tenant.api` yang membawa `EnsureSubscriptionActive`
+- **Deskripsi:**
+  `EnsureSubscriptionActive` ikut lewat grup `tenant`/`tenant.api`, bukan lewat alias per-rute. Grup self-order tidak memakai keduanya, sehingga `POST /api/v1/orders` tampaknya **tidak** melewati pemeriksaan status langganan sama sekali. Bila benar, tenant `suspended` atau `grace` masih bisa menerima pesanan baru lewat n8n/Telegram, padahal jalur webnya sudah tertutup — dan `grace` secara definisi berarti "hanya-baca, transaksi baru ditolak".
+  Perlu dicatat bahwa ini **mungkin disengaja**: token n8n adalah token mesin, bukan sesi pengguna, dan grup `tenant.api` juga menyeret `EnsureEmailVerified` yang tidak masuk akal untuk mesin. Jadi pertanyaannya bukan "tambahkan `tenant.api`?" melainkan "gerbang langganan mana yang seharusnya berlaku untuk token mesin?".
+- **Usulan Perbaikan:**
+  1. Tulis test lebih dulu: tenant `suspended` dan `grace` mencoba `POST /api/v1/orders`. Hasilnya menentukan apakah entri ini nyata.
+  2. Bila bocor, jangan tempelkan `tenant.api` begitu saja — pisahkan gerbang langganan dari verifikasi surel supaya token mesin bisa dikenai yang pertama tanpa yang kedua.
+  3. Periksa sekalian permukaan Sanctum lain yang mungkin senasib.
+- **Catatan:** Bersinggungan dengan `[BL-019]`, yang menambahkan `cashier.queue.*` ke `ALWAYS_ALLOWED` di middleware yang sama — dua arah berbeda pada gerbang yang sama, dan sebaiknya tidak dikerjakan bersamaan tanpa test yang memisahkannya.
+
+### [BL-019] Rencana Antrian Dapur (PHASE-QUEUE) Perlu Ditinjau Ulang & Ditulis Ulang Sebelum Diimplementasi
+- **Ditemukan:** 2026-07-28
+- **Sumber:** Peninjauan teknis `docs/phases-2/PHASE-QUEUE_Kitchen-Order-Queue.md` terhadap keadaan kode hari ini, dilakukan **sebelum** implementasi dimulai
+- **Status:** In Progress
+- **Prioritas:** High untuk **peninjauannya**, bukan untuk fiturnya. Fiturnya sendiri boleh menunggu; yang mendesak adalah dokumennya, karena ia ditulis dalam bentuk instruksi siap-salin dan sebagian isinya kini **menyesatkan**. Siapa pun yang mengeksekusinya apa adanya akan merusak hal lain yang sudah berjalan.
+- **JANGAN diimplementasikan dulu.** Urutannya: tinjau ulang tujuan → tulis ulang dokumennya menyesuaikan sistem sekarang → baru kerjakan. Menambal dokumen sambil ngoding akan menghasilkan setengah rencana lama dan setengah keadaan baru.
+- **KEMAJUAN (2026-07-28):** ✅ tujuan ditinjau & tiga keputusan dikunci (lihat blok di bawah) · ✅ `PHASE-QUEUE_Kitchen-Order-Queue.md` **selesai ditulis ulang** · ✅ `PHASE-FEATURE-FLAGS_Capabilities-Sync.md` **selesai ditulis ulang** — kini ia yang memiliki fondasi flag (tidak lagi menumpang "Bagian 0"), blok aliasnya dikoreksi, dan **klaim "MCP masih kerangka" ternyata sudah usang: MCP hidup penuh dan gerbangnya dibutuhkan sekarang** · ⬜ implementasi belum dimulai. Kedua dokumen punya bagian **Riwayat Revisi** yang mencatat apa yang berubah dan kenapa. Entri ini baru pindah ke Riwayat Selesai setelah fiturnya benar-benar mendarat di kode.
+- **Turunan:** `[BL-020]` lahir dari penulisan ulang ini.
+
+#### KEPUTUSAN PEMILIK (2026-07-28) — arah tulisan ulang
+> Diambil setelah peninjauan di bawah dipaparkan. Tiga keputusan ini **mengunci arah** dan menutup sebagian temuan; sisanya tetap berlaku apa adanya.
+
+1. **Persona bertahap — versi pertama ONLINE saja, offline jadi fase lanjutan.** Sasaran akhirnya tetap kaki lima/bazar, tapi papan versi pertama dibangun untuk outlet yang koneksinya wajar. Konsekuensi yang harus **ditulis eksplisit** di dokumen, bukan dibiarkan tersirat: saat perangkat offline, mode antrian tidak aktif dan kasir kembali ke alur biasa; transaksi hasil sinkronisasi **tidak** menyusul masuk papan. Kalau tidak dinyatakan, perilaku ini akan dilaporkan sebagai bug oleh orang pertama yang mengalaminya.
+2. **Nilai inti papan = urutan pesanan**, sesuai rencana asli. Pengelompokan pekerjaan (poin 16) resmi **di luar lingkup** dan tinggal sebagai arah lanjutan, bukan kekurangan yang perlu ditutup sekarang. Perlu dicatat bahwa ini **tidak** membatalkan poin 11: mengganti naik/turun jadi *Dahulukan* satu-tap itu soal biaya interaksi, bukan soal nilai inti — jadi tetap dikerjakan.
+3. **Papan menampung pesanan belum lunas dan menandainya.** Open bill ikut masuk papan dengan penanda **BELUM BAYAR** yang mencolok, dan transisi ke `done` menuntut konfirmasi bila `status !== completed`. Dengan ini poin 12 naik derajat dari temuan jadi **syarat penerimaan**, dan status pembayaran menjadi bagian sah dari model papan — bukan tempelan.
+
+##### Penjaga anti-kunci — wajib dipasang di versi pertama meski offline belum dikerjakan
+> Ini harga dari memilih "bertahap". Empat hal berikut hampir tak berbiaya sekarang, tapi mahal sekali kalau baru disadari saat fase offline dibuka.
+
+1. **`queue_number` tidak boleh jadi identitas kartu.** Identitas tetap `id`/`code`; nomor antrian hanya label tampilan. Perangkat offline nanti tidak akan bisa menjamin nomor unik lintas perangkat, jadi apa pun yang menjadikan nomor sebagai kunci akan menghalangi fase kedua.
+2. **Pengalokasian nomor disembunyikan di balik satu seam tersendiri** (mis. `QueueNumberAllocator`), bukan ditanam langsung di `TransactionService@checkout`. Fase offline akan menukar strateginya — blok nomor per perangkat, atau awalan per perangkat seperti `A-12`/`B-12` — dan penukaran itu harus jadi penggantian satu kelas, bukan bedah ulang checkout.
+3. **`sort_index` diturunkan dari `effectiveDate()`/`occurred_at`, bukan `now()`.** Gratis hari ini karena keduanya sama persis untuk transaksi online. Wajib nanti: penjualan offline disinkronkan belakangan, sehingga `now()` saat sync akan melemparkannya ke dasar papan padahal pesanannya datang paling awal.
+4. **Batas hari pada papan juga memakai `effectiveDate()`** (lihat poin 9), dengan alasan yang sama.
+
+- **Area Terdampak:**
+  - `docs/phases-2/PHASE-QUEUE_Kitchen-Order-Queue.md` — dokumen utama yang perlu ditulis ulang
+  - `docs/phases-2/PHASE-FEATURE-FLAGS_Capabilities-Sync.md` — ikut terdampak; ia menyatakan dirinya bergantung pada Bagian 0 dokumen di atas
+  - `database/migrations/2026_07_26_180117_add_business_type_to_tenants_table.php` — kolom yang direbutkan
+  - `config/pricing-dimensions.php:83` — pemakaian sah kolom itu hari ini
+  - `app/Services/TransactionService.php:471` — `commitOffline()` tidak menyentuh fulfillment sama sekali
+  - `app/Services/TransactionService.php:323` — `void()` tidak membersihkan `fulfillment_status`
+  - `app/Http/Middleware/EnsureSubscriptionActive.php:52` — masa tenggang menolak semua method non-safe
+  - `bootstrap/app.php:23` — `tenant`/`tenant.api` adalah GRUP, bukan alias
+  - `app/Http/Controllers/Api/V1/ApiOrderController.php:113` — satu-satunya jalur advance yang ada hari ini
+  - `resources/js/Components/ReceiptModal.vue` — struk belum mengenal nomor antrian
+
+- **Deskripsi — kenapa dokumennya usang, bukan salah sejak awal:**
+  Dokumen ini ditulis saat fondasi self-order baru selesai, dan waktu itu isinya benar. Sesudahnya tiga pekerjaan besar mendarat dan menggeser tanah tempat ia berdiri: **PHASE SAAS** (`[BL-005]`/`[BL-006]`) membawa siklus hidup langganan berikut gerbang hanya-baca, **`[BL-015]`** menaruh `tenants.business_type` sebagai dimensi harga, dan **PHASE PWA** membuat penjualan offline jadi jalur tulis kedua yang setara. Ketiganya menyentuh persis titik yang diandaikan dokumen ini masih kosong.
+
+- **A. Penghalang keras — akan merusak yang sudah jalan:**
+  1. **Kolom `business_type` sudah dipakai penetapan harga, dan rebutan ini menyentuh tagihan.** Dokumen merencanakan `string('business_type')->default('cafe')` bernilai `cafe|street_food` (Bagian 1a). Kolomnya **sudah ada** — `nullable`, bernilai `kuliner|retail|jasa|lainnya`, bertipe dimensi `attribute`, dan **dibekukan ke `invoices.pricing_context`** setiap kali tagihan terbit. Migrasinya akan gagal karena duplikat; yang jauh lebih buruk adalah bila kolomnya "dipakai bareng" — toggle bernama *Mode Outlet* di Settings akan **diam-diam mengubah dasar harga langganan tenant**. Owner mengira mengganti wajah papan dapur; yang berubah adalah aturan harga mana yang cocok untuknya. Ini persis jenis kesalahan yang tak akan disadari siapa pun sampai ada yang memeriksa tagihan.
+  2. **Transaksi offline tidak akan pernah muncul di papan — dan itu menimpa persona yang justru ditarget.** `commitOffline()` tak pernah menyetel `fulfillment_status`, jadi nilainya `null` dan `hasFulfillmentTracking()` menjawab false. Checklist dokumen menyebut `checkout` dan `confirmSelfOrderPayment`, tapi **melewatkan jalur offline seluruhnya**. Sasaran fiturnya adalah kaki lima dan tenant bazar — tempat dengan sinyal paling buruk. Jadi papan dapur akan kosong justru pada hari antreannya paling panjang. Turunannya perlu diputuskan sadar-sadar: nomor antrian digenerate server saat sync, sehingga urutan nomor tak mencerminkan urutan orang datang, dan pelanggan tak memegang nomor apa pun saat memesan.
+  3. **Transaksi void nyangkut di papan selamanya.** `void()` hanya mengubah `status` jadi `voided` tanpa menyentuh `fulfillment_status`, sementara query papan (Bagian 2c) hanya menyaring `fulfillment_status`. Pesanan yang sudah dibatalkan tetap tampil sebagai kartu aktif dan akan dimasak. Perbaikannya dua lapis: `void()` menolkan fulfillment, **dan** query papan tetap mengecualikan `STATUS_VOIDED` — jangan bergantung pada satu saja.
+  4. **Masa tenggang membekukan dapur.** `EnsureSubscriptionActive` menolak seluruh method non-safe saat status `grace`, dan semua rute antrian yang diusulkan adalah POST. Artinya begitu langganan lewat jatuh tempo, operator tak bisa memajukan status pesanan **yang uangnya sudah diterima**. Ini bertabrakan dengan prinsip yang ditulis middleware itu sendiri — *"Menyandera data pelanggan bukan alat penagihan yang sah"*. Menyelesaikan kewajiban yang sudah dibayar bukan "layanan baru", jadi `queue.advance` layak masuk `ALWAYS_ALLOWED`.
+
+- **B. Koreksi pada kode contoh di dokumen (bukan penghalang, tapi jangan disalin apa adanya):**
+  5. **`advance()` tanpa proteksi balapan, padahal dokumen sendiri menetapkan polling 5–10 detik dan skenario dua aktor.** Dengan polling, UI basi bukan kemungkinan melainkan keadaan normal: kartu yang masih menampilkan "Mulai masak" padahal sudah `preparing` akan melompati satu status begitu ditekan. Kirim status yang diharapkan dari klien (`advance($tx, expectedFrom:)`) dan tolak bila tak cocok — murah, dan menutup seluruh kelas bug ini sekaligus.
+  6. **`sort_index` tidak sungguh anti-tie.** Dokumen mengklaim `now()->valueOf()` membuat tiap kartu unik; itu milidetik, dan dua self-order bisa jatuh di milidetik yang sama. Query tetangga memakai perbandingan **strict** (`<` / `>`), sehingga kartu kembar dilewati dan tombolnya terasa rusak. Pakai `id` sebagai pemecah seri di pengurutan maupun di pencarian tetangga.
+  7. **Lost update di `swapWithNeighbor`.** Hanya tetangga yang kena `lockForUpdate`; `$transaction->sort_index` dibaca dari model in-memory yang tidak dikunci dan tidak di-refresh di dalam `DB::transaction`. Dua tap cepat saling menimpa.
+  8. **`advance()` menulis tiga kali dan tidak atomik** — `advanceFulfillment()` sudah `update()`, lalu dua `update()` lagi untuk stempel waktu, dan tidak dibungkus `DB::transaction` padahal `moveUp`/`moveDown` dibungkus. Jadikan satu `update()`.
+  9. **Papan tidak punya batas hari.** Pesanan `ready` yang terlupakan saat tutup lapak akan tetap muncul besok pagi, dan karena nomor antrian reset harian, "#5 kemarin" berdampingan dengan "#5 hari ini". Filternya juga harus memakai `effectiveDate()`/`whereEffectiveDate()` sesuai konvensi repo — bukan `created_at` mentah seperti pada `generateQueueNumber` usulan, yang akan salah untuk transaksi offline.
+  10. **Blok alias di PHASE-FEATURE-FLAGS Bagian 2 salah fakta.** Ia menulis `tenant` dan `tenant.api` sebagai alias, padahal `bootstrap/app.php` menyatakan keduanya **sengaja grup** berikut alasan panjangnya. Blok itu juga menghilangkan `permission`, `permission.api`, `platform.can`, dan `platform.owner` yang sudah ada — menyalinnya mentah-mentah akan mematikan gating RBAC dan panel platform sekaligus.
+
+- **C. Kasus yang belum tertangani — ini soal rancangan, bukan bug:**
+  11. **Cara mendahulukan pesanan bertabrakan dengan personanya sendiri.** Dokumen menggambarkan operator yang "lagi masak, tangan repot", lalu mewajibkan modal konfirmasi **di setiap** tekan ▲/▼. Karena mekanismenya tukar-satu-langkah, mendahulukan pesanan dari posisi 10 ke posisi 1 berarti **9 tap dan 9 konfirmasi**. Niat sebenarnya hampir selalu "dahulukan yang ini", bukan "geser satu": jadikan *Dahulukan* (lompat ke atas) aksi utamanya dengan satu konfirmasi, dan sisakan ▲/▼ sebagai penghalus tanpa modal.
+  12. **Pesanan yang belum dibayar bisa ditandai "Selesai".** Open bill masuk papan dengan `fulfillment_status = waiting` tapi `status = pending`, dan rancangan kartunya tidak menampilkan status pembayaran sama sekali. Untuk operator tunggal yang merangkap masak dan kasir — persona yang persis ditarget — ini kebocoran uang, bukan kekurangan kosmetik.
+  13. **Pelanggan tidak pernah menerima nomor antriannya.** Seluruh gunanya `queue_number` bertumpu pada nomor itu bisa dipanggil, tapi tidak ada satu langkah pun yang menyampaikannya: `ReceiptModal.vue` tidak mengenal kolomnya, dan self-order hanya menerima `transaction_code`. Tanpa ini papan cuma jadi catatan internal.
+  14. **Tidak ada jalan batal dari papan.** Salah input di jam sibuk hanya bisa dikeluarkan dengan menekan "Selesai" tiga kali — yang mencatatnya sebagai terlayani dan mengotori data.
+  15. **Status `ready` ikut dalam himpunan yang bisa diurutkan ulang,** sehingga pesanan yang sudah siap bisa ditukar posisinya dengan yang belum dimasak. Tidak bermakna; pisahkan atau pin.
+  16. **Pengelompokan pekerjaan (batching) tidak tertangani — dan ini peluang terbesar yang terlewat.** Bagi operator tunggal, pertanyaan sesungguhnya bukan "pesanan mana duluan" melainkan "apa yang bisa saya kerjakan sekaligus": tiga es teh di tiga pesanan berbeda idealnya sekali jalan. Papan berbentuk daftar-pesanan murni justru menyembunyikan informasi itu. Tidak harus masuk versi pertama, tapi layak jadi arah lanjutan — efisiensi yang benar-benar dirasakan persona ini ada di sini, jauh melebihi tombol naik/turun.
+  17. **Fulfillment parsial** (sebagian item siap) tidak didukung. Untuk street-food itu penyederhanaan yang wajar — tapi nyatakan sebagai batas yang disadari, jangan dibiarkan ambigu.
+  18. **Hari pertama flag dinyalakan, papan akan langsung penuh sampah — dan ini akibat data yang sudah tertimbun, bukan bug baru.** Ditemukan menyusul Keputusan 3. Open bill **sudah** memperoleh `fulfillment_status = waiting` sejak hari pertama fitur itu ada (`TransactionService.php:60`), sementara `payOpenBill()` (`:264`) hanya mengubah `status` jadi `completed` dan **tidak pernah menyentuh `fulfillment_status`**. Artinya setiap open bill yang pernah dibuat — termasuk yang sudah lunas dan selesai berbulan-bulan lalu — sampai detik ini masih berbunyi `waiting` di basis data, dan selama ini tidak terlihat semata karena belum ada permukaan yang menampilkannya. Begitu papan menyala, semuanya muncul sekaligus sebagai pesanan aktif. Dua hal yang harus ikut dikerjakan: **(a)** `payOpenBill()` memajukan fulfillment saat tagihan lunas — perbaikan yang benar terlepas dari fitur antrian, dan **(b)** migrasi backfill yang menolkan `fulfillment_status` pada open bill lama yang sudah `completed`/`voided`. Poin 9 (batas hari) saja **tidak cukup** menutup ini: sebagian open bill lama akan jatuh di hari yang sama dengan pengaktifan, dan yang lolos tetap salah — hanya tidak terlihat.
+
+- **Usulan Perbaikan:**
+  1. **Selaraskan ulang tujuannya lebih dulu, baru bentuknya.** Yang perlu dijawab: apakah sasarannya tetap kaki lima/bazar (yang berarti offline **wajib** ikut, poin 2), dan apakah nilai utamanya "urutan siapa duluan" atau "apa yang dikerjakan berikutnya" (poin 16). Dua jawaban ini menentukan hampir seluruh sisanya.
+  2. **Cabut `business_type` dari fase ini sepenuhnya.** Kalau preset saat pendaftaran tetap diinginkan, pakai kolom bernama lain (mis. `operation_mode`) — jangan menumpang dimensi harga. Ini sekaligus menutup "Keputusan Terbuka A" di dokumen: pilih **toggle murni**, karena slot registrasi sudah punya penghuni sah.
+  3. **Tulis ulang dokumennya, jangan ditambal.** Bagian 0, 1, dan 2b bertumpu pada asumsi yang sudah gugur, jadi menyunting sepotong-sepotong akan menyisakan kalimat lama yang saling bertentangan dengan yang baru.
+  4. **Perbarui PHASE-FEATURE-FLAGS di sesi yang sama.** Ia menyatakan dirinya bergantung pada Bagian 0 dokumen ini; membiarkannya menunjuk bagian yang sudah berubah akan mengulang persoalan yang sama di permukaan lain.
+
+- **Catatan:**
+  - **Yang tidak perlu diragukan.** Beberapa keputusan di dokumen ini tetap benar dan sebaiknya dipertahankan saat ditulis ulang: memusatkan logika fulfillment di satu service (duplikasi di `ApiOrderController:113` memang nyata), migrasi yang hanya menambah kolom, gating agar mode cafe nol perubahan, penggunaan ulang `ConfirmDialog.vue`, polling sebelum Reverb, dan urutan "test backend dulu, UI belakangan".
+  - **Fondasi datanya memang sudah berdiri seperti klaim dokumen** — `fulfillment_status`, `advanceFulfillment()`, `source`, `order_type`, `customer_name`, `table_number` semuanya ada. Jadi yang usang adalah asumsi tentang *sekitarnya*, bukan tentang fondasinya.
+  - **Pemisahan `feature:` dari `permission:` bukan duplikasi sistem.** Keduanya ortogonal: `permission` menjawab "pengguna ini boleh?", `feature` menjawab "outlet ini punya kapabilitasnya?". Yang perlu dijaga saat menulis ulang hanyalah urutan gerbang dan agar menu nav menghormati keduanya.
+
 ### [BL-018] Diskon Dinamis Barang Mendekati Habis/Kedaluwarsa dengan Penjaga Margin
 - **Ditemukan:** 2026-07-25
 - **Sumber:** Saran yang diterima setelah sesi pitching — diskon yang "harganya ditentukan dan menyesuaikan sembari tetap untung, melihat harga modal dan harga jual"
