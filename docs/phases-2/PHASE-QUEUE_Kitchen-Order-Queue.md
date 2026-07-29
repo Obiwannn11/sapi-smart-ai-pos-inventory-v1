@@ -1,6 +1,6 @@
 # PHASE QUEUE — Antrian Dapur (Papan Operator)
 
-**Status:** Rencana — belum dikerjakan
+**Status:** ✅ Selesai 2026-07-29 — lihat `[ADDITION] Papan Antrian Dapur (BL-019)` di `docs/CHANGELOG.md`
 **Ditulis ulang:** 2026-07-28 (lihat [Riwayat Revisi](#riwayat-revisi))
 **Dependency:** Fondasi **Tenant Capability Flags** (lihat [Bagian 1](#1-prasyarat--capability-flags)) — harus berdiri lebih dulu
 **Output:** Papan antrian dapur untuk operator yang merangkap kasir + masak, digerbang flag `kitchen_queue_enabled`
@@ -30,7 +30,7 @@ Yang berubah, dan kenapa:
 | Papan tidak mengenal status bayar | **BELUM BAYAR** jadi syarat penerimaan | Operator tunggal bisa menandai "Selesai" atas pesanan yang belum ditagih |
 | — | Migrasi **backfill** open bill lama | Temuan baru: timbunan `waiting` yang selama ini tak terlihat (lihat [2c](#2c-migrasi-backfill--membersihkan-timbunan-yang-belum-terlihat)) |
 
-**Catatan pemeliharaan:** `docs/phases-2/PHASE-FEATURE-FLAGS_Capabilities-Sync.md` masih menunjuk *"PHASE-QUEUE Bagian 0"* sebagai tempat fondasi flag. Rujukan itu **sudah tidak berlaku** sejak dokumen ini ditulis ulang, dan dokumen tersebut perlu diperbarui di sesi tersendiri. Blok alias di Bagian 2-nya juga salah fakta — lihat catatan di [Bagian 1](#1-prasyarat--capability-flags).
+**Catatan pemeliharaan — SUDAH TIDAK BERLAKU (2026-07-29).** Paragraf ini semula memperingatkan bahwa `PHASE-FEATURE-FLAGS` masih menunjuk *"PHASE-QUEUE Bagian 0"* dan blok aliasnya salah fakta. Keduanya **sudah dikoreksi di dokumen tersebut pada penulisan ulang 2026-07-28 yang sama**, jadi peringatan ini sendiri yang kemudian jadi usang. Dipertahankan apa adanya supaya tidak ada yang mengira koreksinya terlewat.
 
 ---
 
@@ -595,39 +595,39 @@ Jalankan: `php artisan test --compact --filter="KitchenQueue|Fulfillment"`
 ## 7. Checklist
 
 **Prasyarat**
-- [ ] Fase capability flags selesai — `Tenant::hasFeature()`, middleware `feature:`, flag terbagi ke Inertia
-- [ ] `PHASE-FEATURE-FLAGS` diperbarui: rujukan "Bagian 0" dan blok alias yang salah fakta
+- [x] Fase capability flags selesai — `Tenant::hasFeature()`, middleware `feature:`, flag terbagi ke Inertia
+- [x] `PHASE-FEATURE-FLAGS` diperbarui: rujukan "Bagian 0" dan blok alias yang salah fakta
 
 **Migrasi**
-- [ ] Kolom antrian di `transactions` + `$fillable` + `casts()`
-- [ ] Indeks papan `transactions_queue_board_index`
-- [ ] Migrasi backfill open bill lama (`down()` no-op berkomentar)
+- [x] Kolom antrian di `transactions` + `$fillable` + `casts()`
+- [x] Indeks papan `transactions_queue_board_index`
+- [x] Migrasi backfill open bill lama (`down()` no-op berkomentar)
 
 **Backend**
-- [ ] `QueueNumberAllocator` + `DailySequenceAllocator` + binding
-- [ ] `TransactionService@checkout` memakai `$queueMode` (bukan `$isOpenBill`) + `effectiveDate()`
-- [ ] `confirmSelfOrderPayment()` mengisi nomor + `sort_index`
-- [ ] `void()` menolkan `fulfillment_status`
-- [ ] `FulfillmentService` — `advance($expectedFrom)`, `moveToTop`, `moveUp`, `moveDown`
-- [ ] `ApiOrderController@updateFulfillment` memanggil service (kontrak API menerima `expected_from`)
-- [ ] `QueueController` + `QueueCardResource`
+- [x] `QueueNumberAllocator` + `DailySequenceAllocator` + binding
+- [x] `TransactionService@checkout` memakai `$queueMode` (bukan `$isOpenBill`) + `effectiveDate()`
+- [x] `confirmSelfOrderPayment()` mengisi nomor + `sort_index`
+- [x] `void()` menolkan `fulfillment_status`
+- [x] `FulfillmentService` — `advance($expectedFrom)`, `moveToTop`, `moveUp`, `moveDown`
+- [x] `ApiOrderController@updateFulfillment` memanggil service (kontrak API menerima `expected_from`)
+- [x] `QueueController` + `QueueCardResource`
 
 **Frontend**
-- [ ] `Cashier/Queue.vue` — kartu, BELUM BAYAR, Dahulukan, polling
-- [ ] `ConfirmDialog` pada Dahulukan & pada Selesai-belum-lunas
-- [ ] Pita keadaan offline
-- [ ] `queue_number` di `ReceiptModal.vue` + `escpos.js` + respons self-order
-- [ ] Menu bersyarat di `OwnerLayout.vue` & `CashierTopbar.vue`
+- [x] `Cashier/Queue.vue` — kartu, BELUM BAYAR, Dahulukan, polling
+- [x] `ConfirmDialog` pada Dahulukan & pada Selesai-belum-lunas
+- [x] Pita keadaan offline
+- [x] `queue_number` di `ReceiptModal.vue` + `escpos.js` + respons self-order
+- [x] Menu bersyarat di `OwnerLayout.vue` & `CashierTopbar.vue`
 
 **Routes & Settings**
-- [ ] Routes digerbang `feature:kitchen_queue`
-- [ ] `cashier.queue.*` masuk `ALWAYS_ALLOWED`
-- [ ] Toggle di `SettingsController` + `Owner/Settings/Index.vue`
+- [x] Routes digerbang `feature:kitchen_queue`
+- [x] `cashier.queue.*` masuk `ALWAYS_ALLOWED`
+- [x] Toggle di `SettingsController` + `Owner/Settings/Index.vue`
 
 **Penutup**
-- [ ] Tests hijau (`KitchenQueue|Fulfillment`)
-- [ ] `vendor/bin/pint --dirty --format agent` bersih
-- [ ] Entri `[ADDITION]` di `docs/CHANGELOG.md`, `[BL-019]` dipindahkan ke Riwayat Selesai
+- [x] Tests hijau (`KitchenQueue|Fulfillment`)
+- [x] `vendor/bin/pint --dirty --format agent` bersih
+- [x] Entri `[ADDITION]` di `docs/CHANGELOG.md`, `[BL-019]` dipindahkan ke Riwayat Selesai
 
 ### Urutan kerja disarankan
 Prasyarat flags → migrasi (2) → backend (3) → **test backend dulu** (6) → frontend (4) → routes & settings (5).

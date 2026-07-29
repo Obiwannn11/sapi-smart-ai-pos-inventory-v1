@@ -143,7 +143,11 @@ Route::middleware(['auth', 'tenant'])
         });
 
         // Modul: AI Analysis (sensitif — grantable, default tidak dicentang)
-        Route::middleware('permission:ai_analysis')->group(function () {
+        // Urutannya disengaja: `feature` lebih dulu daripada `permission`.
+        // Keduanya harus dijawab ya, tapi tenant yang fiturnya mati perlu
+        // mendengar "fitur tidak aktif untuk outlet Anda" — bukan "Anda tidak
+        // punya izin", yang akan mengirim owner memeriksa halaman Role.
+        Route::middleware(['feature:ai', 'permission:ai_analysis'])->group(function () {
             Route::get('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'index'])
                 ->name('ai-analysis.index');
             Route::post('ai-analysis', [\App\Http\Controllers\Owner\AiAnalysisController::class, 'store'])
@@ -214,6 +218,21 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
         // Transaction History (kasir)
         Route::get('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'history'])
             ->name('transactions.index');
+
+        // Antrian Dapur — digerbang kapabilitas outlet. Flag mati → 403, dan
+        // alur kasir cafe tidak berubah sama sekali.
+        Route::middleware('feature:kitchen_queue')->group(function () {
+            Route::get('/queue', [\App\Http\Controllers\Cashier\QueueController::class, 'index'])
+                ->name('queue');
+            Route::post('/queue/{transaction}/advance', [\App\Http\Controllers\Cashier\QueueController::class, 'advance'])
+                ->name('queue.advance');
+            Route::post('/queue/{transaction}/move-to-top', [\App\Http\Controllers\Cashier\QueueController::class, 'moveToTop'])
+                ->name('queue.move-to-top');
+            Route::post('/queue/{transaction}/move-up', [\App\Http\Controllers\Cashier\QueueController::class, 'moveUp'])
+                ->name('queue.move-up');
+            Route::post('/queue/{transaction}/move-down', [\App\Http\Controllers\Cashier\QueueController::class, 'moveDown'])
+                ->name('queue.move-down');
+        });
 
         // Cash Drawer
         Route::get('/cash-drawer', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'index'])

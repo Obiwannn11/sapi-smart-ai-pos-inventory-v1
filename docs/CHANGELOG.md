@@ -45,6 +45,70 @@
 
 ---
 
+### [ADDITION] Papan Antrian Dapur (BL-019)
+- **Tanggal:** 2026-07-29
+- **Fase Terkait:** PHASE QUEUE — menutup `[BL-019]`; berdiri di atas fase capability flags di bawah
+- **Dampak:** Migration | Model | Service | Controller | Resource | Route | Frontend | Test
+- **Breaking Change:** Tidak untuk mode cafe (flag `kitchen_queue_enabled` bawaannya mati → nol perubahan). Ya untuk konsumen `PATCH /api/v1/orders/{tx}/fulfillment`, yang kini menerima `expected_from`.
+- **Deskripsi:** Kolom fulfillment yang sudah tertanam sejak Self-Order akhirnya punya **wajah**: papan operator di `/cashier/queue` dengan nomor antrian, urutan yang bisa diubah, penanda BELUM BAYAR, dan timer tunggu. Ditujukan untuk warung ber-dapur dan kaki lima, di mana satu orang merangkap masak dan kasir.
+- **Alasan:** Skema aplikasi ini berorientasi kasir cafe — bayar, cetak, selesai. Operator tunggal butuh tahu pesanan mana masuk duluan dan mana yang perlu didahulukan, dan sampai sekarang satu-satunya jalur memajukan status ada di API Sanctum tanpa UI sama sekali.
+- **File Terdampak:**
+  - `database/migrations/..._add_queue_columns_to_transactions_table.php` — `queue_number`, `sort_index`, `preparing_at`, `ready_at`
+  - `database/migrations/..._add_queue_board_index_to_transactions_table.php` — indeks `transactions_queue_board_index`
+  - `database/migrations/..._backfill_stale_fulfillment_status.php` — migrasi DATA, `down()` no-op berkomentar
+  - `app/Services/Queue/QueueNumberAllocator.php` + `DailySequenceAllocator.php` + binding di `AppServiceProvider`
+  - `app/Services/FulfillmentService.php` — `advance($expectedFrom)`, `moveToTop`, `moveUp`, `moveDown`
+  - `app/Services/TransactionService.php` — `$queueMode` di `checkout()`, nomor di `confirmSelfOrderPayment()`, `void()` menolkan fulfillment
+  - `app/Http/Controllers/Cashier/QueueController.php` + `app/Http/Resources/QueueCardResource.php`
+  - `app/Http/Controllers/Api/V1/ApiOrderController.php` — memanggil service, menerima `expected_from`
+  - `app/Http/Middleware/EnsureSubscriptionActive.php` — `cashier.queue.*` masuk `ALWAYS_ALLOWED`
+  - `resources/js/Pages/Cashier/Queue.vue`, `Components/ReceiptModal.vue`, `Components/CashierTopbar.vue`, `Layouts/OwnerLayout.vue`, `services/escpos.js`
+  - `app/Http/Controllers/Api/XenditWebhookController.php` — respons memuat `queue_number`
+  - `tests/Feature/KitchenQueueTest.php` (22) + `tests/Unit/FulfillmentServiceTest.php` (13)
+- **Keputusan arsitektur yang perlu diingat:**
+  - **Empat penjaga anti-kunci dipasang meski fase offline belum dibuka.** `queue_number` bukan identitas (hanya label; identitas tetap `id`/`code`), pengalokasian nomor di balik seam `QueueNumberAllocator`, `sort_index` diturunkan dari `effectiveDate()` bukan `now()`, dan batas hari papan juga memakai `effectiveDate()`. Semuanya nyaris tak berbiaya hari ini karena online dan offline identik untuk transaksi biasa — dan mahal sekali kalau baru disadari nanti.
+  - **`expected_from` wajib di permukaan web.** Papan di-poll tiap 7 detik dan bisa dibuka dua orang, jadi kartu basi adalah keadaan normal. Tanpa pemeriksaan ini satu tap pada kartu basi melompati satu status diam-diam. Ini juga yang membuat kenaikan ke Reverb aman dilakukan belakangan.
+  - **Perubahan perilaku yang disengaja: `checkout()` kini bersyarat `$queueMode`, bukan `$isOpenBill`.** Versi lama memberi `waiting` pada setiap open bill bahkan tanpa papan yang mengerjakannya — sumber timbunan yang dibersihkan migrasi backfill. Tak terlihat oleh tenant mode cafe karena tak ada permukaan yang merendernya, tapi tetap dikunci dengan test tersendiri.
+  - **`payOpenBill()` tidak disentuh sama sekali.** Saat mode antrian hidup, pelunasan memang tidak boleh mengubah status masak — memasak dan membayar dua hal berbeda. Diuji.
+  - **Dahulukan, bukan sembilan tap.** Aksi prioritas utamanya satu-tap ke puncak dengan satu konfirmasi; ▲/▼ tinggal sebagai penghalus tanpa modal, dan tidak dirender sama sekali pada kartu `ready`.
+  - **`id` sebagai pemecah seri.** `sort_index` lahir dari cap waktu milidetik dan dua self-order bisa jatuh di milidetik yang sama; tanpa pemecah seri, perbandingan strict melewati kartu kembar dan tombolnya terasa rusak.
+  - **`cashier.queue.*` di `ALWAYS_ALLOWED`.** Menyelesaikan pesanan yang uangnya sudah diterima bukan layanan baru. Halaman papannya sendiri (`cashier.queue`, tanpa akhiran) tidak tercakup pola itu — dan tidak perlu, karena GET sudah lolos sebagai method aman.
+- **Batas yang diterima sadar (Keputusan pemilik 2026-07-28):** mode antrian **tidak aktif saat perangkat offline**, dan penjualan hasil sinkronisasi **tidak menyusul masuk papan**. Dinyatakan di UI lewat pita offline dan di deskripsi toggle Settings, serta dikunci test — bukan dibiarkan tersirat. Di luar lingkup juga: pengelompokan pekerjaan (batching), fulfillment parsial, websocket, dan pembatalan langsung dari papan.
+- **Catatan Migrasi:** `php artisan migrate` lalu `npm run build`. Migrasi backfill **tidak bisa dibatalkan** — ia menolkan `fulfillment_status` pada transaksi lama yang sudah tuntas. Papan menyala per tenant lewat toggle **Mode & Fitur Outlet** di Pengaturan.
+
+---
+
+### [ADDITION] Fondasi Capability Flags & Gerbang Tersinkron
+- **Tanggal:** 2026-07-29
+- **Fase Terkait:** PHASE FEATURE-FLAGS — prasyarat `PHASE QUEUE`
+- **Dampak:** Migration | Model | Middleware | Route | Job | Controller | Frontend | Test
+- **Breaking Change:** Ya untuk konsumen API self-order — `POST /api/v1/orders`, `POST /api/v1/upsell/suggestions`, dan `PATCH /api/v1/orders/{tx}/fulfillment` kini bisa menjawab `403` berkode `feature_disabled`.
+- **Deskripsi:** Tiga kapabilitas per tenant (`kitchen_queue_enabled`, `self_order_enabled`, `ai_enabled`) dengan satu sumber kebenaran `Tenant::hasFeature()`, dua middleware gerbang (web + API/JSON), dan gerbang terpasang di **setiap** pintu masuk yang ada: web, API self-order, job AI, dan MCP.
+- **Alasan:** Satu fitur bisa dicapai lewat pintu yang mekanisme autentikasinya berbeda-beda, dan gerbang di satu pintu tidak menutup pintu lain. Yang paling mendesak: **MCP sudah hidup penuh** — tiga tool terdaftar, token bisa diterbitkan dari Settings — dan sampai sekarang satu-satunya cara menghentikan aksesnya adalah mencabut tokennya. Tidak ada saklar.
+- **File Terdampak:**
+  - `database/migrations/..._add_capability_flags_to_tenants_table.php` — tiga boolean + backfill `self_order_enabled = true`
+  - `app/Models/Tenant.php` — `$fillable`, `casts()`, `$attributes`, `hasFeature()`
+  - `app/Http/Middleware/EnsureTenantFeature.php` + `EnsureTenantFeatureApi.php` + alias di `bootstrap/app.php`
+  - `routes/api.php`, `routes/web.php`, `routes/ai.php` — gerbang per permukaan
+  - `app/Jobs/RunAiAnalysisJob.php` — guard sebelum kuota & provider
+  - `app/Http/Middleware/HandleInertiaRequests.php` — flag dibagikan ke klien
+  - `app/Http/Controllers/Owner/SettingsController.php` + `resources/js/Pages/Owner/Settings/Index.vue`
+  - `resources/js/Layouts/OwnerLayout.vue`, `Components/CashierTopbar.vue` — nav bersyarat
+  - `tests/Feature/FeatureGatingTest.php` — 14 test
+- **Keputusan arsitektur yang perlu diingat:**
+  - **Gagal tertutup.** Nama fitur yang tidak dikenal menjawab `false`, bukan `true`. Salah ketik harus menutup pintu, bukan membukanya diam-diam. Diuji.
+  - **Backfill `self_order_enabled = true` adalah penjaga status quo, bukan kerapian.** Self-order bukan fitur baru; membiarkan baris lama `false` berarti pada hari rilis setiap integrasi n8n yang hidup menerima 403. Risikonya tidak setara — keliru `false` mematikan yang sedang bekerja, keliru `true` tidak mengubah apa pun bagi yang tak memakainya. `ai_enabled` default `true` dengan alasan sama.
+  - **`$attributes` ikut diisi.** `hasFeature()` atas instance yang belum dibaca ulang dari basis data akan menerima `null` dan menjawab `false` — termasuk untuk `ai_enabled` yang seharusnya `true`. Dikunci test.
+  - **Dua middleware, bukan satu.** Web butuh abort; API, MCP, dan mobile butuh JSON. `code` yang stabil (`feature_disabled`) lebih penting daripada `message`: n8n mencocokkan kode, bukan kalimat.
+  - **`feature` mendahului `permission`.** Keduanya ortogonal — `permission` menjawab "pengguna ini boleh?", `feature` menjawab "outlet ini punya kapabilitasnya?" — dan urutannya menentukan sebab penolakan yang didengar owner. "Tidak punya izin" akan mengirimnya memeriksa halaman Role, tempat yang salah sama sekali.
+  - **Job dijaga terpisah dari middleware.** `RunAiAnalysisJob` tak lewat HTTP dan bisa sudah mengantre saat flag dimatikan. Flag diperiksa **sebelum** kuota — terbalik berarti tenant yang fiturnya mati tetap menghabiskan jatah hariannya. Diuji dua arah.
+  - **`/api/v1/products` sengaja di luar gerbang.** Katalog bukan pemesanan, dan endpoint yang sama dipakai jalur mobile.
+  - **Badge "Self Order" historis tetap tampil** di dashboard meski flag mati. Itu data masa lalu; menyembunyikan riwayat karena fitur dimatikan hari ini adalah menghapus sejarah, bukan menggerbang fitur.
+  - **Tidak ada `business_type` di Settings.** Kolom itu milik penetapan harga (`[BL-015]`) dan dibekukan ke `invoices.pricing_context`; mengeditnya dari sana akan diam-diam mengubah dasar tagihan langganan.
+- **Catatan Migrasi:** `php artisan migrate` lalu `npm run build`. Tenant lama otomatis mempertahankan self-order dan AI; `kitchen_queue_enabled` mati untuk semua dan dinyalakan per outlet dari Pengaturan.
+
+---
+
 ### [HOTFIX] Gerbang Langganan di Jalur Self-Order (BL-020)
 - **Tanggal:** 2026-07-29
 - **Fase Terkait:** Di Luar Fase — menutup `[BL-020]`
@@ -128,7 +192,7 @@
 
 ---
 
-### [ADDITION] Pemisahan README ↔ Panduan Demo
+hro### [ADDITION] Pemisahan README ↔ Panduan Demo
 - **Tanggal:** 2026-07-25
 - **Fase Terkait:** Di Luar Fase — pemeliharaan dokumentasi
 - **Dampak:** Dokumentasi

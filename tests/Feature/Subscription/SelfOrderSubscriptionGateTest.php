@@ -29,7 +29,14 @@ use Laravel\Sanctum\Sanctum;
  */
 function makeSelfOrderContext(string $status): array
 {
-    $tenant = Tenant::factory()->create(['status' => $status]);
+    // Gerbang fitur sengaja dibuka: yang diuji berkas ini adalah gerbang
+    // LANGGANAN. Membiarkan `self_order_enabled` pada default `false` akan
+    // membuat sebagian test di bawah lulus karena alasan yang salah — 403 dari
+    // `feature_disabled`, bukan dari status langganan.
+    $tenant = Tenant::factory()->create([
+        'status' => $status,
+        'self_order_enabled' => true,
+    ]);
 
     Subscription::factory()->create([
         'tenant_id' => $tenant->id,

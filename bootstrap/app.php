@@ -63,6 +63,14 @@ return Application::configure(basePath: dirname(__DIR__))
             // Manajemen akun platform: dijaga penanda is_owner, bukan modul
             // grantable — agar staf platform tak bisa menaikkan izinnya sendiri.
             'platform.owner' => \App\Http\Middleware\EnsurePlatformOwner::class,
+            // Kapabilitas per tenant. Ortogonal terhadap 'permission':
+            // 'permission' menjawab "pengguna ini boleh?", 'feature' menjawab
+            // "outlet ini punya kapabilitasnya?". Keduanya kerap dipasang
+            // berdampingan, dan 'feature' ditaruh lebih dulu supaya sebab
+            // penolakannya benar — "fitur tidak aktif" mengarahkan owner ke
+            // Settings, "tidak punya izin" mengarahkannya ke halaman Role.
+            'feature' => \App\Http\Middleware\EnsureTenantFeature::class,
+            'feature.api' => \App\Http\Middleware\EnsureTenantFeatureApi::class,
         ]);
 
         // Tamu di area platform diarahkan ke login platform, bukan login tenant.

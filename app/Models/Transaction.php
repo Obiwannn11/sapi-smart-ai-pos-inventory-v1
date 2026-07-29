@@ -56,6 +56,7 @@ class Transaction extends Model
         'tenant_id', 'user_id', 'code', 'client_uuid', 'status',
         'total_amount', 'change_amount', 'notes',
         'source', 'order_type', 'fulfillment_status',
+        'queue_number', 'sort_index', 'preparing_at', 'ready_at',
         'customer_name', 'table_number',
         'edited_at', 'edited_by',
         'channel', 'occurred_at', 'synced_at', 'sync_status', 'device_id',
@@ -69,6 +70,8 @@ class Transaction extends Model
             'edited_at' => 'datetime',
             'occurred_at' => 'datetime',
             'synced_at' => 'datetime',
+            'preparing_at' => 'datetime',
+            'ready_at' => 'datetime',
         ];
     }
 

@@ -31,6 +31,16 @@ class EnsureSubscriptionActive
     private const ALWAYS_ALLOWED = [
         'logout',
         'billing.*',
+        // Menyelesaikan pesanan yang sudah diterima bukan "layanan baru".
+        // Seluruh aksi papan adalah POST, jadi tanpa pengecualian ini masa
+        // tenggang akan membekukan dapur di tengah antrean — menyandera
+        // pelanggan yang sudah membayar, persis yang ditolak docblock kelas
+        // ini. Tak satu pun rute di bawah pola ini menciptakan penjualan baru.
+        //
+        // Halaman papannya sendiri bernama `cashier.queue` tanpa akhiran,
+        // sehingga TIDAK tercakup pola ini — dan itu tidak masalah karena GET
+        // sudah lolos sebagai method aman.
+        'cashier.queue.*',
     ];
 
     public function handle(Request $request, Closure $next): Response

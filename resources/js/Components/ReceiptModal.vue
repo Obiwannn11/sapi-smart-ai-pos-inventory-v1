@@ -95,6 +95,16 @@ const printThermal = async () => {
                             <div class="text-center pb-3 border-b border-dashed border-gray-400">
                                 <p class="text-base font-bold uppercase tracking-widest">{{ tenantName }}</p>
                                 <p class="text-[10px] text-gray-500 mt-0.5">Point of Sale</p>
+
+                                <!--
+                                    Nomor antrian hanya ada saat mode antrian
+                                    hidup; mode cafe tidak punya nilainya, jadi
+                                    struknya tidak berubah.
+                                -->
+                                <div v-if="transaction.queue_number" class="mt-2 pt-2 border-t border-dashed border-gray-400">
+                                    <p class="text-[10px] uppercase tracking-widest text-gray-500">No. Antrian</p>
+                                    <p class="text-3xl font-bold leading-tight">{{ transaction.queue_number }}</p>
+                                </div>
                             </div>
 
                             <!-- ===== TRANSACTION INFO ===== -->

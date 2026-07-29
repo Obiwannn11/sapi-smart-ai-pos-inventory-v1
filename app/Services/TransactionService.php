@@ -9,6 +9,7 @@ use App\Models\StockMovement;
 use App\Models\Transaction;
 use App\Models\UpsellEvent;
 use App\Models\User;
+use App\Services\Queue\QueueNumberAllocator;
 use App\Services\Upsell\UpsellEventRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -20,7 +21,26 @@ class TransactionService
     public function __construct(
         private StockService $stockService,
         private UpsellEventRecorder $upsellEventRecorder,
+        private QueueNumberAllocator $queueNumberAllocator,
     ) {}
+
+    /**
+     * Beri kartu ini label panggil dan posisi di papan.
+     *
+     * Keduanya diturunkan dari `effectiveDate()`, bukan `now()`. Untuk transaksi
+     * online keduanya identik, jadi hari ini gratis. Wajib nanti: penjualan
+     * offline disinkronkan belakangan, sehingga `now()` saat sync akan
+     * melemparkannya ke dasar papan padahal pesanannya datang paling awal.
+     */
+    private function assignQueuePosition(Transaction $transaction): void
+    {
+        $occurredAt = $transaction->effectiveDate();
+
+        $transaction->update([
+            'queue_number' => $this->queueNumberAllocator->allocate($transaction->tenant_id, $occurredAt),
+            'sort_index' => $occurredAt->getTimestampMs(),
+        ]);
+    }
 
     /**
      * Proses checkout — atomic transaction.
@@ -56,8 +76,19 @@ class TransactionService
             $code = $this->generateTransactionCode($tenantId);
 
             // 2. Determine fulfillment_status
-            // Open bill → waiting (perlu tracking), POS langsung bayar → null (skip tracking)
-            $fulfillmentStatus = $isOpenBill ? Transaction::FULFILLMENT_WAITING : null;
+            //
+            // Bersyarat MODE ANTRIAN, bukan bersyarat open bill. Versi lama
+            // berbunyi `$isOpenBill ? WAITING : null`, sehingga open bill
+            // memperoleh `waiting` bahkan saat tak ada papan yang akan
+            // mengerjakannya — itulah sumber timbunan yang dibersihkan migrasi
+            // backfill_stale_fulfillment_status. Mengganti syaratnya menutup
+            // sumbernya, bukan cuma menyapu akibatnya.
+            //
+            // Mode antrian hidup → open bill DAN POS langsung-bayar sama-sama
+            // masuk papan; memasak dan membayar dua hal berbeda.
+            // Mode antrian mati → null, persis perilaku cafe hari ini.
+            $queueMode = $user->tenant?->hasFeature('kitchen_queue') ?? false;
+            $fulfillmentStatus = $queueMode ? Transaction::FULFILLMENT_WAITING : null;
 
             // 3. Buat transaksi
             $transaction = Transaction::create([
@@ -75,6 +106,12 @@ class TransactionService
                 'customer_name' => $data['customer_name'] ?? null,
                 'table_number' => $data['table_number'] ?? null,
             ]);
+
+            // 3b. Label & urutan papan. Dipanggil SETELAH create karena
+            //     effectiveDate() jatuh ke created_at bila occurred_at kosong.
+            if ($fulfillmentStatus) {
+                $this->assignQueuePosition($transaction);
+            }
 
             $totalAmount = 0;
 
@@ -234,6 +271,13 @@ class TransactionService
                 'fulfillment_status' => Transaction::FULFILLMENT_WAITING,
             ]);
 
+            // 4. Nomor antrian baru lahir di sini — bukan saat pesanan dibuat —
+            //    karena self-order belum tentu dibayar. Tanpa langkah ini
+            //    pesanan QR tidak akan pernah punya nomor untuk dipanggil.
+            if ($transaction->tenant?->hasFeature('kitchen_queue')) {
+                $this->assignQueuePosition($transaction);
+            }
+
             return $transaction->fresh()->load(['items.modifiers', 'payments.paymentMethod']);
         });
     }
@@ -320,7 +364,14 @@ class TransactionService
                 $this->stockService->restore($variant, $item->qty, $transaction->id);
             }
 
-            $transaction->update(['status' => Transaction::STATUS_VOIDED]);
+            $transaction->update([
+                'status' => Transaction::STATUS_VOIDED,
+                // Tanpa ini, pesanan yang dibatalkan tetap tampil sebagai kartu
+                // aktif di papan dan akan dimasak. Query papan JUGA
+                // mengecualikan voided — dua lapis, karena satu lapis akan
+                // bocor lewat jalur pembatalan yang belum ada hari ini.
+                'fulfillment_status' => null,
+            ]);
 
             return $transaction->fresh();
         });

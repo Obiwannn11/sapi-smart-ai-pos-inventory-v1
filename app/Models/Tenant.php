@@ -32,6 +32,7 @@ class Tenant extends Model
         'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
+        'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled',
     ];
 
     protected $hidden = ['ai_api_key'];
@@ -45,6 +46,9 @@ class Tenant extends Model
     protected $attributes = [
         'status' => self::STATUS_TRIAL,
         'pricing_track' => Subscription::TRACK_NORMAL,
+        'kitchen_queue_enabled' => false,
+        'self_order_enabled' => false,
+        'ai_enabled' => true,
     ];
 
     protected function casts(): array
@@ -52,10 +56,33 @@ class Tenant extends Model
         return [
             'ai_api_key' => 'encrypted',
             'flagged_at' => 'datetime',
+            'kitchen_queue_enabled' => 'boolean',
+            'self_order_enabled' => 'boolean',
+            'ai_enabled' => 'boolean',
         ];
     }
 
     // --- Helpers ---
+
+    /**
+     * Apakah kapabilitas ini aktif untuk tenant tersebut.
+     *
+     * Satu-satunya pintu. Route, menu nav, controller, job, dan tool MCP
+     * semuanya bertanya ke sini — sehingga menambah permukaan tidak pernah
+     * berarti menambah logika, hanya menambah pemanggil.
+     *
+     * `default => false` disengaja: nama fitur yang salah ketik harus MENUTUP
+     * pintu, bukan membukanya diam-diam.
+     */
+    public function hasFeature(string $feature): bool
+    {
+        return (bool) match ($feature) {
+            'kitchen_queue' => $this->kitchen_queue_enabled,
+            'self_order' => $this->self_order_enabled,
+            'ai' => $this->ai_enabled,
+            default => false,
+        };
+    }
 
     /**
      * Boleh membuat data baru (transaksi, produk, staf). Hanya `trial` dan

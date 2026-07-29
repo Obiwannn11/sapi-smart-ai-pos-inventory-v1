@@ -38,10 +38,19 @@ const staffModules = computed(() => {
 const isActive = (href) => page.url.startsWith(href);
 
 // POS/kasir is reachable via the back button on the left, so it's omitted here.
+// Kapabilitas outlet, dibagikan lewat HandleInertiaRequests. Gerbang rutenya
+// tetap sumber kebenaran — tautan ini hanya cermin.
+const hasFeature = (feature) => page.props.auth?.tenant?.features?.[feature] === true;
+
 const navItems = computed(() => {
-    const items = [
-        { name: 'Riwayat', href: '/cashier/transactions', icon: 'history' },
-    ];
+    const items = [];
+
+    if (hasFeature('kitchen_queue')) {
+        items.push({ name: 'Antrian', href: '/cashier/queue', icon: 'queue' });
+    }
+
+    items.push({ name: 'Riwayat', href: '/cashier/transactions', icon: 'history' });
+
     if (!isOwner.value) {
         items.push({ name: 'Kas', href: '/cashier/cash-drawer', icon: 'cash' });
     }
@@ -58,6 +67,7 @@ const iconPaths = {
     back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
     printer: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
     install: 'M12 4v12m0 0l-4-4m4 4l4-4M4 20h16',
+    queue: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
 };
 
 const NavIcon = defineComponent({

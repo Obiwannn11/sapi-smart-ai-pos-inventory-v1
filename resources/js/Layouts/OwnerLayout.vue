@@ -54,6 +54,8 @@ const iconPaths = {
     ],
     sparkles:
         'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L19 12l-3.714 2.143L13 21l-2.286-6.857L7 12l3.714-2.143L13 5z',
+    clipboard:
+        'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
 };
 
 const NavIcon = defineComponent({
@@ -88,10 +90,18 @@ const NavIcon = defineComponent({
 // Each item carries either `perm` (spatie module permission) or `ownerOnly`
 // (routes still gated by role:owner). Owner sees everything; staff only sees
 // items whose permission they hold (Keputusan A: shared filtered sidebar).
+//
+// A third key, `feature`, gates on a tenant capability flag rather than on the
+// user: it answers "does this outlet have the feature?" instead of "is this
+// person allowed?". Both can appear on the same item — they are independent
+// questions and each must answer yes.
 const sidebarGroups = [
     {
         label: null,
-        items: [{ name: 'Beranda', href: '/owner/dashboard', icon: 'home', ownerOnly: true }],
+        items: [
+            { name: 'Beranda', href: '/owner/dashboard', icon: 'home', ownerOnly: true },
+            { name: 'Antrian Dapur', href: '/cashier/queue', icon: 'clipboard', feature: 'kitchen_queue' },
+        ],
     },
     {
         label: 'Atur Menu',
@@ -133,7 +143,10 @@ const sidebarGroups = [
 const isOwner = computed(() => auth.user?.role === 'owner');
 const can = (perm) =>
     auth.user?.permissions?.includes('*') || auth.user?.permissions?.includes(perm);
+// Tenant capability flags, shared from HandleInertiaRequests.
+const hasFeature = (feature) => auth.tenant?.features?.[feature] === true;
 const canShowItem = (item) => {
+    if (item.feature && !hasFeature(item.feature)) return false;
     if (item.ownerOnly) return isOwner.value;
     if (!item.perm) return true;
     return can(item.perm);

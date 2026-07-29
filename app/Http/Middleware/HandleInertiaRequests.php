@@ -37,6 +37,22 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => fn () => $user->modulePermissions(),
                 ] : null,
 
+                // Kapabilitas outlet — dipakai menu nav agar bersyarat.
+                // Kunci terpisah dengan alasan yang sama seperti platformUser
+                // di bawah, dan closure dengan alasan yang sama seperti
+                // permissions di atas. Penjaga instanceof wajib: PlatformUser
+                // tidak punya tenant sama sekali.
+                //
+                // Sidebar hanyalah cermin — gerbang rute tetap sumber
+                // kebenarannya. Menyembunyikan menu bukan pengamanan.
+                'tenant' => $user instanceof User && $user->tenant ? [
+                    'features' => fn () => [
+                        'kitchen_queue' => $user->tenant->hasFeature('kitchen_queue'),
+                        'self_order' => $user->tenant->hasFeature('self_order'),
+                        'ai' => $user->tenant->hasFeature('ai'),
+                    ],
+                ] : null,
+
                 // Sengaja kunci terpisah, bukan menumpang `auth.user`. Kalau
                 // ditumpangkan, tiap komponen Vue yang membaca auth.user.role
                 // atau auth.user.tenant_id akan menerima null diam-diam di

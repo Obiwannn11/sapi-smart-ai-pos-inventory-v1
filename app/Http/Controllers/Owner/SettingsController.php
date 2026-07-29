@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiAnalysis;
 use App\Models\AiUsage;
+use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -29,6 +31,25 @@ class SettingsController extends Controller
                 'ai_provider' => $tenant->ai_provider,
                 'ai_model' => $tenant->ai_model,
                 'ai_key_set' => filled($tenant->ai_api_key),
+            ],
+            // Kapabilitas outlet. `business_type` SENGAJA tidak ada di sini:
+            // kolom itu milik penetapan harga dan dibekukan ke
+            // `invoices.pricing_context` tiap tagihan terbit — mengeditnya dari
+            // Settings akan diam-diam mengubah dasar harga langganan. Pengubahnya
+            // ada di panel platform, dan memang seharusnya di sana.
+            'features' => [
+                'kitchen_queue_enabled' => $tenant->kitchen_queue_enabled,
+                'self_order_enabled' => $tenant->self_order_enabled,
+                'ai_enabled' => $tenant->ai_enabled,
+            ],
+            // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
+            // masih ada pekerjaan berjalan di baliknya.
+            'featureWarnings' => [
+                'active_self_orders' => Transaction::where('source', Transaction::SOURCE_SELF_ORDER)
+                    ->whereNotNull('fulfillment_status')
+                    ->where('fulfillment_status', '!=', Transaction::FULFILLMENT_DONE)
+                    ->count(),
+                'pending_analyses' => AiAnalysis::where('status', AiAnalysis::STATUS_PENDING)->count(),
             ],
             'aiFreeTier' => [
                 'daily_limit' => $dailyLimit,
@@ -72,6 +93,9 @@ class SettingsController extends Controller
             'ai_provider' => 'nullable|in:sumopod,gemini,openai,anthropic',
             'ai_api_key' => 'nullable|string|max:255',
             'ai_model' => 'nullable|string|max:100',
+            'kitchen_queue_enabled' => 'boolean',
+            'self_order_enabled' => 'boolean',
+            'ai_enabled' => 'boolean',
         ]);
 
         // Jangan overwrite key jadi null kalau field dikosongkan tanpa maksud hapus.

@@ -7,6 +7,8 @@ defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     tenant: Object,
+    features: Object,
+    featureWarnings: Object,
     aiFreeTier: Object,
     mcp: Object,
 });
@@ -17,7 +19,24 @@ const form = useForm({
     ai_provider: props.tenant.ai_provider ?? '',
     ai_model:    props.tenant.ai_model ?? '',
     ai_api_key:  '',
+    kitchen_queue_enabled: props.features.kitchen_queue_enabled,
+    self_order_enabled:    props.features.self_order_enabled,
+    ai_enabled:            props.features.ai_enabled,
 });
+
+// Peringatan hanya relevan saat owner sedang MEMATIKAN fitur yang masih punya
+// pekerjaan berjalan. Menampilkannya saat fitur sudah mati sejak awal hanya
+// jadi kebisingan.
+const warnSelfOrderOff = computed(
+    () => props.features.self_order_enabled
+        && !form.self_order_enabled
+        && props.featureWarnings.active_self_orders > 0,
+);
+const warnAiOff = computed(
+    () => props.features.ai_enabled
+        && !form.ai_enabled
+        && props.featureWarnings.pending_analyses > 0,
+);
 
 const submit = () => {
     form.patch('/owner/settings', { preserveScroll: true });
@@ -98,6 +117,63 @@ const revokeMcpToken = () => {
                         :class="{ 'border-red-300': form.errors.phone }"
                     />
                     <p v-if="form.errors.phone" class="mt-1 text-xs text-red-600">{{ form.errors.phone }}</p>
+                </div>
+
+                <!-- Mode & Fitur Outlet -->
+                <div class="pt-5 border-t border-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900">Mode &amp; Fitur Outlet</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Menyalakan atau mematikan kapabilitas untuk outlet ini. Berlaku di semua pintu masuk sekaligus — web, aplikasi kasir, dan integrasi.
+                    </p>
+
+                    <div class="space-y-3">
+                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+                            <input v-model="form.kitchen_queue_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                            <span class="text-sm">
+                                <span class="font-medium text-gray-900 block">Antrian Dapur</span>
+                                <span class="text-xs text-gray-500">
+                                    Menampilkan papan urutan pesanan untuk operator yang merangkap masak dan kasir, plus nomor antrian di struk.
+                                    Mode ini <strong>tidak aktif saat perangkat offline</strong> — kasir kembali ke alur biasa dan penjualan hasil sinkronisasi tidak menyusul masuk papan.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+                            <input v-model="form.self_order_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                            <span class="text-sm">
+                                <span class="font-medium text-gray-900 block">Self-Order</span>
+                                <span class="text-xs text-gray-500">Pemesanan mandiri pelanggan lewat QR/Telegram beserta saran jualnya.</span>
+                            </span>
+                        </label>
+
+                        <div v-if="warnSelfOrderOff" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                            <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                            </svg>
+                            <span>
+                                Masih ada <strong>{{ featureWarnings.active_self_orders }}</strong> pesanan mandiri yang belum selesai.
+                                Mematikan fitur ini tidak membatalkannya, tapi pelanggan tidak bisa memesan lagi sampai dinyalakan kembali.
+                            </span>
+                        </div>
+
+                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+                            <input v-model="form.ai_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                            <span class="text-sm">
+                                <span class="font-medium text-gray-900 block">AI Analysis &amp; MCP</span>
+                                <span class="text-xs text-gray-500">Analisis AI di aplikasi sekaligus akses AI client eksternal lewat token MCP.</span>
+                            </span>
+                        </label>
+
+                        <div v-if="warnAiOff" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                            <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                            </svg>
+                            <span>
+                                Masih ada <strong>{{ featureWarnings.pending_analyses }}</strong> analisis yang mengantre.
+                                Analisis itu akan gagal dengan keterangan fitur tidak aktif — kuota harian Anda tidak terpakai.
+                            </span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- AI Analysis -->

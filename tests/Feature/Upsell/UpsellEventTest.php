@@ -18,7 +18,10 @@ use function Pest\Laravel\get;
 use function Pest\Laravel\post;
 
 beforeEach(function () {
-    $this->tenant = Tenant::factory()->create();
+    // Permukaan self-order digerbang `feature.api:self_order`, yang bawaannya
+    // mati untuk tenant baru. Dinyalakan eksplisit supaya test saran upsell
+    // menguji sarannya, bukan gerbangnya.
+    $this->tenant = Tenant::factory()->create(['self_order_enabled' => true]);
 
     $this->cashier = User::factory()->create([
         'tenant_id' => $this->tenant->id,

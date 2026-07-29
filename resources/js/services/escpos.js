@@ -130,6 +130,18 @@ export function buildReceipt(transaction, options = {}) {
     b.raw(CMD.boldOff);
     if (options.subheader) b.line(options.subheader);
     b.line('Point of Sale');
+
+    // ── Nomor antrian ──
+    // Hanya ada saat mode antrian hidup, jadi struk cafe tidak berubah sama
+    // sekali. Dicetak besar: seluruh gunanya bertumpu pada nomor ini bisa
+    // dibaca pelanggan dari seberang meja lalu dipanggil.
+    if (transaction.queue_number) {
+        b.line(divider(width));
+        b.raw(CMD.boldOn).raw(CMD.doubleOn);
+        b.line(`NO. ANTRIAN ${transaction.queue_number}`);
+        b.raw(CMD.doubleOff).raw(CMD.boldOff);
+    }
+
     b.raw(CMD.alignLeft);
     b.line(divider(width));
 

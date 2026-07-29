@@ -36,13 +36,13 @@ class XenditWebhookController extends Controller
         $externalId = $payload['external_id'] ?? '';
         $invoiceId = $payload['id'] ?? '';
 
-        if (!$externalId) {
+        if (! $externalId) {
             return response()->json(['message' => 'Missing external_id'], 400);
         }
 
         $transaction = Transaction::where('code', $externalId)->first();
 
-        if (!$transaction) {
+        if (! $transaction) {
             // Transaksi tidak ditemukan — mungkin dari tenant lain atau data lama
             return response()->json(['message' => 'Transaction not found, ignored'], 200);
         }
@@ -57,13 +57,21 @@ class XenditWebhookController extends Controller
             // Log error tapi tetap return 200 agar Xendit tidak retry
             \Illuminate\Support\Facades\Log::error('Xendit webhook error', [
                 'external_id' => $externalId,
-                'status'      => $status,
-                'error'       => $e->getMessage(),
+                'status' => $status,
+                'error' => $e->getMessage(),
             ]);
         }
 
-        // Selalu return 200 ke Xendit agar tidak retry
-        return response()->json(['message' => 'OK']);
+        // Selalu return 200 ke Xendit agar tidak retry.
+        //
+        // `queue_number` disertakan supaya n8n bisa menyampaikannya ke
+        // pelanggan: nomor baru lahir saat pembayaran dikonfirmasi, jadi respons
+        // pembuatan pesanan belum bisa memuatnya. Tanpa langkah ini papan dapur
+        // hanya jadi catatan internal — tak ada yang tahu nomor berapa dirinya.
+        return response()->json([
+            'message' => 'OK',
+            'queue_number' => $transaction->fresh()->queue_number,
+        ]);
     }
 
     /**

@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\Queue\DailySequenceAllocator;
+use App\Services\Queue\QueueNumberAllocator;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +20,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Seam pengalokasi nomor antrian. Fase offline akan menukar strateginya
+        // dengan mengganti binding ini saja — checkout tidak perlu disentuh.
+        $this->app->bind(QueueNumberAllocator::class, DailySequenceAllocator::class);
     }
 
     /**

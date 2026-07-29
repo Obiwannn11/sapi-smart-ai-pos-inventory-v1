@@ -29,6 +29,19 @@ class RunAiAnalysisJob implements ShouldQueue
         $analysis = AiAnalysis::withoutGlobalScopes()->findOrFail($this->analysisId);
         $tenant = $analysis->tenant;
 
+        // Defense-in-depth: job berjalan tanpa middleware, dan bisa sudah
+        // mengantre saat flag dimatikan. Diperiksa SEBELUM kuota dan sebelum
+        // provider dipanggil — terbalik berarti tenant yang fiturnya mati
+        // tetap menghabiskan jatah hariannya.
+        if (! $tenant->hasFeature('ai')) {
+            $analysis->update([
+                'status' => AiAnalysis::STATUS_FAILED,
+                'error' => 'Fitur AI tidak aktif untuk outlet ini.',
+            ]);
+
+            return;
+        }
+
         $analysis->update(['status' => AiAnalysis::STATUS_PROCESSING]);
 
         // AiContextService & ProfitService memakai TenantScope berbasis auth().

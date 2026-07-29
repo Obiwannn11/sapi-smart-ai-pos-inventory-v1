@@ -1,6 +1,6 @@
 # PHASE FEATURE-FLAGS — Fondasi Capability Flags & Gerbang Tersinkron
 
-**Status:** Rencana — belum dikerjakan
+**Status:** ✅ Selesai 2026-07-29 — lihat `[ADDITION] Fondasi Capability Flags & Gerbang Tersinkron` di `docs/CHANGELOG.md`
 **Ditulis ulang:** 2026-07-28 (lihat [Riwayat Revisi](#riwayat-revisi))
 **Dependency:** Tidak ada. **Fase ini fondasi**, dan `PHASE-QUEUE` bergantung padanya — bukan sebaliknya.
 **Output:** Satu sumber kebenaran `Tenant::hasFeature()`, dua middleware gerbang, dan gerbang terpasang di **setiap** permukaan yang sudah ada
@@ -416,28 +416,28 @@ Jalankan: `php artisan test --compact --filter=FeatureGating`
 ## 9. Checklist
 
 **Fondasi**
-- [ ] Migrasi tiga boolean + **backfill `self_order_enabled = true`**
-- [ ] `Tenant`: `$fillable`, `casts()`, `hasFeature()`, dan **`$attributes`**
-- [ ] `EnsureTenantFeature` + `EnsureTenantFeatureApi`
-- [ ] Alias ditambahkan ke daftar yang sudah ada — `tenant`/`tenant.api` **tidak** disentuh
+- [x] Migrasi tiga boolean + **backfill `self_order_enabled = true`**
+- [x] `Tenant`: `$fillable`, `casts()`, `hasFeature()`, dan **`$attributes`**
+- [x] `EnsureTenantFeature` + `EnsureTenantFeatureApi`
+- [x] Alias ditambahkan ke daftar yang sudah ada — `tenant`/`tenant.api` **tidak** disentuh
 
 **Gerbang**
-- [ ] `feature.api:self_order` membungkus `/orders*` + `/upsell/suggestions`
-- [ ] `feature:ai` mendahului `permission:ai_analysis` di `ai-analysis.*`
-- [ ] Guard `hasFeature('ai')` di `RunAiAnalysisJob@handle`, sebelum kuota & provider
-- [ ] `feature.api:ai` di `routes/ai.php` (**MCP sudah hidup — jangan ditunda**)
-- [ ] Flag dibagikan lewat `HandleInertiaRequests` (closure + penjaga `instanceof`)
-- [ ] Nav bersyarat di `OwnerLayout.vue`
+- [x] `feature.api:self_order` membungkus `/orders*` + `/upsell/suggestions`
+- [x] `feature:ai` mendahului `permission:ai_analysis` di `ai-analysis.*`
+- [x] Guard `hasFeature('ai')` di `RunAiAnalysisJob@handle`, sebelum kuota & provider
+- [x] `feature.api:ai` di `routes/ai.php` (**MCP sudah hidup — jangan ditunda**)
+- [x] Flag dibagikan lewat `HandleInertiaRequests` (closure + penjaga `instanceof`)
+- [x] Nav bersyarat di `OwnerLayout.vue`
 
 **Settings**
-- [ ] `index()` mengirim `features`, `update()` memvalidasi tiga boolean — **tanpa `business_type`**
-- [ ] Section "Mode & Fitur Outlet" + dua peringatan
+- [x] `index()` mengirim `features`, `update()` memvalidasi tiga boolean — **tanpa `business_type`**
+- [x] Section "Mode & Fitur Outlet" + dua peringatan
 
 **Penutup**
-- [ ] Tests `FeatureGating` hijau
-- [ ] `vendor/bin/pint --dirty --format agent` bersih
-- [ ] Matriks [Bagian 6](#6-matriks-sinkronisasi) diperbarui bila ada yang berubah saat pengerjaan
-- [ ] Entri `[ADDITION]` di `docs/CHANGELOG.md`
+- [x] Tests `FeatureGating` hijau
+- [x] `vendor/bin/pint --dirty --format agent` bersih
+- [x] Matriks [Bagian 6](#6-matriks-sinkronisasi) diperbarui bila ada yang berubah saat pengerjaan
+- [x] Entri `[ADDITION]` di `docs/CHANGELOG.md`
 
 ### Urutan kerja disarankan
 Fondasi (1) → middleware (2) → **test fondasi dulu** → gerbang per permukaan (3–5) → Settings (7).
@@ -451,11 +451,12 @@ Fase ini prasyarat `PHASE-QUEUE`; Bagian 5 baru bisa ditutup setelah rute antria
 Sekarang MCP ikut flag `ai`: AI mati, MCP ikut mati. Sederhana dan konsisten. Pemisahan baru berguna bila owner ingin memakai AI in-app sambil menolak klien MCP eksternal — kebutuhan yang belum terbukti.
 **Rekomendasi:** satu flag `ai` dulu. Naikkan ke `mcp_enabled` saat MCP benar-benar dibuka ke pihak ketiga, bukan sebelum.
 
-### B. Grup self-order tidak memakai `tenant.api` — apakah disengaja?
+### B. Grup self-order tidak memakai `tenant.api` — apakah disengaja? ✅ TERJAWAB
 **Temuan baru saat penulisan ulang ini, dan ia melampaui lingkup dokumen.** Grup di `routes/api.php:31` hanya memakai `auth:sanctum`, sementara grup mobile (`:50`) memakai `tenant.api`. Karena `tenant.api` yang membawa `EnsureSubscriptionActive`, konsekuensinya: **tenant yang `suspended` atau `grace` tampaknya masih bisa membuat self-order lewat API**, padahal jalur web-nya sudah tertutup.
 
-Belum jelas apakah ini disengaja (token n8n memang bukan sesi pengguna) atau terlewat. Perlu diverifikasi dengan test sebelum diubah — menambahkan `tenant.api` ke grup itu juga menyeret `EnsureEmailVerified`, yang mungkin tidak masuk akal untuk token mesin.
-**Rekomendasi:** buktikan dulu dengan test; kalau benar bocor, tangani sebagai entri backlog tersendiri, bukan diselipkan ke fase ini.
+**Ditutup 2026-07-29 sebagai `[BL-020]`**, persis lewat jalur yang direkomendasikan: dicatat sebagai entri backlog tersendiri, dibuktikan dengan test lebih dulu, dan **ternyata benar bocor** — `POST /api/v1/orders` pada tenant `suspended` menjawab 422 dari validasi controller, bukan 403.
+
+Perbaikannya memakai alias `subscription` yang baru, **bukan** menempelkan `tenant.api` — dugaan bahwa grup itu akan menyeret `EnsureEmailVerified` secara tidak masuk akal untuk token mesin terbukti tepat, dan sekarang ada test yang menjaga batas itu. Rute `PATCH /orders/{id}/fulfillment` sengaja ditinggalkan di luar gerbang langganan; alasannya di `docs/CHANGELOG.md`.
 
 ### C. Kode respons untuk fitur mati
 Dipakai `403 feature_disabled`. Alternatif `503` bila ingin memberi kesan "sementara".

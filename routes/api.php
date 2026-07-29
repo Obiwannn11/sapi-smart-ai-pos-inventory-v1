@@ -34,11 +34,19 @@ Route::prefix('v1')->group(function () {
     // EnsureEmailVerified yang ikut di grup itu tidak masuk akal untuk token
     // mesin. Lihat [BL-020].
     Route::middleware(['auth:sanctum', 'subscription'])->group(function () {
+        // Katalog sengaja di LUAR gerbang fitur: katalog bukan pemesanan, dan
+        // endpoint yang sama dipakai jalur mobile.
         Route::get('/products', [ApiProductController::class, 'index']);
-        Route::post('/upsell/suggestions', [ApiUpsellController::class, 'suggestions'])
-            ->middleware('throttle:120,1');
-        Route::post('/orders', [ApiOrderController::class, 'store'])
-            ->middleware('throttle:60,1');
+
+        Route::middleware('feature.api:self_order')->group(function () {
+            // Saran upsell ikut digerbang — ia hanya berguna untuk permukaan
+            // self-order, dan saat pemesanan mati ia tetap akan membocorkan
+            // barang mana yang sedang tertekan stoknya kepada pemegang token.
+            Route::post('/upsell/suggestions', [ApiUpsellController::class, 'suggestions'])
+                ->middleware('throttle:120,1');
+            Route::post('/orders', [ApiOrderController::class, 'store'])
+                ->middleware('throttle:60,1');
+        });
     });
 
     // Memajukan status pesanan SENGAJA di luar gerbang langganan. Ini
@@ -47,7 +55,7 @@ Route::prefix('v1')->group(function () {
     // menyandera data pelanggan bukan alat penagihan yang sah. Menutupnya akan
     // membuat dapur berhenti di tengah antrean pada hari langganan lewat jatuh
     // tempo. Kebijakan antrean seutuhnya diputuskan di [BL-019].
-    Route::middleware(['auth:sanctum'])->group(function () {
+    Route::middleware(['auth:sanctum', 'feature.api:self_order'])->group(function () {
         Route::patch('/orders/{transaction}/fulfillment', [ApiOrderController::class, 'updateFulfillment']);
     });
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\ProductVariant;
 use App\Models\Transaction;
+use App\Services\FulfillmentService;
 use App\Services\TransactionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,7 +16,8 @@ use Xendit\Invoice\InvoiceApi;
 class ApiOrderController extends Controller
 {
     public function __construct(
-        private TransactionService $transactionService
+        private TransactionService $transactionService,
+        private FulfillmentService $fulfillment,
     ) {}
 
     /**
@@ -109,6 +111,11 @@ class ApiOrderController extends Controller
     /**
      * Advance fulfillment status ke step berikutnya.
      * Kasir/owner klik tombol → waiting → preparing → ready → done
+     *
+     * `expected_from` adalah perubahan kontrak yang disengaja: klien mana pun
+     * — n8n, aplikasi kasir, papan web — bisa memegang status basi, dan tanpa
+     * menyebutkan status yang diharapkannya satu permintaan bisa melompati
+     * langkah. Ia opsional demi konsumen lama, tapi memakainya jauh lebih aman.
      */
     public function updateFulfillment(Request $request, Transaction $transaction): JsonResponse
     {
@@ -119,15 +126,18 @@ class ApiOrderController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if (! $transaction->hasFulfillmentTracking()) {
-            return response()->json(['message' => 'Transaksi ini tidak memiliki fulfillment tracking.'], 422);
-        }
+        $validated = $request->validate([
+            'expected_from' => 'nullable|in:waiting,preparing,ready',
+        ]);
 
-        if ($transaction->fulfillment_status === Transaction::FULFILLMENT_DONE) {
-            return response()->json(['message' => 'Pesanan sudah selesai.'], 422);
+        try {
+            $this->fulfillment->advance(
+                $transaction,
+                $validated['expected_from'] ?? $transaction->fulfillment_status ?? '',
+            );
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
-
-        $transaction->advanceFulfillment();
 
         return response()->json([
             'success' => true,
