@@ -46,6 +46,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // 'permission:' (spatie) instead.
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
+            // Gerbang langganan yang bisa dipasang SENDIRIAN, di luar grup
+            // 'tenant'/'tenant.api'. Dibutuhkan token mesin (n8n/self-order):
+            // ia harus tunduk pada siklus hidup langganan, tapi tidak pada
+            // EnsureEmailVerified — token mesin tidak punya kotak masuk untuk
+            // membuktikan apa pun. Rute bertenant biasa tetap memakai grupnya;
+            // alias ini bukan jalan pintas untuk melewati verifikasi surel.
+            'subscription' => \App\Http\Middleware\EnsureSubscriptionActive::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             // Kembaran JSON dari 'permission' untuk API: katalog dan Gate yang
             // sama, hanya jawabannya yang berbeda bentuk.

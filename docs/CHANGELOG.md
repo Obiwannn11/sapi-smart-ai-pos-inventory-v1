@@ -45,6 +45,26 @@
 
 ---
 
+### [HOTFIX] Gerbang Langganan di Jalur Self-Order (BL-020)
+- **Tanggal:** 2026-07-29
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-020]`
+- **Dampak:** Route | Config (alias middleware) | Test
+- **Breaking Change:** Ya untuk konsumen API — `POST /api/v1/orders`, `GET /api/v1/products`, dan `POST /api/v1/upsell/suggestions` kini bisa menjawab **403** pada tenant yang langganannya tidak aktif. Integrasi n8n perlu menangani status ini.
+- **Deskripsi:** Grup rute self-order hanya memakai `auth:sanctum`, sehingga `EnsureSubscriptionActive` — yang ikut lewat grup `tenant`/`tenant.api` — **tidak pernah berjalan di sana**. Tenant `suspended` dan `grace` masih bisa menerima pesanan baru lewat n8n/Telegram padahal jalur webnya sudah tertutup. Gerbangnya kini dipasang lewat alias `subscription` yang baru.
+- **Alasan:** Dugaan di `[BL-020]` dibaca dari susunan middleware, bukan dari percobaan. Test verifikasi ditulis lebih dulu dan **membuktikannya nyata**: `POST /api/v1/orders` pada tenant `suspended` menjawab 422 (validasi controller) alih-alih 403, dan `GET /api/v1/products` menjawab 200. `grace` menurut definisinya hanya-baca, jadi menerima pesanan baru di sana bertentangan dengan janji sistem langganannya sendiri.
+- **File Terdampak:**
+  - `bootstrap/app.php` — alias baru `subscription` => `EnsureSubscriptionActive`
+  - `routes/api.php` — grup self-order jadi `['auth:sanctum', 'subscription']`; rute fulfillment dipisah ke grupnya sendiri
+  - `tests/Feature/Subscription/SelfOrderSubscriptionGateTest.php` — 8 test
+- **Keputusan yang perlu diingat:**
+  - **Alias, bukan grup `tenant.api`.** Menempelkan grup itu akan menyeret `EnsureEmailVerified`, dan token n8n tidak punya kotak masuk untuk membuktikan apa pun — seluruh jalur self-order akan mati pada tenant yang surelnya belum terverifikasi. Pertanyaannya memang "gerbang langganan mana yang berlaku untuk token mesin", bukan "tambahkan `tenant.api`?". Ada test yang menjaga batas ini.
+  - **`PATCH /orders/{id}/fulfillment` SENGAJA di luar gerbang.** Memajukan status pesanan menyelesaikan kewajiban yang uangnya sudah diterima — bukan layanan baru. Menutupnya akan menghentikan dapur di tengah antrean pada hari langganan lewat jatuh tempo, bertentangan dengan prinsip yang ditulis middleware-nya sendiri: *"Menyandera data pelanggan bukan alat penagihan yang sah"*.
+  - **`ALWAYS_ALLOWED` tidak disentuh.** `[BL-020]` mencatat bahwa entri ini dan `[BL-019]` mendorong gerbang yang sama ke dua arah berbeda. Memisahkan rute fulfillment di berkas rute — bukan menambah pengecualian di middleware — membuat kebijakan antrean seutuhnya tetap milik `[BL-019]`, dan dua test menjaga arah yang berlawanan itu masing-masing.
+  - **Permukaan Sanctum lain sudah diperiksa** lewat `php artisan route:list --path=api`: seluruh grup mobile sudah memakai `tenant.api`, jadi self-order satu-satunya yang bocor.
+- **Catatan Migrasi:** Tidak ada migration. Cukup `php artisan route:clear` bila rute pernah di-cache.
+
+---
+
 ### [ADDITION] Saran Jual dari Sinyal Stok (BL-017)
 - **Tanggal:** 2026-07-27
 - **Fase Terkait:** Di Luar Fase — PHASE UPSELL Tahap A–E, menutup `[BL-017]`

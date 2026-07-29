@@ -28,12 +28,26 @@ Route::post('/xendit/webhook', [XenditWebhookController::class, 'handle']);
 Route::prefix('v1')->group(function () {
 
     // --- Self Order / n8n (Sanctum) ---
-    Route::middleware(['auth:sanctum'])->group(function () {
+    // 'subscription' dipasang sebagai alias, BUKAN grup 'tenant.api': gerbang
+    // langganan wajib berlaku di sini — pesanan lewat n8n/Telegram adalah
+    // layanan baru, persis yang ditahan saat 'grace'/'suspended' — sementara
+    // EnsureEmailVerified yang ikut di grup itu tidak masuk akal untuk token
+    // mesin. Lihat [BL-020].
+    Route::middleware(['auth:sanctum', 'subscription'])->group(function () {
         Route::get('/products', [ApiProductController::class, 'index']);
         Route::post('/upsell/suggestions', [ApiUpsellController::class, 'suggestions'])
             ->middleware('throttle:120,1');
         Route::post('/orders', [ApiOrderController::class, 'store'])
             ->middleware('throttle:60,1');
+    });
+
+    // Memajukan status pesanan SENGAJA di luar gerbang langganan. Ini
+    // menyelesaikan kewajiban atas pesanan yang uangnya sudah diterima, bukan
+    // membuka layanan baru — dan middleware-nya sendiri menulis bahwa
+    // menyandera data pelanggan bukan alat penagihan yang sah. Menutupnya akan
+    // membuat dapur berhenti di tengah antrean pada hari langganan lewat jatuh
+    // tempo. Kebijakan antrean seutuhnya diputuskan di [BL-019].
+    Route::middleware(['auth:sanctum'])->group(function () {
         Route::patch('/orders/{transaction}/fulfillment', [ApiOrderController::class, 'updateFulfillment']);
     });
 

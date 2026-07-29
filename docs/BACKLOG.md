@@ -40,25 +40,6 @@
 
 ## Daftar Isu (Open / In Progress)
 
-### [BL-020] Grup API Self-Order Tidak Melewati Gerbang Langganan — Perlu Diverifikasi
-- **Ditemukan:** 2026-07-28
-- **Sumber:** Terlihat saat menulis ulang `PHASE-FEATURE-FLAGS` — memetakan middleware tiap permukaan
-- **Status:** Open
-- **Prioritas:** Medium bila terbukti (menyangkut penagihan), Low bila ternyata disengaja
-- **BELUM DIVERIFIKASI.** Temuan ini dibaca dari susunan middleware, bukan dari percobaan. Buktikan dengan test lebih dulu — jangan mengubah rute berdasarkan entri ini saja.
-- **Area Terdampak:**
-  - `routes/api.php:31` — grup self-order hanya memakai `auth:sanctum`
-  - `routes/api.php:50` — grup mobile memakai `auth:sanctum` + `tenant.api`
-  - `bootstrap/app.php:37` — `tenant.api` yang membawa `EnsureSubscriptionActive`
-- **Deskripsi:**
-  `EnsureSubscriptionActive` ikut lewat grup `tenant`/`tenant.api`, bukan lewat alias per-rute. Grup self-order tidak memakai keduanya, sehingga `POST /api/v1/orders` tampaknya **tidak** melewati pemeriksaan status langganan sama sekali. Bila benar, tenant `suspended` atau `grace` masih bisa menerima pesanan baru lewat n8n/Telegram, padahal jalur webnya sudah tertutup — dan `grace` secara definisi berarti "hanya-baca, transaksi baru ditolak".
-  Perlu dicatat bahwa ini **mungkin disengaja**: token n8n adalah token mesin, bukan sesi pengguna, dan grup `tenant.api` juga menyeret `EnsureEmailVerified` yang tidak masuk akal untuk mesin. Jadi pertanyaannya bukan "tambahkan `tenant.api`?" melainkan "gerbang langganan mana yang seharusnya berlaku untuk token mesin?".
-- **Usulan Perbaikan:**
-  1. Tulis test lebih dulu: tenant `suspended` dan `grace` mencoba `POST /api/v1/orders`. Hasilnya menentukan apakah entri ini nyata.
-  2. Bila bocor, jangan tempelkan `tenant.api` begitu saja — pisahkan gerbang langganan dari verifikasi surel supaya token mesin bisa dikenai yang pertama tanpa yang kedua.
-  3. Periksa sekalian permukaan Sanctum lain yang mungkin senasib.
-- **Catatan:** Bersinggungan dengan `[BL-019]`, yang menambahkan `cashier.queue.*` ke `ALWAYS_ALLOWED` di middleware yang sama — dua arah berbeda pada gerbang yang sama, dan sebaiknya tidak dikerjakan bersamaan tanpa test yang memisahkannya.
-
 ### [BL-019] Rencana Antrian Dapur (PHASE-QUEUE) Perlu Ditinjau Ulang & Ditulis Ulang Sebelum Diimplementasi
 - **Ditemukan:** 2026-07-28
 - **Sumber:** Peninjauan teknis `docs/phases-2/PHASE-QUEUE_Kitchen-Order-Queue.md` terhadap keadaan kode hari ini, dilakukan **sebelum** implementasi dimulai
@@ -66,7 +47,7 @@
 - **Prioritas:** High untuk **peninjauannya**, bukan untuk fiturnya. Fiturnya sendiri boleh menunggu; yang mendesak adalah dokumennya, karena ia ditulis dalam bentuk instruksi siap-salin dan sebagian isinya kini **menyesatkan**. Siapa pun yang mengeksekusinya apa adanya akan merusak hal lain yang sudah berjalan.
 - **JANGAN diimplementasikan dulu.** Urutannya: tinjau ulang tujuan → tulis ulang dokumennya menyesuaikan sistem sekarang → baru kerjakan. Menambal dokumen sambil ngoding akan menghasilkan setengah rencana lama dan setengah keadaan baru.
 - **KEMAJUAN (2026-07-28):** ✅ tujuan ditinjau & tiga keputusan dikunci (lihat blok di bawah) · ✅ `PHASE-QUEUE_Kitchen-Order-Queue.md` **selesai ditulis ulang** · ✅ `PHASE-FEATURE-FLAGS_Capabilities-Sync.md` **selesai ditulis ulang** — kini ia yang memiliki fondasi flag (tidak lagi menumpang "Bagian 0"), blok aliasnya dikoreksi, dan **klaim "MCP masih kerangka" ternyata sudah usang: MCP hidup penuh dan gerbangnya dibutuhkan sekarang** · ⬜ implementasi belum dimulai. Kedua dokumen punya bagian **Riwayat Revisi** yang mencatat apa yang berubah dan kenapa. Entri ini baru pindah ke Riwayat Selesai setelah fiturnya benar-benar mendarat di kode.
-- **Turunan:** `[BL-020]` lahir dari penulisan ulang ini.
+- **Turunan:** `[BL-020]` lahir dari penulisan ulang ini, dan **sudah ditutup 2026-07-29**. Yang perlu dibaca ulang saat mengerjakan poin 4 di bawah: perbaikan itu memasang gerbang langganan di jalur self-order tapi **sengaja meninggalkan `PATCH /orders/{id}/fulfillment` di luarnya**, dengan alasan yang sama persis dengan poin 4 — menyelesaikan kewajiban yang sudah dibayar bukan layanan baru. Preseden untuk `cashier.queue.*` sudah ada, dan `EnsureSubscriptionActive` masih utuh belum tersentuh, jadi keputusan `ALWAYS_ALLOWED` tetap sepenuhnya milik entri ini.
 
 #### KEPUTUSAN PEMILIK (2026-07-28) — arah tulisan ulang
 > Diambil setelah peninjauan di bawah dipaparkan. Tiga keputusan ini **mengunci arah** dan menutup sebagian temuan; sisanya tetap berlaku apa adanya.
@@ -290,6 +271,21 @@ Urutannya disusun supaya **yang paling mungkin menggagalkan rencana diuji paling
 ---
 
 ## Riwayat Selesai
+
+### [BL-020] Grup API Self-Order Tidak Melewati Gerbang Langganan
+- **Ditemukan:** 2026-07-28
+- **Sumber:** Terlihat saat menulis ulang `PHASE-FEATURE-FLAGS` — memetakan middleware tiap permukaan
+- **Status:** Selesai (2026-07-29) — lihat `[HOTFIX] Gerbang Langganan di Jalur Self-Order (BL-020)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **TERBUKTI NYATA.** Entri ini ditulis dengan peringatan "belum diverifikasi, buktikan dengan test lebih dulu". Testnya ditulis lebih dulu (`SelfOrderSubscriptionGateTest`) dan **tiga dari lima ekspektasi awalnya gagal**, persis seperti yang diduga:
+  - `suspended` → `POST /api/v1/orders` menjawab **422** (validasi controller), bukan 403 — permintaan lolos gerbang
+  - `grace` → `POST /api/v1/orders` menjawab **422** — sama, padahal `grace` hanya-baca
+  - `suspended` → `GET /api/v1/products` menjawab **200** — katalog tetap terbuka
+- **Perbaikan:**
+  Usulan 2 dijalankan apa adanya: gerbang langganan **dipisahkan** dari verifikasi surel lewat alias baru `subscription`, bukan dengan menempelkan grup `tenant.api`. Token mesin kini tunduk pada siklus hidup langganan tanpa dituntut membuktikan alamat surel yang memang tidak dimilikinya — dan ada test yang menjaga batas itu, supaya tidak ada yang "merapikan"-nya jadi `tenant.api` di kemudian hari.
+- **Usulan 3 dikerjakan dan hasilnya bersih:** `php artisan route:list --path=api` menunjukkan seluruh grup mobile sudah memakai `tenant.api`. Self-order satu-satunya yang bocor.
+- **Keputusan yang tidak ada di entri asli — rute fulfillment sengaja DI LUAR gerbang.** `PATCH /orders/{id}/fulfillment` ikut di grup yang sama, tapi memajukan status pesanan menyelesaikan kewajiban yang uangnya sudah diterima, bukan membuka layanan baru. Menggerbangnya akan menghentikan dapur di tengah antrean pada hari langganan lewat jatuh tempo — persis yang diperingatkan poin 4 `[BL-019]`. Rutenya dipisah di `routes/api.php`, **bukan** dengan menambah pengecualian ke `ALWAYS_ALLOWED`.
+- **Catatan penutup atas ketegangan dengan `[BL-019]`:** entri ini memperingatkan bahwa keduanya mendorong gerbang yang sama ke dua arah berbeda dan "sebaiknya tidak dikerjakan bersamaan tanpa test yang memisahkannya". Syarat itu dipenuhi — ada test untuk masing-masing arah — dan `EnsureSubscriptionActive` **tidak disentuh sama sekali**, sehingga kebijakan antrean seutuhnya tetap milik `[BL-019]` yang masih terbuka.
 
 ### [BL-017] Peringatan Stok Belum Berkembang Jadi Upsell (FITUR BESAR)
 - **Ditemukan:** 2026-07-25
