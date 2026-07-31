@@ -278,3 +278,200 @@ test('checkout with modifiers includes modifier extra price', function () {
         'total_amount' => 30000,
     ])->exists())->toBeTrue();
 });
+
+/**
+ * [BL-022] StoreTransactionRequest menghitung "cukup bayar" dari `unit_price`
+ * kiriman klien. Perangkat yang memakai katalog offline basi mengirim harga
+ * lama, lolos validasi, lalu checkout menghitung ulang dari harga DB — dan
+ * dulu tetap menyelesaikannya sebagai `completed` dengan kurang bayar.
+ */
+test('checkout rejects payment that is short against DB prices, not client prices', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    // Owner menaikkan harga setelah perangkat memanen katalognya.
+    $variant->update(['price' => 40000]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => 25000, // harga basi dari snapshot
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 25000,
+            ],
+        ],
+    ])->assertSessionHas('error');
+
+    expect(Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->count())->toBe(0);
+});
+
+test('checkout still succeeds when payment covers the DB price', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    $variant->update(['price' => 40000]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => 40000,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 50000,
+            ],
+        ],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->sole();
+
+    expect((float) $transaction->total_amount)->toBe(40000.0)
+        ->and((float) $transaction->change_amount)->toBe(10000.0);
+});
+
+/**
+ * [BL-021] Split bill. Modal-nya dulu membekukan nominal non-tunai saat metode
+ * dipilih, sehingga koreksi pada baris tunai meninggalkan angka QRIS yang basi.
+ * Test ini menjaga sisi yang benar-benar tersimpan: tiap metode membawa
+ * nominalnya sendiri, bukan hanya totalnya yang kebetulan cocok.
+ */
+test('split payment records each method with its own amount', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $cash] = makePOSContext();
+
+    $qris = PaymentMethod::factory()->qris()->create(['tenant_id' => $tenant->id]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 4, // 4 x 25000 = 100000
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            ['payment_method_id' => $cash->id, 'amount' => 60000],
+            ['payment_method_id' => $qris->id, 'amount' => 40000],
+        ],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->sole();
+
+    expect((float) $transaction->total_amount)->toBe(100000.0)
+        ->and((float) $transaction->change_amount)->toBe(0.0)
+        ->and((float) $transaction->payments()->where('payment_method_id', $cash->id)->value('amount'))->toBe(60000.0)
+        ->and((float) $transaction->payments()->where('payment_method_id', $qris->id)->value('amount'))->toBe(40000.0);
+});
+
+test('split payment that falls short of the total is rejected', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $cash] = makePOSContext();
+
+    $qris = PaymentMethod::factory()->qris()->create(['tenant_id' => $tenant->id]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 4,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            ['payment_method_id' => $cash->id, 'amount' => 60000],
+            ['payment_method_id' => $qris->id, 'amount' => 30000], // total 90rb dari 100rb
+        ],
+    ])->assertSessionHasErrors('payments');
+
+    expect(Transaction::query()->count())->toBe(0);
+});
+
+test('open bill can be settled with a split payment', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $cash] = makePOSContext();
+
+    $qris = PaymentMethod::factory()->qris()->create(['tenant_id' => $tenant->id]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 4,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => null,
+        'is_open_bill' => true,
+        'customer_name' => 'Meja 3',
+    ])->assertSessionHas('success');
+
+    $bill = Transaction::query()->where('status', Transaction::STATUS_PENDING)->sole();
+
+    post("/cashier/transactions/{$bill->id}/pay", [
+        'payments' => [
+            ['payment_method_id' => $cash->id, 'amount' => 70000],
+            ['payment_method_id' => $qris->id, 'amount' => 30000],
+        ],
+    ])->assertSessionHas('success');
+
+    $bill->refresh();
+
+    expect($bill->status)->toBe(Transaction::STATUS_COMPLETED)
+        ->and($bill->payments)->toHaveCount(2)
+        ->and((float) $bill->payments->sum('amount'))->toBe(100000.0);
+});

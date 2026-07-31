@@ -45,6 +45,27 @@
 
 ---
 
+### [HOTFIX] Split Bill: Nominal Non-Tunai Jadi Turunan, & Cukup-Bayar Diuji Terhadap Harga DB (BL-021, BL-022)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-021]` dan `[BL-022]`
+- **Dampak:** Service | Frontend | Test
+- **Breaking Change:** Tidak untuk pembayaran satu baris (perilakunya identik). Ya dalam satu hal yang disengaja: checkout kini **menolak** pembayaran yang kurang terhadap harga DB, yang sebelumnya diterima diam-diam.
+- **Deskripsi:** Modal pembayaran mengisi nominal non-tunai **sekali** saat metode dipilih lalu membekukannya, sehingga mengoreksi baris tunai setelahnya meninggalkan angka QRIS yang basi — dan angka basi itulah yang tersimpan ke `transaction_payments`. Terpisah dari itu, `checkout()` memvalidasi cukup-bayar memakai harga kiriman klien, lalu menghitung total dari harga DB, dan tetap menyelesaikan transaksi meski hasilnya kurang bayar.
+- **Alasan:** Keduanya menulis angka uang yang salah ke database, dan keduanya menjalar: nominal per metode yang salah merusak rekap per metode dan `expected_amount` laci; kurang bayar yang lolos merusak omzet.
+- **File Terdampak:**
+  - `resources/js/Components/PaymentModal.vue` — ditulis ulang bagian nominalnya
+  - `app/Services/TransactionService.php` — penjagaan cukup-bayar di `checkout()`
+  - `tests/Feature/Cashier/POSTest.php` — 5 test baru (2 untuk BL-022, 3 untuk BL-021)
+- **Keputusan yang perlu diingat:**
+  - **Satu baris penyeimbang, dan ia dipilih, bukan ditetapkan.** Nominal non-tunai kini turunan `total − Σ baris lain`, dievaluasi ulang tiap perubahan. Yang menyeimbangkan adalah baris non-tunai **terakhir yang belum disentuh kasir**; begitu kasir mengetik di sana, baris itu jadi manual dan penyeimbangnya berpindah. Dua baris yang sama-sama "otomatis" tidak punya jawaban tunggal, jadi keadaan itu tidak diizinkan ada.
+  - **Kembalian hanya dari porsi tunai:** `max(0, Σ tunai − (total − Σ non-tunai))`. Ditambah penjagaan baru: non-tunai melebihi total ditolak, karena itu menjanjikan kembalian yang tidak bisa diberikan.
+  - **Tombol cepat kini ada di SETIAP baris tunai**, dan "Uang Pas" berubah jadi "Sisa" saat split. Sebelumnya tombol itu tetap terlihat pada baris pertama tapi diam-diam berhenti bekerja begitu baris kedua ditambahkan — inilah yang membuat kasir harus mengetik manual.
+  - **Penjagaan kurang bayar sengaja hanya "tidak boleh kurang", BUKAN "harga klien harus sama persis dengan DB".** Syarat kedua akan menabrak harga diskon yang sah begitu `[BL-018]` dikerjakan.
+  - **`commitOffline()` tidak lewat penjagaan itu.** Penjualan offline yang sudah terjadi secara fisik tetap ditandai `needs_review`, tidak pernah ditolak — asimetri yang memang disengaja dan sudah tertulis di docblock-nya.
+- **Batas yang diketahui:** proyek ini belum punya test runner JavaScript, jadi logika `PaymentModal` **tidak tercakup test otomatis**. Yang diuji adalah apa yang benar-benar tersimpan dari split (nominal per metode, kurang bayar ditolak, pelunasan open bill). Menambah Vitest adalah perubahan dependency dan menunggu persetujuan pemilik.
+
+---
+
 ### [HOTFIX] Rekonsiliasi Kas Menghitung Penjualan Tunai, Per-Laci, & Per-Tanggal Efektif (BL-028 Tahap A)
 - **Tanggal:** 2026-07-31
 - **Fase Terkait:** Di Luar Fase — menutup Tahap A `[BL-028]`; Tahap B (`cash_drawer_id`) sengaja ditunda

@@ -139,6 +139,28 @@ class TransactionService
 
             // 7. Simpan pembayaran
             $totalPaid = collect($data['payments'])->sum('amount');
+
+            // Cukup-bayar diuji ulang terhadap harga DB, bukan harga kiriman
+            // klien. StoreTransactionRequest sudah mengujinya lebih dulu, tapi
+            // di sana yang tersedia hanya `unit_price` dari klien — perangkat
+            // yang memakai katalog offline basi bisa lolos validasi lalu
+            // tercatat `completed` dalam keadaan kurang bayar. Penjaga yang
+            // sama sudah lama ada di payOpenBill(); [BL-022].
+            //
+            // Yang dijaga sengaja hanya "tidak boleh kurang", BUKAN "harga
+            // klien harus sama persis dengan DB" — syarat kedua akan menabrak
+            // harga diskon yang sah begitu [BL-018] dikerjakan.
+            //
+            // commitOffline() punya jalur sendiri dan TIDAK lewat sini:
+            // penjualan offline yang sudah terjadi secara fisik ditandai
+            // needs_review, tidak pernah ditolak.
+            if ($totalPaid < $totalAmount) {
+                throw new \Exception(
+                    'Total pembayaran kurang. Harga katalog mungkin berubah — harus: '
+                    .number_format($totalAmount).', dibayar: '.number_format($totalPaid)
+                );
+            }
+
             $changeAmount = max(0, $totalPaid - $totalAmount);
             $transaction->update([
                 'change_amount' => $changeAmount,
