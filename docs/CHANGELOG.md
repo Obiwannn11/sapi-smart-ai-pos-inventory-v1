@@ -4,6 +4,18 @@
 
 ---
 
+## Cara Membaca File Ini
+
+File ini bersifat append-only dan akan terus membesar. **Jangan pernah membacanya utuh.** Pintu masuknya adalah [Indeks Entri](#indeks-entri) di bawah: cari entri yang relevan di sana, lalu baca hanya potongan entrinya.
+
+Bila indeks terasa kurang, headingnya bisa didaftar langsung dari filenya (dan daftar ini tidak pernah basi):
+
+```bash
+grep -n '^### ' docs/CHANGELOG.md
+```
+
+---
+
 ## Cara Menggunakan File Ini
 
 ### Kapan Harus Dicatat
@@ -29,6 +41,8 @@
 - **Catatan Migrasi:** (jika ada) Instruksi khusus untuk apply perubahan
 ```
 
+Entri baru ditulis di paling atas bagian [Revision History](#revision-history), **dan wajib disertai satu baris baru di paling atas [Indeks Entri](#indeks-entri)**. Entri tanpa baris indeks tidak akan ditemukan.
+
 ### Tipe Entry
 | Tag | Keterangan |
 |---|---|
@@ -41,7 +55,135 @@
 
 ---
 
+## Indeks Entri
+
+Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. Kolom **Judul** ditulis persis seperti headingnya supaya bisa langsung dicari (`grep -n 'Judul' docs/CHANGELOG.md`).
+
+| Tanggal | Tipe | Area | Judul |
+|---|---|---|---|
+| 2026-07-31 | ADDITION | Kasir | Penawaran Wajib Diselesaikan & Status "Ditolak" Terpisah (BL-025) |
+| 2026-07-31 | DECISION | Dokumentasi | Indeks Entri & Protokol Baca untuk CHANGELOG/BACKLOG |
+| 2026-07-31 | ADDITION | Kasir | Tagihan Terbuka Pindah ke Topbar Kasir (BL-023) |
+| 2026-07-31 | HOTFIX | Langganan | Turunan Periode Bulanan Meluber di Bulan Pendek (BL-029) |
+| 2026-07-31 | HOTFIX | Kasir | Riwayat Kasir Dibatasi ke Sesi Kas Berjalan (BL-027) |
+| 2026-07-31 | HOTFIX | Kasir | Split Bill: Nominal Non-Tunai Jadi Turunan, & Cukup-Bayar Diuji Terhadap Harga DB (BL-021, BL-022) |
+| 2026-07-31 | HOTFIX | Kas | Rekonsiliasi Kas Menghitung Penjualan Tunai, Per-Laci, & Per-Tanggal Efektif (BL-028 Tahap A) |
+| 2026-07-29 | ADDITION | Dapur | Papan Antrian Dapur (BL-019) |
+| 2026-07-29 | ADDITION | Langganan | Fondasi Capability Flags & Gerbang Tersinkron |
+| 2026-07-29 | HOTFIX | Self-Order | Gerbang Langganan di Jalur Self-Order (BL-020) |
+| 2026-07-27 | ADDITION | Stok | Saran Jual dari Sinyal Stok (BL-017) |
+| 2026-07-27 | SCHEMA | Langganan | Dimensi Harga Bebas — Aturan Berkriteria (BL-015) |
+| 2026-07-25 | ADDITION | Dokumentasi | Hub Dokumentasi Publik — Dua Jalur |
+| 2026-07-25 | ADDITION | Mobile API | Permissions RBAC di Mobile API (BL-003) |
+| 2026-07-25 | ADDITION | Infra | Pesan Validasi Berbahasa Indonesia (BL-004) |
+| 2026-07-25 | ADDITION | Auth | Peringatan Login Gagal & Verifikasi Email (BL-011, BL-014) |
+| 2026-07-25 | ADDITION | Langganan | Jalur Subsidi & Aturan Harga Dinamis — PHASE SAAS Tahap C & D (BL-005, BL-006) |
+| 2026-07-25 | ADDITION | Langganan | Langganan Dasar Jalur Normal — PHASE SAAS Tahap B (BL-005) |
+| 2026-07-22 | ADDITION | Auth | Pemulihan Kata Sandi Pengguna Tenant (BL-012) |
+| 2026-07-22 | ADDITION | Platform | Pemulihan Kata Sandi Akun Platform (BL-010) |
+| 2026-07-22 | ADDITION | Platform | Halaman & Retensi Jejak Audit (BL-009) |
+| 2026-07-21 | ADDITION | Platform | Manajemen Akun Platform (BL-008) |
+| 2026-07-21 | HOTFIX | Auth | Rate Limit Endpoint Login (BL-007) |
+| 2026-07-21 | ADDITION | Platform | Platform Console — Fondasi Panel Pemilik SaaS (Tahap A) |
+| 2026-07-21 | HOTFIX | RBAC | Lima Kendala Implementasi RBAC & Resolusinya |
+| 2026-07-21 | ADDITION | RBAC | RBAC — Kontrol Akses Modul untuk Staf Non-Owner |
+| 2026-07-21 | HOTFIX | Test | Ekspektasi Dua Test Usang (BL-002) |
+| 2026-07-16 | ADDITION | PWA | Transaksi Offline + Sinkronisasi (PWA Fase B/C/D) |
+| 2026-07-15 | HOTFIX | AI | Penomoran Ordered List Hasil AI (BL-001) |
+| 2026-07-15 | SCHEMA | PWA | Idempotency `client_uuid` di Checkout (PWA Fase A) |
+| 2026-07-14 | ADDITION | Transaksi | Edit Transaksi (Owner & Kasir) + Recalc Stok & Audit Trail |
+| 2026-07-11 | DECISION | AI | SumoPod Jadi Provider AI Default (OpenAI-Compatible Gateway) |
+| 2026-07-11 | ADDITION | AI | MCP Server: Data Bridge Read-Only untuk AI Client Milik Owner |
+| 2026-07-10 | DECISION | AI | RunAiAnalysisJob Autentikasi sebagai Pemilik Analisis (Tenant Scoping di Queue) |
+| 2026-05-29 | ADDITION | Mobile API | Public API Reference Page for Mobile POS |
+| 2026-05-29 | DECISION | Mobile API | API Consumer Dipindahkan ke Prefix `/api/v1` |
+| 2026-05-28 | ADDITION | UI | Owner Modifier Quick Settings, Cashier Account Menu, and UI Stability Fixes |
+| 2026-05-28 | ADDITION | UI | UI System Refresh, Cashier Flow Guard, and Shared Components |
+| 2026-05-25 | ADDITION | Mobile API | Mobile API Phase 2: Operasi Kasir Lengkap |
+| 2026-03-07 | ADDITION | Kasir | UX POS: Auto-Amount Non-Cash, Thermal Receipt, Open Bill Customer Name |
+| 2026-03-07 | ADDITION | Dashboard | Dashboard Owner: Badge Self Order pada Transaksi Terbaru |
+| 2026-03-06 | ADDITION | Infra | Integrasi Dependency Xendit SDK (Persiapan Payment Gateway) |
+| 2026-03-06 | RECONCILE | Transaksi | Transaction Status Naming |
+| 2026-03-06 | RECONCILE | Stok | Stock Movement Type Naming |
+| 2026-03-06 | DECISION | Auth | Auth Method: Manual → Laravel Sanctum (SPA Mode) |
+| 2026-03-06 | SCHEMA | Kas | Penambahan Tabel `cash_drawers` |
+| 2026-03-06 | SCHEMA | Produk | Penambahan Kolom `expiry_date` di `product_variants` |
+| 2026-03-06 | SCHEMA | Infra | Penambahan `deleted_at` (SoftDeletes) di 6 Tabel |
+| 2026-03-06 | DECISION | Kas | `expected_amount` Cash Drawer = Semua Payment Method |
+| 2026-03-06 | ADDITION | Infra | Tenant Isolation via Global Scope + Trait |
+| 2026-03-06 | ADDITION | Infra | Image Upload Service dengan Konversi WEBP |
+| 2026-03-06 | ADDITION | Kasir | Flash `lastTransaction` via Inertia untuk Receipt Modal |
+| 2026-03-06 | ADDITION | Kas | Redirect Tutup Kas ke Summary Page |
+| 2026-03-06 | ADDITION | Kas | Transaction Count di Cash Drawer Summary |
+| 2026-03-06 | ADDITION | Dashboard | Dependency chart.js + vue-chartjs untuk Dashboard Chart |
+| 2026-03-06 | ADDITION | UI | Navigasi Sidebar Owner Ditambah Menu Phase 5 |
+| 2026-03-06 | HOTFIX | Stok | BadgeHelperService Dead Stock Query Bug |
+| 2026-03-06 | HOTFIX | Produk | CategoryController Soft Delete Tidak Nullify product.category_id |
+| 2026-03-06 | SCHEMA | Stok | Penambahan 'void' di ENUM stock_movements.type (Create Migration) |
+| 2026-03-06 | ADDITION | Infra | HasFactory Trait pada Semua Model |
+| 2026-03-06 | ADDITION | Kasir | Fitur Open Bill (Simpan Pesanan Tanpa Bayar) |
+| 2026-03-06 | SCHEMA | Transaksi | Penambahan Kolom `notes` di `transaction_items` |
+| 2026-03-06 | ADDITION | Kasir | Catatan (Notes) per Item di Halaman POS |
+| 2026-03-06 | ADDITION | Kasir | Halaman Riwayat Transaksi Kasir |
+| 2026-03-06 | DECISION | Kas | Reversal: `expected_amount` Cash Drawer = Cash Only (Bukan Semua Payment) |
+| 2026-03-06 | ADDITION | Kasir | Perbaikan Payment Modal (Lebar, Sticky Total, Denominasi, Format Angka) |
+| 2026-03-06 | ADDITION | UI | Sidebar Owner Grouped dengan Dropdown Collapsible |
+| 2026-03-06 | SCHEMA | Self-Order | Penambahan Kolom Self-Order & Fulfillment di `transactions` |
+| 2026-03-06 | ADDITION | Self-Order | API Layer untuk Self Order (Sanctum + Xendit) |
+| 2026-03-06 | DECISION | Self-Order | Self-Order: Stok Tidak Dikurangi Sebelum Bayar |
+| 2026-03-06 | DECISION | Self-Order | Fulfillment Tracking: Opsional, Terpisah dari Payment Status |
+
+---
+
 ## Revision History
+
+---
+
+### [ADDITION] Penawaran Wajib Diselesaikan & Status "Ditolak" Terpisah (BL-025)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-025]`; berdiri di atas `[BL-017]`
+- **Dampak:** Migration | Model | Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak. Kolom baru bawaannya **mati**, jadi outlet yang tidak menyalakannya berperilaku persis seperti sebelumnya.
+- **Deskripsi:** Owner kini bisa mewajibkan tiap saran jual dijawab sebelum kasir boleh menekan BAYAR. Bersamaan dengan itu, tombol × berubah makna dari "tutup saran" jadi **"ditolak pelanggan"**, dan status itu disimpan terpisah dari `ignored`.
+- **Alasan:** Tanpa saklar ini owner tidak punya cara memastikan penawaran benar-benar disampaikan — saran bisa ditutup begitu saja dan checkout tetap jalan. Dan tanpa memisahkan `rejected` dari `ignored`, menyalakan mode wajib justru akan **merusak** angka konversinya: semua saran jadi "terjawab", sehingga penyebutnya kehilangan arti.
+- **File Terdampak:**
+  - `database/migrations/..._add_upsell_mandatory_to_tenants_table.php` — kolom `upsell_mandatory`, default `false`
+  - `app/Models/Tenant.php` — fillable, cast, dan `$attributes`
+  - `app/Models/UpsellEvent.php` — `STATUS_REJECTED`, `statuses()`, `offeredStatuses()`
+  - `app/Services/Upsell/UpsellIndexBuilder.php` — `mandatory` ikut indeks
+  - `app/Services/Upsell/UpsellEventRecorder.php`, `app/Http/Requests/StoreTransactionRequest.php` — menerima status baru
+  - `app/Http/Controllers/Owner/SettingsController.php`, `resources/js/Pages/Owner/Settings/Index.vue` — saklarnya
+  - `app/Http/Controllers/Owner/ReportController.php`, `resources/js/Pages/Owner/Reports/Upsell.vue` — `offer_rate` di samping `conversion_rate`
+  - `resources/js/composables/useUpsell.js`, `resources/js/Components/UpsellStrip.vue`, `resources/js/Pages/Cashier/POS.vue`
+  - `tests/Feature/Upsell/UpsellEventTest.php` — 5 test baru
+- **Keputusan yang perlu diingat:**
+  - **× dan "Diterima" SAMA-SAMA menyelesaikan saran** (keputusan pemilik 2026-07-31). Yang tidak tersedia hanyalah melewatinya tanpa menjawab. Label lama "Tawarkan" diganti "Diterima" karena menekannya berarti pelanggan sudah setuju — barangnya langsung masuk keranjang, jadi kata "tawarkan" menggambarkan langkah yang sebenarnya sudah lewat.
+  - **Saklarnya menumpang indeks upsell, bukan prop tersendiri.** Dengan begitu ia ikut ter-snapshot `useCatalogCache` dan tetap berlaku saat perangkat offline. Aturan yang mengikat online tapi bebas dilewati offline tidak mengikat apa pun.
+  - **`upsell_mandatory` sengaja TIDAK masuk `Tenant::hasFeature()`.** Ia aturan kerja, bukan kapabilitas modul: tidak menggerbangi satu rute pun. Menaruhnya di sana akan mengaburkan arti `hasFeature()` yang selama ini berarti "permukaan ini ada atau tidak".
+  - **Penegakannya di klien saja, dan itu memang cukup.** Ini disiplin kerja, bukan batas keamanan. Server **tidak** menolak checkout yang sarannya belum dijawab — prinsip yang sama sudah dipakai untuk `upsell_events`: statistik upsell tidak boleh punya kuasa menggagalkan penjualan yang sah.
+  - **Laporan kini punya dua angka, dan bedanya penting.** `conversion_rate` dari semua yang tampil (ikut mengukur seberapa sering kasir menawarkan); `offer_rate` hanya dari yang benar-benar sampai ke pelanggan (menilai mutu sarannya). Menyalakan mode wajib akan menaikkan `conversion_rate` tanpa satu pun saran jadi lebih baik — `offer_rate` yang tidak bisa dikelabui begitu.
+  - **Peringatan di halaman Settings menyebut risikonya apa adanya:** kasir yang terburu akan menekan "ditolak" tanpa menawarkan, dan lonjakan angka penolakan adalah tanda pertamanya. Fitur yang bisa menahan penjualan harus jujur soal cara ia bisa disiasati.
+- **Catatan:** alert "kenapa tombol bayar mati" yang juga diminta `[BL-025]` sudah sebagian mendarat lebih dulu di `PaymentModal` bersama `[BL-021]`; entri ini melengkapinya di tombol BAYAR pada POS.
+
+---
+
+### [DECISION] Indeks Entri & Protokol Baca untuk CHANGELOG/BACKLOG
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — perawatan dokumentasi
+- **Dampak:** Dokumentasi | Konvensi
+- **Breaking Change:** Tidak untuk kode. Ya untuk konvensi: entri changelog baru **wajib** disertai satu baris di `## Indeks Entri`, dan entri backlog yang selesai dipindahkan ke `docs/BACKLOG-ARCHIVE.md`.
+- **Deskripsi:** `docs/CHANGELOG.md` sudah 1.383 baris (130 KB, ~37k token) dan `docs/BACKLOG.md` 679 baris (95 KB, ~27k token), dan keduanya hanya bisa diakses dengan membaca utuh karena tidak ada lapisan pencarian. Tiga hal ditambahkan: (1) `## Indeks Entri` di CHANGELOG — satu baris per entri (69 entri, ~2k token), cukup untuk memilih entri tanpa membuka isinya; (2) 22 entri backlog yang sudah selesai pindah ke `docs/BACKLOG-ARCHIVE.md`, menyisakan tabel ringkas di file utama; (3) protokol bacanya ditulis di `CLAUDE.md` supaya berlaku otomatis di tiap sesi.
+- **Alasan:** Laju pertumbuhannya ~11 entri/bulan (~26 KB/bulan) — akhir tahun CHANGELOG menembus 300 KB dan tidak lagi muat dibaca bersamaan dengan pekerjaan lain. Yang mahal sebetulnya bukan ukuran filenya, melainkan tidak adanya cara mengaksesnya selain membaca semuanya. Indeks + protokol memangkas biaya baca dari ~37k jadi ~2,5k token tanpa membuang satu kalimat pun dari riwayatnya.
+- **File Terdampak:**
+  - `docs/CHANGELOG.md` — bagian `Cara Membaca File Ini` dan `Indeks Entri` (69 entri)
+  - `docs/BACKLOG.md` — 679 → 376 baris; `Riwayat Selesai` berubah jadi tabel indeks
+  - `docs/BACKLOG-ARCHIVE.md` — **file baru**, 341 baris, 22 entri selesai
+  - `CLAUDE.md` — bagian `Changelog & Backlog` + protokol baca berurutan
+- **Keputusan yang perlu diingat:**
+  - **Indeksnya dipelihara manual, dan itu risiko yang disadari.** Indeks bisa tertinggal dari isinya. Penangkalnya bukan disiplin semata: fallback `grep -n '^### '` diturunkan dari file itu sendiri dan tidak pernah basi, jadi indeks yang kurang satu baris tetap tidak membuat entrinya hilang.
+  - **Indeks sengaja tidak menyimpan nomor baris.** Entri baru ditulis di paling atas, jadi setiap nomor baris bergeser tiap kali. Kunci pencariannya adalah judul entri — ditulis persis seperti headingnya — dan kode `BL-xxx`.
+  - **CHANGELOG belum dipecah per kuartal.** Arsip bergilir baru berguna kalau indeksnya sendiri sudah mahal, dan pada 69 entri belum. Ambang berikutnya: saat file lewat ~2.000 baris, sisakan ~15 entri terbaru dan pindahkan sisanya ke `docs/changelog/YYYY-Qn.md`.
+  - **Yang masih terbuka: `File Terdampak` menduplikasi git.** Bagian itu porsi terbesar tiap entri, padahal `git show <hash> --stat` menyimpannya lebih akurat. Memangkasnya (dengan mencantumkan commit hash di entri) belum dikerjakan karena mengubah bentuk entri lama, bukan sekadar menambah lapisan di atasnya.
 
 ---
 

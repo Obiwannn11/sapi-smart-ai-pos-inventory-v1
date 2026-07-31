@@ -226,8 +226,22 @@ Vue components must have a single root element.
   - Stage only the files relevant to that change (avoid a blanket `git add .` when the working tree has unrelated edits).
 - Use a single author only. Do not add a `Co-Authored-By` trailer (or any other co-author) to commit messages.
 
-# Changelog
+# Changelog & Backlog
 
 - The project changelog lives at `docs/CHANGELOG.md`. Record out-of-phase changes and architecture decisions there.
 - Write a changelog entry only when the change is actually applied (implemented in the codebase), not while it is still being planned or proposed. Add the entry as part of the same work that lands the change.
+- Every new changelog entry must also add **one row at the top of the `## Indeks Entri` table** in `docs/CHANGELOG.md`. An entry with no index row will not be found.
+- Open issues and technical debt live in `docs/BACKLOG.md`. When an entry is finished, move its full text to `docs/BACKLOG-ARCHIVE.md` and leave one row in the "Riwayat Selesai (Arsip)" table in `docs/BACKLOG.md`.
+
+## Reading these files (do not read them in full)
+
+`docs/CHANGELOG.md` is append-only and already ~1,475 lines / ~37k tokens. Reading it whole is never the right move — it costs more context than the rest of a typical task combined. Use this order instead:
+
+1. **Read the index, not the file.** `Read docs/CHANGELOG.md offset=58 limit=78` returns the whole `## Indeks Entri` table (~2k tokens) — date, type, area, and exact title of every entry.
+2. **Jump to the one entry you need.** `Grep` the title from the index to get its line number, then `Read` with `offset`/`limit` around it. Entries are 15–35 lines each.
+3. **Fallback that never goes stale.** If the index looks incomplete, list headings directly: `Grep` pattern `^### ` on the file with `-n`. That derives the table of contents from the file itself.
+
+Same protocol for `docs/BACKLOG.md` (open issues only) and `docs/BACKLOG-ARCHIVE.md` (finished ones): grep `^### \[BL-` to locate an entry, then read only its range. Whether a `BL-xxx` is already done can be answered from the "Riwayat Selesai (Arsip)" table in `docs/BACKLOG.md` without opening the archive at all.
+
+The same applies to the large phase documents under `docs/phases-1/` and `docs/phases-2/` — grep for the relevant section rather than reading the file end to end.
 
