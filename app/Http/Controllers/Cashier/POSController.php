@@ -189,10 +189,30 @@ class POSController extends Controller
 
     /**
      * Daftar riwayat transaksi kasir.
+     *
+     * Dibatasi ke SESI BERJALAN, bukan seluruh riwayat akun. Tanpa batas ini
+     * halaman membuka semua transaksi sejak akun dibuat — bising untuk kasir
+     * yang hanya ingin mengoreksi penjualan barusan, dan memperlebar data yang
+     * terbaca dari mesin kasir yang dipakai bergantian ([BL-027]).
+     *
+     * Batas tanggal memakai tanggal EFEKTIF, sejalan dengan rekonsiliasi kas:
+     * penjualan offline muncul di shift yang benar-benar melakukannya, bukan
+     * di shift yang kebetulan sedang berjalan saat ia tersinkron.
      */
     public function history(Request $request): Response
     {
-        $query = Transaction::where('user_id', Auth::id())
+        $user = Auth::user();
+
+        // Diambil lebih awal daripada sebelumnya: laci terbuka kini menentukan
+        // BATAS daftarnya, bukan sekadar hak edit tiap baris.
+        $openDrawer = $user->isOwner()
+            ? null
+            : CashDrawer::where('user_id', $user->id)
+                ->whereNull('closed_at')
+                ->latest('opened_at')
+                ->first();
+
+        $query = Transaction::where('user_id', $user->id)
             ->with(['items.modifiers', 'payments.paymentMethod'])
             ->latest();
 
@@ -201,23 +221,24 @@ class POSController extends Controller
             $query->where('status', $request->input('status'));
         }
 
-        // Filter by date
-        if ($request->filled('date')) {
-            $query->whereDate('created_at', $request->input('date'));
+        // Penyetelan tanggal manual milik owner saja. Kasir yang bisa memilih
+        // tanggal sendiri membuat pembatasan sesi di bawah cuma hiasan.
+        $manualDate = $user->isOwner() && $request->filled('date')
+            ? $request->input('date')
+            : null;
+
+        if ($manualDate) {
+            $query->whereEffectiveDate($manualDate);
+        } elseif ($openDrawer) {
+            $query->whereEffectiveBetween($openDrawer->opened_at, now());
+        } else {
+            $query->whereEffectiveDate(now()->toDateString());
         }
 
         $transactions = $query->paginate(20)->withQueryString();
 
         // Tandai transaksi mana yang boleh diedit oleh user ini.
         // Owner: semua completed. Kasir: completed dalam shift laci terbuka miliknya.
-        $user = Auth::user();
-        $openDrawer = $user->isOwner()
-            ? null
-            : CashDrawer::where('user_id', $user->id)
-                ->whereNull('closed_at')
-                ->latest('opened_at')
-                ->first();
-
         $transactions->getCollection()->transform(function (Transaction $tx) use ($user, $openDrawer) {
             $tx->can_edit = $this->canEditTransaction($tx, $user, $openDrawer);
 
@@ -226,7 +247,16 @@ class POSController extends Controller
 
         return Inertia::render('Cashier/TransactionHistory', [
             'transactions' => $transactions,
-            'filters' => $request->only(['status', 'date']),
+            'filters' => [
+                'status' => $request->input('status'),
+                'date' => $manualDate,
+            ],
+            // Daftar yang diam-diam terpotong lebih buruk daripada daftar
+            // panjang — permukaannya harus menyebutkan batas yang berlaku.
+            'scope' => [
+                'label' => $this->historyScopeLabel($manualDate, $openDrawer),
+                'can_filter_date' => $user->isOwner(),
+            ],
             // Katalog untuk modal edit — deferred agar payload awal ringan.
             'products' => Inertia::defer(fn () => Product::where('is_active', true)
                 ->with([
@@ -237,6 +267,22 @@ class POSController extends Controller
                 ->get()),
             'paymentMethods' => Inertia::defer(fn () => PaymentMethod::where('is_active', true)->get()),
         ]);
+    }
+
+    /**
+     * Kalimat yang menyebutkan batas daftar riwayat yang sedang berlaku.
+     */
+    private function historyScopeLabel(?string $manualDate, ?CashDrawer $openDrawer): string
+    {
+        if ($manualDate) {
+            return 'Transaksi tanggal '.$manualDate;
+        }
+
+        if ($openDrawer) {
+            return 'Sesi kas berjalan — sejak '.$openDrawer->opened_at->format('d M, H:i');
+        }
+
+        return 'Hari ini';
     }
 
     /**

@@ -475,3 +475,114 @@ test('open bill can be settled with a split payment', function () {
         ->and($bill->payments)->toHaveCount(2)
         ->and((float) $bill->payments->sum('amount'))->toBe(100000.0);
 });
+
+/**
+ * [BL-027] Riwayat kasir dulu membuka SELURUH riwayat akun karena filter
+ * tanggal bersifat opsional dan tanpa nilai bawaan.
+ */
+test('history is limited to the cashier open drawer session', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'opened_at' => now()->subHours(3),
+        'closed_at' => null,
+    ]);
+
+    $thisShift = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subHour(),
+    ]);
+
+    $lastWeek = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subWeek(),
+    ]);
+
+    actingAs($cashier);
+
+    get('/cashier/transactions')
+        ->assertInertia(fn ($page) => $page
+            ->component('Cashier/TransactionHistory')
+            ->where('transactions.data.0.id', $thisShift->id)
+            ->count('transactions.data', 1)
+            ->where('scope.can_filter_date', false)
+        );
+
+    expect($lastWeek->exists)->toBeTrue();
+});
+
+test('history falls back to today when the cashier has no open drawer', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    $today = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now(),
+    ]);
+
+    Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subDays(2),
+    ]);
+
+    actingAs($cashier);
+
+    get('/cashier/transactions')
+        ->assertInertia(fn ($page) => $page
+            ->count('transactions.data', 1)
+            ->where('transactions.data.0.id', $today->id)
+        );
+});
+
+test('cashier cannot widen the history with a date parameter', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'opened_at' => now()->subHours(2),
+        'closed_at' => null,
+    ]);
+
+    Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subWeek(),
+    ]);
+
+    actingAs($cashier);
+
+    // Tanggal diselundupkan lewat query string — harus diabaikan, bukan
+    // sekadar disembunyikan tombolnya di UI.
+    get('/cashier/transactions?date='.now()->subWeek()->toDateString())
+        ->assertInertia(fn ($page) => $page
+            ->count('transactions.data', 0)
+            ->where('filters.date', null)
+        );
+});
+
+test('owner may still pick a date on the cashier history', function () {
+    ['tenant' => $tenant] = makePOSContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    $old = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+        'occurred_at' => now()->subWeek(),
+    ]);
+
+    actingAs($owner);
+
+    get('/cashier/transactions?date='.now()->subWeek()->toDateString())
+        ->assertInertia(fn ($page) => $page
+            ->count('transactions.data', 1)
+            ->where('transactions.data.0.id', $old->id)
+            ->where('scope.can_filter_date', true)
+        );
+});

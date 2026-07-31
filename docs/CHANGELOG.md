@@ -45,6 +45,25 @@
 
 ---
 
+### [HOTFIX] Riwayat Kasir Dibatasi ke Sesi Kas Berjalan (BL-027)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-027]`
+- **Dampak:** Controller | Frontend | Test
+- **Breaking Change:** Ya untuk kasir: `/cashier/transactions` tidak lagi menampilkan seluruh riwayat akun, dan parameter `?date=` diabaikan untuk peran kasir. Owner tidak berubah selain bawaannya kini hari ini.
+- **Deskripsi:** Filter tanggal bersifat opsional dan tidak punya nilai bawaan, sehingga halaman riwayat membuka semua transaksi kasir sejak akun dibuat. Kini dibatasi ke sesi laci yang sedang terbuka, dengan `hari ini` sebagai cadangan bila tidak ada sesi.
+- **Alasan:** Kasir yang ingin mengoreksi penjualan barusan harus menyaring ratusan baris lama, dan mesin kasir yang dipakai bergantian memperlihatkan riwayat shift orang sebelumnya lebih banyak dari yang perlu. Penyaring `user_id` sudah ada sejak awal — yang hilang hanya batas waktunya.
+- **File Terdampak:**
+  - `app/Http/Controllers/Cashier/POSController.php` — `history()` + helper `historyScopeLabel()`
+  - `resources/js/Pages/Cashier/TransactionHistory.vue` — chip cakupan, pemilih tanggal khusus owner, empty state menyebut batasnya
+  - `tests/Feature/Cashier/POSTest.php` — 4 test baru
+- **Keputusan yang perlu diingat:**
+  - **Batasnya ditegakkan di server, bukan disembunyikan di UI.** Menyembunyikan pemilih tanggal saja akan dilewati siapa pun yang mengetik `?date=` di URL, jadi `date` hanya dibaca untuk peran owner. Ada test khusus yang menyelundupkannya lewat query string.
+  - **Batas waktu memakai tanggal EFEKTIF**, sejalan dengan `[BL-028]`: penjualan offline muncul di shift yang benar-benar melakukannya, bukan di shift yang kebetulan berjalan saat ia tersinkron.
+  - **`canEditTransaction()` sengaja TIDAK ikut diubah.** Ia masih membandingkan `created_at` karena merupakan cermin `TransactionEditService::assertEditable()`; mengubah salah satunya saja akan memunculkan tombol edit yang ditolak service. Ketidakcocokannya condong ke arah aman (baris bisa tampil tanpa bisa diedit, tidak sebaliknya).
+  - **Cakupan yang berlaku selalu disebutkan** lewat chip di panel filter dan di empty state. Daftar yang diam-diam terpotong lebih membingungkan daripada daftar panjang.
+
+---
+
 ### [HOTFIX] Split Bill: Nominal Non-Tunai Jadi Turunan, & Cukup-Bayar Diuji Terhadap Harga DB (BL-021, BL-022)
 - **Tanggal:** 2026-07-31
 - **Fase Terkait:** Di Luar Fase — menutup `[BL-021]` dan `[BL-022]`

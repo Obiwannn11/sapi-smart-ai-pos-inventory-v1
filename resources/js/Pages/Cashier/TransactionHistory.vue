@@ -11,6 +11,9 @@ import TransactionEditModal from '@/Components/TransactionEditModal.vue';
 const props = defineProps({
     transactions: Object,
     filters: Object,
+    // Batas daftar yang sedang berlaku. Kasir dibatasi ke sesi kas berjalan
+    // dan tidak boleh menyetel tanggal sendiri — lihat [BL-027].
+    scope: { type: Object, default: () => ({ label: '', can_filter_date: false }) },
     products: { type: Array, default: null },
     paymentMethods: { type: Array, default: () => [] },
 });
@@ -62,7 +65,7 @@ const statusClass = (status) => {
 const applyFilters = () => {
     const params = {};
     if (statusFilter.value) params.status = statusFilter.value;
-    if (dateFilter.value) params.date = dateFilter.value;
+    if (props.scope.can_filter_date && dateFilter.value) params.date = dateFilter.value;
     router.get('/cashier/transactions', params, { preserveState: true });
 };
 
@@ -104,6 +107,16 @@ const openEdit = (transaction) => {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
                     </svg>
                     <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Filter</span>
+                    <span
+                        v-if="scope.label"
+                        class="ml-auto inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+                        :title="scope.can_filter_date ? undefined : 'Riwayat dibatasi ke sesi kas Anda yang sedang berjalan'"
+                    >
+                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {{ scope.label }}
+                    </span>
                 </div>
                 <div class="flex flex-wrap gap-3 items-end">
                     <div class="flex-1 min-w-[140px]">
@@ -113,7 +126,7 @@ const openEdit = (transaction) => {
                             :options="statusOptions"
                         />
                     </div>
-                    <div class="flex-1 min-w-[140px]">
+                    <div v-if="scope.can_filter_date" class="flex-1 min-w-[140px]">
                         <label class="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
                         <DatePicker v-model="dateFilter" />
                     </div>
@@ -207,6 +220,7 @@ const openEdit = (transaction) => {
                 <!-- Empty state -->
                 <div v-if="transactions.data.length === 0" class="text-center py-12 text-gray-400">
                     <p class="text-sm">Tidak ada transaksi ditemukan.</p>
+                    <p v-if="scope.label" class="text-xs mt-1">Cakupan: {{ scope.label }}.</p>
                 </div>
             </div>
 
