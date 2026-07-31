@@ -9,6 +9,7 @@ const props = defineProps({
     tenant: Object,
     businessTypes: { type: Object, default: () => ({}) },
     features: Object,
+    orderIdentityModes: { type: Object, default: () => ({}) },
     featureWarnings: Object,
     aiFreeTier: Object,
     mcp: Object,
@@ -25,6 +26,7 @@ const form = useForm({
     self_order_enabled:    props.features.self_order_enabled,
     ai_enabled:            props.features.ai_enabled,
     upsell_mandatory:      props.features.upsell_mandatory,
+    order_identity_mode:   props.features.order_identity_mode ?? 'none',
 });
 
 // Peringatan hanya relevan saat owner sedang MEMATIKAN fitur yang masih punya
@@ -40,6 +42,15 @@ const warnAiOff = computed(
         && !form.ai_enabled
         && props.featureWarnings.pending_analyses > 0,
 );
+
+// Apa yang sebenarnya berubah di layar kasir untuk tiap mode. Ditulis sebagai
+// akibat yang terlihat, bukan nama fiturnya — owner memilih dari sini.
+const identityModeHint = computed(() => ({
+    none: 'Kasir tidak ditanya apa-apa. Tagihan terbuka tetap boleh diberi nama supaya bisa dikenali saat ditagih.',
+    name: 'Sebelum menyimpan, kasir mengisi nama pelanggan. Nama ikut tercetak di struk dan tampil di riwayat.',
+    table: 'Sebelum menyimpan, kasir mengisi nomor meja lewat papan angka. Nomor ikut tercetak di struk dan tampil di riwayat.',
+    code: 'Sistem memberi nomor panggil berurutan tiap hari — kasir tidak mengetik apa pun. Nomor dicetak besar di struk untuk dipanggil saat pesanan siap.',
+}[form.order_identity_mode] ?? ''));
 
 const submit = () => {
     form.patch('/owner/settings', { preserveScroll: true });
@@ -221,6 +232,41 @@ const revokeMcpToken = () => {
                                 Ini satu-satunya pengaturan yang bisa <strong>menahan penjualan</strong>.
                                 Kasir yang antre panjang akan menekan "ditolak" tanpa menawarkan kalau merasa terburu —
                                 angka penolakan yang melonjak adalah tanda pertama itu terjadi.
+                            </span>
+                        </div>
+
+                        <!-- Identitas pesanan: satu mode, bukan tiga saklar -->
+                        <div class="p-3 rounded-lg border border-gray-200">
+                            <label class="block text-sm font-medium text-gray-900 mb-1">Identitas Pesanan</label>
+                            <p class="text-xs text-gray-500 mb-2">
+                                Cara mengenali pesanan saat dipanggil atau diantar.
+                                <strong>Pilih satu</strong> — outlet yang memakai ketiganya sekaligus biasanya berakhir tidak mengisi satu pun.
+                            </p>
+                            <select
+                                v-model="form.order_identity_mode"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                :class="{ 'border-red-300': form.errors.order_identity_mode }"
+                            >
+                                <option v-for="(label, value) in orderIdentityModes" :key="value" :value="value">
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p v-if="form.errors.order_identity_mode" class="mt-1 text-xs text-red-600">
+                                {{ form.errors.order_identity_mode }}
+                            </p>
+                            <p v-else class="mt-1.5 text-xs text-gray-500 leading-relaxed">{{ identityModeHint }}</p>
+                        </div>
+
+                        <div
+                            v-if="form.order_identity_mode === 'code' && form.kitchen_queue_enabled"
+                            class="flex gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700"
+                        >
+                            <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>
+                                Antrian Dapur juga memberi nomor panggil, jadi mode ini tidak menambah apa pun selama papan menyala.
+                                Gunanya baru terasa kalau papan dimatikan — nomornya tetap ada.
                             </span>
                         </div>
                     </div>

@@ -97,8 +97,10 @@ const printThermal = async () => {
                                 <p class="text-[10px] text-gray-500 mt-0.5">Point of Sale</p>
 
                                 <!--
-                                    Nomor antrian hanya ada saat mode antrian
-                                    hidup; mode cafe tidak punya nilainya, jadi
+                                    Nomor antrian hanya ada saat papan dapur
+                                    hidup ATAU mode identitas "kode panggil"
+                                    dipilih ([BL-026]); outlet yang tidak
+                                    memakai keduanya tidak punya nilainya, jadi
                                     struknya tidak berubah.
                                 -->
                                 <div v-if="transaction.queue_number" class="mt-2 pt-2 border-t border-dashed border-gray-400">
@@ -128,6 +130,10 @@ const printThermal = async () => {
                                 <div v-if="transaction.customer_name" class="flex justify-between">
                                     <span class="text-gray-500">Pelanggan</span>
                                     <span class="font-medium">{{ transaction.customer_name }}</span>
+                                </div>
+                                <div v-if="transaction.table_number" class="flex justify-between">
+                                    <span class="text-gray-500">Meja</span>
+                                    <span class="font-medium">{{ transaction.table_number }}</span>
                                 </div>
                             </div>
 

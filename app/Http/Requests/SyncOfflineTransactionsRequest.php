@@ -41,6 +41,8 @@ class SyncOfflineTransactionsRequest extends FormRequest
             'transactions.*.device_id' => 'nullable|string|max:64',
             'transactions.*.total_amount' => 'nullable|numeric|min:0',
             'transactions.*.notes' => 'nullable|string|max:1000',
+            'transactions.*.customer_name' => 'nullable|string|max:100',
+            'transactions.*.table_number' => 'nullable|string|max:10',
 
             'transactions.*.items' => 'required|array|min:1',
             'transactions.*.items.*.variant_id' => 'required|integer',

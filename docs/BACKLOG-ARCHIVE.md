@@ -10,6 +10,31 @@
 
 ## Daftar Entri
 
+### [BL-026] Identitas Pesanan (Nama / No. Meja / Kode Panggil) Belum Bisa Diisi dari Kasir
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Catatan pemilik — "buatkan menu untuk menambahkan sistem nama, sistem nomor meja, atau sistem kode (misal mau pakai untuk pemanggilan)"
+- **Status:** Selesai (2026-08-01) — lihat `[ADDITION] Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Models/Transaction.php:59-60` — `queue_number`, `customer_name`, `table_number` **sudah ada** dan fillable
+  - `app/Services/TransactionService.php:106-107` & `:191-192` — checkout & self-order sudah menulis keduanya
+  - `app/Services/TransactionService.php:85-92` — `queue_number` hanya dialokasikan bila fitur `kitchen_queue` aktif
+  - `app/Http/Requests/StoreTransactionRequest.php:66` — hanya `customer_name` yang divalidasi; **`table_number` tidak ada**, jadi mustahil dikirim dari POS
+  - `resources/js/Pages/Cashier/POS.vue:1004-1046` — modal nama pelanggan hanya muncul di jalur "Tunda Bayar"
+  - `app/Http/Resources/QueueCardResource.php:30-36` — papan antrian sudah menampilkan ketiganya
+- **Yang SUDAH ada (jangan dibangun ulang):** kolomnya, alokator nomor harian (`DailySequenceAllocator`), dan tampilannya di papan antrian sudah berdiri. Jalur API self-order & mobile sudah mengirim `customer_name` + `table_number`. **Yang hilang persis satu lapis: cara kasir mengisinya.**
+- **Deskripsi:** Di POS, identitas hanya bisa diberikan lewat modal "Tunda Bayar", dan hanya berupa nama bebas. Transaksi bayar-langsung tidak bisa diberi identitas apa pun — padahal justru pesanan inilah yang perlu dipanggil saat siap. `table_number` bahkan tidak lolos validasi request, jadi tidak ada jalan mengirimnya dari kasir sekalipun UI-nya dibuat.
+- **Usulan Perbaikan:**
+  1. Setting `order_identity_mode` di Owner: `none` / `name` / `table` / `code`. Satu mode aktif per outlet — warung yang memakai ketiganya sekaligus akan mengisi nol dari tiga.
+  2. **Satu modal identitas dipakai kedua jalur** (bayar langsung & tunda bayar), bukan hanya open bill. Bentuk input mengikuti mode: teks bebas untuk nama, papan angka untuk meja, dan untuk `code` cukup tampilkan nomor yang dialokasikan sistem.
+  3. Tambahkan `table_number` ke `StoreTransactionRequest`.
+  4. **Lepaskan `queue_number` dari syarat `kitchen_queue`.** Nomor panggil dan papan dapur adalah dua kebutuhan berbeda — warung yang hanya ingin memanggil pelanggan tidak seharusnya dipaksa menyalakan papan dapur.
+  5. Identitas harus ikut tercetak di struk dan tampil di riwayat; identitas yang hanya hidup di layar kasir tidak menolong siapa pun saat pesanan siap.
+- **Catatan saat dikerjakan (yang usulan di atas tidak sebutkan):**
+  - **Tunda bayar tetap SELALU ditanya**, jatuh ke nama saat mode `none`. Usulan poin 1 kalau dibaca harfiah akan menghapus prompt nama yang sudah bekerja pada outlet yang belum memilih mode — tagihan yang menunggu dibayar tetap harus bisa dikenali lagi nanti.
+  - **Identitas ikut menumpang outbox offline** (`useOfflineQueue` → `SyncOfflineTransactionsRequest` → `commitOffline`). Tanpa itu, pesanan yang sudah dinamai kasir kehilangan namanya begitu tersinkron. **Nomor panggil sengaja tidak ikut** — nomor yang lahir berjam-jam setelah struknya dibawa pulang tidak memanggil siapa pun.
+  - Poin 4 dikerjakan **tanpa** ikut melepas `fulfillment_status`. Nomor panggil tidak memasukkan pesanan ke papan; kalau ikut dilepas, outlet yang hanya ingin memanggil akan menumbuhkan papan yang tidak pernah dibuka — persis timbunan yang dibersihkan migrasi `backfill_stale_fulfillment_status`.
+
 ### [BL-042] Daftar Tenant Memajang Kolom Informasi, Bukan Jalan Masuk ke Rincian — dan Tautan yang Ada Bisa Berujung 403
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Permintaan pemilik — "pada halaman daftar tenant, ganti informasi kolom yang terdaftar menjadi action button untuk melihat detail... di dalam detail barulah kita bisa liat informasi detailnya... bisa menggunakan konsep nav tab"

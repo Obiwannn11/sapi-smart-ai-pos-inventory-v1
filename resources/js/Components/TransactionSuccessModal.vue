@@ -26,6 +26,29 @@ const totalPaid = computed(() => {
 
 const changeAmount = computed(() => Number(props.transaction?.change_amount || 0));
 
+/**
+ * Identitas pesanan, satu baris saja ([BL-026]).
+ *
+ * Urutannya bukan selera: nomor panggil menang karena hanya ia yang menuntut
+ * tindakan berikutnya (memanggil), sedangkan nama dan meja sekadar keterangan.
+ * Satu transaksi memang bisa membawa lebih dari satu — self-order mengirim nama
+ * DAN meja — tapi menampilkan tiga baris berarti tidak ada yang menonjol.
+ */
+const identity = computed(() => {
+    const tx = props.transaction;
+    if (!tx) return null;
+
+    if (tx.queue_number) return { label: 'No. Panggil', value: tx.queue_number };
+    if (tx.table_number) return { label: 'Meja', value: tx.table_number };
+    if (tx.customer_name) return { label: 'Pelanggan', value: tx.customer_name };
+
+    return null;
+});
+
+const hasIdentity = computed(() => identity.value !== null);
+const identityLabel = computed(() => identity.value?.label ?? '');
+const identityValue = computed(() => identity.value?.value ?? '');
+
 const itemCount = computed(() => {
     if (!props.transaction?.items) return 0;
     return props.transaction.items.reduce((sum, item) => sum + Number(item.qty), 0);
@@ -63,6 +86,19 @@ const print = () => emit('print');
                             <span class="font-semibold text-gray-600">{{ transaction.code }}</span>
                             · {{ formatTime(transaction.created_at) }}
                         </p>
+                    </div>
+
+                    <!--
+                        ===== IDENTITAS PESANAN =====
+                        Di atas kembalian dan dicetak besar: ini satu-satunya
+                        angka yang harus dibacakan kasir ke pelanggan, dan ia
+                        hilang begitu modal ditutup ([BL-026]).
+                    -->
+                    <div v-if="hasIdentity" class="px-6 pb-3">
+                        <div class="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-center">
+                            <p class="text-[11px] uppercase tracking-widest text-amber-700">{{ identityLabel }}</p>
+                            <p class="text-3xl font-bold text-amber-900 leading-tight mt-0.5">{{ identityValue }}</p>
+                        </div>
                     </div>
 
                     <!-- ===== CHANGE (most important for cashier) ===== -->

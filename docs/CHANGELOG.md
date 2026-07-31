@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-01 | ADDITION | Kasir | Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026) |
 | 2026-08-01 | ADDITION | Platform | Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042) |
 | 2026-07-31 | DECISION | Platform | Jenis Usaha Berpindah ke Pemilik Toko, dan "Subsidi" Jadi "Harga Adaptif" |
 | 2026-07-31 | ADDITION | Platform | Konsol Platform: Langganan & Tagihan Menyatu, Batas Pengguna Bisa Diatur |
@@ -140,6 +141,37 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026)
+- **Tanggal:** 2026-08-01
+- **Fase Terkait:** Di Luar Fase — `[BL-026]`
+- **Dampak:** Schema | Model | Request | Service | Middleware | Frontend | Test
+- **Breaking Change:** Tidak. Kolom baru berbawaan `none`, yang berarti perilaku hari ini persis seperti sebelumnya sampai ada owner yang memilih mode lain.
+- **Deskripsi:** Owner kini memilih **satu** cara mengenali pesanannya di Pengaturan — `Tidak dipakai` / `Nama pelanggan` / `Nomor meja` / `Kode panggil (otomatis)`. Kasir mengisinya lewat **satu modal yang dipakai kedua jalur**, bayar-langsung maupun tunda-bayar, dengan bentuk input mengikuti mode: teks bebas untuk nama, papan angka untuk meja, dan tanpa modal sama sekali untuk kode (nomornya dialokasikan server). Identitasnya ikut tercetak di struk (layar dan thermal), tampil sebagai kartu besar di modal transaksi berhasil, dan jadi chip di riwayat kasir. Terpisah dari itu, **nomor panggil tidak lagi bersyarat papan dapur**.
+- **Alasan:** Kolomnya (`queue_number`, `customer_name`, `table_number`), alokator nomor hariannya, dan tampilannya di papan antrian semuanya sudah berdiri, dan jalur self-order sudah mengirim ketiganya. Yang hilang persis satu lapis: cara kasir mengisinya. Di POS identitas hanya bisa diberikan lewat modal "Tunda Bayar" berupa nama bebas, sehingga transaksi bayar-langsung — justru yang perlu dipanggil saat siap — tidak bisa diberi identitas apa pun. `table_number` bahkan tidak lolos `StoreTransactionRequest`, jadi mustahil dikirim dari kasir sekalipun UI-nya dibuat.
+- **File Terdampak:**
+  - `database/migrations/2026_07_31_180043_add_order_identity_mode_to_tenants_table.php` — **baru**
+  - `app/Models/Tenant.php` — empat konstanta mode, `orderIdentityModes()`, `usesCallNumber()`
+  - `app/Http/Requests/StoreTransactionRequest.php` — `table_number` divalidasi
+  - `app/Http/Requests/SyncOfflineTransactionsRequest.php` — identitas ikut payload outbox
+  - `app/Services/TransactionService.php` — `$needsCallNumber` di `checkout()` & konfirmasi self-order, identitas di `commitOffline()`
+  - `app/Http/Controllers/Owner/SettingsController.php` — mode dikirim & divalidasi
+  - `app/Http/Middleware/HandleInertiaRequests.php` — `auth.tenant.order_identity_mode`
+  - `resources/js/Components/OrderIdentityModal.vue` — **baru**, satu modal untuk kedua jalur
+  - `resources/js/Pages/Cashier/POS.vue` — modal nama open-bill lama dihapus, kedua jalur lewat modal baru
+  - `resources/js/Pages/Owner/Settings/Index.vue` — pemilih mode + keterangan per mode
+  - `resources/js/Components/{ReceiptModal,TransactionSuccessModal}.vue`, `resources/js/services/escpos.js`, `resources/js/Pages/Cashier/TransactionHistory.vue` — identitas ditampilkan
+  - `resources/js/composables/useOfflineQueue.js` — identitas menumpang outbox
+  - `tests/Feature/OrderIdentityTest.php` — **baru**, 13 test
+- **Keputusan yang perlu diingat:**
+  - **Satu mode, bukan tiga saklar.** Outlet yang disodori nama + meja + kode sekaligus akan mengisi nol dari tiga, dan identitas yang kadang diisi kadang tidak lebih buruk daripada tidak punya identitas sama sekali — tidak ada yang bisa bersandar padanya.
+  - **Nomor panggil lepas dari `kitchen_queue`, tapi `fulfillment_status` TIDAK ikut lepas.** Mode `code` memberi nomor tanpa memasukkan pesanan ke papan. Memanggil pelanggan dan menjalankan papan dapur adalah dua kebutuhan berbeda; warung yang hanya ingin memanggil tidak seharusnya dipaksa menyalakan papan yang tak akan pernah dilihat siapa pun. Ada test yang menjaga `queue_number != null && fulfillment_status == null`.
+  - **Mode identitas tidak pernah menolak penjualan.** Modalnya selalu punya tombol **Lewati**, dan servernya menerima identitas kosong dalam mode apa pun. Ini alat bantu operasional, bukan syarat sah penjualan — prinsip yang sama sudah dipakai untuk `upsell_events`, dan `[BL-025]` tetap satu-satunya pengaturan yang boleh menahan tombol bayar.
+  - **Tunda bayar SELALU ditanya, jatuh ke nama saat mode `none`.** Tagihan yang menunggu dibayar harus bisa dikenali lagi nanti, dan itu benar bahkan untuk outlet yang tidak memanggil pesanan. Bayar-langsung hanya ditanya bila owner memang memilih mode — outlet yang berjalan hari ini tidak mendapat satu ketukan tambahan tanpa ada yang memintanya.
+  - **Nomor panggil TIDAK dialokasikan untuk penjualan offline.** Nama dan meja ikut menumpang outbox, tapi nomor berguna justru karena tercetak di struk yang dipegang pelanggan; nomor yang lahir saat sinkronisasi — berjam-jam setelah struknya dibawa pulang — tidak memanggil siapa pun. Ini batas yang sama seperti papan dapur yang memang sudah tidak aktif saat offline.
+  - **`string`, bukan `enum`.** Menambah mode kelak tidak boleh memaksa SQLite membangun ulang tabelnya — ongkos yang sudah dibayar sekali di fase EDIT-TX.
 
 ---
 

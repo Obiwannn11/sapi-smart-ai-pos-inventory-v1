@@ -1,5 +1,5 @@
 <script setup>
-import { router, Head } from '@inertiajs/vue3';
+import { router, Head, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import { useFlash } from '@/composables/useFlash';
@@ -11,6 +11,7 @@ import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import UpsellStrip from '@/Components/UpsellStrip.vue';
+import OrderIdentityModal from '@/Components/OrderIdentityModal.vue';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useCatalogCache } from '@/composables/useCatalogCache';
 import { useOfflineQueue } from '@/composables/useOfflineQueue';
@@ -169,9 +170,43 @@ const getCheckoutUuid = () => {
     return checkoutUuid.value;
 };
 
-// --- Open Bill Customer Name Modal ---
-const showOpenBillNameModal = ref(false);
-const openBillCustomerName = ref('');
+// --- Identitas pesanan ([BL-026]) ---
+//
+// Mode ditentukan owner dan dibagikan lewat shared data, jadi tidak perlu prop
+// tersendiri dan tetap terbaca di halaman kasir mana pun.
+const inertiaPage = usePage();
+const identityMode = computed(() => inertiaPage.props.auth?.tenant?.order_identity_mode ?? 'none');
+
+// Jalur mana yang menunggu identitas: 'pay' atau 'open_bill'. Satu modal, dua
+// pemanggil — inilah yang dulu tidak ada, sehingga transaksi bayar-langsung
+// tidak bisa diberi identitas apa pun.
+const pendingIdentityFor = ref(null);
+const orderIdentity = ref({ customer_name: null, table_number: null });
+
+/**
+ * Bentuk input untuk jalur tertentu.
+ *
+ * Tagihan terbuka SELALU ditanya, jatuh ke nama saat owner belum memilih mode:
+ * tagihan yang menunggu dibayar harus bisa dikenali lagi nanti, dan itu benar
+ * bahkan untuk outlet yang tidak memanggil pesanan. Bayar langsung hanya
+ * ditanya bila owner memang memilih mode — outlet yang berjalan hari ini tidak
+ * mendapat satu ketukan tambahan tanpa ada yang memintanya.
+ *
+ * `code` tidak pernah membuka modal: nomornya lahir di server.
+ */
+const identityFormFor = (intent) => {
+    if (identityMode.value === 'table') return 'table';
+    if (identityMode.value === 'name') return 'name';
+    if (identityMode.value === 'code') return intent === 'open_bill' ? 'name' : null;
+
+    return intent === 'open_bill' ? 'name' : null;
+};
+
+const identityForm = computed(() => identityFormFor(pendingIdentityFor.value) ?? 'name');
+
+const resetOrderIdentity = () => {
+    orderIdentity.value = { customer_name: null, table_number: null };
+};
 
 // --- Helpers ---
 const formatCurrency = (value) => {
@@ -421,7 +456,38 @@ const canCheckout = computed(() => !processing.value && checkoutBlockedReason.va
 
 const openPaymentModal = () => {
     if (!canCheckout.value) return;
+
+    // Identitas ditanya SEBELUM pembayaran: ia milik pesanan, bukan milik
+    // pembayarannya, dan menanyakannya setelah uang berpindah berarti menahan
+    // pelanggan yang sudah selesai.
+    if (identityFormFor('pay')) {
+        pendingIdentityFor.value = 'pay';
+
+        return;
+    }
+
+    resetOrderIdentity();
     showPaymentModal.value = true;
+};
+
+/**
+ * Kasir menutup modal identitas tanpa memutuskan. Berbeda dari "Lewati":
+ * membatalkan mengembalikannya ke keranjang, bukan meneruskan ke pembayaran.
+ */
+const cancelIdentity = () => {
+    pendingIdentityFor.value = null;
+};
+
+const confirmIdentity = (identity) => {
+    const intent = pendingIdentityFor.value;
+    orderIdentity.value = identity;
+    pendingIdentityFor.value = null;
+
+    if (intent === 'pay') {
+        showPaymentModal.value = true;
+    } else if (intent === 'open_bill') {
+        submitOpenBill();
+    }
 };
 
 const cartToItems = () => cart.value.map(item => ({
@@ -451,6 +517,10 @@ const queueOfflineSale = async (payments) => {
         payments,
         totalAmount: cartTotal.value,
         upsellEvents: collectUpsellEvents(),
+        // Nama/meja ikut tersimpan; nomor panggil tidak bisa — urutannya milik
+        // server dan perangkat offline tidak tahu sudah sampai mana.
+        customerName: orderIdentity.value.customer_name,
+        tableNumber: orderIdentity.value.table_number,
     });
 
     if (!stored) {
@@ -465,6 +535,7 @@ const queueOfflineSale = async (payments) => {
     showPaymentModal.value = false;
     cart.value = [];
     resetUpsell();
+    resetOrderIdentity();
     checkoutUuid.value = null;
     showFlash('Tersimpan offline. Akan tersinkron otomatis saat kembali online.', 'success');
 
@@ -488,6 +559,8 @@ const handlePayment = async (payments) => {
         notes: null,
         client_uuid: getCheckoutUuid(),
         upsell_events: collectUpsellEvents(),
+        customer_name: orderIdentity.value.customer_name,
+        table_number: orderIdentity.value.table_number,
     };
 
     router.post('/cashier/transactions', data, {
@@ -501,6 +574,7 @@ const handlePayment = async (payments) => {
             }
             cart.value = [];
             resetUpsell();
+            resetOrderIdentity();
             checkoutUuid.value = null;
         },
         // navigator.onLine said we were online but the request never landed
@@ -546,21 +620,20 @@ const saveAsOpenBill = () => {
         return;
     }
 
-    openBillCustomerName.value = '';
-    showOpenBillNameModal.value = true;
+    pendingIdentityFor.value = 'open_bill';
 };
 
-const confirmSaveOpenBill = () => {
+const submitOpenBill = () => {
     if (processing.value) return;
     processing.value = true;
-    showOpenBillNameModal.value = false;
 
     const data = {
         items: cartToItems(),
         payments: null,
         notes: null,
         is_open_bill: true,
-        customer_name: openBillCustomerName.value.trim() || null,
+        customer_name: orderIdentity.value.customer_name,
+        table_number: orderIdentity.value.table_number,
         client_uuid: getCheckoutUuid(),
         upsell_events: collectUpsellEvents(),
     };
@@ -570,6 +643,7 @@ const confirmSaveOpenBill = () => {
         onSuccess: () => {
             cart.value = [];
             resetUpsell();
+            resetOrderIdentity();
             checkoutUuid.value = null;
         },
         onFinish: () => {
@@ -933,49 +1007,19 @@ onUnmounted(stopResizeCart);
             @close="showReceiptModal = false; lastTransaction = null"
         />
 
-        <!-- Open Bill Customer Name Modal -->
-        <Teleport to="body">
-            <Transition
-                enter-active-class="transition-opacity duration-150"
-                enter-from-class="opacity-0"
-                enter-to-class="opacity-100"
-                leave-active-class="transition-opacity duration-150"
-                leave-from-class="opacity-100"
-                leave-to-class="opacity-0"
-            >
-                <div v-if="showOpenBillNameModal" class="fixed inset-0 z-[110] flex items-center justify-center p-4">
-                    <div class="absolute inset-0 bg-black/50" @click="showOpenBillNameModal = false" />
-                    <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-                        <h3 class="text-base font-semibold text-gray-800">Nama Pelanggan</h3>
-                        <p class="text-sm text-gray-500">Nama pelanggan untuk tagihan ini (opsional).</p>
-                        <input
-                            v-model="openBillCustomerName"
-                            type="text"
-                            placeholder="Contoh: Meja 3 / Budi"
-                            maxlength="100"
-                            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                            @keydown.enter="confirmSaveOpenBill"
-                            @keydown.esc="showOpenBillNameModal = false"
-                            autofocus
-                        />
-                        <div class="flex gap-3 pt-1">
-                            <button
-                                @click="showOpenBillNameModal = false"
-                                class="flex-1 py-2.5 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition text-sm"
-                            >
-                                Batal
-                            </button>
-                            <button
-                                @click="confirmSaveOpenBill"
-                                class="flex-1 py-2.5 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition text-sm"
-                            >
-                                Simpan Tagihan
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </Transition>
-        </Teleport>
+        <!--
+            Satu modal identitas untuk kedua jalur. Dulu modal nama hanya ada di
+            jalur "Tunda Bayar", sehingga pesanan bayar-langsung — yang justru
+            perlu dipanggil saat siap — tidak bisa diberi identitas ([BL-026]).
+        -->
+        <OrderIdentityModal
+            :show="pendingIdentityFor !== null"
+            :mode="identityForm"
+            :confirm-label="pendingIdentityFor === 'open_bill' ? 'Simpan Tagihan' : 'Lanjut Bayar'"
+            :disabled="processing"
+            @close="cancelIdentity"
+            @confirm="confirmIdentity"
+        />
     </div>
 </template>
 

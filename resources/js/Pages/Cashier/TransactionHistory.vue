@@ -180,6 +180,21 @@ const openEdit = (transaction) => {
                         <span class="text-xs text-gray-400">{{ formatDate(tx.occurred_at ?? tx.created_at) }}</span>
                     </div>
 
+                    <!-- Identitas pesanan. Ada di sini karena identitas yang
+                         hanya hidup di layar kasir tidak menolong siapa pun
+                         saat pesanan dicari kembali ([BL-026]). -->
+                    <div v-if="tx.queue_number || tx.table_number || tx.customer_name" class="flex flex-wrap items-center gap-1.5 mb-2">
+                        <span v-if="tx.queue_number" class="px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            No. {{ tx.queue_number }}
+                        </span>
+                        <span v-if="tx.table_number" class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                            Meja {{ tx.table_number }}
+                        </span>
+                        <span v-if="tx.customer_name" class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 truncate max-w-[12rem]">
+                            {{ tx.customer_name }}
+                        </span>
+                    </div>
+
                     <!-- Items preview -->
                     <div class="text-xs text-gray-600 space-y-0.5 mb-2">
                         <p v-for="item in tx.items?.slice(0, 3)" :key="item.id" class="truncate">

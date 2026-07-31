@@ -62,8 +62,19 @@ class StoreTransactionRequest extends FormRequest
             // Notes
             'notes' => 'nullable|string|max:1000',
 
-            // Customer name (open bill)
+            // Identitas pesanan — nama pelanggan / nomor meja.
+            //
+            // Keduanya `nullable` dan tidak pernah saling mewajibkan. Mode
+            // identitas milik owner mengatur apa yang DITANYAKAN kasir, bukan
+            // apa yang diterima server: kasir yang melewati modal identitas di
+            // tengah antrean panjang tetap harus bisa menyelesaikan penjualan.
+            // Prinsip yang sama sudah dipakai untuk `upsell_events` ([BL-026]).
+            //
+            // `max:10` mengikuti lebar kolomnya, bukan angka yang dikarang —
+            // batas yang lebih longgar dari kolomnya hanya memindahkan
+            // kegagalan dari validasi ke driver database.
             'customer_name' => 'nullable|string|max:100',
+            'table_number' => 'nullable|string|max:10',
 
             // Open bill flag
             'is_open_bill' => 'nullable|boolean',

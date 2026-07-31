@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Owner;
 use App\Http\Controllers\Controller;
 use App\Models\AiAnalysis;
 use App\Models\AiUsage;
+use App\Models\Tenant;
 use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -59,7 +60,12 @@ class SettingsController extends Controller
                 // mata owner, tapi sengaja TIDAK masuk Tenant::hasFeature() —
                 // ia tidak menggerbangi rute atau modul apa pun ([BL-025]).
                 'upsell_mandatory' => $tenant->upsell_mandatory,
+                // Bukan boolean seperti yang lain, dan bukan kapabilitas modul:
+                // ini cara outlet mengenali pesanannya. Ikut di sini karena
+                // tempatnya sama di mata owner ([BL-026]).
+                'order_identity_mode' => $tenant->order_identity_mode,
             ],
+            'orderIdentityModes' => Tenant::orderIdentityModes(),
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
             // masih ada pekerjaan berjalan di baliknya.
             'featureWarnings' => [
@@ -123,6 +129,10 @@ class SettingsController extends Controller
             'self_order_enabled' => 'boolean',
             'ai_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
+            // `sometimes` dengan alasan yang sama seperti business_type di
+            // atas: field yang tidak dikirim berarti "jangan sentuh", bukan
+            // "kembalikan ke none".
+            'order_identity_mode' => ['sometimes', 'required', Rule::in(array_keys(Tenant::orderIdentityModes()))],
         ]);
 
         // Jangan overwrite key jadi null kalau field dikosongkan tanpa maksud hapus.

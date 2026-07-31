@@ -132,9 +132,10 @@ export function buildReceipt(transaction, options = {}) {
     b.line('Point of Sale');
 
     // ── Nomor antrian ──
-    // Hanya ada saat mode antrian hidup, jadi struk cafe tidak berubah sama
-    // sekali. Dicetak besar: seluruh gunanya bertumpu pada nomor ini bisa
-    // dibaca pelanggan dari seberang meja lalu dipanggil.
+    // Hanya ada saat papan dapur hidup atau mode identitas "kode panggil"
+    // dipilih ([BL-026]), jadi struk outlet lain tidak berubah sama sekali.
+    // Dicetak besar: seluruh gunanya bertumpu pada nomor ini bisa dibaca
+    // pelanggan dari seberang meja lalu dipanggil.
     if (transaction.queue_number) {
         b.line(divider(width));
         b.raw(CMD.boldOn).raw(CMD.doubleOn);
@@ -151,6 +152,7 @@ export function buildReceipt(transaction, options = {}) {
     b.line(twoCols('Waktu', formatTime(transaction.created_at), width));
     if (transaction.user?.name) b.line(twoCols('Kasir', transaction.user.name, width));
     if (transaction.customer_name) b.line(twoCols('Pelanggan', transaction.customer_name, width));
+    if (transaction.table_number) b.line(twoCols('Meja', transaction.table_number, width));
     b.line(divider(width));
 
     // ── Items ──

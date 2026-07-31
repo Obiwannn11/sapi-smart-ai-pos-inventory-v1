@@ -90,6 +90,16 @@ class TransactionService
             $queueMode = $user->tenant?->hasFeature('kitchen_queue') ?? false;
             $fulfillmentStatus = $queueMode ? Transaction::FULFILLMENT_WAITING : null;
 
+            // Nomor panggil lepas dari papan dapur ([BL-026]).
+            //
+            // Sebelumnya nomor hanya lahir bila `kitchen_queue` menyala, jadi
+            // warung yang cuma ingin memanggil pelanggan harus menyalakan papan
+            // dapur yang tak akan pernah dilihat siapa pun. Dua kebutuhan
+            // berbeda, dua syarat berbeda — dan `fulfillment_status` tetap
+            // milik papan seorang diri: nomor panggil TIDAK memasukkan pesanan
+            // ke papan.
+            $needsCallNumber = $queueMode || ($user->tenant?->usesCallNumber() ?? false);
+
             // 3. Buat transaksi
             $transaction = Transaction::create([
                 'tenant_id' => $tenantId,
@@ -109,7 +119,7 @@ class TransactionService
 
             // 3b. Label & urutan papan. Dipanggil SETELAH create karena
             //     effectiveDate() jatuh ke created_at bila occurred_at kosong.
-            if ($fulfillmentStatus) {
+            if ($needsCallNumber) {
                 $this->assignQueuePosition($transaction);
             }
 
@@ -296,7 +306,12 @@ class TransactionService
             // 4. Nomor antrian baru lahir di sini — bukan saat pesanan dibuat —
             //    karena self-order belum tentu dibayar. Tanpa langkah ini
             //    pesanan QR tidak akan pernah punya nomor untuk dipanggil.
-            if ($transaction->tenant?->hasFeature('kitchen_queue')) {
+            //
+            //    Syaratnya sama dengan checkout(): papan dapur ATAU mode
+            //    identitas kode. Pelanggan yang memesan lewat QR justru yang
+            //    paling butuh dipanggil — ia tidak berdiri di depan kasir.
+            $tenant = $transaction->tenant;
+            if (($tenant?->hasFeature('kitchen_queue') ?? false) || ($tenant?->usesCallNumber() ?? false)) {
                 $this->assignQueuePosition($transaction);
             }
 
@@ -576,6 +591,16 @@ class TransactionService
                 'notes' => $data['notes'] ?? null,
                 'total_amount' => 0,
                 'change_amount' => 0,
+                // Identitas ikut menumpang outbox, dengan alasan yang sama
+                // seperti upsell_events di bawah: tanpa ini, periode offline
+                // terlihat seolah tidak ada pesanan yang pernah diberi nama.
+                //
+                // Nomor panggil sengaja TIDAK dialokasikan di sini. Nomor
+                // berguna karena tercetak di struk yang dipegang pelanggan;
+                // nomor yang lahir saat sinkronisasi — berjam-jam setelah
+                // strukanya dibawa pulang — tidak memanggil siapa pun.
+                'customer_name' => $data['customer_name'] ?? null,
+                'table_number' => $data['table_number'] ?? null,
             ]);
 
             [$totalAmount, $needsReview] = $this->processOfflineItems(

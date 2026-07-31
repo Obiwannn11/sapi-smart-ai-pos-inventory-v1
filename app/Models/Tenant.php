@@ -41,12 +41,26 @@ class Tenant extends Model
      */
     public const BUSINESS_TYPE_DEFAULT = 'lainnya';
 
+    // --- Mode identitas pesanan ([BL-026]) ---
+
+    /** Pesanan tidak diberi identitas apa pun. Bawaan. */
+    public const ORDER_IDENTITY_NONE = 'none';
+
+    /** Nama pelanggan, diketik bebas. */
+    public const ORDER_IDENTITY_NAME = 'name';
+
+    /** Nomor meja, diisi dari papan angka. */
+    public const ORDER_IDENTITY_TABLE = 'table';
+
+    /** Kode panggil, dialokasikan sistem — kasir tidak mengetik apa pun. */
+    public const ORDER_IDENTITY_CODE = 'code';
+
     protected $fillable = [
         'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled',
-        'upsell_mandatory',
+        'upsell_mandatory', 'order_identity_mode',
     ];
 
     protected $hidden = ['ai_api_key'];
@@ -65,6 +79,7 @@ class Tenant extends Model
         'self_order_enabled' => false,
         'ai_enabled' => true,
         'upsell_mandatory' => false,
+        'order_identity_mode' => self::ORDER_IDENTITY_NONE,
     ];
 
     protected function casts(): array
@@ -99,6 +114,40 @@ class Tenant extends Model
             'ai' => $this->ai_enabled,
             default => false,
         };
+    }
+
+    /**
+     * Mode identitas pesanan beserta keterangannya, untuk halaman Pengaturan
+     * DAN untuk aturan validasinya. Satu daftar, dua pemakai — supaya pilihan
+     * yang tampil di layar tidak pernah menyimpang dari yang diterima server.
+     *
+     * @return array<string, string>
+     */
+    public static function orderIdentityModes(): array
+    {
+        return [
+            self::ORDER_IDENTITY_NONE => 'Tidak dipakai',
+            self::ORDER_IDENTITY_NAME => 'Nama pelanggan',
+            self::ORDER_IDENTITY_TABLE => 'Nomor meja',
+            self::ORDER_IDENTITY_CODE => 'Kode panggil (otomatis)',
+        ];
+    }
+
+    /**
+     * Apakah tiap pesanan outlet ini butuh nomor panggil.
+     *
+     * Sengaja TIDAK lewat hasFeature(): mode identitas bukan kapabilitas modul
+     * dan tidak menggerbangi rute mana pun — ia hanya menentukan apa yang
+     * ditanyakan kasir sebelum menyimpan.
+     *
+     * Perhatikan bahwa nomor panggil juga lahir saat `kitchen_queue` menyala.
+     * Keduanya sengaja dipisah: memanggil pelanggan dan menjalankan papan dapur
+     * adalah dua kebutuhan berbeda, dan warung yang hanya ingin memanggil tidak
+     * seharusnya dipaksa menyalakan papan ([BL-026]).
+     */
+    public function usesCallNumber(): bool
+    {
+        return $this->order_identity_mode === self::ORDER_IDENTITY_CODE;
     }
 
     /**

@@ -49,6 +49,11 @@ class HandleInertiaRequests extends Middleware
                 // kebenarannya. Menyembunyikan menu bukan pengamanan.
                 'tenant' => $user instanceof User && $user->tenant ? [
                     'name' => $user->tenant->name,
+                    // Bukan kapabilitas, jadi tidak ikut `features`: ia
+                    // menentukan apa yang ditanyakan kasir sebelum menyimpan,
+                    // bukan pintu mana yang terbuka ([BL-026]). Skalar biasa —
+                    // tenant-nya sudah dimuat, jadi tidak ada query tambahan.
+                    'order_identity_mode' => $user->tenant->order_identity_mode,
                     'features' => fn () => [
                         'kitchen_queue' => $user->tenant->hasFeature('kitchen_queue'),
                         'self_order' => $user->tenant->hasFeature('self_order'),
