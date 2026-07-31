@@ -45,6 +45,29 @@
 
 ---
 
+### [HOTFIX] Rekonsiliasi Kas Menghitung Penjualan Tunai, Per-Laci, & Per-Tanggal Efektif (BL-028 Tahap A)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup Tahap A `[BL-028]`; Tahap B (`cash_drawer_id`) sengaja ditunda
+- **Dampak:** Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak. Tanpa migrasi, tanpa perubahan skema, tanpa backfill.
+- **Deskripsi:** Layar tutup kas dulu menghitung selisih sebagai `uang fisik − modal awal`, sehingga kasir yang menjual Rp 500.000 tunai melihat "Selisih +500.000" seolah lacinya kelebihan uang. Rumus yang benar sebenarnya sudah ada di `close()` tapi tidak pernah sampai ke layar, dan punya dua cacat sendiri. Ketiganya ditutup sekaligus lewat satu service bersama.
+- **Alasan:** Angka yang dipakai kasir mempertanggungjawabkan uang fisik salah di setiap penutupan sesi (207 sesi sejauh ini). Dua cacat lainnya masih laten dan justru itu alasan memperbaikinya sekarang — memperbaiki bug yang belum merusak data jauh lebih murah daripada memperbaikinya sambil membersihkan akibatnya.
+- **File Terdampak:**
+  - `app/Services/CashDrawerReconciliation.php` — **baru**; satu-satunya sumber angka rekonsiliasi
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — `index()` mengirim `reconciliation`; `close()` & `summary()` memakai service, ~35 baris query duplikat dihapus
+  - `resources/js/Pages/Cashier/CashDrawer.vue` — rincian modal + tunai masuk − kembalian = seharusnya di laci; non-tunai ditandai "tidak masuk laci"; pratinjau memuat ulang angkanya sebelum ditampilkan
+  - `tests/Feature/Cashier/CashDrawerReconciliationTest.php` — **baru**, 8 test
+- **Tiga cacat yang ditutup:**
+  1. **Penjualan tunai tidak terlihat di layar.** Pratinjau kini menampilkan rinciannya, bukan hanya modal awal vs uang fisik.
+  2. **Scope per-laci.** Query dulu menyaring `tenant_id` saja, sehingga dua kasir yang shift bersamaan sama-sama menghitung seluruh uang tunai toko sebagai miliknya. Kini disaring `user_id` laci. Data per 2026-07-31 membuktikan cacat ini belum pernah aktif (1 kasir per tenant, 0 sesi tumpang-tindih) — diperbaiki selagi masih laten.
+  3. **Jendela waktu memakai `created_at`.** Penjualan offline yang tersinkron belakangan dihitung ke laci hari sinkronisasi, bukan hari uangnya masuk. Kini memakai `Transaction::scopeWhereEffectiveBetween()` — scope yang sudah ada dan sudah dipakai papan antrian dengan alasan yang persis sama.
+- **Keputusan yang perlu diingat:**
+  - **`cash_drawer_id` BUKAN prasyarat.** Catatan awal `[BL-028]` menyebutnya begitu; itu keliru. `transactions.user_id` + jendela sesi sudah memisahkan laci dengan benar, termasuk untuk kasir kedua. Kolom eksplisitnya (Tahap B) ditunda sampai benar-benar dibutuhkan — backfill di atas data yang belum pernah salah adalah risiko tanpa imbalan.
+  - **Pratinjau memuat ulang, bukan menghitung sendiri.** `previewClose()` melakukan partial reload `reconciliation` sebelum menampilkan ringkasan. Pratinjau yang basi akan menjanjikan selisih berbeda dari yang akhirnya tercatat `close()` — cara tercepat membuat kasir berhenti mempercayai kedua angkanya.
+  - **Batas yang disadari & sengaja dibiarkan:** penjualan offline yang terjadi di dalam sesi tapi baru tersinkron setelah lacinya ditutup tidak terhitung di mana pun, karena `expected_amount` sesi itu sudah dibekukan. Memakai `created_at` tidak menyelesaikannya, hanya memindahkan kesalahannya. Jawabannya menunggu Tahap B.
+
+---
+
 ### [ADDITION] Papan Antrian Dapur (BL-019)
 - **Tanggal:** 2026-07-29
 - **Fase Terkait:** PHASE QUEUE — menutup `[BL-019]`; berdiri di atas fase capability flags di bawah

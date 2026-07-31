@@ -6,6 +6,9 @@ import { ref, computed, nextTick } from 'vue';
 
 const props = defineProps({
     openDrawer: Object,
+    // Rekonsiliasi sesi berjalan dari CashDrawerReconciliation — null saat
+    // belum ada sesi terbuka.
+    reconciliation: { type: Object, default: null },
 });
 
 const openingAmount = ref(0);
@@ -14,14 +17,33 @@ const closingAmount = ref(0);
 const closingAmountDisplay = ref('');
 const notes = ref('');
 const processing = ref(false);
+const refreshing = ref(false);
 const step = ref(1); // 1 = form, 2 = summary
 
-const selisih = computed(() => {
-    return closingAmount.value - Number(props.openDrawer?.opening_amount || 0);
-});
+// Uang yang seharusnya ada di laci = modal + tunai masuk − kembalian keluar.
+// Sebelumnya halaman ini membandingkan uang fisik dengan modal awal saja,
+// sehingga seluruh penjualan tunai shift itu terbaca sebagai "kelebihan".
+const expectedAmount = computed(() => Number(props.reconciliation?.expected_amount ?? 0));
 
+const selisih = computed(() => closingAmount.value - expectedAmount.value);
+
+/**
+ * Ambil ulang angka rekonsiliasi sebelum menampilkan ringkasan.
+ *
+ * Penjualan bisa terjadi setelah halaman ini dibuka, dan `close()` menghitung
+ * ulang di server. Tanpa muat ulang, ringkasan bisa menjanjikan selisih yang
+ * berbeda dari yang akhirnya tercatat — cara tercepat membuat kasir berhenti
+ * mempercayai kedua angkanya.
+ */
 const previewClose = () => {
-    step.value = 2;
+    if (refreshing.value) return;
+    refreshing.value = true;
+
+    router.reload({
+        only: ['reconciliation'],
+        onSuccess: () => { step.value = 2; },
+        onFinish: () => { refreshing.value = false; },
+    });
 };
 
 const backToForm = () => {
@@ -170,6 +192,18 @@ const goToPOS = () => {
                         <span class="text-gray-500">Modal awal</span>
                         <span class="font-medium text-gray-800">{{ formatCurrency(openDrawer.opening_amount) }}</span>
                     </div>
+                    <div v-if="reconciliation" class="flex justify-between text-sm">
+                        <span class="text-gray-500">Penjualan tunai</span>
+                        <span class="font-medium text-gray-800 font-mono">+{{ formatCurrency(reconciliation.cash_in) }}</span>
+                    </div>
+                    <div v-if="reconciliation && Number(reconciliation.change_out) > 0" class="flex justify-between text-sm">
+                        <span class="text-gray-500">Kembalian keluar</span>
+                        <span class="font-medium text-gray-800 font-mono">−{{ formatCurrency(reconciliation.change_out) }}</span>
+                    </div>
+                    <div v-if="reconciliation" class="flex justify-between text-sm border-t border-border pt-2">
+                        <span class="text-gray-500">Seharusnya di laci</span>
+                        <span class="font-semibold text-gray-800 font-mono">{{ formatCurrency(expectedAmount) }}</span>
+                    </div>
                 </div>
 
                 <!-- Tombol ke POS -->
@@ -217,9 +251,10 @@ const goToPOS = () => {
                             </div>
                             <button
                                 type="submit"
-                                class="w-full py-3 bg-secondary text-secondary-foreground font-semibold rounded-lg hover:bg-secondary/80 transition text-sm"
+                                :disabled="refreshing"
+                                class="w-full py-3 bg-secondary text-secondary-foreground font-semibold rounded-lg hover:bg-secondary/80 transition text-sm disabled:opacity-50"
                             >
-                                Lihat Ringkasan
+                                {{ refreshing ? 'Menghitung ulang...' : 'Lihat Ringkasan' }}
                             </button>
                         </form>
                     </template>
@@ -241,6 +276,21 @@ const goToPOS = () => {
                                 <span class="font-medium text-foreground font-mono">{{ formatCurrency(openDrawer.opening_amount) }}</span>
                             </div>
                             <div class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">
+                                    Penjualan tunai
+                                    <span v-if="reconciliation" class="text-muted-foreground/60">({{ reconciliation.transaction_count }} transaksi)</span>
+                                </span>
+                                <span class="font-medium text-success font-mono">+{{ formatCurrency(reconciliation?.cash_in ?? 0) }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">Kembalian keluar</span>
+                                <span class="font-medium text-destructive font-mono">−{{ formatCurrency(reconciliation?.change_out ?? 0) }}</span>
+                            </div>
+                            <div class="border-t border-border pt-3 flex justify-between text-sm">
+                                <span class="text-muted-foreground font-medium">Seharusnya di laci</span>
+                                <span class="font-semibold text-foreground font-mono">{{ formatCurrency(expectedAmount) }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
                                 <span class="text-muted-foreground">Uang fisik aktual</span>
                                 <span class="font-medium text-foreground font-mono">{{ formatCurrency(Number(closingAmount) || 0) }}</span>
                             </div>
@@ -258,6 +308,18 @@ const goToPOS = () => {
                                     <template v-else-if="selisih > 0">+{{ formatCurrency(selisih) }}</template>
                                     <template v-else>{{ formatCurrency(selisih) }}</template>
                                 </span>
+                            </div>
+                            <!-- Non-tunai ditampilkan terpisah dan ditandai tegas:
+                                 kasir tidak boleh mencari uang QRIS di dalam laci. -->
+                            <div
+                                v-if="Number(reconciliation?.non_cash_in) > 0"
+                                class="border-t border-border pt-3 flex justify-between text-xs"
+                            >
+                                <span class="text-muted-foreground">
+                                    Non-tunai (QRIS/transfer)
+                                    <span class="text-muted-foreground/60">— tidak masuk laci</span>
+                                </span>
+                                <span class="text-muted-foreground font-mono">{{ formatCurrency(reconciliation.non_cash_in) }}</span>
                             </div>
                             <div v-if="notes" class="border-t border-border pt-3 text-sm">
                                 <span class="text-muted-foreground">Catatan: </span>

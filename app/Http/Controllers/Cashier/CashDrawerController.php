@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CloseCashDrawerRequest;
 use App\Http\Requests\OpenCashDrawerRequest;
 use App\Models\CashDrawer;
-use App\Models\TransactionPayment;
+use App\Services\CashDrawerReconciliation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -14,6 +14,10 @@ use Inertia\Response;
 
 class CashDrawerController extends Controller
 {
+    public function __construct(
+        private CashDrawerReconciliation $reconciliation,
+    ) {}
+
     /**
      * Halaman cash drawer — form buka kas atau summary sesi aktif.
      * Sesi kas hanya untuk kasir; owner diarahkan ke POS.
@@ -30,6 +34,13 @@ class CashDrawerController extends Controller
 
         return Inertia::render('Cashier/CashDrawer', [
             'openDrawer' => $openDrawer,
+            // Angka ini bergerak selama shift berjalan, jadi halaman memuatnya
+            // ulang (partial reload) tepat sebelum menampilkan ringkasan —
+            // pratinjau yang basi akan berbeda dari hasil close() dan justru
+            // membuat kasir tidak percaya keduanya.
+            'reconciliation' => $openDrawer
+                ? $this->reconciliation->for($openDrawer)
+                : null,
         ]);
     }
 
@@ -40,7 +51,7 @@ class CashDrawerController extends Controller
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             abort(401);
         }
 
@@ -77,26 +88,7 @@ class CashDrawerController extends Controller
             ->whereNull('closed_at')
             ->firstOrFail();
 
-        // Hitung expected_amount hanya dari pembayaran CASH
-        // (QRIS & transfer tidak masuk ke laci kas fisik)
-        $expectedCashFromPayments = TransactionPayment::query()
-            ->whereHas('paymentMethod', fn($q) => $q->where('type', 'cash'))
-            ->whereHas('transaction', function ($q) use ($drawer) {
-                $q->where('tenant_id', $drawer->tenant_id)
-                    ->where('status', 'completed')
-                    ->where('created_at', '>=', $drawer->opened_at)
-                    ->where('created_at', '<=', now());
-            })
-            ->sum('amount');
-
-        // Hitung total kembalian cash yang dikeluarkan dari laci
-        $totalChangeGiven = \App\Models\Transaction::where('tenant_id', $drawer->tenant_id)
-            ->where('status', 'completed')
-            ->where('created_at', '>=', $drawer->opened_at)
-            ->where('created_at', '<=', now())
-            ->sum('change_amount');
-
-        $expectedAmount = $drawer->opening_amount + $expectedCashFromPayments - $totalChangeGiven;
+        $expectedAmount = $this->reconciliation->for($drawer)['expected_amount'];
         $closingAmount = $request->validated('closing_amount');
 
         $drawer->update([
@@ -119,34 +111,19 @@ class CashDrawerController extends Controller
         $user = Auth::user();
 
         // Authorization: cashier hanya bisa lihat kas sendiri, owner bisa lihat semua
-        if (!$user || ($user->isCashier() && $cashDrawer->user_id !== $user->id)) {
+        if (! $user || ($user->isCashier() && $cashDrawer->user_id !== $user->id)) {
             abort(403, 'Anda tidak memiliki akses ke sesi kas ini.');
         }
 
-        // Rekap per payment method
-        $paymentSummary = TransactionPayment::query()
-            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', 'transaction_payments.payment_method_id', '=', 'payment_methods.id')
-            ->whereHas('transaction', function ($q) use ($cashDrawer) {
-                $q->where('tenant_id', $cashDrawer->tenant_id)
-                    ->where('status', 'completed')
-                    ->where('created_at', '>=', $cashDrawer->opened_at)
-                    ->where('created_at', '<=', $cashDrawer->closed_at ?? now());
-            })
-            ->groupBy('payment_methods.name', 'payment_methods.type')
-            ->get();
-
-        // Hitung jumlah transaksi dalam sesi
-        $transactionCount = \App\Models\Transaction::where('tenant_id', $cashDrawer->tenant_id)
-            ->where('status', 'completed')
-            ->where('created_at', '>=', $cashDrawer->opened_at)
-            ->where('created_at', '<=', $cashDrawer->closed_at ?? now())
-            ->count();
+        // Sumber angka yang sama dengan close(). Kalau rekap menghitung sendiri,
+        // ia akan menampilkan angka berbeda dari yang barusan dipakai menutup
+        // kas — lebih membingungkan daripada tidak menampilkannya sama sekali.
+        $reconciliation = $this->reconciliation->for($cashDrawer);
 
         return Inertia::render('Cashier/CashDrawerSummary', [
             'cashDrawer' => $cashDrawer,
-            'paymentSummary' => $paymentSummary,
-            'transactionCount' => $transactionCount,
+            'paymentSummary' => $reconciliation['payment_summary'],
+            'transactionCount' => $reconciliation['transaction_count'],
         ]);
     }
 }
