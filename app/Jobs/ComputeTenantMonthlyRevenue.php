@@ -33,7 +33,12 @@ class ComputeTenantMonthlyRevenue implements ShouldQueue
             ? Carbon::createFromFormat('Y-m', $this->period)->startOfMonth()
             // Bulan yang sudah TUTUP. Menghitung bulan berjalan menghasilkan
             // angka yang berubah tiap hari dan bracket yang ikut goyang.
-            : now()->subMonth()->startOfMonth();
+            //
+            // startOfMonth() DULU, baru subMonth(). Urutan sebaliknya meluber:
+            // 31 Juli − 1 bulan = 31 Juni yang tidak ada, dinormalkan Carbon
+            // jadi 1 Juli — dan job ini akan menghitung bulan BERJALAN, persis
+            // yang dilarang komentar di atas. Lihat [BL-029].
+            : now()->startOfMonth()->subMonth();
 
         Tenant::query()
             // GERBANG PRIVASI, dua lapis. Tenant jalur normal tidak pernah

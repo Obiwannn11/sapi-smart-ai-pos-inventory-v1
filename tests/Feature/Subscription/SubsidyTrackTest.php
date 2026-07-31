@@ -130,7 +130,7 @@ test('mencabut consent menghapus ringkasan omzet seketika', function () {
 
     foreach ([1, 2, 3] as $bulanLalu) {
         TenantMonthlyMetric::factory()
-            ->forPeriod(now()->subMonths($bulanLalu)->format('Y-m'))
+            ->forPeriod(now()->startOfMonth()->subMonths($bulanLalu)->format('Y-m'))
             ->create(['tenant_id' => $tenant->id]);
     }
 
@@ -182,7 +182,7 @@ test('pencabutan menghentikan pengumpulan data meski jalurnya belum berubah', fu
         'user_id' => $owner->id,
         'total_amount' => 400000,
         'status' => Transaction::STATUS_COMPLETED,
-        'occurred_at' => now()->subMonth()->startOfMonth()->addDay(),
+        'occurred_at' => now()->startOfMonth()->subMonth()->addDay(),
     ]);
 
     post('/langganan/subsidi/cabut');

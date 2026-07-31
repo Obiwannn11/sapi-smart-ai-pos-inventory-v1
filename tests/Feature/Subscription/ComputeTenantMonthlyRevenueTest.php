@@ -40,7 +40,7 @@ function makeSale(Tenant $tenant, User $user, float $amount, string $status, ?Ca
         'user_id' => $user->id,
         'total_amount' => $amount,
         'status' => $status,
-        'occurred_at' => $occurredAt ?? now()->subMonth()->startOfMonth()->addDays(3),
+        'occurred_at' => $occurredAt ?? now()->startOfMonth()->subMonth()->addDays(3),
     ]);
 }
 
@@ -92,7 +92,7 @@ test('hanya transaksi selesai yang dihitung', function () {
 test('transaksi offline dihitung ke bulan kejadiannya, bukan bulan sinkronnya', function () {
     ['tenant' => $tenant, 'owner' => $owner] = makeMetricContext();
 
-    $bulanLalu = now()->subMonth();
+    $bulanLalu = now()->startOfMonth()->subMonth();
 
     // Dibuat di server hari ini (created_at bulan ini) tapi terjadi bulan lalu.
     $transaksi = makeSale($tenant, $owner, 750000, Transaction::STATUS_COMPLETED, $bulanLalu->copy()->startOfMonth()->addDays(5));
@@ -125,7 +125,7 @@ test('menghitung ulang periode yang sama memperbarui barisnya, bukan menambah', 
 test('periode bisa dipilih untuk menghitung ulang bulan tertentu', function () {
     ['tenant' => $tenant, 'owner' => $owner] = makeMetricContext();
 
-    $duaBulanLalu = now()->subMonths(2);
+    $duaBulanLalu = now()->startOfMonth()->subMonths(2);
     makeSale($tenant, $owner, 250000, Transaction::STATUS_COMPLETED, $duaBulanLalu->copy()->startOfMonth()->addDay());
 
     artisan('subscriptions:compute-revenue', ['--period' => $duaBulanLalu->format('Y-m')])->assertSuccessful();
@@ -173,8 +173,8 @@ test('bracket berjalan tenant dibaca dari tabel ringkasan', function () {
 test('ringkasan yang lewat retensi dipangkas', function () {
     ['tenant' => $tenant] = makeMetricContext();
 
-    $lama = now()->subMonths(30)->format('Y-m');
-    $baru = now()->subMonth()->format('Y-m');
+    $lama = now()->startOfMonth()->subMonths(30)->format('Y-m');
+    $baru = now()->startOfMonth()->subMonth()->format('Y-m');
 
     TenantMonthlyMetric::factory()->forPeriod($lama)->create(['tenant_id' => $tenant->id]);
     TenantMonthlyMetric::factory()->forPeriod($baru)->create(['tenant_id' => $tenant->id]);
@@ -188,10 +188,51 @@ test('ringkasan yang lewat retensi dipangkas', function () {
 test('dry-run tidak menghapus apa pun', function () {
     ['tenant' => $tenant] = makeMetricContext();
 
-    $lama = now()->subMonths(30)->format('Y-m');
+    $lama = now()->startOfMonth()->subMonths(30)->format('Y-m');
     TenantMonthlyMetric::factory()->forPeriod($lama)->create(['tenant_id' => $tenant->id]);
 
     artisan('subscriptions:prune-metrics', ['--dry-run' => true])->assertSuccessful();
 
     expect(TenantMonthlyMetric::where('period', $lama)->exists())->toBeTrue();
+});
+
+// --- Luberan bulan pendek ([BL-029]) ---
+
+/**
+ * `now()->subMonth()` BUKAN "bulan lalu": ia berarti "tanggal yang sama sebulan
+ * lalu, meluber bila tanggal itu tidak ada". Pada 31 Juli hasilnya 1 Juli —
+ * bulan BERJALAN. Job ini justru dibangun untuk tidak pernah menghitung bulan
+ * berjalan, jadi luberannya membatalkan jaminan intinya, satu hari tiap bulan
+ * yang bulan sebelumnya lebih pendek.
+ */
+test('pada tanggal 31 job tetap menghitung bulan yang sudah tutup', function () {
+    $this->travelTo(Carbon\Carbon::parse('2026-07-31 10:00:00'));
+
+    ['tenant' => $tenant, 'owner' => $owner] = makeMetricContext();
+
+    makeSale($tenant, $owner, 750000, Transaction::STATUS_COMPLETED, Carbon\Carbon::parse('2026-06-15'));
+
+    artisan('subscriptions:compute-revenue')->assertSuccessful();
+
+    expect(TenantMonthlyMetric::where('tenant_id', $tenant->id)->pluck('period')->all())
+        ->toBe(['2026-06']);
+});
+
+test('batas retensi tidak bergeser sebulan pada tanggal 31', function () {
+    $this->travelTo(Carbon\Carbon::parse('2026-07-31 10:00:00'));
+
+    ['tenant' => $tenant] = makeMetricContext();
+
+    $retensi = (int) config('subscription.metrics_retention_months');
+
+    // Tepat di batas — harus SELAMAT. Dengan `subMonths()` telanjang batasnya
+    // meleset satu bulan ke depan dan baris ini ikut terhapus.
+    $diBatas = Carbon\Carbon::parse('2026-07-31')->startOfMonth()->subMonths($retensi)->format('Y-m');
+
+    TenantMonthlyMetric::factory()->forPeriod($diBatas)->create(['tenant_id' => $tenant->id]);
+
+    artisan('subscriptions:prune-metrics')->assertSuccessful();
+
+    expect(TenantMonthlyMetric::where('tenant_id', $tenant->id)->where('period', $diBatas)->exists())
+        ->toBeTrue();
 });

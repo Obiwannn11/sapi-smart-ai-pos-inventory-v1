@@ -20,7 +20,7 @@ class TenantMonthlyMetricFactory extends Factory
     {
         return [
             'tenant_id' => Tenant::factory(),
-            'period' => now()->subMonth()->format('Y-m'),
+            'period' => now()->startOfMonth()->subMonth()->format('Y-m'),
             'revenue' => fake()->numberBetween(500, 20000) * 1000,
             'transaction_count' => fake()->numberBetween(10, 2000),
             'computed_at' => now(),

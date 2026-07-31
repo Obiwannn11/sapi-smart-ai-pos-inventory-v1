@@ -45,6 +45,26 @@
 
 ---
 
+### [HOTFIX] Turunan Periode Bulanan Meluber di Bulan Pendek (BL-029)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-029]`
+- **Dampak:** Job | Command | Factory | Test
+- **Breaking Change:** Tidak. Memperbaiki periode yang dihitung, bukan cara menghitungnya.
+- **Deskripsi:** Ditemukan sebagai satu test subsidi yang gagal, ternyata **tiga bug produksi**. `Carbon::subMonth()` bukan berarti "bulan lalu" melainkan "tanggal yang sama sebulan lalu, meluber bila tanggal itu tidak ada". Pada 31 Juli, `now()->subMonth()` menghasilkan **1 Juli** — bulan berjalan.
+- **Alasan:** Ketiganya menurunkan periode `Y-m` dari `now()` dengan aritmetika bulan, dan ketiganya salah bulan di tanggal 29–31. Yang paling berbahaya menghapus data.
+- **File Terdampak:**
+  - `app/Jobs/ComputeTenantMonthlyRevenue.php:41` — job menghitung **bulan berjalan** alih-alih bulan yang sudah tutup, persis yang dilarang komentarnya sendiri
+  - `app/Console/Commands/PruneTenantMetrics.php:30` — batas retensi bergeser satu bulan penuh, pada perintah yang **menghapus** ringkasan omzet
+  - `app/Console/Commands/ComputeTenantRevenue.php:36` — laporan hasil menyebut periode yang berbeda dari yang baru saja dihitung job
+  - `database/factories/TenantMonthlyMetricFactory.php:23`, `tests/Feature/Subscription/*`, `tests/Feature/Platform/PlatformRevenueTest.php` — sumber test yang sama
+- **Perbaikan:** `startOfMonth()` **dulu**, baru `subMonths()`. Urutan ini menyatakan maksudnya — yang dibandingkan memang bulannya, bukan tanggalnya — dan tidak bisa meluber karena tanggal 1 selalu ada.
+- **Keputusan yang perlu diingat:**
+  - **Gejalanya test merah, penyakitnya di produksi.** Test-nya membuat dua baris untuk periode yang sama lalu menabrak unique constraint. Yang jauh lebih mahal adalah job dan perintah prune, yang tidak punya penjaga apa pun dan diam saja saat salah bulan.
+  - **Test regresinya menyetel waktu ke tanggal 31**, bukan mengandalkan kapan suite kebetulan dijalankan. Sudah diverifikasi gagal pada kode lama sebelum diterima.
+  - **`[BL-030]` sengaja TIDAK diborong ke sini.** Jatuh tempo langganan (`addMonth()` di `InvoiceController`) punya luberan yang sama, tapi memperbaikinya menuntut keputusan aturan bisnis — langganan mulai 31 Januari jatuh tempo 28 Februari atau 1 Maret? Menggeser tanggal tagih pelanggan sambil membetulkan bug lain bukan keputusan yang boleh diambil diam-diam.
+
+---
+
 ### [HOTFIX] Riwayat Kasir Dibatasi ke Sesi Kas Berjalan (BL-027)
 - **Tanggal:** 2026-07-31
 - **Fase Terkait:** Di Luar Fase — menutup `[BL-027]`

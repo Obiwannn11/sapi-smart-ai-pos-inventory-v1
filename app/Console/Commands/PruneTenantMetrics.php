@@ -23,7 +23,11 @@ class PruneTenantMetrics extends Command
     {
         $dryRun = (bool) $this->option('dry-run');
         $months = (int) config('subscription.metrics_retention_months');
-        $cutoff = now()->subMonths($months)->format('Y-m');
+        // startOfMonth() dulu. `subMonths()` telanjang meluber bila bulan
+        // tujuan lebih pendek (31 Juli − 3 bulan = 31 April → 1 Mei), dan di
+        // sini luberannya menggeser batas retensi satu bulan penuh — pada
+        // perintah yang MENGHAPUS data. Lihat [BL-029].
+        $cutoff = now()->startOfMonth()->subMonths($months)->format('Y-m');
 
         // Perbandingan string pada format YYYY-MM aman secara leksikografis —
         // '2024-09' < '2026-07' — jadi tidak perlu mengurai tanggalnya.

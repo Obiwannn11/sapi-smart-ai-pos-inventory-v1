@@ -38,7 +38,7 @@ function makePlatformRevenueContext(): array
 
     TenantMonthlyMetric::factory()
         ->revenue(3_500_000)
-        ->forPeriod(now()->subMonth()->format('Y-m'))
+        ->forPeriod(now()->startOfMonth()->subMonth()->format('Y-m'))
         ->create(['tenant_id' => $tenant->id]);
 
     return [

@@ -31,7 +31,9 @@ class ComputeTenantRevenue extends Command
 
         ComputeTenantMonthlyRevenue::dispatchSync($period);
 
-        $target = $period ?? now()->subMonth()->format('Y-m');
+        // startOfMonth() dulu — harus memakai periode yang SAMA dengan job di
+        // atas, dan `subMonth()` telanjang meluber tiap tanggal 31 ([BL-029]).
+        $target = $period ?? now()->startOfMonth()->subMonth()->format('Y-m');
         $count = TenantMonthlyMetric::where('period', $target)->count();
 
         $this->info("Periode {$target}: {$count} tenant jalur subsidi terhitung.");
