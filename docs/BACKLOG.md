@@ -54,6 +54,181 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-07-31** — `[BL-021]`–`[BL-028]` berasal dari satu daftar catatan yang sama dan sudah diverifikasi terhadap kode. Tiga di antaranya (`[BL-021]`, `[BL-022]`, `[BL-028]`) menyangkut **angka uang yang tercatat salah**, jadi didahulukan; sisanya UX. Urutan pengerjaan yang disarankan: ~~`[BL-028]` Tahap A~~ → ~~`[BL-021]`+`[BL-022]`~~ → ~~`[BL-027]`~~ → ~~`[BL-023]`~~ → ~~`[BL-025]`~~ → `[BL-026]`, dengan `[BL-024]` menunggu perincian dari pemilik dan `[BL-028]` Tahap B ditunda sampai ada kasir kedua. Yang dicoret sudah selesai 2026-07-31.
 
+> **Catatan pemilik 2026-07-31 (kedua)** — `[BL-032]`–`[BL-041]` berasal dari catatan review demo "SAPI — ASpire" dan sudah **diverifikasi terhadap kode**; tiap entri menyebut berkas dan barisnya. Dua hal dari catatan itu sengaja TIDAK jadi entri karena ternyata sudah benar: (1) pemisahan login platform vs login tenant sudah utuh — guard `platform` sendiri (`config/auth.php:50`), broker reset kata sandi sendiri (`config/auth.php:120`), dan `redirectGuestsTo` yang memilah tujuan berdasarkan prefiks URL (`bootstrap/app.php:80`); (2) "kelas harga sesuai omzet" sudah ada mesinnya (`pricing_rules` + bracket A–D), yang belum ada hanya angkanya — itu masuk `[BL-041]`.
+
+### [BL-032] Landing Page Tidak Lagi Menggambarkan Produk yang Sudah Jadi
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "landing perbaiki menyesuaikan sekarang", "perbaiki gambar2 di landing page"
+- **Status:** Open
+- **Prioritas:** High (ini permukaan pertama yang dilihat calon klien)
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:686-745` — bagian harga menuliskan dua paket "Core POS Rp 149k" dan "Smart SAPI Rp 299k" yang **tidak ada di sistem**
+  - `resources/views/public/landing.blade.php:132,180,716,742,1013` — seluruh CTA ("Daftar Gratis", "Pilih Paket", "Mulai Sekarang") menunjuk `/login`, padahal `/register` ada dan itulah tujuan yang dimaksud
+  - `public/avatar_andi.png`, `public/avatar_budi.png`, `public/avatar_santi.png` — masing-masing ±600 KB untuk dirender `w-12 h-12` (48 px); tiga berkas ini saja ±1,8 MB, lebih berat dari seluruh tangkapan layar digabung
+  - `public/Dashboard-owner.png`, `POS-Interface.png`, `Reports-Daily.png`, `Stock-Management.png`, `Product-List.png` — tertanggal 25 Mei, sebelum topbar tagihan terbuka, papan antrian, dan saran jual ada
+- **Deskripsi:**
+  Dihitung dari isi berkasnya, halaman ini tidak menyebut satu pun dari yang sudah dikirim sejak Mei: "open bill" 0 kali, "antrian" 0, "pesan mandiri/self-order" 0, "MCP" 0, "subsidi" 0, "modifier" 0, "sesi kas" 0. Yang tersisa hanya "offline" (1) dan "saran jual" (1). Sementara harga yang dipajang bukan sekadar usang — angkanya tidak pernah ada: paket bawaan sistem satu-satunya bernama `Dasar` dengan `base_price = 0` (`database/migrations/2026_07_24_181634_create_plans_table.php:38-47`), dan jalur subsidi memakai bracket Rp 10k–100k (`config/subscription.php:85-90`). Calon klien yang membaca "Rp 299k/bulan" lalu mendaftar akan mendapati tagihan yang sama sekali lain.
+- **Usulan Perbaikan:**
+  Tiga hal terpisah, boleh dikerjakan bertahap: (1) tulis ulang daftar fitur dari kapabilitas yang benar-benar ada; (2) tarik harga dari `pricing_rules`/`plans` alih-alih menuliskannya di HTML — lihat `[BL-041]`; (3) ambil ulang tangkapan layar dari seeder demo, dan turunkan avatar ke ±10 KB (WebP 96 px) karena ukuran sekarang tidak punya pembenaran apa pun.
+
+### [BL-033] Tiga Permukaan Publik Belum Satu Keluarga — Desain, Aset, dan Wordmark
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "dokumentasi publik dan dokumentasi teknis seperti ai dan api kasih konsisten", "konsep logo SAPI Pos seperti di halaman dokumentasi menarik"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:20` dan `resources/views/public/api-docs.blade.php:17-28` — keduanya memuat `https://cdn.tailwindcss.com` di atas `@vite(['resources/css/app.css'])`; aplikasi ini memakai Tailwind v4 lewat Vite, jadi CDN itu build kedua yang dimuat dari luar
+  - `resources/views/public/docs/layout.blade.php:24-38` — palet oklch disalin ulang; komentar di berkasnya sendiri mengakui itu salinan dari `/api-docs`
+  - `resources/views/public/docs/layout.blade.php:181-183` — wordmark `SAPI POS` (`<b>SAPI</b><span>POS</span>`)
+  - `resources/views/public/landing.blade.php:118,1026` — hanya teks "SAPI", tanpa "POS"
+  - `public/sapi-logo.png` — ada di repo, **tidak dirujuk satu berkas pun** di `resources/`
+- **Deskripsi:**
+  Ada tiga permukaan publik (`/`, `/api-docs`, `/dokumentasi`) dengan tiga sumber gaya berbeda dan dua identitas merek berbeda. `/dokumentasi` sudah rapi — sidebar per jalur, dua jalur pembaca yang dipisah sengaja (`config/docs.php`) — sedangkan referensi API mobile berdiri sendiri di luar hub itu; `DocsController` menjelaskan alasannya (komponen kartu endpoint tidak terwakili markdown), jadi memindahkannya bukan yang diminta. Yang diminta adalah **terasa satu produk**: satu topbar, satu palet, satu wordmark.
+- **Usulan Perbaikan:**
+  Jadikan wordmark `SAPI POS` versi dokumentasi sebagai identitas resmi dan pakai di ketiganya (plus favicon/PWA icon). Angkat palet oklch yang sudah ada ke satu partial Blade yang di-`@include` bertiga, atau ke `resources/css/app.css` agar ikut Vite. Buang `cdn.tailwindcss.com` dari landing dan api-docs — utilitas yang dipakai sudah tersedia dari build Vite; ini sekaligus menghapus dua permintaan pihak ketiga yang memblokir render.
+
+### [BL-034] Pendaftaran Belum Menentukan Paket/Fitur — Tipe Usaha Hanya Dipakai Harga
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "perbaiki dan kasih jelas alur pendaftaran, ... pakai paket kategori, misal bazar maka aktif itu cuma kasir dan stock biasa, kalau cafe maka akan aktif open bill dll"
+- **Status:** Open
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Http/Controllers/Auth/AuthController.php:35-47` — pendaftaran hanya meminta `business_name`, `business_type`, `name`, `email`, `password`
+  - `config/pricing-dimensions.php:83-95` — pilihan `business_type` hanya `kuliner`/`retail`/`jasa`/`lainnya`, dan resolvernya (`BusinessTypeResolver`) hanya dipakai mencocokkan aturan harga
+  - `app/Models/Tenant.php:94-102` — `hasFeature()` membaca `kitchen_queue_enabled`, `self_order_enabled`, `ai_enabled`; tidak satu pun disentuh saat registrasi
+  - `app/Http/Controllers/Owner/SettingsController.php:122-125` — satu-satunya tempat ketiganya bisa dinyalakan, setelah tenant terlanjur jadi
+  - `app/Models/Tenant.php:60-68` — `$attributes` memasang bawaan ketiganya: `kitchen_queue` mati, `self_order` mati, `ai` menyala. Inilah keadaan yang diterima **setiap** tenant baru hari ini, apa pun jenis usahanya
+- **Deskripsi:**
+  Tipe usaha sudah ditanyakan di formulir daftar, tapi jawabannya tidak mengubah apa pun selain penetapan harga. Warung bazar dan kafe mendarat di aplikasi yang persis sama: antrian dapur mati, pesan mandiri mati, AI mati — lalu harus menemukan sendiri "Profil Usaha" untuk menyalakannya. Akibatnya pengguna baru menilai produk dari keadaan paling kosongnya.
+- **Usulan Perbaikan:**
+  Setelah nama usaha diisi, tampilkan pilihan **preset kategori** yang menyetel `*_enabled` sekaligus (mis. `kafe` → antrian dapur + open bill; `bazar` → kasir + stok saja; `retail` → stok + varian), dengan daftar centang yang tetap bisa diubah manual sebelum lanjut. Presetnya sebaiknya tinggal di config sebagai peta `business_type → daftar fitur`, bukan `if` di controller, supaya menambah kategori tidak berarti menyentuh alur pendaftaran.
+- **Koreksi 2026-08-01 — batas yang dulu ditulis di sini sudah dicabut.** Entri ini semula menutup dengan "`business_type` sengaja tidak bisa diedit dari Settings, jadi preset fitur boleh diubah belakangan tapi tipe usahanya tidak". **Itu tidak berlaku lagi:** sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31, `docs/CHANGELOG.md`), jenis usaha justru diubah dari Owner → Pengaturan (`SettingsController.php:118`, `sometimes|required`), dan panel platform hanya membacanya. Yang menjaga tagihan tetap bisa dijelaskan bukan larangan mengedit, melainkan `effective_from` pada aturan harga + `invoices.pricing_context` yang membekukan keadaan tenant saat tagihan terbit.
+  Konsekuensinya untuk entri ini: **keduanya kini bisa diedit belakangan**, jadi presetnya harus dibaca sebagai *nilai awal*, bukan sebagai ikatan. Yang perlu dijaga: mengubah jenis usaha dari Pengaturan **tidak boleh menerapkan ulang preset fiturnya diam-diam** — owner yang sudah mematikan antrian dapur tidak boleh mendapatkannya kembali hanya karena ia membetulkan jenis usahanya. Preset berlaku sekali, saat pendaftaran.
+- **Bergantung pada `[BL-035]`** untuk isi preset `bazar`; preset lain (`kafe`, `retail`, `jasa`) sudah bisa disusun dari kapabilitas yang ada sekarang.
+
+### [BL-035] "Mode Bazar" Belum Ada Wujudnya di Kode — Perlu Definisi Lebih Dulu
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "mode bazar atau tenant khusus untuk jualan di cfd, event, dll"
+- **Status:** Open — **butuh keputusan pemilik sebelum bisa diimplementasikan**
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - Seluruh repo — pencarian `bazar|bazaar` hanya menemukan **satu** kecocokan: `docs/phases-2/PHASE-QUEUE_Kitchen-Order-Queue.md:56`, dan itu pun menyebutnya sebagai sasaran akhir, bukan fitur ("Sasaran akhirnya tetap kaki lima/bazar")
+  - `app/Models/Tenant.php:80-88` — tempat kapabilitas baru akan bergabung bila mode ini jadi capability flag
+- **Deskripsi:**
+  Tidak ada kolom, flag, konfigurasi, maupun rencana tertulis untuk mode bazar. Yang belum terjawab bukan soal teknis melainkan soal produk: **apa yang berubah** saat mode ini aktif? Kandidat yang masuk akal dari catatan pemilik — tagihan terbuka dimatikan (jualan selalu lunas di tempat), nomor antrian ditonjolkan, stok disederhanakan jadi hitungan terpakai/sisa per hari acara, dan penekanan pada operasi offline. Ada juga pertanyaan yang bersinggungan dengan `[BL-031]`: kalau tidak ada open bill, umur tagihan tidak perlu diputuskan untuk mode ini.
+- **Usulan Perbaikan:**
+  Putuskan dulu daftar perbedaannya, lalu wujudkan sebagai capability flag lewat `Tenant::hasFeature()` seperti `kitchen_queue` — bukan sebagai `business_type` baru, karena `business_type` milik penetapan harga dan membeku per tagihan. Sesudah itu barulah `[BL-034]` bisa menawarkan preset "bazar" yang berarti sesuatu, dan `[BL-036]` bisa memperagakannya.
+
+### [BL-036] Belum Ada Studi Kasus Demo Kedua — Semua Peragaan Bertumpu pada Satu Kafe
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "tambahkan suatu toko usaha baru, bergerak di bidang makanan bazar kayak chicken shi lin atau ayam potong kripsi, ... dia ada antrian, dan mode bazar"
+- **Status:** Open — **menunggu `[BL-035]`**
+- **Prioritas:** Low (nilainya untuk demo & pengujian, bukan untuk klien yang sudah jalan)
+- **Area Terdampak:**
+  - `database/seeders/CafeStudyCaseSeeder.php:76` — satu-satunya tenant demo, "Kopi Story", dengan katalog kopi/pastry
+  - `database/seeders/DatabaseSeeder.php` — hanya memanggil `PermissionCatalogSeeder`
+- **Deskripsi:**
+  Setiap peragaan, tangkapan layar landing, dan pengujian manual memakai tenant kafe yang sama. Bentuk usaha yang justru jadi sasaran utama — gerai makanan cepat saji di acara, dengan antrian panjang dan katalog pendek bersaus — belum pernah dicoba di aplikasi ini. Perbedaannya bukan kosmetik: katalog pendek dengan banyak modifier saus, transaksi cepat beruntun, dan nomor antrian sebagai penanda utama akan menekan bagian sistem yang berbeda dari katalog kafe yang panjang.
+- **Usulan Perbaikan:**
+  Seeder studi kasus kedua dengan pola yang sama seperti `CafeStudyCaseSeeder` (tenant + owner + kasir + katalog + modifier + transaksi contoh): katalog ±8 produk gorengan/ayam, satu grup modifier saus wajib pilih satu, antrian dapur menyala, dan bila `[BL-035]` sudah diputuskan, mode bazar aktif. Berguna sekaligus sebagai bahan tangkapan layar baru untuk `[BL-032]`.
+
+### [BL-037] Perpindahan Halaman Hanya Ditandai Progress Bar — Belum Ada Skeleton
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "render skeleton, hilangkan progress bar yang mengganggu dan keliatan aplikasi lambat loading, terutama di kasir dan owner dashboard"
+- **Status:** Open
+- **Prioritas:** Medium (tidak ada yang rusak, tapi ini yang membuat aplikasi terasa lambat)
+- **Area Terdampak:**
+  - `resources/js/app.js:16-18` — `progress: { color: 'var(--primary)' }`, bar bawaan Inertia dan satu-satunya penanda perpindahan halaman
+  - `app/Http/Controllers/Cashier/POSController.php:30,62` — `index()` merender seluruh katalog, metode bayar, dan tagihan terbuka secara eager; `Inertia::defer()` hanya dipakai di `history()` (baris 257, 264)
+  - `app/Http/Controllers/Owner/DashboardController.php:75` — metrik, tren harian, badge, dan transaksi terakhir semuanya eager dalam satu respons
+  - Hanya dua berkas di seluruh `resources/js` yang punya kerangka pemuatan: `Components/TransactionEditModal.vue` dan `Pages/Owner/AiAnalysis/Index.vue`
+- **Deskripsi:**
+  Karena semua prop dihitung sebelum respons dikirim, halaman tidak muncul sama sekali sampai kueri paling lambat selesai — dan selama itu satu-satunya umpan balik adalah garis tipis di puncak layar. Dua halaman terberatnya justru yang paling sering dibuka. Pedoman Inertia v2 di `CLAUDE.md` sudah menyebut pasangan yang benar untuk ini: deferred props disertai kerangka beranimasi.
+- **Usulan Perbaikan:**
+  Pindahkan bagian yang tidak dibutuhkan pada cat pertama ke `Inertia::defer()` — di POS: katalog produk dan metode pembayaran; di dashboard: tren harian, badge, dan transaksi terakhir (metrik hari ini tetap eager karena itulah isi utama layarnya). Bungkus tiap bagian dengan `<WhenVisible>`/`<Deferred>` dan kerangka `animate-pulse` yang **menempati ruang yang sama** dengan isi aslinya, supaya tidak ada lompatan tata letak saat data tiba. Baru setelah itu progress bar layak dikecilkan atau dimatikan — mematikannya lebih dulu justru menghilangkan satu-satunya penanda yang ada sekarang.
+
+### [BL-038] Halaman Staf Tidak Menunjukkan Modul Efektif Per Orang
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "dalam konsep tim dan akses, staf dan role konsepnya dia langsung melihat kalau orang ini (email ini) memiliki akses ke module module berikut"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Pages/Owner/Staff/Index.vue:236-243` — tiap baris hanya menampilkan surel dan satu lencana berisi **nama role**
+  - `resources/js/Pages/Owner/Roles/Index.vue:205-211` — daftar modul ada, tapi di halaman Role, terpisah dari orangnya
+  - `app/Models/User.php:85-96` — `modulePermissions()` sudah menghitung daftar itu dan sudah dibagikan ke Inertia; datanya ada, tinggal ditampilkan
+  - `app/Providers/AppServiceProvider.php:87-89` — `Gate::before` membuat owner lolos semua gerbang, dan `modulePermissions()` mengembalikan `['*']` untuknya
+- **Deskripsi:**
+  Untuk menjawab "si A ini bisa buka apa saja?", pemilik harus membaca nama role di halaman Staf, lalu pindah ke halaman Role, lalu mencocokkan sendiri. Padahal jawabannya sudah dihitung server. Satu hal lagi yang tidak pernah terlihat di UI mana pun: owner bukan pemegang role dengan modul terbanyak, melainkan **melewati pemeriksaan sepenuhnya** — jadi mencabut modul dari role owner tidak akan berpengaruh apa-apa, dan tidak ada yang memberi tahu itu.
+- **Usulan Perbaikan:**
+  Kirim `modulePermissions()` tiap anggota ke `Owner/Staff/Index` dan tampilkan lencana modulnya di bawah surel, bukan nama role saja (nama role tetap ada sebagai asal-usulnya). Untuk owner, tampilkan satu lencana "Akses penuh — melewati seluruh pemeriksaan" alih-alih memuntahkan seluruh daftar modul, sesuai maksud `['*']` yang sudah ditulis di `User::modulePermissions()`.
+
+### [BL-039] "Profil Usaha" Mencampur Merek, Aturan Kerja, Kapabilitas, dan Kredensial
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "pada profile usaha dan setting usaha, pisahkan bersifat brand usaha, cara kerja sistem, sampai ke api key dll settingannya pisahkan semua"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Pages/Owner/Settings/Index.vue:125,149,229,314` — satu halaman memuat "Jenis Usaha", "Mode & Fitur Outlet", "AI Analysis" (termasuk kolom API key), dan "Akses MCP (AI Client)", ditambah nama/alamat/telepon usaha di atasnya
+  - `app/Http/Controllers/Owner/SettingsController.php:19-81` — satu `index()` mengumpulkan identitas tenant, jenis usaha, kredensial AI, kapabilitas modul, aturan upsell, kuota AI, dan status token MCP
+  - `app/Http/Controllers/Owner/SettingsController.php:106-136` — satu `update()` memvalidasi kesepuluh-sepuluhnya sekaligus
+  - `resources/js/Layouts/OwnerLayout.vue:135-146` — grup "Pengaturan" berisi dua tautan: "Profil Usaha" dan "Langganan & Tagihan" (`[BL-040]`)
+- **Deskripsi:**
+  **Lima** hal dengan tingkat risiko yang jauh berbeda berbagi satu formulir dan satu tombol simpan: identitas usaha (aman, sering diubah), **jenis usaha** (dasar penetapan harga — lihat di bawah), aturan kerja seperti `upsell_mandatory` (mengubah perilaku kasir), kapabilitas modul (mematikannya bisa menggantung pesanan berjalan — itu sebabnya `featureWarnings` ada), dan kredensial (API key penyedia AI, token MCP). Menamainya "Profil Usaha" pun menyesatkan: sebagian besar isinya bukan profil.
+- **Pemutakhiran 2026-08-01 — kasusnya bertambah kuat, bukan berkurang.** Saat entri ini ditulis, halaman ini memuat empat urusan. Sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31) ia memuat lima: **`business_type` pindah ke sini**, dan itu satu-satunya kolom di halaman ini yang ikut menentukan **berapa tagihan bulan depan** lewat `invoices.pricing_context`. Sekarang satu tombol simpan bisa menulis identitas, dasar tagihan, aturan kerja, kapabilitas, dan kredensial dalam satu permintaan.
+  Kabar baiknya: validasinya sudah disiapkan untuk dipecah. `business_type` sengaja memakai `sometimes|required` (`SettingsController.php:111-118`) supaya form yang hanya mengirim sebagian field tetap bisa menyimpan — jadi memecah halamannya **tidak** menuntut menulis ulang aturan validasinya, hanya memisahkan endpoint-nya.
+- **Usulan Perbaikan:**
+  Pecah jadi beberapa halaman di bawah grup "Pengaturan": **Profil & Merek** (nama, alamat, telepon, logo struk, **jenis usaha**), **Cara Kerja Sistem** (kapabilitas modul + `upsell_mandatory`, tetap dengan peringatan pekerjaan berjalan), dan **Integrasi & Kredensial** (penyedia AI + key, token MCP, kelak webhook). Endpoint `update` sebaiknya ikut dipecah supaya satu formulir tidak lagi bisa menulis kredensial dan kapabilitas dalam satu permintaan. Pintu masuk ke tagihan sudah berdiri sendiri di grup yang sama lewat `[BL-040]` (selesai 2026-07-31), jadi pemecahan ini tinggal menata tiga halaman sisanya.
+  **Jenis usaha ditaruh di Profil & Merek, bukan di halaman tersendiri** — ia memang keterangan usaha, dan memisahkannya hanya akan membuat orang mencarinya di tempat yang salah. Yang wajib ikut: satu kalimat di sebelah kolomnya yang menyatakan terus terang bahwa mengubahnya ikut mengubah dasar tarif bulan berikutnya, dan bahwa tagihan yang sudah terbit tidak berubah. Kolom yang menggerakkan uang tidak boleh terlihat sama tak berbahayanya dengan kolom nomor telepon.
+  **Dampak ke `[BL-034]`:** halaman "Cara Kerja Sistem" inilah tempat preset fitur pendaftaran nanti bisa ditinjau ulang owner. Mengerjakan entri ini lebih dulu membuat `[BL-034]` punya tempat mendarat.
+
+### [BL-041] Tarif Belum Ditetapkan, dan Halaman Harga Publik Belum Dinamis
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "Pemberian Kelas, dan sesuai Omset / Sesuaikan Tarif kembali", "berikan halaman pricing dan dynamic, perjelas batasan batasan dari owner yang membayar full, subsidi dan lain lain"
+- **Status:** Open — **sebagian butuh keputusan pemilik (angka tarif)**
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `database/migrations/2026_07_24_181634_create_plans_table.php:38-47` — paket `dasar`: `base_price = 0`, `included_seats = 1`, `extra_seat_price = 0`
+  - `config/subscription.php:85-90` — benih bracket A–D: Rp 10k / 25k / 50k / 100k
+  - `resources/views/public/landing.blade.php:686-745` — yang dipajang publik: Rp 149k dan Rp 299k
+  - `app/Http/Controllers/Billing/SubscriptionController.php:68-70` — `bracket` diisi **hanya** bila `isSubsidized()`; tenant jalur Harga Tetap tidak pernah melihat kelas apa pun
+  - `routes/web.php:390-398` — rute publik hanya `/`, `/api-docs`, `/dokumentasi`; tidak ada halaman harga tersendiri
+- **Kosakata (pemutakhiran 2026-08-01):** sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31), istilah yang dibaca orang adalah **Harga Tetap** (dulu "normal") dan **Harga Adaptif** (dulu "subsidi"). Nilai di basis data **tidak** ikut berganti — `pricing_track` tetap `normal`/`subsidized`, begitu pula `TenantConsent::TYPE_SUBSIDIZED`. Entri ini memakai istilah barunya untuk hal yang dilihat pengguna dan nama kolom aslinya untuk hal yang menyentuh kode.
+- **Deskripsi:**
+  Mesin "kelas sesuai omzet" yang diminta sebenarnya **sudah ada dan sudah berjalan**: `pricing_rules` bisa di-CRUD dari `/platform/pricing-rules`, dimensinya bebas (omzet, jumlah transaksi, seat aktif, tipe usaha), dan bracket A–D sudah tertanam sejak migrasi. Tiga hal yang belum ada: (1) **angkanya** — jalur Harga Tetap memakai paket ber-`base_price` 0, jadi tenant yang membayar penuh secara harfiah tertagih nol; (2) **kelas untuk jalur Harga Tetap** — bracket hanya dihitung untuk tenant Harga Adaptif, sehingga tenant bayar-penuh tidak punya penjelasan mengapa tarifnya sekian; (3) **halaman harga publik** yang membacakan aturan yang berlaku, bukan HTML yang ditulis tangan.
+- **Keadaan data per 2026-08-01 (hasil query, bukan dugaan):** 2 tenant, keduanya paket `Dasar` dengan `base_price = 0.00`, `extra_seat_price = 0.00`, dan `price_locked = 0.00`; keduanya di jalur `normal`. Tabel `invoices` **kosong — belum pernah ada satu tagihan pun terbit**. `pricing_rules` berisi 4 baris: bracket A–D bawaan migrasi, yang hanya terpakai di jalur Harga Adaptif, sementara **0 tenant** ada di jalur itu. Artinya seluruh mesin penagihan berdiri lengkap dan belum pernah menagih siapa pun — dan itu bukan keadaan yang bisa dilihat dari layar mana pun.
+- **Jendela yang akan tertutup:** selama `invoices` masih kosong, `[BL-030]` (tanggal jatuh tempo yang meluber di bulan pendek) bisa diperbaiki tanpa migrasi, tanpa backfill, dan tanpa menggeser tanggal tagih siapa pun. Begitu butir (a) di bawah dijalankan dan tagihan pertama terbit, jendela itu tertutup. **Kerjakan `[BL-030]` lebih dulu, bukan sesudahnya.**
+- **Usulan Perbaikan:**
+  Berurutan, karena masing-masing bergantung pada yang sebelumnya. **(a)** Pemilik menetapkan tarif jalur Harga Tetap (base + harga seat tambahan) dan meninjau ulang bracket Harga Adaptif — ini keputusan bisnis, bukan pekerjaan kode. **(b)** Perluas `bracket` di `SubscriptionController` agar juga terisi untuk jalur Harga Tetap memakai dimensi yang tidak butuh consent (seat aktif, tipe usaha), sehingga tiap owner bisa melihat kelasnya sendiri tanpa membuka data penjualan yang tidak pernah ia setujui — batas privasi di `config/pricing-dimensions.php` harus tetap dihormati. **(c)** Baru kemudian buat `/harga` yang merender aturan berlaku dari `PricingService`, dengan tabel perbandingan tegas antara jalur Harga Tetap dan Harga Adaptif: apa yang dibuka, apa yang dibatasi, dan syarat berpindah jalur (`track_switch_minimum_months` = 3). Landing menaut ke sana, menggantikan bagian harga yang sekarang (`[BL-032]`).
+  **Dua tenant yang sudah ada memegang `price_locked = 0.00`.** Grandfathering yang sudah dibangun (`InvoiceController::verify()` mengunci harga dari nominal yang benar-benar dibayar) akan mempertahankan angka nol itu apa adanya — benar sebagai mekanisme, tapi keduanya adalah tenant demo/awal, bukan kesepakatan yang perlu dihormati selamanya. Putuskan sekalian di butir (a): dibiarkan nol, atau dinaikkan ke tarif baru dengan pemberitahuan. Jangan diam-diam.
+
+### [BL-042] Daftar Tenant Memajang Kolom Informasi, Bukan Jalan Masuk ke Rincian — dan Tautan yang Ada Bisa Berujung 403
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Permintaan pemilik — "pada halaman daftar tenant, ganti informasi kolom yang terdaftar menjadi action button untuk melihat detail... di dalam detail barulah kita bisa liat informasi detailnya... bisa menggunakan konsep nav tab"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Pages/Platform/Tenants/Index.vue:15-21` — lima kolom (`name`, `owner`, `business_type`, `users`, `registered`) tanpa satu pun kolom aksi
+  - `resources/js/Pages/Platform/Tenants/Index.vue:46-51` — satu-satunya jalan ke rincian adalah nama tenant yang diam-diam menaut ke `/platform/subscriptions/{id}`; tidak ada penanda visual bahwa ia bisa diklik
+  - `routes/web.php:288-291` vs `routes/web.php:299-308` — daftarnya digerbang `platform.can:tenants`, rincian yang ditautnya digerbang `platform.can:subscriptions,payments`
+  - `app/Http/Middleware/EnsurePlatformModule.php:29-34` — gerbangnya `abort(403)`; staf yang hanya dipegangi modul `tenants` akan menabrak halaman error saat menekan nama tenant
+  - `resources/js/Pages/Platform/Subscriptions/Show.vue:187-479` — halaman rincian sudah ada, tapi satu gulungan panjang: ringkasan → akun → langganan → riwayat tagihan → omzet
+  - `app/Services/Platform/AccountOverview.php:39-54` — payload rincian tidak memuat kapabilitas kasir tenant sama sekali
+  - `app/Models/Tenant.php:94-102` — `hasFeature()` sudah menjadi satu-satunya pintu untuk `kitchen_queue`, `self_order`, `ai`; nilainya tidak pernah dikirim ke panel platform
+- **Deskripsi:**
+  Halaman `/platform/tenants` menjawab pertanyaan "siapa saja klien kita" dengan memipihkan tiap tenant jadi lima kolom, lalu berhenti di situ. Rincian yang diminta sebenarnya **sebagian besar sudah dibangun** — `Platform/Subscriptions/Show.vue` sudah menampilkan paket, tarif berjalan (`price_locked`), batas pengguna beserta asal-usulnya, periode, label jalur harga (`Harga Tetap` / `Harga Adaptif` lewat `PRICING_TRACK` di `resources/js/support/platform.js:71-81`), kelompok harga bracket, dan seluruh riwayat tagihan dengan nominalnya. Masalahnya ada tiga:
+
+  **(1) Jalan masuknya tidak terlihat dan tidak selalu sah.** Rinciannya hidup di bawah modul *Langganan & Tagihan*, bukan di bawah *Daftar Tenant*. Bagi pemilik SaaS yang memegang semua modul ini tidak terasa, tapi seluruh gerbang modul di panel ini dibuat justru supaya staf bisa diberi sebagian — dan staf yang hanya diberi `tenants` mendapat halaman yang setiap barisnya menaut ke 403.
+
+  **(2) Rinciannya satu gulungan.** Empat urusan yang berbeda umur dan berbeda kepekaan (identitas akun, langganan, riwayat tagihan, omzet) berbaris vertikal tanpa pemisah. Riwayat tagihan tidak dipotong (`AccountOverview.php:127-136` sengaja mengambil seluruhnya), jadi tenant berumur setahun mendorong panel omzet keluar layar.
+
+  **(3) "Benefit sistem kasir" memang belum pernah ada datanya.** Yang ditanyakan pemilik — fitur apa saja yang menyala untuk kasir tenant ini — tidak bisa dijawab halaman mana pun sekarang. `kitchen_queue_enabled`, `self_order_enabled`, dan `ai_enabled` tersimpan di tabel `tenants` dan dipakai di seluruh sisi tenant, tapi tidak pernah ikut di payload platform. Ini satu-satunya bagian permintaan yang benar-benar butuh data baru; sisanya soal penataan.
+- **Usulan Perbaikan:**
+  **(a)** Pindahkan kepemilikan rincian ke *Daftar Tenant*: rute `GET /platform/tenants/{tenant}` di bawah `platform.can:tenants`, dirakit dari `AccountOverview` yang sudah ada (ia sudah menyaring isi per modul penglihatnya, jadi staf ber-`tenants`-saja akan menerima `subscription`/`invoices` bernilai `null` — bukan 403). Alamat lama `/platform/subscriptions/{tenant}` tetap hidup, mengikuti pola pengalihan yang sudah dipakai `routes/web.php:354`.
+  **(b)** Di daftarnya, sisakan kolom yang benar-benar membedakan satu baris dari yang lain (nama + slug, pemilik, status/tanda) dan ganti sisanya dengan satu kolom aksi **Lihat detail** di ujung kanan. Jenis usaha, jumlah akun, dan tanggal terdaftar pindah ke dalam rincian.
+  **(c)** Beri rinciannya nav tab — usul: **Ikhtisar** (identitas, status, pemilik, jenis usaha, jumlah akun) · **Langganan** (paket, jalur harga tetap/adaptif beserta penjelasannya, kelompok harga, batas pengguna) · **Tagihan** (riwayat + nominal + tindakan verifikasi) · **Kapabilitas** (fitur kasir yang menyala) · **Omzet** (tetap di balik tautan beraudit tersendiri, tab-nya hanya mengantar ke sana). Tab yang modulnya tidak dipegang penglihatnya **tidak dirender sama sekali**, sejalan dengan prinsip `AccountOverview`: yang tidak boleh dilihat tidak ikut terkirim.
+  **(d)** Tambahkan kapabilitas ke `AccountOverview::tenantPayload()` dengan membaca lewat `Tenant::hasFeature()`, bukan menyentuh kolomnya langsung — supaya menambah fitur baru kelak tetap satu tempat. **Keputusan pemilik 2026-08-01: tab ini HANYA MEMBACA.** Tidak ada tombol menyalakan/mematikan fitur kasir dari sisi platform, mengikuti alasan yang sama seperti pencabutan kuasa ubah tipe usaha di `[BL-015]`: mengubah cara kerja usaha orang tanpa sepengetahuannya bukan kewenangan penyedia layanan. Yang diberikan halaman ini adalah kuasa MENGETAHUI — pemilik SaaS tetap perlu tahu fitur apa yang menyala saat menjawab keluhan atau menjelaskan tarif.
+  **(e)** Perlu diperhatikan saat mengerjakan: `PlatformArchTest` melarang controller platform mengimpor model operasional tenant, dan tab Kapabilitas tidak melanggarnya selama nilainya dibaca dari `Tenant` sendiri.
+
 ### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Pertanyaan pemilik saat `[BL-023]` selesai — "apakah tagihan atau open bill itu hidup berdasarkan waktu hidup kas / shift kasir atau per hari atau sampai diselesaikan"
@@ -92,17 +267,21 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Status:** Open
 - **Prioritas:** Medium — bukan salah bulan seperti `[BL-029]`, tapi tanggal tagih yang bergeser maju dan **tidak pernah kembali**
 - **Area Terdampak:**
+  - `app/Http/Controllers/Platform/InvoiceController.php:202` — `$periodStart = now()->startOfDay()`, yaitu **tanggal bukti bayar diverifikasi**, bukan awal bulan. Inilah yang membuat tanggal 29/30/31 bisa jadi titik mulai periode sama sekali
   - `app/Http/Controllers/Platform/InvoiceController.php:211` — `current_period_end = $periodStart->copy()->addMonth()`
   - `database/migrations/2026_07_24_181638_add_subscription_columns_to_tenants_table.php:66` — pola yang sama saat backfill
   - `database/factories/SubscriptionFactory.php:32,34` — `now()->addMonth()`
-  - `app/Services/SubscriptionService.php:127` & `:137` — jarak minimum pindah jalur, `subMonths()`/`addMonths()`
+  - `app/Services/SubscriptionService.php:150` & `:160` — jarak minimum pindah jalur, `subMonths()`/`addMonths()`
+  - **Jangan tertukar:** `InvoiceController::periodStart()` (`:169-172`) memang memakai `startOfMonth()` dan **tidak** bermasalah — ia titik waktu penetapan harga, bukan awal periode langganan. Dua hal berbeda di berkas yang sama
 - **Deskripsi:** `addMonth()` berarti "tanggal yang sama bulan depan, meluber bila tidak ada". Langganan yang periodenya mulai 31 Januari berakhir **3 Maret**, bukan 28/29 Februari — periode 31 hari yang ditagih sebagai satu bulan. Karena periode berikutnya dihitung dari tanggal akhir yang sudah meleset, pergeserannya **menumpuk**: tiap kali melewati bulan pendek, tanggal tagih maju beberapa hari dan tidak pernah balik.
   Untuk `SubscriptionService`, akibatnya lebih ringan — jarak minimum 3 bulan bisa jadi 3 bulan + beberapa hari — tapi sumbernya persis sama.
 - **Kenapa tidak diborong ke `[BL-029]`:** `[BL-029]` memperbaiki turunan periode yang **jelas salah** (bulan berjalan dihitung sebagai bulan lalu) — tidak ada pilihan produk di sana. Yang ini menuntut keputusan: langganan mulai 31 Januari jatuh tempo **28 Februari** (`addMonthNoOverflow`, tanggal tagih tetap di akhir bulan) atau **1 Maret**? Keduanya bisa dibela, dan pilihannya menentukan berapa yang ditagih. Mengubahnya diam-diam sambil membetulkan bug lain akan menggeser tanggal tagih pelanggan tanpa ada yang memutuskan.
+- **Kerjakan sebelum `[BL-041]`, bukan sesudahnya (dicatat 2026-08-01).** Prioritas entri ini tertulis Medium, dan itu masih benar soal besarnya kerusakan — tapi **ongkos memperbaikinya sedang berada di titik terendah dan akan naik**. Hasil query per 2026-08-01: tabel `invoices` **kosong** (belum pernah ada tagihan terbit), dan kedua langganan yang ada berperiode `2026-07-24` → `2026-08-24`, yaitu tanggal 24 — tanggal yang ada di setiap bulan, jadi **belum ada satu pun tanggal tagih yang sudah meleset**.
+  Artinya hari ini perbaikannya murni penggantian pemanggilan: tanpa migrasi, tanpa backfill, tanpa satu pun tanggal tagih pelanggan yang bergeser. Begitu `[BL-041]` butir (a) dijalankan — tarif ditetapkan dan tagihan pertama terbit — setiap verifikasi pembayaran yang jatuh pada tanggal 29/30/31 mulai menanam pergeseran yang menumpuk, dan poin 3 di bawah berubah dari "tidak ada yang perlu diluruskan" menjadi pekerjaan data sungguhan. Rujukan baliknya ada di `[BL-041]` bagian **Jendela yang akan tertutup**.
 - **Usulan Perbaikan:**
   1. Putuskan lebih dulu semantik jatuh temponya, lalu tuliskan di `CHANGELOG.md` sebagai `[DECISION]` — ini aturan bisnis, bukan detail implementasi.
   2. Setelah itu ganti ke `addMonthNoOverflow()` (atau turunkan dari tanggal mulai berlangganan, bukan dari akhir periode sebelumnya, supaya pergeseran tidak menumpuk).
-  3. Langganan yang sudah berjalan butuh keputusan tersendiri: dibiarkan pada tanggalnya sekarang, atau diluruskan sekali. Jangan diam-diam.
+  3. Langganan yang sudah berjalan butuh keputusan tersendiri: dibiarkan pada tanggalnya sekarang, atau diluruskan sekali. Jangan diam-diam. — **Per 2026-08-01 poin ini kosong biayanya:** dua langganan yang ada berperiode tanggal 24 dan belum pernah melewati bulan pendek, jadi tidak ada yang perlu diluruskan. Poin ini tetap ditulis karena ia akan hidup kembali begitu entri ini ditunda melewati tagihan pertama.
 
 ### [BL-028] Rekonsiliasi Kas Tidak Memperhitungkan Penjualan Tunai, dan Angka Server Tidak Per-Laci
 - **Ditemukan:** 2026-07-31
@@ -343,6 +522,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-040` | Halaman langganan & tagihan tidak punya pintu masuk dari dashboard | 2026-07-31 | `[ADDITION] Pintu Masuk Langganan & Ringkasan Tagihan di Dashboard (BL-040)` |
 | `BL-001` | Penomoran ordered list hasil AI selalu "1." | 2026-07-15 | `[HOTFIX] Penomoran Ordered List Hasil AI (BL-001)` |
 | `BL-002` | Dua test gagal (pre-existing) di suite | 2026-07-21 | `[HOTFIX] Ekspektasi Dua Test Usang (BL-002)` |
 | `BL-003` | Mobile API — permissions RBAC di auth & gating endpoint | 2026-07-25 | `[ADDITION] Permissions RBAC di Mobile API (BL-003)` |
