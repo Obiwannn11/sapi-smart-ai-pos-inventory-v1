@@ -21,7 +21,6 @@ const props = defineProps({
     products: Array,
     paymentMethods: Array,
     cashDrawer: Object,
-    openBills: { type: Array, default: () => [] },
     tenantName: { type: String, default: 'SAPI POS' },
     upsell: { type: Object, default: null },
 });
@@ -170,10 +169,6 @@ const getCheckoutUuid = () => {
     return checkoutUuid.value;
 };
 
-const showOpenBills = ref(false);
-const selectedOpenBill = ref(null);
-const showOpenBillPayment = ref(false);
-
 // --- Open Bill Customer Name Modal ---
 const showOpenBillNameModal = ref(false);
 const openBillCustomerName = ref('');
@@ -181,13 +176,6 @@ const openBillCustomerName = ref('');
 // --- Helpers ---
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
-};
-
-const formatDate = (date) => {
-    return new Date(date).toLocaleString('id-ID', {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
 };
 
 // --- Filtered Products ---
@@ -567,44 +555,6 @@ const confirmSaveOpenBill = () => {
     });
 };
 
-const openBillPayment = (bill) => {
-    // Settling an open bill mutates a row that already lives on the server —
-    // there is no local copy to safely amend, and another till may be settling
-    // the same bill. Same reasoning as saveAsOpenBill: refuse rather than risk
-    // double-settling one order.
-    if (!isOnline.value) {
-        showFlash('Pembayaran tagihan terbuka butuh koneksi. Coba lagi saat online.', 'error');
-
-        return;
-    }
-
-    selectedOpenBill.value = bill;
-    showOpenBillPayment.value = true;
-};
-
-const handleOpenBillPayment = (payments) => {
-    if (processing.value || !selectedOpenBill.value) return;
-    processing.value = true;
-
-    router.post(`/cashier/transactions/${selectedOpenBill.value.id}/pay`, {
-        payments: payments,
-    }, {
-        preserveScroll: true,
-        onSuccess: (page) => {
-            showOpenBillPayment.value = false;
-            selectedOpenBill.value = null;
-            const txData = page.props.flash?.lastTransaction;
-            if (txData) {
-                lastTransaction.value = txData;
-                showSuccessModal.value = true;
-            }
-        },
-        onFinish: () => {
-            processing.value = false;
-        },
-    });
-};
-
 // --- Resizable Cart Panel ---
 const CART_WIDTH_KEY = 'cashier.cartWidth';
 const CART_MIN_WIDTH = 300;
@@ -858,52 +808,6 @@ onUnmounted(stopResizeCart);
 
                 <!-- Cart Items -->
                 <div class="flex-1 overflow-y-auto p-3 space-y-2">
-                    <!-- Open Bills Panel -->
-                    <div v-if="openBills.length > 0" class="mb-2">
-                        <button
-                            @click="showOpenBills = !showOpenBills"
-                            class="w-full flex items-center justify-between px-3 py-2 bg-amber-50 rounded-lg border border-amber-200 text-sm"
-                        >
-                            <span class="font-medium text-amber-700">Tagihan Terbuka ({{ openBills.length }})</span>
-                            <svg
-                                :class="['w-4 h-4 text-amber-600 transition-transform', showOpenBills ? 'rotate-180' : '']"
-                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                            >
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                            </svg>
-                        </button>
-                        <div v-if="showOpenBills" class="mt-2 space-y-2">
-                            <div
-                                v-for="bill in openBills"
-                                :key="bill.id"
-                                class="bg-amber-50 border border-amber-200 rounded-lg p-3"
-                            >
-                                <div class="flex items-center justify-between mb-1">
-                                    <span class="text-xs font-semibold text-amber-700">{{ bill.code }}</span>
-                                    <span class="text-xs text-gray-400">{{ formatDate(bill.created_at) }}</span>
-                                </div>
-                                <p v-if="bill.customer_name" class="text-xs font-medium text-amber-800 mb-1">
-                                    👤 {{ bill.customer_name }}
-                                </p>
-                                <div class="text-xs text-gray-600 space-y-0.5">
-                                    <p v-for="item in bill.items" :key="item.id" class="truncate">
-                                        {{ item.qty }}x {{ item.variant_name }}
-                                        <span v-if="item.notes" class="text-amber-600 italic"> — {{ item.notes }}</span>
-                                    </p>
-                                </div>
-                                <div class="flex items-center justify-between mt-2">
-                                    <span class="text-sm font-semibold text-gray-800">{{ formatCurrency(bill.total_amount) }}</span>
-                                    <button
-                                        @click="openBillPayment(bill)"
-                                        class="px-3 py-1 text-xs font-medium bg-success text-success-foreground rounded-md hover:bg-success/90 transition"
-                                    >
-                                        Bayar
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <template v-if="cart.length > 0">
                         <CartItem
                             v-for="(item, idx) in cart"
@@ -976,15 +880,6 @@ onUnmounted(stopResizeCart);
             :payment-methods="availablePaymentMethods"
             @close="showPaymentModal = false"
             @confirm="handlePayment"
-        />
-
-        <!-- Open Bill Payment Modal -->
-        <PaymentModal
-            :show="showOpenBillPayment"
-            :total-amount="Number(selectedOpenBill?.total_amount || 0)"
-            :payment-methods="availablePaymentMethods"
-            @close="showOpenBillPayment = false; selectedOpenBill = null"
-            @confirm="handleOpenBillPayment"
         />
 
         <TransactionSuccessModal

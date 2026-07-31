@@ -55,19 +55,15 @@ class POSController extends Controller
 
         $paymentMethods = PaymentMethod::where('is_active', true)->get();
 
-        // Open bills milik kasir ini (atau sesi ini)
-        $openBills = Transaction::where('user_id', $userId)
-            ->where('status', Transaction::STATUS_PENDING)
-            ->with(['items.modifiers'])
-            ->latest()
-            ->get();
+        // Tagihan terbuka TIDAK lagi dikirim dari sini: ia dibagikan lewat
+        // HandleInertiaRequests supaya topbar bisa menampilkannya di semua
+        // halaman kasir, bukan hanya POS ([BL-023]).
 
         return Inertia::render('Cashier/POS', [
             'categories' => $categories,
             'products' => $products,
             'paymentMethods' => $paymentMethods,
             'cashDrawer' => $openDrawer,
-            'openBills' => $openBills,
             'tenantName' => Auth::user()->tenant->name,
             // Indeks saran upsell ikut props, bukan endpoint tersendiri: dengan
             // begitu ia ikut ter-snapshot useCatalogCache dan tetap hidup saat

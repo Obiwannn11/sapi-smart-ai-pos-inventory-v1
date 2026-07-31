@@ -45,6 +45,28 @@
 
 ---
 
+### [ADDITION] Tagihan Terbuka Pindah ke Topbar Kasir (BL-023)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-023]`
+- **Dampak:** Middleware | Controller | Frontend | Test
+- **Breaking Change:** Tidak untuk pengguna. Ya untuk kode: prop `openBills` **dihapus** dari `Cashier/POS`; sumbernya kini `page.props.cashier.openBills`.
+- **Deskripsi:** Daftar tagihan terbuka tinggal di dalam area gulir item keranjang, sehingga ikut tergeser saat keranjang panjang dan bercampur dengan barang yang sedang diinput. Kini jadi tombol ber-badge di `CashierTopbar` dengan panelnya sendiri, dan tersedia di **semua** halaman kasir.
+- **Alasan:** Dua hal yang tidak berhubungan berbagi satu ruang gulir, dan akibat praktisnya paling terasa saat paling mahal — tagihan yang menunggu dibayar hilang dari pandangan justru ketika kasir sibuk. Selain itu daftarnya dulu hanya ada di POS: kasir yang sedang membuka Riwayat atau Kas tidak tahu ada tagihan menggantung.
+- **File Terdampak:**
+  - `app/Http/Middleware/HandleInertiaRequests.php` — kunci `cashier` (openBills + paymentMethods) + helper `openBillsFor()`
+  - `app/Http/Controllers/Cashier/POSController.php` — berhenti mengirim `openBills`
+  - `resources/js/Components/CashierTopbar.vue` — tombol, badge, panel, dan **seluruh alur pelunasan**
+  - `resources/js/Pages/Cashier/POS.vue` — panel lama, handler, dan `PaymentModal` kedua dilepas
+  - `tests/Feature/Cashier/POSTest.php` — 3 test baru
+- **Keputusan yang perlu diingat:**
+  - **Alur pelunasan ikut pindah, bukan hanya daftarnya.** Kalau tombol "Bayar" tetap milik POS, panel di halaman Riwayat cuma jadi pajangan yang memaksa kasir berpindah halaman. Karena itu `PaymentModal` + modal sukses + struk sekarang milik topbar. Konsekuensinya `paymentMethods` ikut dibagikan — satu query kecil, dan hanya di rute kasir.
+  - **Data bersamanya digerbang `routeIs('cashier.*')`.** Topbar hanya ada di sana; menghitung tagihan terbuka pada tiap request halaman owner/platform adalah query yang tak pernah dibaca. Ada test yang memastikan `cashier` bernilai `null` di halaman owner.
+  - **Cakupannya tetap `user_id`, tidak diam-diam diperluas ke tenant.** Ini memindahkan tempat, bukan mengubah siapa yang melihat tagihan siapa — dan ada test yang menjaga tagihan kasir lain tidak bocor. Kalau nanti tagihan perlu dilunasi dari kasir mana pun, itu keputusan tersendiri.
+  - **Penolakan saat offline ikut pindah bersama tombolnya.** Melunasi tagihan terbuka mengubah baris yang sudah ada di server dan kasir lain bisa sedang melunasi yang sama; menolak lebih baik daripada berisiko melunasi dua kali. Alasan yang sama sudah tertulis di `saveAsOpenBill()` dan tetap berlaku.
+  - **`PaymentModal` kini terpasang dua kali di halaman POS** (checkout dan pelunasan). Keduanya `v-if`, jadi hanya satu yang hidup — tapi ingat bahwa perbaikan pada modal itu otomatis menyentuh kedua jalur (lihat `[BL-021]`).
+
+---
+
 ### [HOTFIX] Turunan Periode Bulanan Meluber di Bulan Pendek (BL-029)
 - **Tanggal:** 2026-07-31
 - **Fase Terkait:** Di Luar Fase — menutup `[BL-029]`

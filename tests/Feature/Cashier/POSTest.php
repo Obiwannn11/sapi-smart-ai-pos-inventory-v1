@@ -586,3 +586,81 @@ test('owner may still pick a date on the cashier history', function () {
             ->where('scope.can_filter_date', true)
         );
 });
+
+/**
+ * [BL-023] Tagihan terbuka pindah dari dalam gulir keranjang POS ke topbar,
+ * dan karena itu datanya harus tersedia di SEMUA halaman kasir — bukan hanya
+ * di props POS.
+ */
+test('open bills are shared with every cashier page', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 2,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => null,
+        'is_open_bill' => true,
+        'customer_name' => 'Meja 7',
+    ])->assertSessionHas('success');
+
+    foreach (['/cashier/pos', '/cashier/transactions', '/cashier/cash-drawer'] as $url) {
+        get($url)->assertInertia(fn ($page) => $page
+            ->count('cashier.openBills', 1)
+            ->where('cashier.openBills.0.customer_name', 'Meja 7')
+            ->count('cashier.openBills.0.items', 1)
+        );
+    }
+});
+
+test('open bills are not shared outside the cashier shell', function () {
+    ['tenant' => $tenant] = makePOSContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    Transaction::factory()->pending()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+    ]);
+
+    actingAs($owner);
+
+    // Halaman owner tidak punya topbar kasir — menghitungnya di sana adalah
+    // query yang tidak pernah dibaca siapa pun.
+    get('/owner/dashboard')->assertInertia(fn ($page) => $page->where('cashier', null));
+});
+
+test('another cashier open bills stay out of this cashier topbar', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    $other = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    Transaction::factory()->pending()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $other->id,
+    ]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    get('/cashier/pos')->assertInertia(fn ($page) => $page->count('cashier.openBills', 0));
+});

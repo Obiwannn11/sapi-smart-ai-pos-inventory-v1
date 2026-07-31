@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\PaymentMethod;
 use App\Models\PlatformUser;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -46,6 +48,7 @@ class HandleInertiaRequests extends Middleware
                 // Sidebar hanyalah cermin — gerbang rute tetap sumber
                 // kebenarannya. Menyembunyikan menu bukan pengamanan.
                 'tenant' => $user instanceof User && $user->tenant ? [
+                    'name' => $user->tenant->name,
                     'features' => fn () => [
                         'kitchen_queue' => $user->tenant->hasFeature('kitchen_queue'),
                         'self_order' => $user->tenant->hasFeature('self_order'),
@@ -66,6 +69,20 @@ class HandleInertiaRequests extends Middleware
                     'modules' => fn () => $user->moduleNames(),
                 ] : null,
             ],
+            // Tagihan terbuka menempel di topbar kasir, bukan di dalam gulir
+            // keranjang — pesanan yang menunggu dibayar tidak boleh hilang dari
+            // pandangan justru saat kasir paling sibuk ([BL-023]).
+            //
+            // Dibatasi ke rute kasir: topbar-nya hanya ada di sana, dan
+            // menghitungnya pada tiap request halaman owner/platform adalah
+            // query yang tak pernah dibaca siapa pun.
+            'cashier' => $user instanceof User && $request->routeIs('cashier.*')
+                ? [
+                    'openBills' => fn () => $this->openBillsFor($user),
+                    'paymentMethods' => fn () => PaymentMethod::where('is_active', true)
+                        ->get(['id', 'name', 'type']),
+                ]
+                : null,
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
@@ -73,5 +90,38 @@ class HandleInertiaRequests extends Middleware
                 'mcpToken' => fn () => $request->session()->get('mcpToken'),
             ],
         ]);
+    }
+
+    /**
+     * Tagihan terbuka milik kasir ini, seperlunya untuk panel topbar.
+     *
+     * Ikut membawa itemnya: panel menampilkan isi pesanan supaya kasir tahu
+     * tagihan mana yang ia buka tanpa harus melunasinya dulu. Jumlahnya
+     * dibatasi keadaan — tagihan terbuka yang menumpuk sampai berat adalah
+     * masalah operasional yang harus terlihat, bukan disembunyikan paginasi.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function openBillsFor(User $user): \Illuminate\Support\Collection
+    {
+        return Transaction::where('user_id', $user->id)
+            ->where('status', Transaction::STATUS_PENDING)
+            ->with(['items:id,transaction_id,variant_name,qty,notes'])
+            ->latest()
+            ->get(['id', 'code', 'customer_name', 'table_number', 'total_amount', 'created_at'])
+            ->map(fn (Transaction $bill) => [
+                'id' => $bill->id,
+                'code' => $bill->code,
+                'customer_name' => $bill->customer_name,
+                'table_number' => $bill->table_number,
+                'total_amount' => $bill->total_amount,
+                'created_at' => $bill->created_at,
+                'items' => $bill->items->map(fn ($item) => [
+                    'id' => $item->id,
+                    'variant_name' => $item->variant_name,
+                    'qty' => $item->qty,
+                    'notes' => $item->notes,
+                ]),
+            ]);
     }
 }

@@ -2,7 +2,12 @@
 import { computed, h, ref, onMounted, onBeforeUnmount, defineComponent } from 'vue';
 import { usePage, router, Link } from '@inertiajs/vue3';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
+import PaymentModal from '@/Components/PaymentModal.vue';
+import ReceiptModal from '@/Components/ReceiptModal.vue';
+import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
+import { useOnlineStatus } from '@/composables/useOnlineStatus';
+import { useFlash } from '@/composables/useFlash';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
 
 defineProps({
@@ -68,6 +73,7 @@ const iconPaths = {
     printer: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
     install: 'M12 4v12m0 0l-4-4m4 4l4-4M4 20h16',
     queue: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+    bill: 'M9 14h6m-6-4h6m2 9H7a2 2 0 01-2-2V5a2 2 0 012-2h6.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
 };
 
 const NavIcon = defineComponent({
@@ -100,6 +106,78 @@ const btnBase =
 const btnInactive = 'border-border text-foreground/70 hover:bg-muted hover:text-foreground';
 const btnActive = 'bg-primary/10 text-primary border-primary/30';
 
+// --- Tagihan terbuka ([BL-023]) ---
+//
+// Tinggal di topbar, bukan di dalam gulir keranjang POS. Di tempat lamanya ia
+// ikut tergeser saat keranjang panjang dan bercampur dengan barang yang sedang
+// diinput — dua hal tak berhubungan berbagi satu ruang gulir. Karena datanya
+// kini dibagikan lewat HandleInertiaRequests, panelnya hidup di SEMUA halaman
+// kasir: tagihan menggantung tetap terlihat dari Riwayat maupun Kas.
+const { isOnline } = useOnlineStatus();
+const { show: showFlash } = useFlash();
+
+const openBills = computed(() => page.props.cashier?.openBills ?? []);
+const cashierPaymentMethods = computed(() => page.props.cashier?.paymentMethods ?? []);
+
+const showOpenBills = ref(false);
+const openBillsRef = ref(null);
+
+const settlingBill = ref(null);
+const processingSettle = ref(false);
+const settledTransaction = ref(null);
+const showSettleSuccess = ref(false);
+const showSettleReceipt = ref(false);
+
+const tenantName = computed(() => page.props.auth?.tenant?.name ?? 'SAPI POS');
+
+const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
+
+const formatTime = (date) => new Date(date).toLocaleString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+});
+
+/** Label pengenal tagihan: meja, nama, atau kodenya — mana yang ada. */
+const billLabel = (bill) => bill.table_number || bill.customer_name || bill.code;
+
+const beginSettle = (bill) => {
+    // Melunasi tagihan terbuka mengubah baris yang sudah ada di server, dan
+    // kasir lain bisa saja sedang melunasi tagihan yang sama. Menolak lebih
+    // baik daripada berisiko melunasi dua kali.
+    if (!isOnline.value) {
+        showFlash('Pembayaran tagihan terbuka butuh koneksi. Coba lagi saat online.', 'error');
+
+        return;
+    }
+
+    settlingBill.value = bill;
+};
+
+const handleSettle = (payments) => {
+    if (processingSettle.value || !settlingBill.value) return;
+    processingSettle.value = true;
+
+    router.post(`/cashier/transactions/${settlingBill.value.id}/pay`, { payments }, {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            settlingBill.value = null;
+            showOpenBills.value = false;
+
+            const transaction = page.props.flash?.lastTransaction;
+            if (transaction) {
+                settledTransaction.value = transaction;
+                showSettleSuccess.value = true;
+            }
+        },
+        onFinish: () => { processingSettle.value = false; },
+    });
+};
+
+const printSettled = () => {
+    showSettleSuccess.value = false;
+    showSettleReceipt.value = true;
+};
+
 const dropdownOpen = ref(false);
 const dropdownRef = ref(null);
 
@@ -108,6 +186,9 @@ const toggleDropdown = () => { dropdownOpen.value = !dropdownOpen.value; };
 const handleClickOutside = (e) => {
     if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
         dropdownOpen.value = false;
+    }
+    if (openBillsRef.value && !openBillsRef.value.contains(e.target)) {
+        showOpenBills.value = false;
     }
 };
 
@@ -151,6 +232,69 @@ const logout = async () => {
                 <NavIcon name="install" />
                 <span class="hidden sm:inline">Install</span>
             </button>
+
+            <!-- Tagihan terbuka: tempatnya di sini, bukan di dalam keranjang -->
+            <div v-if="openBills.length > 0" ref="openBillsRef" class="relative">
+                <button
+                    @click="showOpenBills = !showOpenBills"
+                    :class="[btnBase, showOpenBills ? btnActive : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100']"
+                    :aria-expanded="showOpenBills"
+                    aria-haspopup="true"
+                >
+                    <NavIcon name="bill" />
+                    <span class="hidden sm:inline">Tagihan</span>
+                    <span class="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                        {{ openBills.length }}
+                    </span>
+                </button>
+
+                <Transition
+                    enter-active-class="transition duration-100 ease-out"
+                    enter-from-class="opacity-0 scale-95"
+                    enter-to-class="opacity-100 scale-100"
+                    leave-active-class="transition duration-75 ease-in"
+                    leave-from-class="opacity-100 scale-100"
+                    leave-to-class="opacity-0 scale-95"
+                >
+                    <div
+                        v-if="showOpenBills"
+                        class="absolute right-0 top-full z-50 mt-1.5 w-80 origin-top-right overflow-hidden rounded-lg border border-border bg-card shadow-lg"
+                    >
+                        <div class="border-b border-border px-3 py-2.5">
+                            <p class="text-sm font-semibold text-foreground">Tagihan Terbuka</p>
+                            <p class="mt-0.5 text-xs text-foreground/50">{{ openBills.length }} pesanan menunggu dibayar</p>
+                        </div>
+
+                        <div class="max-h-[60vh] overflow-y-auto divide-y divide-border">
+                            <div v-for="bill in openBills" :key="bill.id" class="p-3">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="truncate text-xs font-semibold text-amber-700">{{ billLabel(bill) }}</span>
+                                    <span class="shrink-0 text-[10px] text-foreground/40">{{ formatTime(bill.created_at) }}</span>
+                                </div>
+                                <p v-if="billLabel(bill) !== bill.code" class="mt-0.5 text-[10px] text-foreground/40">{{ bill.code }}</p>
+
+                                <div class="mt-1.5 space-y-0.5 text-xs text-foreground/70">
+                                    <p v-for="item in bill.items" :key="item.id" class="truncate">
+                                        {{ item.qty }}× {{ item.variant_name }}
+                                        <span v-if="item.notes" class="italic text-amber-600"> — {{ item.notes }}</span>
+                                    </p>
+                                </div>
+
+                                <div class="mt-2 flex items-center justify-between gap-2">
+                                    <span class="text-sm font-semibold text-foreground">{{ formatCurrency(bill.total_amount) }}</span>
+                                    <button
+                                        @click="beginSettle(bill)"
+                                        :disabled="processingSettle"
+                                        class="rounded-md bg-success px-3 py-1 text-xs font-medium text-success-foreground transition hover:bg-success/90 disabled:opacity-40"
+                                    >
+                                        Bayar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </Transition>
+            </div>
 
             <!-- Printer settings -->
             <button
@@ -258,5 +402,29 @@ const logout = async () => {
         </div>
 
         <PrinterSetupModal :show="showPrinterSetup" @close="showPrinterSetup = false" />
+
+        <!-- Pelunasan tagihan terbuka. Ikut topbar supaya jalannya sama dari
+             halaman kasir mana pun, bukan hanya dari POS. -->
+        <PaymentModal
+            :show="settlingBill !== null"
+            :total-amount="Number(settlingBill?.total_amount || 0)"
+            :payment-methods="cashierPaymentMethods"
+            @close="settlingBill = null"
+            @confirm="handleSettle"
+        />
+
+        <TransactionSuccessModal
+            :show="showSettleSuccess"
+            :transaction="settledTransaction"
+            @close="showSettleSuccess = false; settledTransaction = null"
+            @print="printSettled"
+        />
+
+        <ReceiptModal
+            :show="showSettleReceipt"
+            :transaction="settledTransaction"
+            :tenant-name="tenantName"
+            @close="showSettleReceipt = false; settledTransaction = null"
+        />
     </header>
 </template>
