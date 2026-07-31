@@ -1,98 +1,96 @@
 <script setup>
-import { router, Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
+import PageHeader from '@/Components/Platform/PageHeader.vue';
+import DataTable from '@/Components/Platform/DataTable.vue';
+import StatusBadge from '@/Components/Platform/StatusBadge.vue';
+import Notice from '@/Components/Platform/Notice.vue';
+import { TENANT_STATUS } from '@/support/platform';
 
 defineProps({
     tenants: { type: Object, required: true },
-    business_types: { type: Object, default: () => ({}) },
 });
 
-// Disimpan seketika saat dipilih, tanpa tombol simpan: satu kolom, satu
-// keputusan. Perubahannya tercatat di jejak audit karena ia dasar penetapan
-// harga, bukan sekadar keterangan.
-const updateBusinessType = (tenant, value) =>
-    router.put(
-        `/platform/tenants/${tenant.id}/business-type`,
-        { business_type: value || null },
-        { preserveScroll: true },
-    );
+// Yang tersisa hanyalah kolom yang membedakan satu baris dari baris lain.
+// Jenis usaha, jumlah akun, dan tanggal terdaftar dulu ikut di sini dan
+// membuat daftarnya terbaca seperti laporan — padahal tak satu pun dari
+// ketiganya menjawab "baris mana yang perlu saya buka". Semuanya pindah ke
+// rincian, satu klik dari sini.
+const columns = [
+    { key: 'name', label: 'Nama Usaha' },
+    { key: 'owner', label: 'Pemilik' },
+    { key: 'status', label: 'Status' },
+    { key: 'actions', label: 'Aksi', align: 'right' },
+];
+
+const statusOf = (value) => TENANT_STATUS[value] ?? { label: value ?? '—', tone: 'neutral' };
 </script>
 
 <template>
     <Head title="Daftar Tenant — Platform" />
 
     <PlatformLayout>
-        <template #header>Daftar Tenant</template>
+        <PageHeader
+            title="Daftar Tenant"
+            description="Siapa saja yang memakai layanan ini. Panel ini sengaja tidak menampilkan data operasional klien — transaksi, produk, stok, maupun laporan."
+        />
 
-        <div class="rounded-xl border border-border bg-card overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-accent/50 text-left">
-                        <tr class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                            <th class="px-4 py-3">Nama Usaha</th>
-                            <th class="px-4 py-3">Pemilik</th>
-                            <th class="px-4 py-3">Jenis Usaha</th>
-                            <th class="px-4 py-3 text-right">Akun</th>
-                            <th class="px-4 py-3">Terdaftar</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border">
-                        <tr v-for="tenant in tenants.data" :key="tenant.id" class="hover:bg-accent/30 transition-colors">
-                            <td class="px-4 py-3">
-                                <p class="font-medium text-foreground">
-                                    {{ tenant.name }}
-                                    <span
-                                        v-if="!tenant.is_verified"
-                                        class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
-                                        title="Pemiliknya belum memverifikasi alamat emailnya"
-                                    >
-                                        belum verifikasi
-                                    </span>
-                                    <span
-                                        v-if="tenant.flagged_at"
-                                        class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-700"
-                                    >
-                                        perlu ditinjau
-                                    </span>
-                                </p>
-                                <p class="text-xs text-muted-foreground">{{ tenant.slug }}</p>
-                                <p v-if="tenant.flag_reason" class="text-xs text-amber-700 mt-0.5">{{ tenant.flag_reason }}</p>
-                            </td>
-                            <td class="px-4 py-3">
-                                <template v-if="tenant.owner">
-                                    <p class="text-foreground">{{ tenant.owner.name }}</p>
-                                    <p class="text-xs text-muted-foreground">{{ tenant.owner.email }}</p>
-                                </template>
-                                <span v-else class="text-xs text-muted-foreground">—</span>
-                            </td>
-                            <td class="px-4 py-3">
-                                <select
-                                    :value="tenant.business_type ?? ''"
-                                    class="w-full max-w-[10rem] px-2 py-1.5 border border-border rounded-lg text-xs bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                                    @change="updateBusinessType(tenant, $event.target.value)"
-                                >
-                                    <option value="">Belum ditentukan</option>
-                                    <option v-for="(label, value) in business_types" :key="value" :value="value">
-                                        {{ label }}
-                                    </option>
-                                </select>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-foreground">{{ tenant.user_count }}</td>
-                            <td class="px-4 py-3 text-muted-foreground">{{ tenant.registered_at }}</td>
-                        </tr>
+        <DataTable
+            v-slot="{ cellClass }"
+            :columns="columns"
+            :count="tenants.data.length"
+            empty="Belum ada tenant terdaftar."
+        >
+            <tr v-for="tenant in tenants.data" :key="tenant.id" class="hover:bg-accent/30 transition-colors">
+                <td :class="cellClass">
+                    <p class="font-medium text-foreground">
+                        {{ tenant.name }}
+                        <StatusBadge
+                            v-if="!tenant.is_verified"
+                            class="ml-1.5"
+                            label="belum verifikasi"
+                            tone="neutral"
+                            title="Pemiliknya belum memverifikasi alamat emailnya"
+                        />
+                        <StatusBadge v-if="tenant.flagged_at" class="ml-1.5" label="perlu ditinjau" tone="warning" />
+                    </p>
+                    <p class="text-xs text-muted-foreground font-mono">{{ tenant.slug }}</p>
+                    <p v-if="tenant.flag_reason" class="mt-0.5 text-xs text-amber-700">{{ tenant.flag_reason }}</p>
+                </td>
 
-                        <tr v-if="tenants.data.length === 0">
-                            <td colspan="5" class="px-4 py-10 text-center text-sm text-muted-foreground">
-                                Belum ada tenant terdaftar.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                <td :class="cellClass">
+                    <template v-if="tenant.owner">
+                        <p class="text-foreground">{{ tenant.owner.name }}</p>
+                        <p class="text-xs text-muted-foreground">{{ tenant.owner.email }}</p>
+                    </template>
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                </td>
 
-        <p class="mt-4 text-xs text-muted-foreground leading-relaxed max-w-2xl">
-            Panel ini sengaja tidak menampilkan data operasional klien — transaksi, produk, stok, maupun laporan.
-        </p>
+                <td :class="cellClass">
+                    <StatusBadge :label="statusOf(tenant.status).label" :tone="statusOf(tenant.status).tone" />
+                </td>
+
+                <!-- Tombol yang menyebut dirinya, bukan nama tenant yang
+                     diam-diam bisa diklik. Tautan sebelumnya tidak punya
+                     penanda apa pun bahwa ia jalan masuk ke suatu tempat. -->
+                <td :class="[cellClass, 'text-right']">
+                    <Link
+                        :href="`/platform/tenants/${tenant.id}`"
+                        class="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors whitespace-nowrap"
+                    >
+                        Lihat detail
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </Link>
+                </td>
+            </tr>
+        </DataTable>
+
+        <Notice class="mt-6 max-w-2xl">
+            Jenis usaha, jumlah akun, riwayat tagihan, dan kapabilitas kasir tiap tenant ada di halaman rinciannya.
+            Jenis usaha adalah dasar penetapan harga, tapi <span class="font-medium">bukan milik kita</span> — ia
+            diatur pemilik toko dari halaman Pengaturan mereka, dan hanya bisa dibaca di sana.
+        </Notice>
     </PlatformLayout>
 </template>

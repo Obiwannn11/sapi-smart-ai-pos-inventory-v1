@@ -13,6 +13,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
+use function Pest\Laravel\put;
 
 /**
  * @return array{platformUser: PlatformUser, tenant: Tenant, subscription: Subscription}
@@ -63,11 +64,13 @@ test('halaman langganan menampilkan keterangan komersial saja', function () {
 });
 
 test('tidak ada data operasional yang bocor ke halaman langganan maupun pembayaran', function () {
-    ['platformUser' => $platformUser] = platformBillingContext();
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
 
     actingAs($platformUser, 'platform');
 
-    foreach (['/platform/subscriptions', '/platform/invoices'] as $url) {
+    // Langganan dan tagihan kini satu bagian: daftarnya, dan rincian tiap akun
+    // yang memuat riwayat tagihannya.
+    foreach (['/platform/subscriptions', "/platform/tenants/{$tenant->id}"] as $url) {
         expect(get($url)->getContent())
             ->not->toContain('ProdukRahasia')
             ->not->toContain('TRXRAHASIA')
@@ -199,4 +202,108 @@ test('penolakan wajib menyertakan alasan', function () {
     actingAs($platformUser, 'platform');
     post("/platform/invoices/{$invoice->id}/reject", ['reason' => ''])
         ->assertSessionHasErrors('reason');
+});
+
+// --- Rincian akun: langganan & tagihan jadi satu ---
+
+test('rincian akun menyatukan keadaan langganan dengan riwayat tagihannya', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant, 'subscription' => $subscription] = platformBillingContext();
+
+    Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'period' => '2026-07',
+    ]);
+
+    actingAs($platformUser, 'platform')
+        ->get("/platform/tenants/{$tenant->id}")
+        ->assertStatus(200)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Platform/Tenants/Show')
+            ->where('tenant.name', 'Kopi Story')
+            ->where('subscription.seats', 3)
+            ->has('invoices.data', 1)
+            ->where('invoices.data.0.period', '2026-07')
+            // Angka omzetnya TIDAK ikut: membukanya adalah tindakan tersendiri
+            // yang punya rute dan barisan auditnya sendiri.
+            ->where('revenue', null)
+            ->etc()
+        );
+});
+
+test('rincian akun menyembunyikan tagihan dari pemegang modul langganan saja', function () {
+    ['tenant' => $tenant] = platformBillingContext();
+
+    $hanyaLangganan = PlatformUser::factory()->create();
+    $hanyaLangganan->modules()->create(['module' => 'subscriptions']);
+
+    actingAs($hanyaLangganan, 'platform')
+        ->get("/platform/tenants/{$tenant->id}")
+        ->assertStatus(200)
+        // Bukan terkirim lalu disembunyikan di Vue — memang tidak ada isinya.
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('invoices', null)
+            ->where('can.payments', false)
+            ->etc()
+        );
+});
+
+// --- Batas pengguna ---
+
+test('batas pengguna bisa diatur dari panel dan wajib beralasan', function () {
+    ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
+
+    actingAs($platformUser, 'platform');
+
+    // Angka baru tanpa alasan tertulis adalah persis hal yang tidak bisa
+    // dijelaskan saat tenant menanyakannya.
+    put("/platform/subscriptions/{$subscription->id}/seats", ['seats' => 5])
+        ->assertSessionHasErrors('reason');
+
+    expect($subscription->fresh()->seats)->toBe(3);
+
+    put("/platform/subscriptions/{$subscription->id}/seats", [
+        'seats' => 5,
+        'reason' => 'Kesepakatan tambahan kasir di luar aplikasi.',
+    ])->assertSessionHas('success');
+
+    expect($subscription->fresh()->seats)->toBe(5);
+
+    $log = PlatformAuditLog::where('action', 'subscriptions.seats.update')->firstOrFail();
+
+    expect($log->severity)->toBe(PlatformAuditLog::SEVERITY_SENSITIVE)
+        ->and($log->meta['before'])->toBe(3)
+        ->and($log->meta['after'])->toBe(5)
+        ->and($log->meta['reason'])->toBe('Kesepakatan tambahan kasir di luar aplikasi.');
+});
+
+test('menurunkan batas di bawah pemakaian aktif diizinkan dan tidak mengusir siapa pun', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant, 'subscription' => $subscription] = platformBillingContext();
+
+    User::factory()->count(2)->create(['tenant_id' => $tenant->id, 'is_active' => true]);
+
+    actingAs($platformUser, 'platform');
+    put("/platform/subscriptions/{$subscription->id}/seats", [
+        'seats' => 1,
+        'reason' => 'Koreksi setelah bukti bayar penambahan ditolak.',
+    ])->assertSessionHas('success');
+
+    // Yang tertutup adalah penambahan berikutnya, bukan pekerjaan orang yang
+    // sedang berjalan — mengikuti alasan yang sama seperti penolakan bukti.
+    expect($subscription->fresh()->seats)->toBe(1)
+        ->and($tenant->users()->where('is_active', true)->count())->toBe(3)
+        ->and($subscription->fresh()->hasSeatAvailable())->toBeFalse();
+});
+
+test('batas pengguna tertutup bagi pemegang modul pembayaran saja', function () {
+    ['subscription' => $subscription] = platformBillingContext();
+
+    $hanyaTagihan = PlatformUser::factory()->create();
+    $hanyaTagihan->modules()->create(['module' => 'payments']);
+
+    actingAs($hanyaTagihan, 'platform')
+        ->put("/platform/subscriptions/{$subscription->id}/seats", ['seats' => 9, 'reason' => 'coba-coba'])
+        ->assertForbidden();
+
+    expect($subscription->fresh()->seats)->toBe(3);
 });

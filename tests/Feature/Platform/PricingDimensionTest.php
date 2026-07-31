@@ -205,11 +205,12 @@ test('konteks harga tidak ikut bocor ke payload platform', function () {
 
     platformOwner();
 
-    $body = $this->get('/platform/invoices')->getContent();
-
-    // Angka omzet hanya boleh terbuka di halaman omzet yang tiap kunjungannya
-    // tercatat — bukan menumpang di daftar tagihan.
-    expect($body)->not->toContain('7654321');
+    // Angka omzet hanya boleh terbuka di rute omzet yang tiap kunjungannya
+    // tercatat — bukan menumpang di daftar langganan maupun di rincian akun
+    // yang kini memuat riwayat tagihannya.
+    foreach (['/platform/subscriptions', "/platform/tenants/{$tenant->id}"] as $url) {
+        expect($this->get($url)->getContent())->not->toContain('7654321');
+    }
 });
 
 // --- Validasi panel ---
@@ -392,7 +393,7 @@ test('tipe usaha di luar pilihan ditolak saat pendaftaran', function () {
     ])->assertSessionHasErrors('business_type');
 });
 
-test('pendaftaran tetap jalan tanpa memilih tipe usaha', function () {
+test('pendaftaran tanpa memilih tipe usaha jatuh ke bawaan, bukan ke kosong', function () {
     post('/register', [
         'business_name' => 'Warung Tanpa Tipe',
         'name' => 'Pemilik',
@@ -401,22 +402,40 @@ test('pendaftaran tetap jalan tanpa memilih tipe usaha', function () {
         'password_confirmation' => 'rahasia123',
     ]);
 
-    expect(Tenant::where('name', 'Warung Tanpa Tipe')->firstOrFail()->business_type)->toBeNull();
+    // Kosong berarti setiap aturan harga yang menyebut tipe usaha diam-diam
+    // melewatkan tenant ini selamanya. Bawaan netral bisa diperbaiki
+    // pemiliknya; `null` hanya bisa diperbaiki oleh orang lain.
+    expect(Tenant::where('name', 'Warung Tanpa Tipe')->firstOrFail()->business_type)
+        ->toBe(Tenant::BUSINESS_TYPE_DEFAULT);
 });
 
-test('tipe usaha bisa dikoreksi dari panel dan tercatat nilai lama barunya', function () {
-    $tenant = Tenant::factory()->active()->create(['business_type' => null]);
+test('pemilik toko mengatur sendiri tipe usahanya dari Pengaturan', function () {
+    $tenant = Tenant::factory()->active()->create(['business_type' => 'kuliner']);
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    actingAs($owner)
+        ->patch('/owner/settings', [
+            'business_type' => 'retail',
+            'kitchen_queue_enabled' => false,
+            'self_order_enabled' => false,
+            'ai_enabled' => true,
+            'upsell_mandatory' => false,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($tenant->fresh()->business_type)->toBe('retail');
+});
+
+test('panel platform tidak lagi punya jalan mengubah tipe usaha tenant', function () {
+    $tenant = Tenant::factory()->active()->create(['business_type' => 'kuliner']);
 
     platformOwner();
 
+    // Rutenya dicabut, bukan sekadar tombolnya disembunyikan. Keterangan usaha
+    // milik kliennya, dan mengubahnya tanpa sepengetahuan pemiliknya bukan
+    // kewenangan penyedia layanan sekalipun ia ikut menentukan tarif.
     put("/platform/tenants/{$tenant->id}/business-type", ['business_type' => 'retail'])
-        ->assertSessionHas('success');
+        ->assertNotFound();
 
-    expect($tenant->fresh()->business_type)->toBe('retail');
-
-    $log = PlatformAuditLog::where('action', 'tenants.business-type.update')->firstOrFail();
-
-    expect($log->meta['before'])->toBeNull()
-        ->and($log->meta['after'])->toBe('retail')
-        ->and($log->severity)->toBe(PlatformAuditLog::SEVERITY_SENSITIVE);
+    expect($tenant->fresh()->business_type)->toBe('kuliner');
 });

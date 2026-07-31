@@ -283,20 +283,53 @@ Route::prefix('platform')
             Route::get('/', [\App\Http\Controllers\Platform\DashboardController::class, 'index'])
                 ->name('dashboard');
 
-            // Modul: Daftar Tenant (read-only di Tahap A)
+            // Modul: Daftar Tenant — read-only, tanpa kecuali. Tipe usaha kini
+            // milik pemilik toko dan diubah dari Pengaturan mereka sendiri.
             Route::middleware('platform.can:tenants')->group(function () {
                 Route::get('/tenants', [\App\Http\Controllers\Platform\TenantController::class, 'index'])
                     ->name('tenants.index');
-                // Satu-satunya tulisan di modul ini: tipe usaha adalah dasar
-                // penetapan harga, dan tenant lama tak punya jalan lain mengisinya.
-                Route::put('/tenants/{tenant}/business-type', [\App\Http\Controllers\Platform\TenantController::class, 'updateBusinessType'])
-                    ->name('tenants.business-type.update');
             });
 
-            // Modul: Langganan (read-only — perubahan tarif menyusul di Tahap D)
-            Route::middleware('platform.can:subscriptions')->group(function () {
+            // Rincian satu tenant tinggal DI SINI, bukan di bawah langganan.
+            // Sebelumnya daftar tenant digerbang `tenants` sementara rinciannya
+            // digerbang `subscriptions,payments`, sehingga staf yang hanya
+            // dipegangi daftar tenant menabrak 403 di tiap barisnya.
+            //
+            // Gerbangnya "salah satu cukup" dari TIGA modul, karena dua daftar
+            // bermuara ke halaman yang sama: daftar tenant dan daftar langganan.
+            // Menyempitkannya ke satu modul hanya akan memindahkan 403 yang sama
+            // ke pintu yang lain. Apa yang TERLIHAT di dalamnya tetap ditentukan
+            // modul per orang di `AccountOverview` — yang tidak boleh dilihat
+            // tidak ikut terkirim, bukan halamannya yang ditutup.
+            Route::middleware('platform.can:tenants,subscriptions,payments')->group(function () {
+                Route::get('/tenants/{tenant}', [\App\Http\Controllers\Platform\TenantController::class, 'show'])
+                    ->name('tenants.show');
+            });
+
+            // Modul: Langganan & Tagihan — satu bagian, dua modul.
+            //
+            // Halamannya digerbang "salah satu cukup" karena langganan dan
+            // tagihannya adalah urusan yang sama dilihat dari dua sisi; yang
+            // menentukan apa yang TERLIHAT di dalamnya tetap modul per orang,
+            // diperiksa di controller.
+            Route::middleware('platform.can:subscriptions,payments')->group(function () {
                 Route::get('/subscriptions', [\App\Http\Controllers\Platform\SubscriptionController::class, 'index'])
                     ->name('subscriptions.index');
+            });
+
+            // Alamat lama rincian akun. Dipertahankan sebagai pengalihan dengan
+            // alasan yang sama seperti `/platform/invoices`: tautan yang mati
+            // tidak memberi tahu siapa pun ke mana halamannya pindah. Sengaja
+            // tidak digerbang — yang menentukan boleh-tidaknya adalah tujuannya.
+            Route::redirect('/subscriptions/{tenant}', '/platform/tenants/{tenant}')
+                ->name('subscriptions.show');
+
+            // Batas pengguna satu tenant. Digerbang modul `subscriptions`
+            // sendiri, bukan "salah satu cukup": ini menulis, dan yang hanya
+            // memegang tagihan tidak berkepentingan mengubah batas paket.
+            Route::middleware('platform.can:subscriptions')->group(function () {
+                Route::put('/subscriptions/{subscription}/seats', [\App\Http\Controllers\Platform\SubscriptionController::class, 'updateSeats'])
+                    ->name('subscriptions.seats.update');
             });
 
             // Modul: Aturan Harga — tarif sebagai data, bukan konstanta di kode.
@@ -313,23 +346,38 @@ Route::prefix('platform')
                     ->name('plans.update');
             });
 
-            // Modul: Data Omset Subsidi — sengaja TERPISAH dari `subscriptions`.
-            // Kelak staf platform bisa diberi daftar langganan tanpa diberi
-            // angka omzet kliennya.
+            // Modul: Data Omzet jalur Harga Adaptif — sengaja TERPISAH dari
+            // `subscriptions`. Staf platform bisa diberi daftar langganan tanpa
+            // diberi angka omzet kliennya.
+            //
+            // Halamannya sendiri sudah lebur ke rincian akun; yang tersisa di
+            // sini adalah rute yang MEMBUKA angkanya, dan pembukaan itulah yang
+            // tercatat di jejak audit. Memisahkannya dari halaman rincian
+            // disengaja: menengok keadaan langganan tenant tidak boleh ikut
+            // menghasilkan catatan "membuka data bisnis klien" yang tak pernah
+            // benar-benar terjadi.
             Route::middleware('platform.can:revenue_data')->group(function () {
-                Route::get('/revenue/{tenant}', [\App\Http\Controllers\Platform\RevenueController::class, 'show'])
+                Route::get('/tenants/{tenant}/revenue', [\App\Http\Controllers\Platform\RevenueController::class, 'show'])
                     ->name('revenue.show');
             });
 
-            // Modul: Pembayaran — satu-satunya modul Tahap B yang bisa MENULIS.
-            // Tiap tindakannya dicatat sebagai kejadian sensitif.
+            // Ikut pindah bersama halaman rincian yang dirender ulangnya.
+            Route::redirect('/subscriptions/{tenant}/revenue', '/platform/tenants/{tenant}/revenue');
+
+            // Modul: Pembayaran — modul yang bisa MENULIS. Tiap tindakannya
+            // dicatat sebagai kejadian sensitif. Daftarnya kini hidup di halaman
+            // Langganan & Tagihan; yang tinggal di sini adalah tindakannya.
             Route::middleware('platform.can:payments')->group(function () {
-                Route::get('/invoices', [\App\Http\Controllers\Platform\InvoiceController::class, 'index'])
+                // Alamat lama halaman Pembayaran. Dipertahankan sebagai
+                // pengalihan, bukan dihapus: tautan yang mati tidak memberi tahu
+                // siapa pun ke mana halamannya pindah.
+                Route::redirect('/invoices', '/platform/subscriptions')
                     ->name('invoices.index');
+
                 // Usulan nominal dari aturan harga yang berlaku. Terpisah dari
-                // `index` dengan sengaja: menghitungnya untuk SELURUH tenant di
-                // halaman daftar berarti satu rangkaian query per tenant, hanya
-                // demi angka yang paling banyak dipakai satu kali per kunjungan.
+                // halaman daftar dengan sengaja: menghitungnya untuk SELURUH
+                // tenant berarti satu rangkaian query per tenant, hanya demi
+                // angka yang paling banyak dipakai satu kali per kunjungan.
                 Route::get('/invoices/suggestion', [\App\Http\Controllers\Platform\InvoiceController::class, 'suggestion'])
                     ->name('invoices.suggestion');
                 Route::post('/invoices', [\App\Http\Controllers\Platform\InvoiceController::class, 'store'])

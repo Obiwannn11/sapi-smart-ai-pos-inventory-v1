@@ -36,6 +36,10 @@ class TenantResource extends JsonResource
             'business_type' => $this->business_type,
             'registered_at' => $this->created_at?->toDateString(),
             'user_count' => $this->users_count,
+            // Keadaan langganan, bukan keadaan usaha: masa coba, aktif, masa
+            // tenggang, ditangguhkan. Nilainya ditetapkan sistem penagihan kita
+            // sendiri — ia tidak mengungkap apa pun tentang bisnis kliennya.
+            'status' => $this->status,
             // Penanda administratif, bukan data bisnis: apakah pendaftarnya
             // sudah membuktikan alamat surelnya, dan apakah pola pendaftarannya
             // perlu ditinjau. Keduanya soal keabsahan akun, bukan soal isi

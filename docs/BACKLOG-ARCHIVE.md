@@ -10,6 +10,53 @@
 
 ## Daftar Entri
 
+### [BL-042] Daftar Tenant Memajang Kolom Informasi, Bukan Jalan Masuk ke Rincian — dan Tautan yang Ada Bisa Berujung 403
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Permintaan pemilik — "pada halaman daftar tenant, ganti informasi kolom yang terdaftar menjadi action button untuk melihat detail... di dalam detail barulah kita bisa liat informasi detailnya... bisa menggunakan konsep nav tab"
+- **Status:** Selesai (2026-08-01) — lihat `[ADDITION] Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Pages/Platform/Tenants/Index.vue:15-21` — lima kolom (`name`, `owner`, `business_type`, `users`, `registered`) tanpa satu pun kolom aksi
+  - `resources/js/Pages/Platform/Tenants/Index.vue:46-51` — satu-satunya jalan ke rincian adalah nama tenant yang diam-diam menaut ke `/platform/subscriptions/{id}`; tidak ada penanda visual bahwa ia bisa diklik
+  - `routes/web.php:288-291` vs `routes/web.php:299-308` — daftarnya digerbang `platform.can:tenants`, rincian yang ditautnya digerbang `platform.can:subscriptions,payments`
+  - `app/Http/Middleware/EnsurePlatformModule.php:29-34` — gerbangnya `abort(403)`; staf yang hanya dipegangi modul `tenants` akan menabrak halaman error saat menekan nama tenant
+  - `resources/js/Pages/Platform/Subscriptions/Show.vue:187-479` — halaman rincian sudah ada, tapi satu gulungan panjang: ringkasan → akun → langganan → riwayat tagihan → omzet
+  - `app/Services/Platform/AccountOverview.php:39-54` — payload rincian tidak memuat kapabilitas kasir tenant sama sekali
+  - `app/Models/Tenant.php:94-102` — `hasFeature()` sudah menjadi satu-satunya pintu untuk `kitchen_queue`, `self_order`, `ai`; nilainya tidak pernah dikirim ke panel platform
+- **Deskripsi:**
+  Halaman `/platform/tenants` menjawab pertanyaan "siapa saja klien kita" dengan memipihkan tiap tenant jadi lima kolom, lalu berhenti di situ. Rincian yang diminta sebenarnya **sebagian besar sudah dibangun** — `Platform/Subscriptions/Show.vue` sudah menampilkan paket, tarif berjalan (`price_locked`), batas pengguna beserta asal-usulnya, periode, label jalur harga (`Harga Tetap` / `Harga Adaptif` lewat `PRICING_TRACK` di `resources/js/support/platform.js:71-81`), kelompok harga bracket, dan seluruh riwayat tagihan dengan nominalnya. Masalahnya ada tiga:
+
+  **(1) Jalan masuknya tidak terlihat dan tidak selalu sah.** Rinciannya hidup di bawah modul *Langganan & Tagihan*, bukan di bawah *Daftar Tenant*. Bagi pemilik SaaS yang memegang semua modul ini tidak terasa, tapi seluruh gerbang modul di panel ini dibuat justru supaya staf bisa diberi sebagian — dan staf yang hanya diberi `tenants` mendapat halaman yang setiap barisnya menaut ke 403.
+
+  **(2) Rinciannya satu gulungan.** Empat urusan yang berbeda umur dan berbeda kepekaan (identitas akun, langganan, riwayat tagihan, omzet) berbaris vertikal tanpa pemisah. Riwayat tagihan tidak dipotong (`AccountOverview.php:127-136` sengaja mengambil seluruhnya), jadi tenant berumur setahun mendorong panel omzet keluar layar.
+
+  **(3) "Benefit sistem kasir" memang belum pernah ada datanya.** Yang ditanyakan pemilik — fitur apa saja yang menyala untuk kasir tenant ini — tidak bisa dijawab halaman mana pun sekarang. `kitchen_queue_enabled`, `self_order_enabled`, dan `ai_enabled` tersimpan di tabel `tenants` dan dipakai di seluruh sisi tenant, tapi tidak pernah ikut di payload platform. Ini satu-satunya bagian permintaan yang benar-benar butuh data baru; sisanya soal penataan.
+- **Usulan Perbaikan:**
+  **(a)** Pindahkan kepemilikan rincian ke *Daftar Tenant*: rute `GET /platform/tenants/{tenant}` di bawah `platform.can:tenants`, dirakit dari `AccountOverview` yang sudah ada (ia sudah menyaring isi per modul penglihatnya, jadi staf ber-`tenants`-saja akan menerima `subscription`/`invoices` bernilai `null` — bukan 403). Alamat lama `/platform/subscriptions/{tenant}` tetap hidup, mengikuti pola pengalihan yang sudah dipakai `routes/web.php:354`.
+  **(b)** Di daftarnya, sisakan kolom yang benar-benar membedakan satu baris dari yang lain (nama + slug, pemilik, status/tanda) dan ganti sisanya dengan satu kolom aksi **Lihat detail** di ujung kanan. Jenis usaha, jumlah akun, dan tanggal terdaftar pindah ke dalam rincian.
+  **(c)** Beri rinciannya nav tab — usul: **Ikhtisar** (identitas, status, pemilik, jenis usaha, jumlah akun) · **Langganan** (paket, jalur harga tetap/adaptif beserta penjelasannya, kelompok harga, batas pengguna) · **Tagihan** (riwayat + nominal + tindakan verifikasi) · **Kapabilitas** (fitur kasir yang menyala) · **Omzet** (tetap di balik tautan beraudit tersendiri, tab-nya hanya mengantar ke sana). Tab yang modulnya tidak dipegang penglihatnya **tidak dirender sama sekali**, sejalan dengan prinsip `AccountOverview`: yang tidak boleh dilihat tidak ikut terkirim.
+  **(d)** Tambahkan kapabilitas ke `AccountOverview::tenantPayload()` dengan membaca lewat `Tenant::hasFeature()`, bukan menyentuh kolomnya langsung — supaya menambah fitur baru kelak tetap satu tempat. **Keputusan pemilik 2026-08-01: tab ini HANYA MEMBACA.** Tidak ada tombol menyalakan/mematikan fitur kasir dari sisi platform, mengikuti alasan yang sama seperti pencabutan kuasa ubah tipe usaha di `[BL-015]`: mengubah cara kerja usaha orang tanpa sepengetahuannya bukan kewenangan penyedia layanan. Yang diberikan halaman ini adalah kuasa MENGETAHUI — pemilik SaaS tetap perlu tahu fitur apa yang menyala saat menjawab keluhan atau menjelaskan tarif.
+  **(e)** Perlu diperhatikan saat mengerjakan: `PlatformArchTest` melarang controller platform mengimpor model operasional tenant, dan tab Kapabilitas tidak melanggarnya selama nilainya dibaca dari `Tenant` sendiri.
+- **Koreksi saat dikerjakan:**
+  Butir (a) menulis rute rincian digerbang `platform.can:tenants` saja — **itu keliru**, dan keliruan yang sama persis dengan yang sedang diperbaiki, hanya terbalik arahnya. Daftar langganan juga bermuara ke halaman ini, jadi menyempitkan gerbangnya ke satu modul akan membuat pemegang modul tagihan menabrak 403 di tautan tenant-nya. Yang dipakai: `platform.can:tenants,subscriptions,payments` ("salah satu cukup"), dengan isi tetap disaring per modul di `AccountOverview`. Karena itu pula `can.tenants` ikut dikirim — tombol "kembali" harus menunjuk daftar yang pembacanya memang berhak membukanya.
+  Rute omzet ikut pindah (`/platform/tenants/{tenant}/revenue`) meski butir (a) hanya menyebut rincian akun: ia merender komponen yang sama dan sekarang mendarat di tab Omzet, jadi meninggalkannya di bawah `/subscriptions` hanya akan menyisakan satu alamat yang tidak lagi menggambarkan isinya. Keduanya mengalihkan dari alamat lama.
+
+### [BL-040] Halaman Langganan & Tagihan Tidak Punya Pintu Masuk dari Dashboard
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "sampai bisa melihat tagihan dan payment akun yang terhubung itu masuk kategori apa, pembayaran selanjutnya, berapa mau di bayar, kapan membayar, apakah status subsidi dll, langsung dalam owner dashboard"
+- **Status:** Selesai (2026-07-31) — lihat `[ADDITION] Pintu Masuk Langganan & Ringkasan Tagihan di Dashboard (BL-040)` di `docs/CHANGELOG.md`
+- **Prioritas:** High (halamannya sudah jadi; yang hilang cuma jalan menuju ke sana)
+- **Area Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue:100-138` — daftar navigasi lengkap; **tidak ada** entri langganan/tagihan
+  - `resources/js/Pages/Owner/Dashboard.vue` — tidak menyebut langganan sama sekali
+  - `app/Http/Controllers/Billing/SubscriptionController.php:36-97` — sudah menyiapkan nama paket, harga, jalur harga, seat terpakai, akhir periode, tanggal suspend, status subsidi berikut bracket-nya, dan 12 tagihan terakhir dengan jatuh tempo serta status buktinya
+- **Deskripsi:**
+  Hampir seluruh yang diminta pemilik **sudah dirender** di `/langganan` — kategori jalur, nominal, jatuh tempo, status subsidi, unggah bukti bayar. Yang tidak ada adalah cara menemukannya: pencarian `/langganan` di seluruh `resources/js` hanya menemukan rujukan dari dalam halaman Billing itu sendiri. Praktis, owner baru sampai ke sana kalau mengetik URL-nya atau kalau langganannya sudah bermasalah dan middleware melemparnya ke sana — persis kebalikan dari yang diinginkan.
+- **Usulan Perbaikan:**
+  Tambahkan entri "Langganan & Tagihan" di grup "Pengaturan" pada `OwnerLayout` (`ownerOnly: true`). Di dashboard, tambahkan satu kartu ringkas — jalur harga, tagihan berjalan beserta nominal dan jatuh temponya — yang menaut ke halaman penuh. Munculkan kartu itu lebih menonjol saat status tenant `grace`.
+- **Koreksi saat dikerjakan:**
+  Usulan di atas menulis "`ownerOnly: true`, sejalan dengan `role:owner` di rutenya" — **itu keliru**. Rute `/langganan` justru sengaja TIDAK digerbang `role:owner`; ia terbuka untuk semua pengguna tenant supaya kasir yang terlempar ke sana saat tenant ditangguhkan tidak mendarat di 403. Yang `ownerOnly` hanya pintu masuk tetapnya, dengan alasan yang berbeda: tagihan adalah urusan owner dengan penyedia layanan, bukan bagian dari pekerjaan kasir.
+
 ### [BL-025] Saran Jual Belum Bisa Diwajibkan, dan Tombol Bayar Nonaktif Tanpa Penjelasan
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Catatan pemilik — "pada menu saran, buatkan setup untuk bisa diatur apakah wajib dilakukan penawaran atau bisa di abaikan (di setting pada menu Owner), tidak akan bisa bayar sampai penawaran itu diselesaikan … serta aktifkan component alert pemberitahuan error nya mengapa bayar button disabled"

@@ -68,7 +68,7 @@ const alreadyCurrent = computed(() => props.agreement?.is_current === true);
 
             <h1 class="mt-8 text-2xl font-bold text-foreground tracking-tight">Persetujuan Langganan</h1>
             <p class="mt-1.5 text-sm text-muted-foreground">
-                {{ isSubsidized ? 'Jalur subsidi UMKM' : 'Jalur harga normal' }} · versi {{ document.version }}
+                {{ isSubsidized ? 'Jalur Harga Adaptif' : 'Jalur Harga Tetap' }} · versi {{ document.version }}
             </p>
 
             <div

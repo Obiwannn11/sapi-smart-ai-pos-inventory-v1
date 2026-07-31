@@ -56,7 +56,7 @@ test('daftar langganan menampilkan kelompok harga tanpa angka rupiahnya', functi
 
     $response->assertInertia(fn (Assert $page) => $page
         ->where("brackets.{$tenant->id}", 'B')
-        ->where('can_view_revenue', true));
+        ->where('can.revenue', true));
 
     // Angka omzetnya tidak boleh ikut terkirim ke daftar — bedanya halus tapi
     // nyata antara membuka data saat dibutuhkan dan membukanya terus-menerus.
@@ -73,7 +73,7 @@ test('pengguna tanpa izin omzet tidak menerima kelompok harga sama sekali', func
         ->get('/platform/subscriptions')
         ->assertStatus(200)
         ->assertInertia(fn (Assert $page) => $page
-            ->where('can_view_revenue', false)
+            ->where('can.revenue', false)
             // Bukan ada tapi kosong — kuncinya memang tidak berisi apa pun.
             ->where('brackets', []));
 
@@ -86,12 +86,12 @@ test('halaman rincian menampilkan angka persis dan mencatat aksesnya', function 
     ['tenant' => $tenant, 'platformUser' => $platformUser] = makePlatformRevenueContext();
 
     actingAs($platformUser, 'platform')
-        ->get("/platform/revenue/{$tenant->id}")
+        ->get("/platform/tenants/{$tenant->id}/revenue")
         ->assertStatus(200)
         ->assertInertia(fn (Assert $page) => $page
-            ->component('Platform/Revenue/Show')
-            ->where('metrics.0.revenue', 3500000)
-            ->where('metrics.0.bracket', 'B'));
+            ->component('Platform/Tenants/Show')
+            ->where('revenue.metrics.0.revenue', 3500000)
+            ->where('revenue.metrics.0.bracket', 'B'));
 
     $log = PlatformAuditLog::where('action', 'revenue.view')->first();
 
@@ -106,8 +106,8 @@ test('setiap kunjungan tercatat, bukan hanya yang pertama', function () {
     ['tenant' => $tenant, 'platformUser' => $platformUser] = makePlatformRevenueContext();
 
     actingAs($platformUser, 'platform');
-    get("/platform/revenue/{$tenant->id}");
-    get("/platform/revenue/{$tenant->id}");
+    get("/platform/tenants/{$tenant->id}/revenue");
+    get("/platform/tenants/{$tenant->id}/revenue");
 
     expect(PlatformAuditLog::where('action', 'revenue.view')->count())->toBe(2);
 });
@@ -120,7 +120,7 @@ test('rincian omzet digerbang izinnya sendiri, terpisah dari daftar langganan', 
 
     actingAs($hanyaLangganan, 'platform');
     get('/platform/subscriptions')->assertStatus(200);
-    get("/platform/revenue/{$tenant->id}")->assertForbidden();
+    get("/platform/tenants/{$tenant->id}/revenue")->assertForbidden();
 });
 
 test('tenant jalur normal tidak punya halaman rincian omzet', function () {
@@ -130,14 +130,14 @@ test('tenant jalur normal tidak punya halaman rincian omzet', function () {
     Subscription::factory()->create(['tenant_id' => $normal->id]);
 
     actingAs($platformUser, 'platform')
-        ->get("/platform/revenue/{$normal->id}")
+        ->get("/platform/tenants/{$normal->id}/revenue")
         ->assertNotFound();
 });
 
 test('halaman rincian tidak pernah menampilkan laba maupun margin', function () {
     ['tenant' => $tenant, 'platformUser' => $platformUser] = makePlatformRevenueContext();
 
-    $body = actingAs($platformUser, 'platform')->get("/platform/revenue/{$tenant->id}")->getContent();
+    $body = actingAs($platformUser, 'platform')->get("/platform/tenants/{$tenant->id}/revenue")->getContent();
 
     expect($body)->not->toContain('"profit"')
         ->not->toContain('"margin"')

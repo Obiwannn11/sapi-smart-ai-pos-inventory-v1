@@ -8,6 +8,7 @@ use App\Models\AiUsage;
 use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,16 +28,27 @@ class SettingsController extends Controller
                 'name' => $tenant->name,
                 'address' => $tenant->address,
                 'phone' => $tenant->phone,
+                // Jenis usaha diatur DI SINI, oleh pemiliknya sendiri.
+                //
+                // Dulu kolom ini sengaja tidak ada di halaman ini dan hanya bisa
+                // diubah pemilik SaaS, dengan alasan ia dasar penetapan harga.
+                // Alasannya benar soal akibatnya, keliru soal siapa yang berhak:
+                // yang tahu jenis usahanya adalah pemilik toko, dan mengubah
+                // keterangan usaha orang tanpa sepengetahuannya bukan kewenangan
+                // penyedia layanan sekalipun angkanya ikut bergeser.
+                //
+                // Yang menjaga tagihan tetap bisa dijelaskan bukan larangan
+                // mengedit, melainkan dua hal yang sudah ada: `effective_from`
+                // pada aturan harga, dan `invoices.pricing_context` yang
+                // membekukan keadaan tenant saat tagihan terbit. Tagihan yang
+                // sudah keluar tidak berubah oleh suntingan hari ini.
+                'business_type' => $tenant->business_type,
                 // AI — TANPA membocorkan key
                 'ai_provider' => $tenant->ai_provider,
                 'ai_model' => $tenant->ai_model,
                 'ai_key_set' => filled($tenant->ai_api_key),
             ],
-            // Kapabilitas outlet. `business_type` SENGAJA tidak ada di sini:
-            // kolom itu milik penetapan harga dan dibekukan ke
-            // `invoices.pricing_context` tiap tagihan terbit — mengeditnya dari
-            // Settings akan diam-diam mengubah dasar harga langganan. Pengubahnya
-            // ada di panel platform, dan memang seharusnya di sana.
+            'businessTypes' => config('pricing-dimensions.business_type.options', []),
             'features' => [
                 'kitchen_queue_enabled' => $tenant->kitchen_queue_enabled,
                 'self_order_enabled' => $tenant->self_order_enabled,
@@ -96,6 +108,14 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'address' => 'nullable|string|max:500',
             'phone' => 'nullable|string|max:50',
+            // `sometimes` + `required`, bukan `nullable`: sejak kolom ini punya
+            // bawaan, tidak ada lagi keadaan "belum dijawab" yang sah, jadi
+            // nilai KOSONG ditolak. Tapi field yang tidak dikirim sama sekali
+            // berarti "jangan sentuh" — bukan "kosongkan". Bedanya penting di
+            // endpoint yang menerima beberapa bagian form sekaligus: aturan
+            // `required` polos akan membuat pemanggil yang tidak berkepentingan
+            // dengan tipe usaha gagal menyimpan apa pun.
+            'business_type' => ['sometimes', 'required', Rule::in(array_keys(config('pricing-dimensions.business_type.options', [])))],
             'ai_provider' => 'nullable|in:sumopod,gemini,openai,anthropic',
             'ai_api_key' => 'nullable|string|max:255',
             'ai_model' => 'nullable|string|max:100',

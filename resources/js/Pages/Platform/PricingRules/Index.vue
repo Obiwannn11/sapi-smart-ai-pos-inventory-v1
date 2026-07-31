@@ -2,17 +2,20 @@
 import { computed, ref } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
+import PageHeader from '@/Components/Platform/PageHeader.vue';
+import DataTable from '@/Components/Platform/DataTable.vue';
+import StatusBadge from '@/Components/Platform/StatusBadge.vue';
+import Notice from '@/Components/Platform/Notice.vue';
+import FormField from '@/Components/Platform/FormField.vue';
+import Button from '@/Components/Button.vue';
+import Modal from '@/Components/Modal.vue';
+import { formatRupiah, formatDate, inputClass } from '@/support/platform';
 
 const props = defineProps({
     plans: { type: Array, required: true },
     rules: { type: Array, required: true },
     dimensions: { type: Array, required: true },
 });
-
-const formatRupiah = (value) =>
-    value === null
-        ? 'tanpa batas'
-        : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
 
 // --- Katalog dimensi ---
 // Seluruh daftarnya datang dari `config/pricing-dimensions.php` lewat props.
@@ -57,7 +60,45 @@ const describeCondition = (condition) => {
     return `${dimension.label} ${operator} ${value}`;
 };
 
-// --- Paket ---
+// --- Golongan paket ---
+// Diturunkan dari tarifnya, bukan disimpan sebagai kolom sendiri: satu-satunya
+// yang membedakan paket gratis dari paket berbayar adalah harganya, dan kolom
+// terpisah hanya akan menghadirkan kemungkinan keduanya berselisih — paket
+// bertanda "Gratis" seharga Rp 50.000.
+//
+// Sebelumnya kolom ini berbunyi "Aktif / Nonaktif", yang menjawab pertanyaan
+// yang tidak sedang ditanyakan siapa pun. Yang ingin diketahui saat menatap
+// daftar paket adalah golongan mana ini, dan apakah ia masih ditawarkan.
+const planTier = (plan) =>
+    plan.base_price === 0
+        ? { label: 'Gratis', tone: 'neutral' }
+        : { label: 'Berbayar', tone: 'success' };
+
+const planAvailability = (plan) =>
+    plan.is_active
+        ? { label: 'Ditawarkan', tone: 'success' }
+        : { label: 'Tidak ditawarkan', tone: 'neutral' };
+
+const planColumns = [
+    { key: 'name', label: 'Paket' },
+    { key: 'tier', label: 'Golongan' },
+    { key: 'base', label: 'Tarif bulanan', align: 'right' },
+    { key: 'seats', label: 'Pengguna termasuk', align: 'right' },
+    { key: 'extra', label: 'Tarif pengguna tambahan', align: 'right' },
+    { key: 'availability', label: 'Ketersediaan' },
+    { key: 'actions', label: 'Aksi', align: 'right' },
+];
+
+const ruleColumns = [
+    { key: 'label', label: 'Nama aturan' },
+    { key: 'conditions', label: 'Berlaku untuk' },
+    { key: 'priority', label: 'Prioritas', align: 'right' },
+    { key: 'price', label: 'Tarif bulanan', align: 'right' },
+    { key: 'effective', label: 'Status' },
+    { key: 'actions', label: 'Aksi', align: 'right' },
+];
+
+// --- Ubah paket ---
 const editingPlan = ref(null);
 const planForm = useForm({
     name: '',
@@ -81,6 +122,35 @@ const submitPlan = () => {
     planForm.put(`/platform/plans/${editingPlan.value.id}`, {
         preserveScroll: true,
         onSuccess: () => { editingPlan.value = null; },
+    });
+};
+
+// --- Paket baru ---
+// Rutenya sudah ada sejak lama tapi tak pernah punya tombol, sehingga daftar
+// paket praktis terkunci pada satu baris bawaan. Selama begitu, "paket gratis"
+// dan "paket berbayar" cuma istilah tanpa wujud di panel ini.
+const showPlanCreate = ref(false);
+const newPlanForm = useForm({
+    name: '',
+    slug: '',
+    base_price: 0,
+    included_seats: 1,
+    extra_seat_price: 0,
+});
+
+const openPlanCreate = () => {
+    newPlanForm.reset();
+    newPlanForm.clearErrors();
+    showPlanCreate.value = true;
+};
+
+const submitNewPlan = () => {
+    newPlanForm.post('/platform/plans', {
+        preserveScroll: true,
+        onSuccess: () => {
+            showPlanCreate.value = false;
+            newPlanForm.reset();
+        },
     });
 };
 
@@ -130,133 +200,124 @@ const submitRule = () => {
 
 const deleteForm = useForm({});
 const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.id}`, { preserveScroll: true });
-
-const inputClass =
-    'w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring';
 </script>
 
 <template>
     <Head title="Aturan Harga — Platform" />
 
     <PlatformLayout>
-        <template #header>Aturan Harga</template>
+        <PageHeader
+            title="Aturan Harga"
+            description="Dua jalur harga, dua cara menetapkannya. Paket menetapkan tarif yang sama untuk semua; aturan menetapkan tarif yang mengikuti keadaan tiap tenant."
+        />
 
-        <div class="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-6 max-w-3xl">
-            <p class="text-sm text-foreground leading-relaxed">
-                Perubahan di halaman ini <span class="font-medium">tidak mengubah tagihan yang sedang berjalan</span>.
-                Tenant tetap di tarif yang sudah disepakati sampai periode berikutnya, dan aturan bracket baru hanya
-                berlaku sejak tanggal yang Anda tetapkan. Setiap perubahan tercatat di jejak audit.
-            </p>
-        </div>
+        <Notice tone="warning" class="mb-6 max-w-3xl">
+            Perubahan di halaman ini <span class="font-medium">tidak mengubah tagihan yang sedang berjalan</span>.
+            Tenant tetap di tarif yang sudah disepakati sampai periode berikutnya, dan aturan baru hanya berlaku sejak
+            tanggal yang Anda tetapkan. Setiap perubahan tercatat di jejak audit.
+        </Notice>
 
-        <!-- Paket jalur normal -->
-        <h2 class="text-sm font-semibold text-foreground mb-2">Paket (jalur harga normal)</h2>
-
-        <div class="rounded-xl border border-border bg-card overflow-hidden mb-8">
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-accent/50 text-left">
-                        <tr class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                            <th class="px-4 py-3">Nama</th>
-                            <th class="px-4 py-3 text-right">Tarif Dasar</th>
-                            <th class="px-4 py-3 text-right">Seat Termasuk</th>
-                            <th class="px-4 py-3 text-right">Tarif Seat Tambahan</th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3 text-right">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border">
-                        <tr v-for="plan in plans" :key="plan.id" class="hover:bg-accent/30 transition-colors">
-                            <td class="px-4 py-3">
-                                <p class="font-medium text-foreground">{{ plan.name }}</p>
-                                <p class="text-xs text-muted-foreground">{{ plan.slug }}</p>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-foreground">{{ formatRupiah(plan.base_price) }}</td>
-                            <td class="px-4 py-3 text-right tabular-nums text-foreground">{{ plan.included_seats }}</td>
-                            <td class="px-4 py-3 text-right tabular-nums text-foreground">{{ formatRupiah(plan.extra_seat_price) }}</td>
-                            <td class="px-4 py-3">
-                                <span
-                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                                    :class="plan.is_active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
-                                >
-                                    {{ plan.is_active ? 'Aktif' : 'Nonaktif' }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-3 text-right">
-                                <button class="px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20" @click="openPlan(plan)">
-                                    Ubah
-                                </button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+        <!-- ── Paket: jalur Harga Tetap ─────────────────────────────────── -->
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+                <h3 class="text-sm font-semibold text-foreground">Paket — jalur Harga Tetap</h3>
+                <p class="mt-1 text-xs text-muted-foreground leading-relaxed max-w-2xl">
+                    Tarif yang sama untuk semua tenant yang memakainya, berapa pun omzetnya. Tidak ada data usaha yang
+                    dibuka. Paket bertarif Rp 0 adalah paket gratis; paket bertarif di atas nol adalah paket berbayar.
+                </p>
             </div>
+            <Button size="sm" @click="openPlanCreate">Tambah Paket</Button>
         </div>
 
-        <!-- Aturan harga bersyarat -->
-        <div class="flex items-center justify-between mb-2">
-            <h2 class="text-sm font-semibold text-foreground">Aturan harga</h2>
-            <button class="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90" @click="showRuleForm = true">
-                Terbitkan Aturan
-            </button>
-        </div>
+        <DataTable
+            v-slot="{ cellClass }"
+            :columns="planColumns"
+            :count="plans.length"
+            empty="Belum ada paket."
+            class="mb-8"
+        >
+            <tr v-for="plan in plans" :key="plan.id" class="hover:bg-accent/30 transition-colors">
+                <td :class="cellClass">
+                    <p class="font-medium text-foreground">{{ plan.name }}</p>
+                    <p class="text-xs text-muted-foreground font-mono">{{ plan.slug }}</p>
+                </td>
+                <td :class="cellClass">
+                    <StatusBadge :label="planTier(plan).label" :tone="planTier(plan).tone" />
+                </td>
+                <td :class="[cellClass, 'text-right tabular-nums text-foreground']">
+                    {{ plan.base_price === 0 ? 'Rp 0' : formatRupiah(plan.base_price) }}
+                </td>
+                <td :class="[cellClass, 'text-right tabular-nums text-foreground']">{{ plan.included_seats }}</td>
+                <td :class="[cellClass, 'text-right tabular-nums text-foreground']">
+                    {{ formatRupiah(plan.extra_seat_price) }}
+                </td>
+                <td :class="cellClass">
+                    <StatusBadge
+                        :label="planAvailability(plan).label"
+                        :tone="planAvailability(plan).tone"
+                        title="Apakah paket ini masih ditawarkan ke tenant baru"
+                    />
+                </td>
+                <td :class="[cellClass, 'text-right']">
+                    <Button size="sm" variant="soft" @click="openPlan(plan)">Ubah</Button>
+                </td>
+            </tr>
+        </DataTable>
 
-        <div class="rounded-xl border border-border bg-card overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-accent/50 text-left">
-                        <tr class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                            <th class="px-4 py-3">Kelompok</th>
-                            <th class="px-4 py-3">Syarat</th>
-                            <th class="px-4 py-3 text-right">Prioritas</th>
-                            <th class="px-4 py-3 text-right">Tarif</th>
-                            <th class="px-4 py-3">Berlaku</th>
-                            <th class="px-4 py-3 text-right">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-border">
-                        <tr v-for="rule in rules" :key="rule.id" class="hover:bg-accent/30 transition-colors">
-                            <td class="px-4 py-3 font-medium text-foreground align-top">{{ rule.label }}</td>
-                            <td class="px-4 py-3 align-top">
-                                <ul v-if="rule.conditions.length" class="space-y-0.5">
-                                    <li v-for="(condition, index) in rule.conditions" :key="index" class="text-foreground">
-                                        {{ describeCondition(condition) }}
-                                    </li>
-                                </ul>
-                                <span v-else class="text-muted-foreground">tanpa syarat — cocok untuk semua</span>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-muted-foreground align-top">{{ rule.priority }}</td>
-                            <td class="px-4 py-3 text-right tabular-nums font-medium text-foreground align-top">{{ formatRupiah(rule.price) }}</td>
-                            <td class="px-4 py-3 align-top">
-                                <span class="text-muted-foreground tabular-nums">{{ rule.effective_from }}</span>
-                                <span
-                                    v-if="!rule.is_effective"
-                                    class="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-700"
-                                >
-                                    menunggu
-                                </span>
-                            </td>
-                            <td class="px-4 py-3 text-right align-top">
-                                <button
-                                    v-if="!rule.is_effective"
-                                    class="px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20"
-                                    @click="removeRule(rule)"
-                                >
-                                    Batalkan
-                                </button>
-                                <span v-else class="text-xs text-muted-foreground">terkunci</span>
-                            </td>
-                        </tr>
-
-                        <tr v-if="rules.length === 0">
-                            <td colspan="6" class="px-4 py-10 text-center text-sm text-muted-foreground">
-                                Belum ada aturan harga.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+        <!-- ── Aturan: jalur Harga Adaptif ──────────────────────────────── -->
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+                <h3 class="text-sm font-semibold text-foreground">Aturan tarif — jalur Harga Adaptif</h3>
+                <p class="mt-1 text-xs text-muted-foreground leading-relaxed max-w-2xl">
+                    Hanya berlaku untuk tenant yang menyetujui membuka omzet bulanannya. Tarifnya mengikuti keadaan
+                    usaha mereka, bukan daftar harga tetap — karena itu jalur ini disebut adaptif, bukan bantuan.
+                </p>
             </div>
+            <Button size="sm" @click="showRuleForm = true">Terbitkan Aturan</Button>
         </div>
+
+        <DataTable
+            v-slot="{ cellClass }"
+            :columns="ruleColumns"
+            :count="rules.length"
+            empty="Belum ada aturan tarif."
+        >
+            <tr v-for="rule in rules" :key="rule.id" class="hover:bg-accent/30 transition-colors">
+                <td :class="[cellClass, 'font-medium text-foreground']">{{ rule.label }}</td>
+                <td :class="cellClass">
+                    <ul v-if="rule.conditions.length" class="space-y-0.5">
+                        <li v-for="(condition, index) in rule.conditions" :key="index" class="text-foreground">
+                            {{ describeCondition(condition) }}
+                        </li>
+                    </ul>
+                    <span v-else class="text-muted-foreground">tanpa syarat — semua tenant jalur adaptif</span>
+                </td>
+                <td :class="[cellClass, 'text-right tabular-nums text-muted-foreground']">{{ rule.priority }}</td>
+                <td :class="[cellClass, 'text-right tabular-nums font-medium text-foreground']">
+                    {{ formatRupiah(rule.price) }}
+                </td>
+                <td :class="cellClass">
+                    <StatusBadge
+                        v-if="rule.is_effective"
+                        label="Berlaku"
+                        tone="success"
+                        title="Sudah menjadi dasar harga — tidak bisa dihapus"
+                    />
+                    <StatusBadge
+                        v-else
+                        :label="`Mulai ${formatDate(rule.effective_from)}`"
+                        tone="warning"
+                        title="Belum berlaku — masih bisa dibatalkan"
+                    />
+                </td>
+                <td :class="[cellClass, 'text-right']">
+                    <Button v-if="!rule.is_effective" size="sm" variant="destructiveSoft" @click="removeRule(rule)">
+                        Batalkan
+                    </Button>
+                    <span v-else class="text-xs text-muted-foreground">terkunci</span>
+                </td>
+            </tr>
+        </DataTable>
 
         <div class="mt-4 space-y-2 text-xs text-muted-foreground leading-relaxed max-w-2xl">
             <p>
@@ -266,198 +327,225 @@ const inputClass =
             </p>
             <p>
                 Aturan yang sudah berlaku tidak bisa dihapus — ia adalah dasar harga periode yang sudah lewat. Untuk
-                mengubah tarif, terbitkan aturan baru dengan kelompok yang sama dan tanggal berlaku ke depan.
+                mengubah tarif, terbitkan aturan baru dengan nama yang sama dan tanggal berlaku ke depan.
             </p>
         </div>
 
-        <!-- Ubah paket -->
-        <Teleport to="body">
-            <div v-if="editingPlan" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                <div class="absolute inset-0 bg-black/50" @click="editingPlan = null" />
-                <div class="relative w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl">
-                    <h3 class="text-lg font-semibold text-foreground mb-4">Ubah Paket</h3>
+        <!-- ── Ubah paket ───────────────────────────────────────────────── -->
+        <Modal :show="editingPlan !== null" title="Ubah paket" @close="editingPlan = null">
+            <form class="space-y-4" @submit.prevent="submitPlan">
+                <FormField label="Nama" :error="planForm.errors.name">
+                    <input v-model="planForm.name" type="text" :class="inputClass" />
+                </FormField>
 
-                    <form class="space-y-4" @submit.prevent="submitPlan">
-                        <div>
-                            <label class="block text-sm font-medium text-foreground mb-1">Nama</label>
-                            <input v-model="planForm.name" type="text" :class="inputClass" />
-                            <p v-if="planForm.errors.name" class="mt-1 text-xs text-destructive">{{ planForm.errors.name }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-foreground mb-1">Tarif dasar (Rp)</label>
-                            <input v-model.number="planForm.base_price" type="number" min="0" :class="inputClass" />
-                            <p v-if="planForm.errors.base_price" class="mt-1 text-xs text-destructive">{{ planForm.errors.base_price }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-foreground mb-1">Seat termasuk</label>
-                            <input v-model.number="planForm.included_seats" type="number" min="1" :class="inputClass" />
-                            <p v-if="planForm.errors.included_seats" class="mt-1 text-xs text-destructive">{{ planForm.errors.included_seats }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-foreground mb-1">Tarif seat tambahan (Rp)</label>
-                            <input v-model.number="planForm.extra_seat_price" type="number" min="0" :class="inputClass" />
-                            <p v-if="planForm.errors.extra_seat_price" class="mt-1 text-xs text-destructive">{{ planForm.errors.extra_seat_price }}</p>
-                        </div>
-                        <label class="flex items-center gap-2 text-sm text-foreground">
-                            <input v-model="planForm.is_active" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring" />
-                            Paket aktif
-                        </label>
+                <FormField
+                    label="Tarif bulanan (Rp)"
+                    hint="Isi 0 untuk menjadikannya paket gratis."
+                    :error="planForm.errors.base_price"
+                >
+                    <input v-model.number="planForm.base_price" type="number" min="0" :class="inputClass" />
+                </FormField>
 
-                        <div class="flex justify-end gap-3 pt-2">
-                            <button type="button" class="px-4 py-2 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-accent/40" @click="editingPlan = null">Batal</button>
-                            <button type="submit" :disabled="planForm.processing" class="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50">
-                                {{ planForm.processing ? 'Menyimpan...' : 'Simpan' }}
-                            </button>
-                        </div>
-                    </form>
+                <FormField label="Pengguna termasuk" :error="planForm.errors.included_seats">
+                    <input v-model.number="planForm.included_seats" type="number" min="1" :class="inputClass" />
+                    <template #footnote>
+                        Batas awal tiap tenant di paket ini. Angkanya naik sendiri saat mereka membayar penambahan.
+                    </template>
+                </FormField>
+
+                <FormField label="Tarif pengguna tambahan (Rp)" :error="planForm.errors.extra_seat_price">
+                    <input v-model.number="planForm.extra_seat_price" type="number" min="0" :class="inputClass" />
+                </FormField>
+
+                <label class="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                        v-model="planForm.is_active"
+                        type="checkbox"
+                        class="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring"
+                    />
+                    <span>
+                        Masih ditawarkan
+                        <span class="block text-xs text-muted-foreground">
+                            Mematikannya menyembunyikan paket dari tenant baru. Tenant yang sudah memakainya tidak
+                            dipindahkan ke mana pun.
+                        </span>
+                    </span>
+                </label>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
+                    <Button variant="secondary" @click="editingPlan = null">Batal</Button>
+                    <Button :loading="planForm.processing" @click="submitPlan">Simpan</Button>
                 </div>
-            </div>
-        </Teleport>
+            </template>
+        </Modal>
 
-        <!-- Terbitkan aturan -->
-        <Teleport to="body">
-            <div v-if="showRuleForm" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                <div class="absolute inset-0 bg-black/50" @click="showRuleForm = false" />
-                <div class="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-2xl">
-                    <h3 class="text-lg font-semibold text-foreground mb-1">Terbitkan Aturan Harga</h3>
-                    <p class="text-sm text-muted-foreground mb-4">
-                        Berlaku sejak tanggal yang Anda pilih, dan tidak menyentuh periode sebelumnya.
+        <!-- ── Paket baru ───────────────────────────────────────────────── -->
+        <Modal
+            :show="showPlanCreate"
+            title="Tambah paket"
+            description="Paket baru langsung ditawarkan ke tenant. Tenant yang sudah berjalan tidak dipindahkan."
+            @close="showPlanCreate = false"
+        >
+            <form class="space-y-4" @submit.prevent="submitNewPlan">
+                <FormField label="Nama" hint="Yang dibaca tenant, mis. “Premium”." :error="newPlanForm.errors.name">
+                    <input v-model="newPlanForm.name" type="text" placeholder="Premium" :class="inputClass" />
+                </FormField>
+
+                <FormField
+                    label="Slug"
+                    hint="Pengenal tetap yang dirujuk kode. Tidak bisa diubah setelah dibuat."
+                    :error="newPlanForm.errors.slug"
+                >
+                    <input v-model="newPlanForm.slug" type="text" placeholder="premium" :class="inputClass" />
+                </FormField>
+
+                <FormField
+                    label="Tarif bulanan (Rp)"
+                    hint="Isi 0 untuk paket gratis."
+                    :error="newPlanForm.errors.base_price"
+                >
+                    <input v-model.number="newPlanForm.base_price" type="number" min="0" :class="inputClass" />
+                </FormField>
+
+                <FormField label="Pengguna termasuk" :error="newPlanForm.errors.included_seats">
+                    <input v-model.number="newPlanForm.included_seats" type="number" min="1" :class="inputClass" />
+                </FormField>
+
+                <FormField label="Tarif pengguna tambahan (Rp)" :error="newPlanForm.errors.extra_seat_price">
+                    <input v-model.number="newPlanForm.extra_seat_price" type="number" min="0" :class="inputClass" />
+                </FormField>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
+                    <Button variant="secondary" @click="showPlanCreate = false">Batal</Button>
+                    <Button :loading="newPlanForm.processing" @click="submitNewPlan">Buat paket</Button>
+                </div>
+            </template>
+        </Modal>
+
+        <!-- ── Terbitkan aturan ─────────────────────────────────────────── -->
+        <Modal
+            :show="showRuleForm"
+            title="Terbitkan aturan tarif"
+            description="Berlaku sejak tanggal yang Anda pilih, dan tidak menyentuh periode sebelumnya."
+            max-width="max-w-2xl"
+            @close="showRuleForm = false"
+        >
+            <form class="space-y-4" @submit.prevent="submitRule">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField label="Nama aturan" :error="ruleForm.errors.label">
+                        <input v-model="ruleForm.label" type="text" placeholder="Warung kecil" :class="inputClass" />
+                        <template #footnote>
+                            Nama yang sama menggantikan aturan sebelumnya, bukan menambah pesaingnya. Nama yang
+                            menjelaskan siapa yang dikenainya lebih berguna daripada satu huruf.
+                        </template>
+                    </FormField>
+
+                    <FormField label="Prioritas" :error="ruleForm.errors.priority">
+                        <input v-model.number="ruleForm.priority" type="number" min="0" max="1000" :class="inputClass" />
+                        <template #footnote>Makin tinggi makin didahulukan.</template>
+                    </FormField>
+
+                    <FormField label="Tarif bulanan (Rp)" :error="ruleForm.errors.price">
+                        <input v-model.number="ruleForm.price" type="number" min="0" :class="inputClass" />
+                    </FormField>
+
+                    <FormField label="Berlaku mulai" :error="ruleForm.errors.effective_from">
+                        <input v-model="ruleForm.effective_from" type="date" :class="inputClass" />
+                    </FormField>
+                </div>
+
+                <!-- Syarat -->
+                <div class="rounded-lg border border-border p-4">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium text-foreground">Syarat</span>
+                        <Button size="sm" variant="soft" @click="addCondition">Tambah Syarat</Button>
+                    </div>
+                    <p class="text-xs text-muted-foreground mb-3 leading-relaxed">
+                        Aturan berlaku hanya bila <span class="font-medium text-foreground">semua</span> syarat
+                        terpenuhi. Tanpa syarat, ia cocok untuk semua tenant jalur adaptif.
                     </p>
 
-                    <form class="space-y-4" @submit.prevent="submitRule">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-foreground mb-1">Kelompok</label>
-                                <input v-model="ruleForm.label" type="text" placeholder="A" :class="inputClass" />
-                                <p class="mt-1 text-xs text-muted-foreground">
-                                    Kelompok yang sama menggantikan aturan sebelumnya, bukan menambah pesaingnya.
-                                </p>
-                                <p v-if="ruleForm.errors.label" class="mt-1 text-xs text-destructive">{{ ruleForm.errors.label }}</p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-foreground mb-1">Prioritas</label>
-                                <input v-model.number="ruleForm.priority" type="number" min="0" max="1000" :class="inputClass" />
-                                <p class="mt-1 text-xs text-muted-foreground">Makin tinggi makin didahulukan.</p>
-                                <p v-if="ruleForm.errors.priority" class="mt-1 text-xs text-destructive">{{ ruleForm.errors.priority }}</p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-foreground mb-1">Tarif (Rp)</label>
-                                <input v-model.number="ruleForm.price" type="number" min="0" :class="inputClass" />
-                                <p v-if="ruleForm.errors.price" class="mt-1 text-xs text-destructive">{{ ruleForm.errors.price }}</p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-foreground mb-1">Berlaku mulai</label>
-                                <input v-model="ruleForm.effective_from" type="date" :class="inputClass" />
-                                <p v-if="ruleForm.errors.effective_from" class="mt-1 text-xs text-destructive">{{ ruleForm.errors.effective_from }}</p>
-                            </div>
-                        </div>
+                    <div v-if="ruleForm.conditions.length === 0" class="py-4 text-center text-xs text-muted-foreground">
+                        Belum ada syarat — aturan ini akan cocok untuk semua tenant jalur adaptif.
+                    </div>
 
-                        <!-- Syarat -->
-                        <div class="rounded-lg border border-border p-4">
-                            <div class="flex items-center justify-between mb-1">
-                                <label class="text-sm font-medium text-foreground">Syarat</label>
-                                <button
-                                    type="button"
-                                    class="px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20"
-                                    @click="addCondition"
-                                >
-                                    Tambah Syarat
-                                </button>
-                            </div>
-                            <p class="text-xs text-muted-foreground mb-3">
-                                Aturan berlaku hanya bila <span class="font-medium text-foreground">semua</span> syarat
-                                terpenuhi. Tanpa syarat, ia cocok untuk semua tenant.
-                            </p>
-
-                            <div v-if="ruleForm.conditions.length === 0" class="py-4 text-center text-xs text-muted-foreground">
-                                Belum ada syarat — aturan ini akan cocok untuk semua tenant.
+                    <div
+                        v-for="(condition, index) in ruleForm.conditions"
+                        :key="index"
+                        class="mb-3 last:mb-0 rounded-lg bg-accent/30 p-3"
+                    >
+                        <div class="flex flex-wrap items-start gap-2">
+                            <div class="flex-1 min-w-[9rem]">
+                                <select v-model="condition.dimension" :class="inputClass" @change="onDimensionChange(condition)">
+                                    <option v-for="dimension in dimensions" :key="dimension.name" :value="dimension.name">
+                                        {{ dimension.label }}
+                                    </option>
+                                </select>
                             </div>
 
-                            <div
-                                v-for="(condition, index) in ruleForm.conditions"
-                                :key="index"
-                                class="mb-3 last:mb-0 rounded-lg bg-accent/30 p-3"
-                            >
-                                <div class="flex flex-wrap items-start gap-2">
-                                    <div class="flex-1 min-w-[9rem]">
-                                        <select
-                                            v-model="condition.dimension"
-                                            :class="inputClass"
-                                            @change="onDimensionChange(condition)"
-                                        >
-                                            <option v-for="dimension in dimensions" :key="dimension.name" :value="dimension.name">
-                                                {{ dimension.label }}
-                                            </option>
-                                        </select>
-                                    </div>
-
-                                    <div class="w-28">
-                                        <select v-model="condition.operator" :class="inputClass">
-                                            <option
-                                                v-for="operator in dimensionByName[condition.dimension]?.operators ?? []"
-                                                :key="operator"
-                                                :value="operator"
-                                            >
-                                                {{ operatorLabels[operator] ?? operator }}
-                                            </option>
-                                        </select>
-                                    </div>
-
-                                    <div class="flex-1 min-w-[9rem]">
-                                        <select
-                                            v-if="dimensionByName[condition.dimension]?.options && condition.operator !== 'in'"
-                                            v-model="condition.value"
-                                            :class="inputClass"
-                                        >
-                                            <option
-                                                v-for="(optionLabel, optionValue) in dimensionByName[condition.dimension].options"
-                                                :key="optionValue"
-                                                :value="optionValue"
-                                            >
-                                                {{ optionLabel }}
-                                            </option>
-                                        </select>
-                                        <input
-                                            v-else
-                                            v-model="condition.value"
-                                            type="text"
-                                            :placeholder="condition.operator === 'in' ? 'kuliner, retail' : 'nilai'"
-                                            :class="inputClass"
-                                        />
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        class="px-2.5 py-2 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20"
-                                        @click="removeCondition(index)"
+                            <div class="w-28">
+                                <select v-model="condition.operator" :class="inputClass">
+                                    <option
+                                        v-for="operator in dimensionByName[condition.dimension]?.operators ?? []"
+                                        :key="operator"
+                                        :value="operator"
                                     >
-                                        Hapus
-                                    </button>
-                                </div>
-
-                                <p
-                                    v-if="dimensionByName[condition.dimension]?.requires_consent"
-                                    class="mt-2 text-xs text-amber-700"
-                                >
-                                    Dimensi ini hanya punya nilai untuk tenant yang menyetujui pembukaan datanya. Aturan
-                                    ini tidak akan berlaku bagi tenant jalur normal.
-                                </p>
-
-                                <p v-if="conditionError(index, 'dimension')" class="mt-1 text-xs text-destructive">{{ conditionError(index, 'dimension') }}</p>
-                                <p v-if="conditionError(index, 'operator')" class="mt-1 text-xs text-destructive">{{ conditionError(index, 'operator') }}</p>
-                                <p v-if="conditionError(index, 'value')" class="mt-1 text-xs text-destructive">{{ conditionError(index, 'value') }}</p>
+                                        {{ operatorLabels[operator] ?? operator }}
+                                    </option>
+                                </select>
                             </div>
+
+                            <div class="flex-1 min-w-[9rem]">
+                                <select
+                                    v-if="dimensionByName[condition.dimension]?.options && condition.operator !== 'in'"
+                                    v-model="condition.value"
+                                    :class="inputClass"
+                                >
+                                    <option
+                                        v-for="(optionLabel, optionValue) in dimensionByName[condition.dimension].options"
+                                        :key="optionValue"
+                                        :value="optionValue"
+                                    >
+                                        {{ optionLabel }}
+                                    </option>
+                                </select>
+                                <input
+                                    v-else
+                                    v-model="condition.value"
+                                    type="text"
+                                    :placeholder="condition.operator === 'in' ? 'kuliner, retail' : 'nilai'"
+                                    :class="inputClass"
+                                />
+                            </div>
+
+                            <Button size="sm" variant="destructiveSoft" @click="removeCondition(index)">Hapus</Button>
                         </div>
 
-                        <div class="flex justify-end gap-3 pt-2">
-                            <button type="button" class="px-4 py-2 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-accent/40" @click="showRuleForm = false">Batal</button>
-                            <button type="submit" :disabled="ruleForm.processing" class="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50">
-                                {{ ruleForm.processing ? 'Menyimpan...' : 'Terbitkan' }}
-                            </button>
-                        </div>
-                    </form>
+                        <p
+                            v-if="dimensionByName[condition.dimension]?.requires_consent"
+                            class="mt-2 text-xs text-amber-700 leading-relaxed"
+                        >
+                            Dimensi ini hanya punya nilai untuk tenant yang menyetujui pembukaan datanya. Aturan ini
+                            tidak akan berlaku bagi tenant jalur Harga Tetap.
+                        </p>
+
+                        <p v-if="conditionError(index, 'dimension')" class="mt-1 text-xs text-destructive">{{ conditionError(index, 'dimension') }}</p>
+                        <p v-if="conditionError(index, 'operator')" class="mt-1 text-xs text-destructive">{{ conditionError(index, 'operator') }}</p>
+                        <p v-if="conditionError(index, 'value')" class="mt-1 text-xs text-destructive">{{ conditionError(index, 'value') }}</p>
+                    </div>
                 </div>
-            </div>
-        </Teleport>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
+                    <Button variant="secondary" @click="showRuleForm = false">Batal</Button>
+                    <Button :loading="ruleForm.processing" @click="submitRule">Terbitkan</Button>
+                </div>
+            </template>
+        </Modal>
     </PlatformLayout>
 </template>

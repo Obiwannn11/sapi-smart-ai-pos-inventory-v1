@@ -61,6 +61,10 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-01 | ADDITION | Platform | Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042) |
+| 2026-07-31 | DECISION | Platform | Jenis Usaha Berpindah ke Pemilik Toko, dan "Subsidi" Jadi "Harga Adaptif" |
+| 2026-07-31 | ADDITION | Platform | Konsol Platform: Langganan & Tagihan Menyatu, Batas Pengguna Bisa Diatur |
+| 2026-07-31 | ADDITION | Langganan | Pintu Masuk Langganan & Ringkasan Tagihan di Dashboard (BL-040) |
 | 2026-07-31 | ADDITION | Kasir | Penawaran Wajib Diselesaikan & Status "Ditolak" Terpisah (BL-025) |
 | 2026-07-31 | DECISION | Dokumentasi | Indeks Entri & Protokol Baca untuk CHANGELOG/BACKLOG |
 | 2026-07-31 | ADDITION | Kasir | Tagihan Terbuka Pindah ke Topbar Kasir (BL-023) |
@@ -136,6 +140,116 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042)
+- **Tanggal:** 2026-08-01
+- **Fase Terkait:** Di Luar Fase — `[BL-042]`
+- **Dampak:** Routing | Service | Controller | Resource | Frontend | Test
+- **Breaking Change:** Ya, pada rute. Rincian akun pindah dari `GET /platform/subscriptions/{tenant}` ke **`GET /platform/tenants/{tenant}`**, dan omzet dari `GET /platform/subscriptions/{tenant}/revenue` ke **`GET /platform/tenants/{tenant}/revenue`**. Keduanya **mengalihkan**, bukan mati. Rute tulis tidak berubah — `PUT /platform/subscriptions/{subscription}/seats` tetap di alamatnya.
+- **Deskripsi:** Halaman Daftar Tenant tidak lagi memipihkan tiap klien jadi lima kolom informasi. Yang tersisa adalah nama, pemilik, status, dan satu tombol **Lihat detail**; jenis usaha, jumlah akun, dan tanggal terdaftar pindah ke rinciannya. Rinciannya sendiri berpindah kepemilikan ke modul Daftar Tenant dan dipecah jadi lima tab — **Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet** — dengan tab baru **Kapabilitas** yang menampilkan fitur kasir yang menyala untuk toko itu (`kitchen_queue`, `self_order`, `ai`), sesuatu yang sebelumnya tidak pernah ikut di payload platform sama sekali.
+- **Alasan:** Satu-satunya jalan ke rincian adalah nama tenant yang diam-diam bisa diklik, dan tautannya menunjuk halaman yang digerbang modul lain: daftarnya `tenants`, rinciannya `subscriptions,payments`. Bagi pemilik SaaS yang memegang semua modul ini tidak terasa, tapi seluruh gerbang modul di panel ini justru dibuat supaya staf bisa diberi sebagian — dan staf ber-`tenants`-saja mendapat halaman yang setiap barisnya menaut ke 403. Rinciannya pun satu gulungan: empat urusan yang berbeda umur dan berbeda kepekaan berbaris vertikal, dan karena riwayat tagihan sengaja tidak dipotong, tenant berumur setahun mendorong panel omzet keluar layar.
+- **File Terdampak:**
+  - `routes/web.php` — `tenants.show` baru, `revenue.show` pindah, dua `Route::redirect` untuk alamat lama
+  - `app/Http/Controllers/Platform/TenantController.php` — `show()`, audit `tenants.show`
+  - `app/Http/Controllers/Platform/SubscriptionController.php` — `show()` dilepas
+  - `app/Http/Controllers/Platform/RevenueController.php` — merender `Platform/Tenants/Show`
+  - `app/Services/Platform/AccountOverview.php` — katalog `CAPABILITIES`, `user_count`, `can.tenants`
+  - `app/Http/Resources/Platform/TenantResource.php` — `status`
+  - `resources/js/Components/Platform/TabNav.vue` — **baru**
+  - `resources/js/Pages/Platform/Tenants/Show.vue` — **baru**, menggantikan `Subscriptions/Show.vue` yang dihapus
+  - `resources/js/Pages/Platform/Tenants/Index.vue` — kolom disusutkan, tombol aksi
+  - `tests/Feature/Platform/PlatformTenantDetailTest.php` — **baru**, 9 test
+  - `tests/Feature/Platform/{PlatformBillingTest,PlatformRevenueTest,PricingDimensionTest}.php` — URL & nama komponen disesuaikan
+- **Keputusan yang perlu diingat:**
+  - **Tab Kapabilitas HANYA MEMBACA.** Tidak ada tombol menyalakan atau mematikan fitur kasir dari panel platform, mengikuti alasan yang sama seperti pencabutan kuasa mengubah jenis usaha: cara kerja usaha orang bukan milik penyedia layanannya. Yang diberikan halaman ini adalah kuasa **mengetahui** — pemilik SaaS tetap perlu tahu fitur apa yang aktif saat menjawab keluhan atau menjelaskan tarif. Ada satu test yang sengaja menjaga ketiadaan rute pengubahnya.
+  - **Nilainya dibaca lewat `Tenant::hasFeature()`, bukan kolomnya langsung.** Menambah fitur kelak cukup satu baris di katalog `AccountOverview::CAPABILITIES` plus satu cabang di `hasFeature()` — bukan satu kolom baru yang harus diingat di tiga tempat.
+  - **Gerbang rinciannya "salah satu cukup" dari TIGA modul** (`tenants,subscriptions,payments`), karena dua daftar bermuara ke halaman yang sama. Menyempitkannya ke `tenants` hanya akan memindahkan 403 yang sama ke pintu yang lain: pemegang modul tagihan sampai ke sini dari daftar langganan. Isinya tetap disaring per modul di `AccountOverview` — yang tidak boleh dilihat tidak ikut terkirim.
+  - **Omzet tetap rute tersendiri yang beraudit.** Yang berubah hanya alamatnya; ia masih merender komponen yang sama dengan bagian omzetnya terisi, dan kini mendaratkan pembacanya langsung di tab Omzet. Membuka rincian tenant tetap tercatat sebagai kejadian **rutin** (terdeduplikasi), membuka omzetnya tetap **sensitif** (tanpa deduplikasi).
+  - **Tab yang aktif dititipkan ke query string (`?tab=tagihan`), bukan disimpan di komponen saja.** Setiap tindakan tagihan berakhir dengan redirect kembali ke alamat ini; tanpa jejak di URL, memverifikasi satu bukti bayar akan melempar pembacanya keluar dari tab yang sedang ia kerjakan. Pengalihan dari alamat lama tidak membawa serta query string-nya — tautan lama memang tidak pernah punya.
+  - **Tautan "kembali" mengikuti modul pembacanya.** Ke daftar tenant bila ia memegangnya, ke daftar langganan bila tidak. Tombol kembali yang menunjuk halaman terlarang adalah bentuk kecil dari kekeliruan yang sama seperti yang membuat halaman ini pindah.
+
+---
+
+### [DECISION] Jenis Usaha Berpindah ke Pemilik Toko, dan "Subsidi" Jadi "Harga Adaptif"
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — meninjau ulang keputusan `[BL-015]`
+- **Dampak:** Schema (data) | Controller | Frontend | Test
+- **Breaking Change:** Ya, kecil. Rute `PUT /platform/tenants/{tenant}/business-type` **dihapus**. Nilai `tenants.business_type` yang `null` di-backfill jadi `lainnya`.
+- **Deskripsi:** Dua perubahan kosakata dan kewenangan yang berjalan bersama. Pertama, jenis usaha tidak lagi diubah dari panel platform — editornya pindah ke Owner → Pengaturan, kolomnya punya nilai bawaan `lainnya`, dan panel platform hanya membacanya. Kedua, istilah "subsidi" dicabut dari seluruh permukaan yang dibaca orang dan diganti **Harga Adaptif** (lawannya: **Harga Tetap**).
+- **Alasan:** `[BL-015]` menempatkan pengubah jenis usaha di panel platform dengan alasan yang benar soal akibatnya — kolom itu dasar penetapan harga dan dibekukan ke `invoices.pricing_context` — tapi keliru soal siapa yang berhak. Yang tahu jenis usahanya adalah pemilik toko, dan keterangan usaha yang bisa diganti penyedia layanan tanpa sepengetahuan pemiliknya bukan keterangan yang sehat, sekalipun perubahannya tercatat di audit. Kebutuhan asli `[BL-015]` — tenant lama yang nilainya kosong — dijawab oleh nilai bawaan, bukan oleh kuasa mengedit milik orang lain. Soal istilah: "subsidi" menempatkan klien sebagai penerima bantuan, padahal yang terjadi adalah pertukaran — mereka membuka omzetnya, tarifnya menyesuaikan.
+- **File Terdampak:**
+  - `database/migrations/2026_07_31_150104_set_default_business_type_on_tenants_table.php` — backfill `null` menjadi `lainnya`
+  - `app/Models/Tenant.php` — `BUSINESS_TYPE_DEFAULT` dan `$attributes`
+  - `app/Http/Controllers/Auth/AuthController.php` — pendaftaran jatuh ke bawaan, bukan ke `null`
+  - `app/Http/Controllers/Owner/SettingsController.php` — prop `businessTypes` dan validasi `sometimes|required`
+  - `app/Http/Controllers/Platform/TenantController.php` — `updateBusinessType()` dihapus
+  - `resources/js/Pages/Owner/Settings/Index.vue` — pemilih jenis usaha
+  - `resources/js/Pages/Platform/Tenants/Index.vue` — dropdown jadi teks
+  - `resources/js/support/platform.js` — kosakata `PRICING_TRACK`
+  - `config/platform-rbac.php`, `config/docs.php`, `resources/js/Pages/Billing/*.vue`, `app/Http/Controllers/Billing/ConsentController.php` — istilah
+  - `tests/Feature/Platform/PricingDimensionTest.php` — 3 test disesuaikan/ditambah
+- **Keputusan yang perlu diingat:**
+  - **Bawaannya `lainnya`, bukan tipe yang paling umum.** Menebak "kuliner" karena itu mayoritas berarti memasang dasar harga yang salah pada orang yang belum pernah ditanya. Bawaan netral tidak mengaku tahu apa pun, dan bisa diperbaiki pemiliknya kapan saja.
+  - **Kolomnya tetap `nullable` di basis data.** Yang menjamin nilainya terisi adalah pendaftaran, `$attributes` model, dan form Pengaturan. Menaikkannya jadi `NOT NULL` hanya menambah risiko migrasi tanpa menutup celah yang masih terbuka.
+  - **Validasinya `sometimes|required`, bukan `required`.** Nilai kosong ditolak, tapi field yang tidak dikirim sama sekali berarti "jangan sentuh". `PATCH /owner/settings` menerima beberapa bagian form sekaligus; `required` polos membuat pemanggil yang tidak berkepentingan dengan jenis usaha gagal menyimpan apa pun.
+  - **Nilai di basis data TIDAK ikut berganti nama.** `pricing_track` tetap `normal` / `subsidized`, begitu pula `TenantConsent::TYPE_SUBSIDIZED` dan URL `/langganan/persetujuan/subsidized`. Yang berubah hanya apa yang dibaca orang. Mengganti nilai enum menuntut migrasi di tiga tabel demi nol manfaat.
+  - **`resources/consents/subsidized-v1.md` SENGAJA tidak disentuh.** Dokumen persetujuan berversi, dan `ConsentService::hasAgreedToCurrent()` membandingkan versi — menyunting teksnya berarti setiap tenant jalur adaptif harus menyetujui ulang dokumen hukum hanya karena kita mengganti sebuah nama. Itu keputusan pemilik SaaS, bukan efek samping perapian kosakata. Selama belum diputuskan, dokumen itu satu-satunya tempat kata "subsidi" masih hidup.
+
+---
+
+### [ADDITION] Konsol Platform: Langganan & Tagihan Menyatu, Batas Pengguna Bisa Diatur
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — perapian konsol platform
+- **Dampak:** Middleware | Service | Controller | Resource | Frontend | Test
+- **Breaking Change:** Ya, pada rute. `GET /platform/invoices` kini **mengalihkan** ke `/platform/subscriptions`; `GET /platform/revenue/{tenant}` pindah ke `/platform/subscriptions/{tenant}/revenue`. Rute tulis tagihan tidak berubah.
+- **Deskripsi:** Menu "Langganan" dan "Pembayaran" lebur jadi satu bagian **Langganan & Tagihan**, dengan halaman rincian per akun (`/platform/subscriptions/{tenant}`) yang menyatukan keadaan langganan, riwayat tagihan, dan — lewat tautan beraudit tersendiri — omzet bulanan jalur Harga Adaptif. Batas pengguna kini punya tombol pengatur beralasan. Seluruh halaman platform dipindahkan ke satu set komponen bersama, dan `PlatformLayout` disamakan strukturnya dengan `OwnerLayout`.
+- **Alasan:** Tiga halaman terpisah yang tidak saling menaut membuat pertanyaan yang paling sering diajukan — "kenapa tenant ini ditangguhkan?" — hanya bisa dijawab dengan membuka dua halaman lalu mencocokkan namanya sendiri. Batas pengguna hanya bisa bergerak lewat tagihan yang dibayar tenant; untuk sisa keadaannya (salah pilih jumlah, kesepakatan di luar aplikasi, koreksi setelah bukti ditolak) satu-satunya penyelesaian adalah menyunting database. Dan panel platform menuliskan sendiri kartu, tabel, tombol, serta modalnya — sehingga padding, radius, dan warna tombolnya pelan-pelan menyimpang dari panel kasir dan owner.
+- **File Terdampak:**
+  - `app/Http/Middleware/EnsurePlatformModule.php` — menerima beberapa modul, "salah satu cukup"
+  - `app/Services/Platform/AccountOverview.php` — **baru**, payload rincian akun
+  - `app/Http/Controllers/Platform/SubscriptionController.php` — `show()`, `updateSeats()`, ringkasan tagihan
+  - `app/Http/Controllers/Platform/RevenueController.php` — merender komponen yang sama
+  - `app/Http/Resources/Platform/InvoiceResource.php` — `kind`, `grants_seats`, `previous_seats`
+  - `resources/js/Components/Platform/*.vue` — **baru** (PageHeader, Panel, DataTable, StatusBadge, StatCard, FormField, Notice)
+  - `resources/js/support/platform.js` — **baru**, format dan kosakata bersama
+  - `resources/js/Components/{Button,Modal,ConfirmDialog}.vue` — pindah ke token tema
+  - `resources/js/Layouts/PlatformLayout.vue` — disamakan dengan OwnerLayout
+  - `resources/js/Pages/Platform/**` — seluruhnya; `Invoices/Index.vue` dan `Revenue/Show.vue` dihapus
+  - `tests/Feature/Platform/{PlatformBillingTest,PlatformRevenueTest}.php` — 5 test baru, URL disesuaikan
+- **Keputusan yang perlu diingat:**
+  - **Omzet TIDAK ikut di halaman rincian akun.** Ia punya rute sendiri (`/subscriptions/{tenant}/revenue`) yang merender komponen yang sama dengan bagian omzetnya terisi. Yang dijaga bukan halaman yang terpisah melainkan **tindakan** yang terpisah: menengok keadaan langganan tenant tidak boleh menghasilkan catatan "membuka data bisnis klien" yang tak pernah benar-benar terjadi.
+  - **`platform.can` kini menerima beberapa modul dengan makna "salah satu cukup".** Dipakai hanya pada rute BACA halaman gabungan. Rute tulis tetap digerbang satu modul — `updateSeats` menuntut `subscriptions`, bukan `subscriptions,payments`: yang hanya memegang tagihan tidak berkepentingan mengubah batas paket. Isi halaman disaring per modul di controller, dan yang tidak boleh dilihat **tidak ikut terkirim** — bukan terkirim lalu disembunyikan di Vue.
+  - **Menurunkan batas pengguna di bawah pemakaian aktif diizinkan.** Tidak ada akun yang dinonaktifkan karenanya, mengikuti alasan yang sama seperti penolakan bukti bayar: yang tertutup adalah penambahan berikutnya, bukan pekerjaan orang yang sedang berjalan.
+  - **`reason` wajib pada perubahan batas pengguna.** Angka sebelum-sesudah saja tidak menjawab "kenapa", dan itulah pertanyaan yang diajukan tenant.
+  - **`JsonResource::collection()` MENGUBAH isi paginator.** Peta seat, tagihan, dan kelompok harga harus dihitung sebelum resource dirakit; sesudahnya `getCollection()` mengembalikan resource, bukan model. Sudah menjatuhkan halaman ini sekali.
+  - **Halaman masuk platform tetap memakai `bg-slate-800`.** Warna gelapnya memang pembeda yang disengaja antara konsol pengelola dan panel tenant; yang diseragamkan adalah metrik — padding, radius, tinggi baris, bentuk tombol dan modal — bukan paletnya.
+
+---
+
+### [ADDITION] Pintu Masuk Langganan & Ringkasan Tagihan di Dashboard (BL-040)
+- **Tanggal:** 2026-07-31
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-040]`
+- **Dampak:** Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak. Tidak ada rute, kolom, maupun bentuk data yang berubah; yang ditambahkan hanya satu prop baru di dashboard dan satu entri navigasi.
+- **Deskripsi:** Halaman `/langganan` kini punya pintu masuk tetap — entri "Langganan & Tagihan" di grup Pengaturan pada sidebar owner — dan dashboard membawa ringkasan keadaan langganan: label status, jalur harga, tanggal berakhirnya periode, serta tagihan terbuka berikut nominal dan jatuh temponya.
+- **Alasan:** Seluruh isi yang diminta pemilik sebenarnya sudah dirender halaman langganan sejak `PHASE SAAS`. Yang tidak ada adalah cara menemukannya: tidak satu pun berkas di `resources/js` menaut ke sana selain halaman Billing itu sendiri. Praktis, owner baru sampai ke sana kalau mengetik URL-nya, atau kalau langganannya **sudah terlanjur bermasalah** dan gerbangnya melempar ke sana — persis kebalikan dari gunanya.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `suspensionDateFor()` dan `outstandingInvoice()`
+  - `app/Http/Controllers/Owner/DashboardController.php` — prop `subscription`
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — perhitungan `suspends_at` pindah ke service
+  - `resources/js/Layouts/OwnerLayout.vue` — entri navigasi
+  - `resources/js/Pages/Owner/Dashboard.vue` — kartu ringkasan
+  - `tests/Feature/Owner/DashboardTest.php` — 7 test baru
+- **Keputusan yang perlu diingat:**
+  - **Tanggal penangguhan berpindah ke `SubscriptionService::suspensionDateFor()`.** Sebelumnya ia dihitung inline di controller Billing; menyalinnya ke dashboard akan melahirkan kebenaran kedua yang bercabang begitu `grace_days` diubah. Ia tetap dihitung, bukan disimpan.
+  - **Entri navigasinya `ownerOnly`, rutenya TIDAK.** Halaman langganan sengaja terbuka untuk semua pengguna tenant — begitu tenant ditangguhkan setiap halaman lain mengarah ke sana, dan kasir yang sedang bekerja tidak boleh mendarat di 403. Yang dibatasi hanya pintu masuk tetapnya: tagihan adalah urusan owner dengan penyedia layanan.
+  - **`rejected` dan `awaiting_verification` ikut dihitung tagihan terbuka.** `rejected` justru yang paling perlu terlihat — buktinya ditolak, jadi tagihannya kembali menunggu tindakan. `awaiting_verification` tidak menuntut apa-apa dari tenant, tapi menyembunyikannya membuat owner mengira tak ada tagihan sama sekali sampai buktinya ternyata ditolak.
+  - **Diurut menurut jatuh tempo, bukan id.** Tagihan upgrade terbit di tengah periode dan bisa jatuh tempo lebih dulu daripada tagihan bulanan yang nomornya lebih kecil.
+  - **Tanpa tagihan terbuka, barisnya tidak muncul sama sekali** — bukan "Rp 0". Nominal nol adalah pernyataan tentang uang; diam bukan.
+  - **Tanggal kalender dirakit komponennya, bukan lewat `new Date(string)`.** Pola yang sama dengan halaman Langganan: bentuk `'2026-08-21'` dibaca sebagai tengah malam UTC dan mundur sehari di zona yang di belakang UTC.
+- **Catatan:** halaman `/langganan` tetap berdiri sendiri di luar `OwnerLayout` — ia harus tetap masuk akal bagi kasir dan bagi tenant yang ditangguhkan, dan ia sudah punya tautan "Kembali ke aplikasi" sendiri. Kartu ringkasan ini juga memperlihatkan `[BL-041]` secara telanjang di layar: tenant jalur normal menampilkan tarif **Rp 0**, karena paket `dasar` memang belum diberi angka.
 
 ---
 

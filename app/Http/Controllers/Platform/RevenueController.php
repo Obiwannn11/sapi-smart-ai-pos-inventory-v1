@@ -7,18 +7,25 @@ use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
+use App\Services\Platform\AccountOverview;
 use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Rincian omzet satu tenant jalur subsidi.
+ * Rincian omzet satu tenant jalur Harga Adaptif.
  *
- * Halaman ini adalah SATU-SATUNYA tempat angka rupiah omzet klien terlihat.
- * Daftar langganan hanya menampilkan kelompok harganya. Bedanya halus tapi
- * nyata: yang pertama membuka data saat memang dibutuhkan, yang kedua akan
+ * Rute ini adalah SATU-SATUNYA tempat angka rupiah omzet klien terlihat.
+ * Daftar dan rincian akun hanya menampilkan kelompok harganya. Bedanya halus
+ * tapi nyata: yang pertama membuka data saat memang dibutuhkan, yang kedua akan
  * membukanya terus-menerus di layar sehari-hari.
+ *
+ * Sejak halaman langganan dan pembayaran menyatu, ia merender KOMPONEN YANG
+ * SAMA dengan rincian tenant — hanya dengan bagian omzetnya terisi, sehingga
+ * pembacanya mendarat langsung di tab Omzet. Yang dijaga bukan halaman yang
+ * terpisah, melainkan TINDAKAN yang terpisah: satu alamat sendiri, satu gerbang
+ * modul sendiri, satu baris audit tiap kali dibuka.
  *
  * Membukanya SELALU tercatat sebagai kejadian `sensitive` — tanpa deduplikasi.
  * Inilah yang membuat janji di dokumen persetujuan ("setiap kali itu dilakukan,
@@ -29,9 +36,11 @@ use Inertia\Response;
  */
 class RevenueController extends Controller
 {
+    public function __construct(private readonly AccountOverview $overview) {}
+
     public function show(Request $request, Tenant $tenant, PricingService $pricing): Response
     {
-        // Tenant jalur normal tidak punya rincian omzet untuk dilihat, dan
+        // Tenant jalur harga tetap tidak punya rincian omzet untuk dilihat, dan
         // halamannya pun tidak boleh terbuka untuk mereka. Menampilkan halaman
         // kosong akan mengaburkan batas yang justru ingin ditegaskan.
         abort_unless($tenant->pricing_track === Subscription::TRACK_SUBSIDIZED, 404);
@@ -52,13 +61,12 @@ class RevenueController extends Controller
             'periods' => $metrics->pluck('period')->all(),
         ]);
 
-        return Inertia::render('Platform/Revenue/Show', [
-            'tenant' => [
-                'id' => $tenant->id,
-                'name' => $tenant->name,
+        return Inertia::render('Platform/Tenants/Show', [
+            ...$this->overview->for($tenant, $request->user()),
+            'revenue' => [
+                'metrics' => $metrics,
+                'retention_months' => (int) config('subscription.metrics_retention_months'),
             ],
-            'metrics' => $metrics,
-            'retention_months' => (int) config('subscription.metrics_retention_months'),
         ]);
     }
 }

@@ -36,10 +36,10 @@ class AuthController extends Controller
             'business_name' => 'required|string|max:255',
             // Ditanyakan sejak awal karena ia dasar penetapan harga, dan
             // menanyakannya belakangan berarti seluruh tenant yang mendaftar
-            // lebih dulu tak pernah punya nilainya. `nullable` agar pendaftaran
-            // tidak dijegal oleh pertanyaan yang jawabannya bisa "belum jelas" —
-            // aturan harga yang menyebut dimensi ini cukup tidak cocok untuk
-            // mereka, dan itu perilaku yang benar.
+            // lebih dulu tak pernah punya nilainya. Tetap `nullable` supaya
+            // pendaftaran tidak dijegal pertanyaan yang jawabannya bisa "belum
+            // jelas" — yang kosong jatuh ke bawaan netral, bukan ke `null`, dan
+            // pemiliknya bisa memperbaikinya sendiri dari Pengaturan.
             'business_type' => ['nullable', Rule::in(array_keys(config('pricing-dimensions.business_type.options', [])))],
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
@@ -58,7 +58,10 @@ class AuthController extends Controller
 
             $tenant = Tenant::create([
                 'name' => $validated['business_name'],
-                'business_type' => $validated['business_type'] ?? null,
+                // Kunci ini bisa TIDAK ADA sama sekali, bukan sekadar kosong:
+                // aturan `nullable` membuat field yang tak dikirim hilang dari
+                // hasil validasi.
+                'business_type' => ($validated['business_type'] ?? null) ?: Tenant::BUSINESS_TYPE_DEFAULT,
                 'slug' => $slug,
                 'status' => Tenant::STATUS_TRIAL,
             ]);

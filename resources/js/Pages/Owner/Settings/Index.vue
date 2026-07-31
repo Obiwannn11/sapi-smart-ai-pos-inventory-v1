@@ -7,6 +7,7 @@ defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     tenant: Object,
+    businessTypes: { type: Object, default: () => ({}) },
     features: Object,
     featureWarnings: Object,
     aiFreeTier: Object,
@@ -16,6 +17,7 @@ const props = defineProps({
 const form = useForm({
     address:     props.tenant.address ?? '',
     phone:       props.tenant.phone ?? '',
+    business_type: props.tenant.business_type ?? 'lainnya',
     ai_provider: props.tenant.ai_provider ?? '',
     ai_model:    props.tenant.ai_model ?? '',
     ai_api_key:  '',
@@ -118,6 +120,30 @@ const revokeMcpToken = () => {
                         :class="{ 'border-red-300': form.errors.phone }"
                     />
                     <p v-if="form.errors.phone" class="mt-1 text-xs text-red-600">{{ form.errors.phone }}</p>
+                </div>
+
+                <!-- Jenis Usaha -->
+                <!-- Sebelumnya kolom ini hanya bisa diubah dari panel pengelola
+                     layanan. Tempatnya di sini: yang tahu jenis usahanya adalah
+                     Anda, dan keterangan usaha yang bisa diganti pihak lain
+                     tanpa sepengetahuan pemiliknya bukan keterangan yang sehat. -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Jenis Usaha</label>
+                    <select
+                        v-model="form.business_type"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        :class="{ 'border-red-300': form.errors.business_type }"
+                    >
+                        <option v-for="(label, value) in businessTypes" :key="value" :value="value">
+                            {{ label }}
+                        </option>
+                    </select>
+                    <p v-if="form.errors.business_type" class="mt-1 text-xs text-red-600">{{ form.errors.business_type }}</p>
+                    <p v-else class="mt-1 text-xs text-gray-500 leading-relaxed">
+                        Ikut menentukan tarif langganan Anda. Mengubahnya
+                        <span class="font-medium text-gray-700">tidak mengubah tagihan yang sudah terbit</span> —
+                        pengaruhnya baru terasa di periode berikutnya.
+                    </p>
                 </div>
 
                 <!-- Mode & Fitur Outlet -->

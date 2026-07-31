@@ -84,7 +84,7 @@ class ConsentController extends Controller
             $this->subscriptions->switchToSubsidized($tenant);
 
             return redirect()->route('billing.show')
-                ->with('success', 'Pengajuan subsidi tercatat. Tarif Anda mengikuti kelompok omzet mulai periode berikutnya.');
+                ->with('success', 'Pengajuan Harga Adaptif tercatat. Tarif Anda mengikuti kelompok omzet mulai periode berikutnya.');
         }
 
         return redirect()->route('billing.show')->with('success', 'Persetujuan tercatat. Terima kasih.');
@@ -103,12 +103,12 @@ class ConsentController extends Controller
         $dicabut = $this->consents->revoke($tenant, TenantConsent::TYPE_SUBSIDIZED);
 
         if ($dicabut === 0) {
-            return back()->with('error', 'Tidak ada persetujuan jalur subsidi yang aktif.');
+            return back()->with('error', 'Tidak ada persetujuan Harga Adaptif yang aktif.');
         }
 
         $this->subscriptions->scheduleTrackRevert($tenant);
 
-        return back()->with('success', 'Persetujuan dicabut dan ringkasan omzet Anda dihapus. Tarif subsidi tetap berlaku sampai akhir periode berjalan.');
+        return back()->with('success', 'Persetujuan dicabut dan ringkasan omzet Anda dihapus. Tarif adaptif tetap berlaku sampai akhir periode berjalan.');
     }
 
     private function isKnownType(string $type): bool

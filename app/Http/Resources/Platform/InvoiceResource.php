@@ -25,6 +25,13 @@ class InvoiceResource extends JsonResource
         return [
             'id' => $this->id,
             'period' => $this->period,
+            // Tagihan langganan berkala dan tagihan penambahan pengguna terlihat
+            // sama begitu keduanya berbaris di satu daftar riwayat — hanya
+            // nominalnya yang berbeda, dan itu tidak cukup untuk membedakan
+            // "iuran bulan ini" dari "tambah satu kasir".
+            'kind' => $this->kind,
+            'grants_seats' => $this->grants_seats,
+            'previous_seats' => $this->previous_seats,
             'amount' => (float) $this->amount,
             'status' => $this->status,
             'due_date' => $this->due_date?->toDateString(),

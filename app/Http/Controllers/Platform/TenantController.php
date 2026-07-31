@@ -6,9 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Platform\TenantResource;
 use App\Models\PlatformAuditLog;
 use App\Models\Tenant;
-use Illuminate\Http\RedirectResponse;
+use App\Services\Platform\AccountOverview;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -19,13 +18,23 @@ use Inertia\Response;
  * operasional (Transaction, Product, StockMovement, AiAnalysis, Category)
  * TIDAK boleh diimpor di sini — ditegakkan oleh PlatformArchTest.
  *
- * Read-only sejak Tahap A, dengan SATU pengecualian sejak `[BL-015]`: tipe
- * usaha bisa dikoreksi dari sini. Alasannya kebutuhan, bukan kemudahan —
- * seluruh tenant yang mendaftar sebelum pertanyaannya ada bernilai kosong, dan
- * tanpa jalan mengisinya dimensi harga itu tidak berguna bagi mereka selamanya.
+ * Read-only, tanpa kecuali.
+ *
+ * Sempat ada satu pengecualian sejak `[BL-015]`: tipe usaha bisa dikoreksi dari
+ * sini, sebagai jalan mengisi tenant lama yang mendaftar sebelum pertanyaannya
+ * ada. Pengecualian itu dicabut. Kebutuhannya kini dijawab nilai bawaan pada
+ * kolomnya plus form di Pengaturan milik pemilik toko — dan itu jawaban yang
+ * lebih benar, karena mengubah keterangan usaha orang tanpa sepengetahuannya
+ * bukan kewenangan penyedia layanan, sekalipun nilainya ikut menentukan tarif.
+ *
+ * Nilainya tetap TERLIHAT di sini. Yang dicabut adalah kuasa mengubahnya, bukan
+ * kuasa mengetahuinya — pemilik SaaS tetap perlu tahu atas dasar apa sebuah
+ * tarif jatuh ke tenant tertentu.
  */
 class TenantController extends Controller
 {
+    public function __construct(private readonly AccountOverview $overview) {}
+
     public function index(Request $request): Response
     {
         $tenants = Tenant::query()
@@ -43,42 +52,37 @@ class TenantController extends Controller
         // baris identik yang menenggelamkan kejadian penting.
         PlatformAuditLog::recordRoutine('tenants.index');
 
+        // Tipe usaha tidak lagi ikut di daftar: ia pindah ke rincian, dan
+        // labelnya dirakit di `AccountOverview` dari katalog yang sama
+        // (`pricing-dimensions`). Mengirim katalognya ke sini hanya akan jadi
+        // payload yang tidak ada yang membaca.
         return Inertia::render('Platform/Tenants/Index', [
             'tenants' => TenantResource::collection($tenants),
-            // Pilihan tipe usaha datang dari katalog dimensi harga, bukan dari
-            // daftar terpisah. Dua daftar yang harus dijaga sinkron pasti
-            // bercabang, dan cabangnya baru terlihat saat sebuah aturan harga
-            // diam-diam berhenti cocok.
-            'business_types' => config('pricing-dimensions.business_type.options', []),
         ]);
     }
 
     /**
-     * Koreksi tipe usaha satu tenant.
+     * Rincian satu tenant: identitas, langganan, tagihan, dan kapabilitas
+     * kasirnya — dipisah bertab, bukan satu gulungan.
      *
-     * Dicatat `sensitive` meski nilainya bukan data bisnis: ia DASAR PENETAPAN
-     * HARGA, dan mengubahnya bisa memindahkan tenant ke tarif yang berbeda.
-     * Perubahan yang bisa menggeser tagihan orang harus punya jejak yang
-     * menyebut nilai lama dan barunya sekaligus.
+     * Halaman ini dulu milik modul langganan, sehingga daftar yang digerbang
+     * `tenants` menaut ke alamat yang digerbang `subscriptions,payments`. Yang
+     * pindah hanyalah kepemilikannya; isinya tetap disaring per modul oleh
+     * `AccountOverview`, jadi staf yang hanya memegang daftar tenant menerima
+     * halaman berisi sebagian — bukan halaman error.
+     *
+     * Angka omzet TIDAK ikut. Membukanya adalah tindakan tersendiri lewat rute
+     * beraudit (`RevenueController`), dan pemisahan itu disengaja: menengok
+     * keterangan tenant tidak boleh menghasilkan catatan "membuka data bisnis
+     * klien" yang tak pernah benar-benar terjadi.
      */
-    public function updateBusinessType(Request $request, Tenant $tenant): RedirectResponse
+    public function show(Request $request, Tenant $tenant): Response
     {
-        $validated = $request->validate([
-            'business_type' => [
-                'nullable',
-                Rule::in(array_keys(config('pricing-dimensions.business_type.options', []))),
-            ],
+        PlatformAuditLog::recordRoutine('tenants.show', $tenant);
+
+        return Inertia::render('Platform/Tenants/Show', [
+            ...$this->overview->for($tenant, $request->user()),
+            'revenue' => null,
         ]);
-
-        $sebelum = $tenant->business_type;
-
-        $tenant->update(['business_type' => $validated['business_type'] ?? null]);
-
-        PlatformAuditLog::record('tenants.business-type.update', $tenant, [
-            'before' => $sebelum,
-            'after' => $tenant->business_type,
-        ]);
-
-        return back()->with('success', 'Tipe usaha diperbarui. Tarif yang sedang berjalan tidak berubah.');
     }
 }

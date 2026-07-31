@@ -51,7 +51,7 @@ return [
                 ],
                 'langganan' => [
                     'title' => 'Langganan & Pembayaran',
-                    'summary' => 'Masa coba, tarif, batas pengguna, dan jalur subsidi UMKM.',
+                    'summary' => 'Masa coba, tarif, batas pengguna, dan jalur Harga Adaptif.',
                 ],
             ],
         ],

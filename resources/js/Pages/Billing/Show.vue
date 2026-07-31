@@ -124,7 +124,7 @@ const submitProof = () => {
     });
 };
 
-// --- Jalur subsidi ---
+// --- Jalur Harga Adaptif ---
 const revokeForm = useForm({});
 const confirmingRevoke = ref(false);
 
@@ -209,10 +209,10 @@ const invoiceStatusLabels = {
                 </Link>
             </div>
 
-            <!-- Jalur subsidi -->
+            <!-- Jalur Harga Adaptif -->
             <div class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
                 <p class="text-sm font-medium text-foreground">
-                    {{ subsidy.is_active ? 'Jalur subsidi UMKM' : 'Harga menyesuaikan kemampuan bayar' }}
+                    {{ subsidy.is_active ? 'Harga Adaptif — aktif' : 'Harga Adaptif' }}
                 </p>
 
                 <template v-if="subsidy.is_active">
@@ -226,8 +226,8 @@ const invoiceStatusLabels = {
                     </p>
 
                     <p v-if="subsidy.reverts_at" class="mt-2 text-sm text-foreground">
-                        Persetujuan sudah dicabut. Tarif subsidi berlaku sampai {{ formatDate(subsidy.reverts_at) }},
-                        setelah itu kembali ke tarif normal.
+                        Persetujuan sudah dicabut. Tarif adaptif berlaku sampai {{ formatDate(subsidy.reverts_at) }},
+                        setelah itu kembali ke Harga Tetap.
                     </p>
 
                     <div v-else-if="tenant.is_owner" class="mt-3">
@@ -236,12 +236,12 @@ const invoiceStatusLabels = {
                             class="text-sm font-medium text-destructive hover:text-destructive/80"
                             @click="confirmingRevoke = true"
                         >
-                            Cabut persetujuan subsidi
+                            Cabut persetujuan Harga Adaptif
                         </button>
 
                         <div v-else class="rounded-lg border border-destructive/40 bg-destructive/10 px-3.5 py-3">
                             <p class="text-sm text-foreground leading-relaxed">
-                                Ringkasan omzet Anda dihapus seketika. Tarif subsidi tetap berlaku sampai akhir
+                                Ringkasan omzet Anda dihapus seketika. Tarif adaptif tetap berlaku sampai akhir
                                 periode berjalan, jadi tagihan Anda tidak naik mendadak.
                             </p>
                             <div class="mt-3 flex gap-3">
@@ -262,9 +262,9 @@ const invoiceStatusLabels = {
 
                 <template v-else>
                     <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                        Anda bisa mengajukan harga subsidi. Sebagai gantinya, omzet bulanan Anda dihitung otomatis
-                        dan angka persisnya bisa dilihat pengelola layanan untuk menentukan tarif. Bacalah
-                        dokumennya sebelum memutuskan.
+                        Tarif yang mengikuti omzet usaha Anda, bukan daftar harga tetap. Sebagai gantinya, omzet
+                        bulanan Anda dihitung otomatis dan angka persisnya bisa dilihat pengelola layanan untuk
+                        menentukan tarif. Bacalah dokumennya sebelum memutuskan.
                     </p>
 
                     <p v-if="!subsidy.can_switch" class="mt-2 text-sm text-foreground">
@@ -275,7 +275,7 @@ const invoiceStatusLabels = {
                         href="/langganan/persetujuan/subsidized"
                         class="mt-3 inline-block text-sm font-medium text-primary hover:text-primary/80 transition-colors duration-150"
                     >
-                        Baca ketentuan subsidi
+                        Baca ketentuan Harga Adaptif
                     </Link>
                 </template>
             </div>

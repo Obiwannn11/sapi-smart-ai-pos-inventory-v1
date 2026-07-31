@@ -28,6 +28,19 @@ class Tenant extends Model
     /** Tenggang habis tanpa penyelesaian — akses ditutup. */
     public const STATUS_SUSPENDED = 'suspended';
 
+    /**
+     * Tipe usaha bawaan untuk tenant yang belum menjawabnya.
+     *
+     * Nilainya harus ada di `config('pricing-dimensions.business_type.options')`
+     * — ia dipakai sebagai nilai awal form pendaftaran DAN sebagai isian
+     * migrasi backfill, jadi keduanya tak boleh menyimpang satu sama lain.
+     *
+     * `lainnya`, bukan tipe yang paling umum: menebak "kuliner" karena itu
+     * mayoritas berarti memasang dasar harga yang salah pada orang yang belum
+     * pernah ditanya. Bawaan yang netral tidak mengaku tahu apa pun.
+     */
+    public const BUSINESS_TYPE_DEFAULT = 'lainnya';
+
     protected $fillable = [
         'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
@@ -46,6 +59,7 @@ class Tenant extends Model
      */
     protected $attributes = [
         'status' => self::STATUS_TRIAL,
+        'business_type' => self::BUSINESS_TYPE_DEFAULT,
         'pricing_track' => Subscription::TRACK_NORMAL,
         'kitchen_queue_enabled' => false,
         'self_order_enabled' => false,
