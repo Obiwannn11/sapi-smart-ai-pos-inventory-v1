@@ -22,6 +22,7 @@ const form = useForm({
     kitchen_queue_enabled: props.features.kitchen_queue_enabled,
     self_order_enabled:    props.features.self_order_enabled,
     ai_enabled:            props.features.ai_enabled,
+    upsell_mandatory:      props.features.upsell_mandatory,
 });
 
 // Peringatan hanya relevan saat owner sedang MEMATIKAN fitur yang masih punya
@@ -171,6 +172,29 @@ const revokeMcpToken = () => {
                             <span>
                                 Masih ada <strong>{{ featureWarnings.pending_analyses }}</strong> analisis yang mengantre.
                                 Analisis itu akan gagal dengan keterangan fitur tidak aktif — kuota harian Anda tidak terpakai.
+                            </span>
+                        </div>
+
+                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+                            <input v-model="form.upsell_mandatory" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                            <span class="text-sm">
+                                <span class="font-medium text-gray-900 block">Penawaran wajib diselesaikan</span>
+                                <span class="text-xs text-gray-500">
+                                    Kasir tidak bisa menekan BAYAR sampai tiap saran dijawab — ditandai
+                                    <strong>diterima</strong> atau <strong>ditolak pelanggan</strong>. Keduanya sah;
+                                    yang tidak bisa hanyalah melewatinya tanpa menjawab.
+                                </span>
+                            </span>
+                        </label>
+
+                        <div v-if="form.upsell_mandatory && !features.upsell_mandatory" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                            <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                            </svg>
+                            <span>
+                                Ini satu-satunya pengaturan yang bisa <strong>menahan penjualan</strong>.
+                                Kasir yang antre panjang akan menekan "ditolak" tanpa menawarkan kalau merasa terburu —
+                                angka penolakan yang melonjak adalah tanda pertama itu terjadi.
                             </span>
                         </div>
                     </div>

@@ -76,7 +76,7 @@ class UpsellEventRecorder
                 continue;
             }
 
-            if (! in_array($status, [UpsellEvent::STATUS_ACCEPTED, UpsellEvent::STATUS_IGNORED], true)) {
+            if (! in_array($status, UpsellEvent::statuses(), true)) {
                 continue;
             }
 

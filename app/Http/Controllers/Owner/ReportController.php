@@ -164,14 +164,28 @@ class ReportController extends Controller
 
         $shown = $scoped()->count();
         $accepted = $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->count();
+        $rejected = $scoped()->where('status', UpsellEvent::STATUS_REJECTED)->count();
         $extraRevenue = (float) $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->sum('extra_amount');
+
+        // Dua angka berbeda, dan membedakannya adalah inti [BL-025]:
+        //
+        //   conversion_rate — dari SEMUA yang tampil. Menjawab "seberapa sering
+        //     saran berujung penjualan", termasuk yang cuma lewat.
+        //   offer_rate      — dari yang BENAR-BENAR ditawarkan ke pelanggan
+        //     (diterima + ditolak). Menjawab "kalau kasir menawarkan, seberapa
+        //     sering pelanggan mau" — dan hanya angka ini yang bisa menilai
+        //     sarannya sendiri, bukan kedisiplinan kasirnya.
+        $offered = $accepted + $rejected;
 
         return Inertia::render('Owner/Reports/Upsell', [
             'filters' => ['from' => $from, 'to' => $to],
             'summary' => [
                 'shown' => $shown,
                 'accepted' => $accepted,
+                'rejected' => $rejected,
+                'offered' => $offered,
                 'conversion_rate' => $shown > 0 ? round($accepted / $shown * 100, 1) : 0,
+                'offer_rate' => $offered > 0 ? round($accepted / $offered * 100, 1) : 0,
                 'extra_revenue' => $extraRevenue,
             ],
             'byType' => $this->upsellBreakdown($scoped(), 'type'),

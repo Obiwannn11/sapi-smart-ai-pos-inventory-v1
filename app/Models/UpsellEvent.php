@@ -31,6 +31,15 @@ class UpsellEvent extends Model
 
     public const STATUS_IGNORED = 'ignored';
 
+    /**
+     * Ditolak pelanggan setelah BENAR-BENAR ditawarkan — berbeda dari
+     * `ignored`, yang berarti saran sempat tampil lalu berlalu tanpa keputusan.
+     * Mencampur keduanya membuat angka "berapa persen saran diterima" tak
+     * berarti: penyebutnya jadi campuran penawaran nyata dan saran yang cuma
+     * lewat ([BL-025]).
+     */
+    public const STATUS_REJECTED = 'rejected';
+
     public const REASON_COOCCURRENCE = 'cooccurrence';
 
     public const REASON_CATALOG = 'catalog';
@@ -60,6 +69,25 @@ class UpsellEvent extends Model
     public static function types(): array
     {
         return [self::TYPE_ATTACH, self::TYPE_PRESSED_STOCK, self::TYPE_UPSIZE];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function statuses(): array
+    {
+        return [self::STATUS_ACCEPTED, self::STATUS_IGNORED, self::STATUS_REJECTED];
+    }
+
+    /**
+     * Saran yang benar-benar sampai ke pelanggan — penyebut yang jujur untuk
+     * tingkat penerimaan.
+     *
+     * @return list<string>
+     */
+    public static function offeredStatuses(): array
+    {
+        return [self::STATUS_ACCEPTED, self::STATUS_REJECTED];
     }
 
     /**

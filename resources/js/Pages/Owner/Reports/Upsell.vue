@@ -63,7 +63,7 @@ const applyFilter = () => {
 
         <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <MetricCard title="Saran Tampil" :value="summary.shown" icon="chart" color="muted" />
-            <MetricCard title="Diambil" :value="summary.accepted" icon="receipt" color="primary" />
+            <MetricCard title="Diterima" :value="summary.accepted" icon="receipt" color="primary" />
             <MetricCard
                 title="Tingkat Terima"
                 :value="summary.conversion_rate + '%'"
@@ -76,6 +76,27 @@ const applyFilter = () => {
                 icon="currency"
                 color="success"
             />
+        </div>
+
+        <!-- Dua angka yang mudah tertukar, dan bedanya menentukan apa yang
+             sebenarnya sedang dinilai. `Tingkat Terima` dihitung dari SEMUA
+             saran yang tampil, jadi ia ikut mengukur seberapa sering kasir
+             benar-benar menawarkan. `Tingkat Sukses Tawar` hanya menghitung
+             yang benar-benar sampai ke pelanggan — inilah yang menilai mutu
+             sarannya sendiri. ([BL-025]) -->
+        <div v-if="summary.offered > 0" class="rounded-lg border border-border bg-muted/40 px-4 py-3">
+            <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+                <span class="font-medium text-foreground">
+                    Tingkat sukses tawar: {{ summary.offer_rate }}%
+                </span>
+                <span class="text-muted-foreground">
+                    dari {{ summary.offered }} yang benar-benar ditawarkan
+                    ({{ summary.accepted }} diterima, {{ summary.rejected }} ditolak)
+                </span>
+                <span v-if="summary.shown > summary.offered" class="text-muted-foreground">
+                    · {{ summary.shown - summary.offered }} tampil tanpa dijawab
+                </span>
+            </div>
         </div>
 
         <!-- Angka nol bukan kegagalan sistem; bedakan supaya owner tidak

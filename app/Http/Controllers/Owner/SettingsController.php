@@ -41,6 +41,12 @@ class SettingsController extends Controller
                 'kitchen_queue_enabled' => $tenant->kitchen_queue_enabled,
                 'self_order_enabled' => $tenant->self_order_enabled,
                 'ai_enabled' => $tenant->ai_enabled,
+                // Bukan kapabilitas modul seperti tiga di atas, melainkan
+                // ATURAN KERJA: menyalakannya menahan tombol bayar sampai tiap
+                // saran dijawab. Dikelompokkan di sini karena tempatnya sama di
+                // mata owner, tapi sengaja TIDAK masuk Tenant::hasFeature() —
+                // ia tidak menggerbangi rute atau modul apa pun ([BL-025]).
+                'upsell_mandatory' => $tenant->upsell_mandatory,
             ],
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
             // masih ada pekerjaan berjalan di baliknya.
@@ -96,6 +102,7 @@ class SettingsController extends Controller
             'kitchen_queue_enabled' => 'boolean',
             'self_order_enabled' => 'boolean',
             'ai_enabled' => 'boolean',
+            'upsell_mandatory' => 'boolean',
         ]);
 
         // Jangan overwrite key jadi null kalau field dikosongkan tanpa maksud hapus.

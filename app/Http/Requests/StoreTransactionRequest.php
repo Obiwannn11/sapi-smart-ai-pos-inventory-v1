@@ -79,7 +79,7 @@ class StoreTransactionRequest extends FormRequest
             // penjualan yang sah.
             'upsell_events' => 'nullable|array|max:20',
             'upsell_events.*.type' => 'required|string|in:'.implode(',', UpsellEvent::types()),
-            'upsell_events.*.status' => 'required|string|in:'.UpsellEvent::STATUS_ACCEPTED.','.UpsellEvent::STATUS_IGNORED,
+            'upsell_events.*.status' => 'required|string|in:'.implode(',', UpsellEvent::statuses()),
             'upsell_events.*.reason' => 'nullable|string|max:50',
             'upsell_events.*.label' => 'required|string|max:255',
             'upsell_events.*.extra_amount' => 'nullable|numeric|min:0',

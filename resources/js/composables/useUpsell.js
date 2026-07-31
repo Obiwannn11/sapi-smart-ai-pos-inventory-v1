@@ -8,19 +8,24 @@
  * tetap muncul saat perangkat offline — endpoint per-perubahan-keranjang akan
  * mati justru di warung yang sinyalnya paling buruk.
  *
- * Dua aturan yang menentukan fiturnya dipakai atau ditutup terus:
+ * Tiga aturan yang menentukan fiturnya dipakai atau ditutup terus:
  *
- *   Saran yang sudah ditutup TIDAK muncul lagi selama keranjang itu hidup.
- *   Saran yang muncul kembali setelah ditutup adalah cara tercepat membuat
+ *   Saran yang sudah diputuskan TIDAK muncul lagi selama keranjang itu hidup.
+ *   Saran yang muncul kembali setelah ditolak adalah cara tercepat membuat
  *   kasir membenci fitur ini.
  *
  *   Yang sempat TAMPIL tetap dicatat meski tidak diambil. Tanpa penyebutnya,
  *   angka "berapa persen saran diterima" tidak berarti apa-apa.
+ *
+ *   DITOLAK berbeda dari DIABAIKAN. Yang pertama sampai ke pelanggan dan
+ *   dijawab tidak; yang kedua cuma lewat di layar kasir. Mencampur keduanya
+ *   membuat angka konversi mengukur kedisiplinan kasir dan mutu saran
+ *   sekaligus, sehingga tidak mengukur apa pun ([BL-025]).
  */
 
 import { ref, computed, watch } from 'vue';
 
-const EMPTY_INDEX = { by_variant: {}, cart_level: [], max_per_transaction: 2 };
+const EMPTY_INDEX = { by_variant: {}, cart_level: [], max_per_transaction: 2, mandatory: false };
 
 /**
  * @param {import('vue').Ref|import('vue').ComputedRef} index  indeks saran dari server
@@ -30,8 +35,13 @@ const EMPTY_INDEX = { by_variant: {}, cart_level: [], max_per_transaction: 2 };
  * @param {(variantId: number) => number} options.getCartQtyForVariant
  */
 export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }) {
-    // Ditutup kasir — per keranjang, bukan per sesi.
-    const dismissedKeys = ref(new Set());
+    // DITOLAK pelanggan setelah ditawarkan — per keranjang, bukan per sesi.
+    //
+    // Dulu bernama "dismissed" dan bermakna "tutup saran ini". Sejak mode wajib
+    // ada, tombol × berarti keputusan yang sesungguhnya: ditawarkan, pelanggan
+    // menolak. Keduanya sah menyelesaikan saran; yang tidak boleh hanyalah
+    // melewatinya tanpa keputusan ([BL-025]).
+    const rejectedKeys = ref(new Set());
 
     // Diambil kasir, beserta tambahan omzet yang benar-benar terjadi.
     const acceptedByKey = ref(new Map());
@@ -44,6 +54,9 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
     const maxPerTransaction = computed(
         () => activeIndex.value.max_per_transaction ?? EMPTY_INDEX.max_per_transaction
     );
+
+    /** Owner mewajibkan tiap saran diselesaikan sebelum boleh bayar. */
+    const mandatory = computed(() => activeIndex.value.mandatory === true);
 
     /**
      * Modifier yang sudah menempel pada baris keranjang varian tertentu.
@@ -74,7 +87,7 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
     };
 
     const isRelevant = (suggestion) => {
-        if (dismissedKeys.value.has(suggestion.key)) return false;
+        if (rejectedKeys.value.has(suggestion.key)) return false;
         if (acceptedByKey.value.has(suggestion.key)) return false;
 
         // Menyarankan sesuatu yang sudah ada di keranjang membuat saran
@@ -126,8 +139,16 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
         { immediate: true, deep: false }
     );
 
-    const dismiss = (suggestion) => {
-        dismissedKeys.value = new Set(dismissedKeys.value).add(suggestion.key);
+    /**
+     * Ditawarkan, pelanggan menolak. Dicatat sebagai keputusan — bukan sebagai
+     * saran yang berlalu begitu saja.
+     */
+    const reject = (suggestion) => {
+        rejectedKeys.value = new Set(rejectedKeys.value).add(suggestion.key);
+
+        if (!shownByKey.value.has(suggestion.key)) {
+            shownByKey.value.set(suggestion.key, suggestion);
+        }
     };
 
     /**
@@ -152,10 +173,15 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
     const collectEvents = () =>
         [...shownByKey.value.values()].map((suggestion) => {
             const accepted = acceptedByKey.value.get(suggestion.key);
+            const status = accepted
+                ? 'accepted'
+                : rejectedKeys.value.has(suggestion.key)
+                    ? 'rejected'
+                    : 'ignored';
 
             return {
                 type: suggestion.type,
-                status: accepted ? 'accepted' : 'ignored',
+                status,
                 reason: suggestion.reason ?? null,
                 label: suggestion.label,
                 extra_amount: accepted ? accepted.actual_extra_amount : 0,
@@ -167,15 +193,20 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
 
     /** Dipanggil setelah keranjang benar-benar selesai (checkout atau dikosongkan). */
     const reset = () => {
-        dismissedKeys.value = new Set();
+        rejectedKeys.value = new Set();
         acceptedByKey.value = new Map();
         shownByKey.value = new Map();
     };
 
     return {
         suggestions,
+        mandatory,
+        // Saran yang masih menunggu keputusan. Kosong = tidak ada yang menahan
+        // tombol bayar; `suggestions` sendiri sudah membuang yang diterima
+        // maupun yang ditolak.
+        unresolved: suggestions,
         accept,
-        dismiss,
+        reject,
         collectEvents,
         reset,
     };

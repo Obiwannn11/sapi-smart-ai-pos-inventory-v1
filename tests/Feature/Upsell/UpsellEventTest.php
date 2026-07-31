@@ -317,3 +317,110 @@ test('modifier yang disarankan divalidasi kepemilikannya lewat grupnya', functio
 
     expect(UpsellEvent::first()->suggested_modifier_id)->toBeNull();
 });
+
+// ── Penawaran wajib & status ditolak ([BL-025]) ─────────────────────────────
+
+test('status ditolak tersimpan terpisah dari diabaikan', function () {
+    actingAs($this->cashier);
+
+    post('/cashier/transactions', checkoutWith(
+        ['variant' => $this->variant, 'cash' => $this->cash],
+        [
+            [
+                'type' => 'upsize',
+                'status' => 'rejected',
+                'reason' => 'price_step',
+                'label' => 'Kopi Susu - Large',
+                'extra_amount' => 5000,
+                'trigger_variant_id' => $this->variant->id,
+                'suggested_variant_id' => $this->upsizeVariant->id,
+            ],
+            [
+                'type' => 'pressed_stock',
+                'status' => 'ignored',
+                'reason' => 'near_expiry',
+                'label' => 'Roti Sisa',
+            ],
+        ],
+    ))->assertSessionHas('success');
+
+    expect(UpsellEvent::where('status', UpsellEvent::STATUS_REJECTED)->count())->toBe(1)
+        ->and(UpsellEvent::where('status', UpsellEvent::STATUS_IGNORED)->count())->toBe(1)
+        // Ditolak berarti tidak ada omzet tambahan, sama seperti diabaikan.
+        ->and((float) UpsellEvent::where('status', UpsellEvent::STATUS_REJECTED)->value('extra_amount'))
+        ->toBe(0.0);
+});
+
+test('status di luar daftar tetap ditolak validasi', function () {
+    actingAs($this->cashier);
+
+    post('/cashier/transactions', checkoutWith(
+        ['variant' => $this->variant, 'cash' => $this->cash],
+        [[
+            'type' => 'upsize',
+            'status' => 'maybe',
+            'label' => 'Kopi Susu - Large',
+        ]],
+    ))->assertSessionHasErrors('upsell_events.0.status');
+});
+
+test('indeks upsell membawa saklar wajib milik tenant', function () {
+    actingAs($this->cashier);
+
+    get('/cashier/pos')->assertInertia(fn ($page) => $page->where('upsell.mandatory', false));
+
+    $this->tenant->update(['upsell_mandatory' => true]);
+
+    // actingAs memegang instance User yang SAMA lintas request dalam satu test,
+    // jadi relasi `tenant` yang sudah ter-load ikut terbawa basi. Login ulang
+    // dengan instance segar — ini artefak test, bukan perilaku request nyata.
+    actingAs($this->cashier->fresh());
+
+    get('/cashier/pos')->assertInertia(fn ($page) => $page->where('upsell.mandatory', true));
+});
+
+test('owner bisa menyalakan penawaran wajib dari pengaturan', function () {
+    $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'role' => 'owner']);
+
+    actingAs($owner)
+        ->patch('/owner/settings', ['upsell_mandatory' => true])
+        ->assertSessionHas('success');
+
+    expect($this->tenant->fresh()->upsell_mandatory)->toBeTrue();
+});
+
+test('laporan memisahkan tingkat terima dari tingkat sukses tawar', function () {
+    $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'role' => 'owner']);
+    $transaction = Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->cashier->id,
+    ]);
+
+    $make = fn (string $status) => UpsellEvent::create([
+        'tenant_id' => $this->tenant->id,
+        'transaction_id' => $transaction->id,
+        'type' => UpsellEvent::TYPE_UPSIZE,
+        'surface' => UpsellEvent::SURFACE_POS,
+        'status' => $status,
+        'label' => 'Kopi Susu - Large',
+        'extra_amount' => $status === UpsellEvent::STATUS_ACCEPTED ? 5000 : 0,
+    ]);
+
+    $make(UpsellEvent::STATUS_ACCEPTED);
+    $make(UpsellEvent::STATUS_REJECTED);
+    $make(UpsellEvent::STATUS_IGNORED);
+    $make(UpsellEvent::STATUS_IGNORED);
+
+    actingAs($owner)
+        ->get('/owner/reports/upsell')
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.shown', 4)
+            ->where('summary.accepted', 1)
+            ->where('summary.rejected', 1)
+            ->where('summary.offered', 2)
+            // 1 dari 4 yang tampil …
+            ->where('summary.conversion_rate', 25)
+            // … tapi 1 dari 2 yang benar-benar ditawarkan.
+            ->where('summary.offer_rate', 50)
+        );
+});

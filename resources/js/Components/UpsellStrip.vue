@@ -6,15 +6,21 @@
  * semuanya tanpa membaca, dan fiturnya mati diam-diam sambil tetap terlihat
  * "ada" saat didemokan. Jumlah barisnya sudah dibatasi di server
  * (`upsell.max_per_transaction`).
+ *
+ * Kedua tombolnya adalah KEPUTUSAN, bukan "ambil" dan "tutup": pelanggan
+ * menerima, atau pelanggan menolak. Keduanya sama-sama menyelesaikan saran —
+ * termasuk saat owner mewajibkannya. Yang tidak tersedia hanyalah melewatinya
+ * tanpa menjawab ([BL-025]).
  */
 import { computed } from 'vue';
 
 const props = defineProps({
     suggestions: { type: Array, default: () => [] },
     disabled: { type: Boolean, default: false },
+    mandatory: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['accept', 'dismiss']);
+const emit = defineEmits(['accept', 'reject']);
 
 const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
 
@@ -50,6 +56,7 @@ const visible = computed(() => props.suggestions ?? []);
     <div v-if="visible.length > 0" class="space-y-1.5">
         <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Saran untuk pelanggan
+            <span v-if="mandatory" class="ml-1 rounded bg-amber-100 px-1 py-0.5 text-amber-800">Wajib dijawab</span>
         </p>
 
         <TransitionGroup
@@ -91,14 +98,16 @@ const visible = computed(() => props.suggestions ?? []);
                     ]"
                     @click="emit('accept', suggestion)"
                 >
-                    Tawarkan
+                    Diterima
                 </button>
 
                 <button
                     type="button"
-                    class="shrink-0 rounded p-1 text-gray-400 transition hover:text-gray-700"
-                    title="Tutup saran ini"
-                    @click="emit('dismiss', suggestion)"
+                    :disabled="disabled"
+                    class="shrink-0 rounded p-1 text-gray-400 transition hover:text-destructive disabled:opacity-40"
+                    title="Ditolak pelanggan"
+                    aria-label="Ditolak pelanggan"
+                    @click="emit('reject', suggestion)"
                 >
                     <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

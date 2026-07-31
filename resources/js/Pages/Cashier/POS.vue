@@ -291,8 +291,10 @@ const removeCartItem = (index) => {
 // --- Upsell ---
 const {
     suggestions: upsellSuggestions,
+    mandatory: upsellMandatory,
+    unresolved: upsellUnresolved,
     accept: acceptUpsell,
-    dismiss: dismissUpsell,
+    reject: rejectUpsell,
     collectEvents: collectUpsellEvents,
     reset: resetUpsell,
 } = useUpsell(catalogUpsell, cart, { getVariantStock, getCartQtyForVariant });
@@ -396,8 +398,29 @@ const clearCart = () => {
 onUnmounted(() => clearTimeout(_clearTimer));
 
 // --- Checkout ---
+
+/**
+ * Kenapa tombol BAYAR mati. Dikembalikan sebagai kalimat, bukan boolean:
+ * tombol kelabu tanpa sebab adalah jalan buntu, dan kasir yang menemuinya di
+ * depan pelanggan tidak punya cara menebak apa yang kurang ([BL-025]).
+ */
+const checkoutBlockedReason = computed(() => {
+    if (cart.value.length === 0) return 'Keranjang masih kosong.';
+    if (processing.value) return '';
+
+    if (upsellMandatory.value && upsellUnresolved.value.length > 0) {
+        const labels = upsellUnresolved.value.map((s) => s.label).join(', ');
+
+        return `Selesaikan penawaran dulu: ${labels}. Tandai diterima atau ditolak pelanggan.`;
+    }
+
+    return '';
+});
+
+const canCheckout = computed(() => !processing.value && checkoutBlockedReason.value === '');
+
 const openPaymentModal = () => {
-    if (cart.value.length === 0) return;
+    if (!canCheckout.value) return;
     showPaymentModal.value = true;
 };
 
@@ -834,9 +857,22 @@ onUnmounted(stopResizeCart);
                     <UpsellStrip
                         :suggestions="upsellSuggestions"
                         :disabled="processing"
+                        :mandatory="upsellMandatory"
                         @accept="applyUpsell"
-                        @dismiss="dismissUpsell"
+                        @reject="rejectUpsell"
                     />
+
+                    <!-- Sebab tombol bayar mati, bukan sekadar tombol kelabu -->
+                    <div
+                        v-if="checkoutBlockedReason && cart.length > 0"
+                        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+                        role="status"
+                    >
+                        <svg class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        </svg>
+                        <span class="text-xs text-amber-800">{{ checkoutBlockedReason }}</span>
+                    </div>
 
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-600">Total</span>
@@ -853,7 +889,8 @@ onUnmounted(stopResizeCart);
                         </button>
                         <button
                             @click="openPaymentModal"
-                            :disabled="cart.length === 0 || processing"
+                            :disabled="!canCheckout"
+                            :title="checkoutBlockedReason || undefined"
                             class="flex-[2] py-3 bg-success text-success-foreground font-semibold rounded-lg hover:bg-success/90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

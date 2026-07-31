@@ -30,11 +30,17 @@ class UpsellIndexBuilder
     /**
      * Indeks penuh untuk dikirim ke POS.
      *
-     * @return array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, generated_at: string}
+     * @return array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, mandatory: bool, generated_at: string}
      */
     public function build(Tenant $tenant): array
     {
         $maxPerTransaction = (int) config('upsell.max_per_transaction', 2);
+
+        // Ikut indeks, bukan prop tersendiri: dengan begitu saklarnya
+        // ter-snapshot useCatalogCache bersama sarannya dan tetap berlaku saat
+        // perangkat offline. Saran yang wajib diselesaikan online tapi bebas
+        // dilewati offline adalah aturan yang tidak berarti apa-apa.
+        $mandatory = (bool) $tenant->upsell_mandatory;
 
         if (! config('upsell.enabled', true)) {
             return $this->emptyIndex($maxPerTransaction);
@@ -62,6 +68,7 @@ class UpsellIndexBuilder
                 $this->enabled('pressed_stock') ? $this->pressedStock->suggest($tenant) : [],
             ),
             'max_per_transaction' => $maxPerTransaction,
+            'mandatory' => $mandatory,
             'generated_at' => now()->toIso8601String(),
         ];
     }
@@ -135,7 +142,7 @@ class UpsellIndexBuilder
     }
 
     /**
-     * @return array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, generated_at: string}
+     * @return array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, mandatory: bool, generated_at: string}
      */
     private function emptyIndex(int $maxPerTransaction): array
     {
@@ -143,6 +150,8 @@ class UpsellIndexBuilder
             'by_variant' => [],
             'cart_level' => [],
             'max_per_transaction' => $maxPerTransaction,
+            // Tanpa saran, tidak ada yang bisa ditahan.
+            'mandatory' => false,
             'generated_at' => now()->toIso8601String(),
         ];
     }

@@ -33,6 +33,7 @@ class Tenant extends Model
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled',
+        'upsell_mandatory',
     ];
 
     protected $hidden = ['ai_api_key'];
@@ -49,6 +50,7 @@ class Tenant extends Model
         'kitchen_queue_enabled' => false,
         'self_order_enabled' => false,
         'ai_enabled' => true,
+        'upsell_mandatory' => false,
     ];
 
     protected function casts(): array
@@ -59,6 +61,7 @@ class Tenant extends Model
             'kitchen_queue_enabled' => 'boolean',
             'self_order_enabled' => 'boolean',
             'ai_enabled' => 'boolean',
+            'upsell_mandatory' => 'boolean',
         ];
     }
 
