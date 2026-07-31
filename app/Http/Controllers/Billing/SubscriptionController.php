@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
-use App\Models\Tenant;
 use App\Models\TenantConsent;
 use App\Services\ConsentService;
 use App\Services\PricingService;
@@ -52,11 +51,7 @@ class SubscriptionController extends Controller
                 // Tanggal penangguhan dihitung dan DITAMPILKAN, bukan disimpan
                 // diam-diam. Tenant di masa tenggang berhak tahu persis kapan
                 // pintunya tertutup, bukan sekadar bahwa ia akan tertutup.
-                'suspends_at' => $tenant->status === Tenant::STATUS_GRACE
-                    ? $subscription->current_period_end?->copy()
-                        ->addDays(SubscriptionService::graceDays())
-                        ->toDateString()
-                    : null,
+                'suspends_at' => $subscriptions->suspensionDateFor($tenant)?->toDateString(),
             ],
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),

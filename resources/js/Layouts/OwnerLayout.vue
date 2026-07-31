@@ -135,6 +135,13 @@ const sidebarGroups = [
         label: 'Pengaturan',
         items: [
             { name: 'Profil Usaha', href: '/owner/settings', icon: 'office-building', ownerOnly: true },
+            // Rutenya sendiri TIDAK digerbang role:owner — halaman langganan
+            // sengaja terbuka untuk semua pengguna tenant, karena begitu tenant
+            // ditangguhkan setiap halaman lain mengarah ke sana dan kasir yang
+            // sedang bekerja tidak boleh mendarat di 403. Yang `ownerOnly` di
+            // sini hanya PINTU MASUK tetapnya: tagihan adalah urusan owner
+            // dengan penyedia layanan, bukan bagian dari pekerjaan kasir.
+            { name: 'Langganan & Tagihan', href: '/langganan', icon: 'credit-card', ownerOnly: true },
         ],
     },
 ];

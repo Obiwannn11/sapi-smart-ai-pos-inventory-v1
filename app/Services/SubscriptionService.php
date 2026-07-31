@@ -28,6 +28,29 @@ class SubscriptionService
     }
 
     /**
+     * Tanggal akses ditutup sepenuhnya, bila tenant sedang di masa tenggang.
+     *
+     * Dihitung, bukan disimpan: menyimpannya berarti ada dua kebenaran yang
+     * bisa berselisih begitu `grace_days` diubah. Dipakai bersama halaman
+     * langganan dan ringkasan di dashboard — dua perhitungan yang mirip pasti
+     * bercabang begitu salah satunya diperbaiki.
+     *
+     * Mengembalikan null untuk status selain `grace`, karena di luar masa
+     * tenggang tanggal ini tidak punya arti apa pun.
+     */
+    public function suspensionDateFor(Tenant $tenant): ?Carbon
+    {
+        if ($tenant->status !== Tenant::STATUS_GRACE) {
+            return null;
+        }
+
+        return $this->ensureFor($tenant)
+            ->current_period_end
+            ?->copy()
+            ->addDays(self::graceDays());
+    }
+
+    /**
      * Pastikan tenant punya langganan, buatkan trial bila belum.
      *
      * Idempoten dan sengaja dipanggil dari beberapa tempat — registrasi,
@@ -220,6 +243,33 @@ class SubscriptionService
             ->where('kind', Invoice::KIND_UPGRADE)
             ->whereIn('status', [Invoice::STATUS_UNPAID, Invoice::STATUS_AWAITING_VERIFICATION])
             ->latest('id')
+            ->first();
+    }
+
+    /**
+     * Tagihan yang masih menuntut perhatian tenant — yang paling mendesak
+     * lebih dulu.
+     *
+     * Ketiga status non-lunas ikut dihitung terbuka, masing-masing dengan
+     * alasannya sendiri. `rejected` justru yang paling perlu terlihat: buktinya
+     * ditolak, jadi tagihannya kembali menunggu tindakan. `awaiting_verification`
+     * memang tidak menuntut apa-apa dari tenant, tapi menyembunyikannya membuat
+     * ia mengira tak ada tagihan sama sekali sampai buktinya ternyata ditolak.
+     *
+     * Diurut menurut jatuh tempo, bukan menurut id: tagihan upgrade terbit di
+     * tengah periode dan bisa jatuh tempo lebih dulu daripada tagihan bulanan
+     * yang nomornya lebih kecil.
+     */
+    public function outstandingInvoice(Tenant $tenant): ?Invoice
+    {
+        return $tenant->invoices()
+            ->whereIn('status', [
+                Invoice::STATUS_UNPAID,
+                Invoice::STATUS_REJECTED,
+                Invoice::STATUS_AWAITING_VERIFICATION,
+            ])
+            ->orderBy('due_date')
+            ->orderBy('id')
             ->first();
     }
 

@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
@@ -12,6 +13,7 @@ const props = defineProps({
     dailyTrend: Array,
     badges: Array,
     recentTransactions: Array,
+    subscription: Object,
 });
 
 const formatCurrency = (value) => {
@@ -31,6 +33,94 @@ const formatDate = (datetime) => {
         month: 'short',
     });
 };
+
+/**
+ * Tanggal kalender polos ('2026-08-21') dirakit komponennya sendiri, bukan
+ * lewat `new Date(string)`: bentuk itu dibaca sebagai tengah malam UTC,
+ * sehingga di zona yang di belakang UTC hasilnya mundur sehari. Zona Indonesia
+ * kebetulan aman, tapi jatuh tempo yang benar hanya karena kebetulan bukan
+ * jatuh tempo yang benar. Pola yang sama dipakai halaman Langganan.
+ */
+const formatCalendarDate = (value) => {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    });
+};
+
+const daysUntil = (value) => {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    return Math.ceil((new Date(year, month - 1, day) - new Date().setHours(0, 0, 0, 0)) / 86400000);
+};
+
+/**
+ * Satu sumber untuk nada dan kalimat tiap keadaan langganan. Ringkasan di sini
+ * sengaja lebih pendek daripada halaman `/langganan` — tugasnya cuma memberi
+ * tahu owner bahwa ada sesuatu yang perlu dilihat, dan menunjukkan jalannya.
+ */
+const billingState = computed(() => {
+    switch (props.subscription?.status) {
+        case 'trial':
+            return {
+                tone: 'neutral',
+                label: 'Masa coba',
+                body: `Semua fitur terbuka sampai ${formatCalendarDate(props.subscription.trial_ends_at)}.`,
+            };
+        case 'active':
+            return {
+                tone: 'neutral',
+                label: 'Langganan aktif',
+                body: `Periode berjalan sampai ${formatCalendarDate(props.subscription.period_ends_at)}.`,
+            };
+        case 'grace':
+            return {
+                tone: 'warning',
+                label: 'Masa tenggang',
+                body:
+                    'Transaksi dan perubahan baru tidak bisa disimpan. Akses ditutup sepenuhnya pada '
+                    + `${formatCalendarDate(props.subscription.suspends_at)}.`,
+            };
+        case 'suspended':
+            return {
+                tone: 'danger',
+                label: 'Ditangguhkan',
+                body: 'Selesaikan pembayaran untuk membuka kembali akses. Data Anda tidak dihapus.',
+            };
+        default:
+            return { tone: 'neutral', label: 'Langganan', body: '' };
+    }
+});
+
+const billingTones = {
+    neutral: {
+        card: 'bg-white border-gray-200', label: 'text-gray-700', body: 'text-gray-500',
+        divider: 'border-gray-100', chip: 'bg-gray-100 text-gray-600',
+    },
+    warning: {
+        card: 'bg-amber-50 border-amber-200', label: 'text-amber-800', body: 'text-amber-700',
+        divider: 'border-amber-200', chip: 'bg-amber-100 text-amber-800',
+    },
+    danger: {
+        card: 'bg-red-50 border-red-200', label: 'text-red-800', body: 'text-red-700',
+        divider: 'border-red-200', chip: 'bg-red-100 text-red-800',
+    },
+};
+
+const billingTone = computed(() => billingTones[billingState.value.tone]);
+
+const trialDaysLeft = computed(() =>
+    props.subscription?.status === 'trial' ? daysUntil(props.subscription.trial_ends_at) : null,
+);
+
+const invoiceStatusLabels = {
+    unpaid: 'Belum dibayar',
+    awaiting_verification: 'Menunggu diperiksa',
+    rejected: 'Bukti ditolak',
+};
 </script>
 
 <template>
@@ -41,6 +131,57 @@ const formatDate = (datetime) => {
         <div>
             <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
             <p class="text-sm text-gray-500 mt-1">Ringkasan bisnis Anda hari ini</p>
+        </div>
+
+        <!-- Ringkasan Langganan -->
+        <div
+            v-if="subscription"
+            :class="['rounded-xl shadow-sm border p-5', billingTone.card]"
+        >
+            <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <p class="text-sm font-semibold" :class="billingTone.label">{{ billingState.label }}</p>
+                        <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="billingTone.chip">
+                            {{ subscription.track === 'subsidized' ? 'Harga Adaptif' : 'Harga Tetap' }}
+                        </span>
+                        <span
+                            v-if="trialDaysLeft !== null"
+                            class="text-xs px-2 py-0.5 rounded-full font-medium tabular-nums"
+                            :class="billingTone.chip"
+                        >
+                            Sisa {{ trialDaysLeft }} hari
+                        </span>
+                    </div>
+                    <p class="mt-1 text-sm" :class="billingTone.body">{{ billingState.body }}</p>
+                </div>
+                <Link href="/langganan" class="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap">
+                    Kelola Langganan →
+                </Link>
+            </div>
+
+            <!-- Tagihan berjalan. Absen berarti tidak ada yang perlu dibayar —
+                 dan dalam hal itu diam lebih jujur daripada menampilkan "Rp 0". -->
+            <div
+                v-if="subscription.outstanding"
+                class="mt-4 pt-4 border-t flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
+                :class="billingTone.divider"
+            >
+                <div class="flex flex-wrap items-baseline gap-2">
+                    <span class="text-sm font-semibold text-gray-900 tabular-nums">
+                        {{ formatCurrency(subscription.outstanding.amount) }}
+                    </span>
+                    <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="billingTone.chip">
+                        {{ invoiceStatusLabels[subscription.outstanding.status] }}
+                    </span>
+                    <span v-if="subscription.outstanding.kind === 'upgrade'" class="text-xs text-gray-500">
+                        penambahan pengguna
+                    </span>
+                </div>
+                <span v-if="subscription.outstanding.due_date" class="text-xs" :class="billingTone.body">
+                    Jatuh tempo {{ formatCalendarDate(subscription.outstanding.due_date) }}
+                </span>
+            </div>
         </div>
 
         <!-- Metric Cards -->
