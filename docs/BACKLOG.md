@@ -56,6 +56,178 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-07-31 (kedua)** — `[BL-032]`–`[BL-041]` berasal dari catatan review demo "SAPI — ASpire" dan sudah **diverifikasi terhadap kode**; tiap entri menyebut berkas dan barisnya. Dua hal dari catatan itu sengaja TIDAK jadi entri karena ternyata sudah benar: (1) pemisahan login platform vs login tenant sudah utuh — guard `platform` sendiri (`config/auth.php:50`), broker reset kata sandi sendiri (`config/auth.php:120`), dan `redirectGuestsTo` yang memilah tujuan berdasarkan prefiks URL (`bootstrap/app.php:80`); (2) "kelas harga sesuai omzet" sudah ada mesinnya (`pricing_rules` + bracket A–D), yang belum ada hanya angkanya — itu masuk `[BL-041]`.
 
+> **Catatan pemilik 2026-08-01** — `[BL-043]`–`[BL-047]` berasal dari catatan menjalankan panel platform, dan sudah **diverifikasi terhadap kode**. Empat dari lima bukan "belum ada sama sekali" melainkan **setengah jadi**: gerbang hanya-baca sudah menegakkan dirinya tapi tak terlihat (`[BL-045]`), CRUD paket sudah ada tapi tak ada yang membacanya (`[BL-046]`), kuota AI sudah ada tapi tinggal di `.env` (`[BL-047]`), dan siklus hidup langganan sudah berpindah keadaan tapi tak pernah menerbitkan tagihan (`[BL-044]`). Hanya `[BL-043]` yang murni cacat. **Koreksi terhadap catatan 2026-07-31 (kedua) di atas:** butir (1) di sana — "pemisahan login platform vs login tenant sudah utuh" — benar untuk *guard, broker, dan pengalihan tamu*, tapi **tidak** untuk pengalihan **setelah** berhasil masuk; lihat `[BL-043]`.
+>
+> Urutan yang disarankan: `[BL-043]` (cacat, berdiri sendiri, kecil) → `[BL-030]` (mumpung `invoices` masih kosong) → `[BL-041]`(a) menetapkan angka → `[BL-044]` → `[BL-046]` → `[BL-047]` → `[BL-045]`.
+
+> **Keputusan pemilik 2026-08-01 (struktur tarif)** — Rp 100k ditetapkan sebagai **puncak bracket Harga Adaptif**, sejajar dengan harga Premium; tenant beromset tinggi tidak lagi berhak atas Adaptif dan hanya bisa Premium; kelayakan Adaptif ditentukan pemilik SaaS. Rinciannya di blok "Keputusan pemilik" pada `[BL-041]`. Dampaknya menyebar ke tiga entri: `[BL-044]` (pertanyaan tarifnya terjawab), `[BL-046]` (Premium dapat pembeda kedua, dan jalur pindah paket berubah dari nyaman jadi wajib), dan satu entri baru **`[BL-048]`** — pagar kelayakan jalur Adaptif, yang ternyata **menabrak gerbang privasi**: menilai kelayakan masuk butuh data omset yang baru boleh dikumpulkan setelah masuk. Baca `[BL-048]` sebelum menyentuh `canSwitchTrack()`.
+>
+> **Keputusan pemilik 2026-08-01 (kedua)** — batas Adaptif diturunkan dari tangga harga Premium, bukan disetel sebagai angka tersendiri; Premium kelak bisa tiga tier dengan puncak Adaptif mendarat di tengahnya. Dua akibat yang menghemat pekerjaan: batas itu **sudah bisa dinyatakan tanpa kolom atau migrasi baru** — cukup satu baris syarat `lt` pada bracket D yang hari ini tidak punya batas atas (`[BL-048]`(b)) — dan permintaan soal harga seat tambahan (**tidak nullable, wajib ditulis walau 0**) ternyata **sudah dipenuhi kode hari ini**, hanya prefill formulirnya yang belum ada (`[BL-046]`).
+
+### [BL-043] Login Platform Berhasil, Lalu Mendarat di Area Tenant
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik saat menjalankan panel platform — "fix redirecting ketika login sebagai platform account, masalahnya adalah mengarahkan ke login, ke `/` dan tidak mengarahkan ke `/platform`"
+- **Status:** Open
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `bootstrap/app.php:80-82` — `redirectGuestsTo()` dipasang; **`redirectUsersTo()` tidak pernah dipasang**
+  - `routes/web.php:260` — grup `guest:platform` membungkus `/platform/login` dan seluruh alur reset kata sandi
+  - `app/Http/Controllers/Platform/AuthController.php:48` — `redirect()->intended(route('platform.dashboard'))`
+  - `app/Http/Middleware/EnsureTenant.php:15` — `redirect()->route('login')` untuk pengunjung tanpa tenant
+  - `routes/web.php:410` — `/` adalah landing publik (`Public\LandingController@index`), bukan pengalih
+- **Deskripsi:**
+  Dua jalur berbeda, dua gejala berbeda, keduanya berakhir di luar `/platform` — persis dua tujuan yang disebut catatan.
+- **Terbukti langsung di browser 2026-08-01.** Cabang (a) direproduksi: masuk sebagai `platform@sapi.test`, mendarat benar di `/platform`, lalu membuka `http://localhost:8001/platform/login` → berakhir di `http://localhost:8001/` dengan judul halaman "SAPI - Smart AI POS & Inventory untuk UMKM", yaitu landing publik. Bukan dugaan.
+  Satu penyempurnaan dari pengujian itu: cabang (b) **tidak selalu muncul**. Login pada sesi peramban yang bersih mendarat benar di `platform.dashboard`, karena `url.intended` memang belum pernah terisi. Jadi gejalanya bersyarat — ia hanya menyerang peramban yang pernah menyentuh area tenant dalam keadaan keluar. Itu menjelaskan mengapa cacat ini bisa lolos: pengujian di jendela penyamaran yang baru akan selalu lulus.
+- **Dugaan Penyebab — sudah ditelusuri, bukan dugaan lagi:**
+  **(a) Mendarat di `/`.** `guest:platform` memakai `RedirectIfAuthenticated` bawaan framework. Tujuannya berasal dari `redirectTo()` → `defaultRedirectUri()`, yang mencari rute bernama persis `dashboard` lalu `home`. Aplikasi ini tidak punya keduanya — rutenya bernama `owner.dashboard` dan `platform.dashboard` (dipastikan lewat `php artisan route:list --name=dashboard`), jadi jatuh ke `return '/'`. Akibatnya: akun platform yang sesinya masih hidup lalu membuka `/platform/login` (bookmark, tombol Back, atau mengetik ulang) dilempar ke landing publik — halaman yang tombol utamanya "Masuk" ke login **tenant**. `redirectGuestsTo` di `bootstrap/app.php:80` sudah memilah tamu dengan benar; kembarannya untuk pengguna yang **sudah** masuk tidak pernah ditulis.
+  **(b) Mendarat di `login` tenant.** `redirect()->intended()` membaca kunci sesi `url.intended`, dan sesi itu **satu** untuk kedua guard. Urutan yang sangat mungkin terjadi di satu peramban: buka `/owner/dashboard` dalam keadaan keluar → `Authenticate` menyimpan `url.intended = /owner/dashboard` → pindah ke `/platform/login` dan masuk sebagai akun platform → `intended()` menang atas argumen bawaannya dan mengirim ke `/owner/dashboard` → `EnsureTenant` melihat pengguna tanpa tenant → `redirect()->route('login')`. Login berhasil, audit log mencatat `login.success`, tapi layar yang muncul adalah halaman masuk pemilik usaha.
+- **Usulan Perbaikan:**
+  **(a)** Tambahkan `$middleware->redirectUsersTo(...)` di `bootstrap/app.php`, bersebelahan dengan `redirectGuestsTo` yang sudah ada dan memakai pemilahan prefiks yang sama (`$request->is('platform', 'platform/*')` → `route('platform.dashboard')`, selain itu `/owner/dashboard`). Menaruhnya berdampingan membuat kedua arah pengalihan terbaca sebagai satu keputusan.
+  **(b)** Di `Platform\AuthController::login()`, jangan pakai `intended()` polos. Entah bersihkan kuncinya lebih dulu (`$request->session()->forget('url.intended')`), atau — lebih aman — terima `intended()` hanya bila URL-nya benar-benar berada di bawah prefiks `platform`, selain itu paksa `route('platform.dashboard')`. Alasan memilih penyaringan, bukan penghapusan: akun platform yang mengklik tautan langsung ke `/platform/tenants/7` lalu diminta masuk tetap layak dikembalikan ke sana.
+  Sertakan test fitur untuk keduanya: masuk dengan `url.intended` menunjuk ke area tenant harus tetap berakhir di `platform.dashboard`, dan membuka `/platform/login` dalam keadaan sudah masuk harus berakhir di `platform.dashboard` — bukan `/`.
+
+### [BL-044] Trial Habis Tanpa Ada yang Menerbitkan Tagihan — Bulan Kedua Tidak Pernah Menagih
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik — "tambahan status jika akun masih gratis, untuk bulan pertama tetapkan full gratis, tapi jika sudah masuk bulan kedua wajib melakukan ajukan subsidi atau kena tagihan biaya normal yaitu 100 k"
+- **Status:** Open — pertanyaan tarif **sudah terjawab** 2026-08-01 (lihat `[BL-041]`); sisanya murni pekerjaan kode
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `config/subscription.php:26` — `trial_days = 30`; `:28` — `grace_days = 30`
+  - `app/Services/SubscriptionService.php:81-96` — `startTrial()`: `current_period_end = trial_ends_at`
+  - `app/Services/SubscriptionService.php:333-384` — `advanceLifecycle()`: memindahkan **status**, tidak menerbitkan tagihan apa pun
+  - `app/Console/Commands/AdvanceSubscriptionLifecycle.php` — satu-satunya perintah terjadwal untuk langganan
+  - `app/Http/Controllers/Platform/InvoiceController.php:136` — **satu-satunya** `Invoice::create` untuk tagihan bulanan, dipicu manual oleh pemilik SaaS
+  - `app/Services/SubscriptionService.php:220` — `Invoice::create` yang kedua, khusus `KIND_UPGRADE` (tambah seat), bukan tagihan periode
+- **Deskripsi:**
+  Yang diminta catatan sudah **separuh** ada. "Bulan pertama gratis" sudah benar apa adanya: `trial_days = 30` dan tenant baru lahir di `STATUS_TRIAL` (`Tenant.php:75`). Yang tidak ada adalah bulan keduanya. `advanceLifecycle()` memindahkan tenant `trial → grace` begitu periodenya lewat, dan `grace → suspended` 30 hari kemudian — tapi di sepanjang jalan itu **tidak ada satu pun tagihan yang terbit**. Tenant tidak pernah diberi tahu berapa yang harus dibayar; ia hanya menemukan aplikasinya berubah jadi hanya-baca. Satu-satunya jalan tagihan bulanan lahir hari ini adalah pemilik SaaS mengetiknya sendiri di `/platform/invoices` untuk tiap tenant, tiap bulan.
+  Konsekuensi kedua: catatan menyebut "wajib ajukan subsidi **atau** kena tagihan normal", yang mengandaikan tenant pernah **ditanya**. Hari ini tidak ada percabangan itu. Jalur harga sudah dipilih saat pendaftaran (selalu `normal`, `SubscriptionService.php:88`) dan pindah jalur hanya terjadi bila tenant sendiri membuka halaman Langganan dan menyetujui dokumen subsidi — tidak ada momen di akhir trial yang menyodorkan dua pilihan itu.
+- **Keadaan data per 2026-08-01 (query, bukan dugaan):** 2 tenant, `invoices` **kosong**, paket satu-satunya `Dasar` dengan `base_price = 0.00`. Jadi bahkan bila penerbit otomatis dipasang hari ini, nominal yang terbit adalah nol.
+- **Usulan Perbaikan:**
+  Berurutan. **(a)** ~~Tetapkan angkanya lebih dulu~~ — **terjawab 2026-08-01: Rp 100k adalah puncak bracket Harga Adaptif, bukan tarif dasar Harga Tetap.** Akibatnya untuk entri ini: kalimat catatan "wajib ajukan subsidi **atau** kena tagihan normal" ternyata **bukan dua pilihan bebas**. Jalur Adaptif kini berpagar kelayakan (`[BL-048]`), jadi yang disodorkan di akhir trial berbeda per tenant — tenant yang layak melihat dua pilihan, yang tidak layak hanya melihat satu. Butir (c) di bawah harus dibaca ulang dengan itu. Angka jalur Harga Tetap/Premium sendiri masih menunggu `[BL-041]`(a). **(b)** Perluas `advanceLifecycle()` (atau perintah terjadwal berdampingan) agar menerbitkan `Invoice` `KIND_SUBSCRIPTION` untuk periode berikutnya **sebelum** memindahkan tenant ke `grace`, memakai `PricingService::resolveFor()` yang sudah dipakai `InvoiceController` — supaya tagihan otomatis dan tagihan manual lahir dari resolver yang sama, bukan dua perhitungan yang akan bercabang. Jaga idempotensinya: `InvoiceController:114-118` sudah menolak periode ganda, dan penerbit otomatis harus tunduk pada penjaga yang sama. **(c)** Baru setelah itu tambahkan momen pilihan di akhir trial (mis. peringatan H-7 di dashboard yang menawarkan dua jalur), karena tanpa (b) pilihan itu tidak bermuara ke tagihan apa pun.
+  **Kerjakan `[BL-030]` sebelum (b).** Begitu tagihan pertama terbit, jendela memperbaiki turunan tanggal jatuh tempo tanpa backfill tertutup.
+
+### [BL-045] Keadaan Hanya-Baca Sudah Ditegakkan tapi Tak Terlihat, dan Membayar Belum Memulihkan Akses Sendiri
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik — "buat peringatan dalam dashboard owner jika misal sudah harus membayar atau melewati waktunya ... tidak bisa transaksi atau melakukan apa pun selain read saja ... bisa melakukan aksi di bagian pembayaran ... maka akan refresh web dan memperbarui akses dari read only menjadi normal kembali"
+- **Status:** Open — **sebagian sudah ada**
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Middleware/EnsureSubscriptionActive.php:62-68` — penegakan hanya-baca **sudah ada**: `grace` + method tidak aman → ditolak
+  - `app/Http/Middleware/EnsureSubscriptionActive.php:54-60` — `suspended` → dialihkan ke halaman langganan
+  - `resources/js/Pages/Owner/Dashboard.vue:66-94,136-182` — kartu ringkasan langganan **sudah ada** (hasil `[BL-040]`, arsip 2026-07-31)
+  - `app/Http/Controllers/Platform/InvoiceController.php:173+` — `verify()`: satu-satunya tempat tenant kembali `active`, dijalankan **pemilik SaaS**
+  - `routes/web.php:53-75` — grup `billing.*`: owner mengunggah bukti bayar, tidak melunasi apa pun sendiri
+- **Deskripsi:**
+  Tiga dari empat hal yang diminta catatan ini **sudah benar-benar berjalan** dan tidak perlu dibangun ulang: data tidak dihapus, tulisan ditolak sementara baca tetap terbuka, dan halaman langganan/tagihan selalu bisa dibuka lewat `ALWAYS_ALLOWED` (`EnsureSubscriptionActive.php:31-44`). Dashboard owner pun sudah memajang keadaan langganan beserta tagihan terbuka.
+  Dua hal yang benar-benar belum ada. **(1) Peringatannya hanya di satu layar.** Kartu itu hidup di Dashboard; kasir yang membuka POS langsung, atau owner yang seharian di halaman Produk, tidak melihat apa-apa sampai ia menekan Simpan dan mendapat `back()->with('error', ...)`. Penolakannya benar, tapi kejutan. **(2) Membayar tidak memulihkan akses sendiri.** Alurnya hari ini: owner unggah bukti → tagihan jadi `awaiting_verification` → **pemilik SaaS memeriksa manual** → `verify()` → tenant kembali `active`. Tidak ada jalur yang membuat akses pulih segera setelah tenant membayar, jadi "refresh lalu normal kembali" yang diminta catatan belum ada wujudnya.
+- **Usulan Perbaikan:**
+  **(1)** Naikkan keadaan langganan dari prop halaman Dashboard menjadi prop bersama di `HandleInertiaRequests`, lalu render satu pita peringatan di layout owner **dan** kasir bila `status` ∈ {`grace`, `suspended`}. Isinya menyebut tanggal penangguhan (`suspensionDateFor()` sudah menghitungnya) dan menaut ke halaman Langganan. Peringatan sebelum tombol ditekan jauh lebih murah daripada penolakan sesudahnya.
+  **(2)** Catatan meminta simulasi ("buatkan saja ala ala kalau membayar"). Simulasi itu **hanya boleh untuk demo, dengan gerbang yang tegas** — mis. hanya aktif di lingkungan non-produksi, atau lewat penanda tenant demo — karena jalur yang melunasi tagihan tanpa bukti adalah persis lubang yang `provisional_blocked` (`SubscriptionService.php:283-314`) dibangun untuk menutup. Jangan menambah aksi baru: pakai kembali `InvoiceController::verify()` sebagai satu-satunya tempat tenant kembali `active`, dan biarkan tombol simulasi memanggilnya. Satu jalan masuk ke keadaan `active` lebih mudah dipertanggungjawabkan daripada dua.
+  Untuk produksi, yang sebenarnya dibutuhkan adalah payment gateway; catat itu sebagai keputusan terpisah, bukan diselundupkan lewat tombol simulasi.
+
+### [BL-046] Paket Kedua Tidak Punya Tempat Berpijak — CRUD-nya Ada, Pembacanya Tidak
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik — "nanti ada 2 paket, 1 dasar dengan golongan gratis, dan ada premium, bedanya adalah bisa menaikkan setup limit, dari 5 perhari jadi 10 per hari"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `database/migrations/2026_07_24_181634_create_plans_table.php:25-32` — kolom paket: `base_price`, `included_seats`, `extra_seat_price`, `is_active`. **Tidak ada kolom batas apa pun selain seat.**
+  - `app/Http/Controllers/Platform/PricingRuleController.php:180-197` (`storePlan`) & `:150-178` (`updatePlan`) — paket **sudah bisa** dibuat & disunting dari `/platform/pricing-rules`
+  - `app/Services/SubscriptionService.php:83-87` — `startTrial()` **selalu** `Plan::default()` (slug `dasar`)
+  - Seluruh `app/`: `plan_id` hanya disebut di `Subscription.php:28` (`$fillable`) dan `SubscriptionService.php:87` — **tidak ada satu pun jalur yang memindahkan tenant antar paket**
+  - `app/Models/Subscription.php` — `hasSeatAvailable()`; `SubscriptionService.php:110-128` — satu-satunya batas yang benar-benar dibaca dari paket
+- **Deskripsi:**
+  Wadahnya sudah berdiri lebih jauh dari dugaan: tabel `plans` ada, dan pemilik SaaS **sudah bisa** membuat paket "Premium" hari ini dari halaman Aturan Harga. Yang belum ada tiga, dan tanpa ketiganya paket baru itu hanya baris data yang tak berakibat apa-apa:
+  **(1) Tidak ada kolom untuk perbedaannya.** Satu-satunya atribut paket yang mengubah perilaku aplikasi adalah `included_seats`/`extra_seat_price`. Batas yang disebut catatan — kuota AI 5/hari → 10/hari — tidak punya kolom, dan pembacanya (`RunAiAnalysisJob.php:92`) membaca config, bukan paket. Lihat `[BL-047]`.
+  **(2) Tidak ada jalan pindah paket.** `plan_id` ditulis sekali seumur hidup langganan, saat trial dibuka. Tidak ada aksi owner ("naikkan ke Premium") maupun aksi platform ("pindahkan tenant ini") yang mengubahnya. `UpgradeController` yang sudah ada hanya menambah **seat**, bukan mengganti paket.
+  **(3) Belum diputuskan apa lagi bedanya.** Catatan menyebut satu pembeda. Paket dengan satu pembeda tunggal biasanya berumur pendek — pertanyaan berikutnya ("Premium dapat antrian dapur? pesan mandiri?") akan datang, dan `hasFeature()` (`Tenant.php:94-102`) hari ini membaca kolom per-tenant yang bisa dinyalakan owner sendiri dari Pengaturan, bukan dari paket. Bila kapabilitas kelak ikut jadi pembeda paket, dua sumber kebenaran itu harus didamaikan lebih dulu — jangan sampai owner bisa menyalakan sendiri fitur yang seharusnya berbayar.
+- **Usulan Perbaikan:**
+  **(a)** Putuskan daftar pembedanya (butir 3) — keputusan bisnis, dan menentukan bentuk kolomnya. **(b)** Tambahkan batas paket sebagai **satu kolom JSON `limits`** pada `plans`, bukan satu kolom per batas: batas berikutnya pasti menyusul, dan tiap batas baru yang berarti satu migrasi akan mengundang orang membuat `if` di kode sebagai gantinya. **(c)** Baca batasnya lewat satu titik (mis. `Subscription::limit('ai_daily')` yang jatuh ke bawaan config bila paket tidak menyetelnya) supaya penambahan batas tidak menyentuh kelas pembacanya. **(d)** Terakhir, jalur pindah paket: aksi platform lebih dulu (pemilik SaaS memindahkan tenant, tercatat di audit log) karena itu yang paling sedikit permukaannya; permintaan naik paket mandiri oleh owner bisa menyusul memakai pola `Invoice` `KIND_UPGRADE` yang sudah ada.
+  **Bergantung pada `[BL-041]`(a)** untuk harga Premium, dan mendahului `[BL-047]` butir (c).
+- **Pemutakhiran 2026-08-01 — Premium naik pangkat, butir (2) jadi yang terpenting.** Keputusan pemilik (lihat blok di `[BL-041]`) memberi Premium pembeda kedua yang jauh lebih berat daripada kuota AI: **Premium adalah satu-satunya jalur bagi tenant beromset tinggi**, yang tidak lagi berhak atas Harga Adaptif. Tiga akibatnya untuk entri ini:
+  1. Kekhawatiran di butir (3) — "paket dengan satu pembeda tunggal biasanya berumur pendek" — **terjawab**: pembedanya bukan lagi 5→10 permintaan AI per hari, melainkan jalur harga yang boleh ditempuh. Kuota AI turun jadi pemanis.
+  2. **Butir (2) berubah dari nyaman jadi wajib.** Selama `plan_id` hanya ditulis sekali saat trial, tidak ada cara memindahkan tenant beromset tinggi ke Premium sama sekali — dan keputusan pemilik menjadi tidak bisa ditegakkan. Kerjakan usulan (d) lebih awal, jangan terakhir.
+  3. Urutan yang disarankan di butir (d) — **aksi platform lebih dulu** — sekarang bukan sekadar "permukaan paling sedikit": pemindahan ke Premium karena omset adalah keputusan pemilik SaaS, bukan permintaan owner toko. Aksi mandiri owner boleh menyusul, tapi tidak boleh jadi satu-satunya jalan.
+  Pintu keluar dari jalur Adaptif ke Premium dirinci di **`[BL-048]`**(b), yang bergantung pada entri ini.
+- **Pemutakhiran 2026-08-01 (kedua) — harga seat tambahan: yang diminta sudah berlaku.** Permintaan pemilik ("tidak nullable, mau diisi 0 pun tetap valid asal wajib ditulis 0 sendiri") **sudah dipenuhi kode hari ini**, jadi tidak ada pekerjaan di situ:
+  - `create_plans_table.php:29` — `decimal('extra_seat_price', 12, 2)->default(0)`, **bukan** `nullable()`
+  - `PricingRuleController.php:187` (`storePlan`) dan `:150` (`updatePlan`) — keduanya `['required', 'numeric', 'min:0']`. `required` menolak field kosong, sementara `min:0` menerima `0` yang diketik — persis "wajib ditulis sendiri, 0 tetap sah"
+  Yang benar-benar belum ada tinggal satu, dan lingkupnya jauh lebih kecil daripada kelihatannya: **nilai bawaan yang bisa diatur dari dashboard**. Karena `storePlan` sudah mewajibkan fieldnya, "default" di sini **hanya mengisi awal formulir** — ia tidak pernah menjadi nilai yang tersimpan diam-diam tanpa dilihat orang. Kerjakan sebagai prefill formulir saja; jangan jadikan kolom yang ikut dibaca saat menghitung tagihan, karena itu akan melahirkan sumber kebenaran kedua di samping `plans.extra_seat_price` — dan begitu keduanya berselisih, yang menang adalah yang tidak pernah dilihat siapa pun.
+  Catatan `->default(0)` di migrasi tetap relevan untuk baris yang lahir di luar formulir (factory, seeder, `Plan::create()` langsung). Itu wajar dan tidak perlu diubah.
+
+### [BL-047] Kuota AI Gratis Terkunci di `.env` — Bukan Kebijakan yang Bisa Diatur Pemilik SaaS
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik — "atur kuota gratis umum ... apakah per hari, di reset semua, atau ada promo dalam waktu tertentu ... jadi sudah tidak statis hard coded 5 request per hari, bisa di atur di platform account"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `config/ai.php:15` — `'daily_limit' => env('AI_FREE_TIER_DAILY_LIMIT', 5)`
+  - `app/Jobs/RunAiAnalysisJob.php:86-95` — `assertQuota()`: satu-satunya penegakan, membaca config
+  - `app/Jobs/RunAiAnalysisJob.php:97-105` — `incrementUsage()`: satu baris `ai_usages` per (tenant, tanggal)
+  - `app/Http/Controllers/Owner/SettingsController.php:25,78-81` — angka yang sama dibacakan ke owner sebagai `daily_limit`/`remaining`
+  - `app/Services/Ai/AiProviderFactory.php:16` — kuota hanya berlaku saat tenant memakai kunci bersama; kunci sendiri = tanpa batas
+  - Platform console: **tidak ada** halaman apa pun yang menyentuh kuota AI (`php artisan route:list --path=platform`)
+- **Deskripsi:**
+  Catatan ini akurat, dengan satu koreksi istilah: angkanya bukan *hard-coded* melainkan *env-coded* — sudah lewat `config()`, jadi bisa diubah tanpa menyunting kelas, tapi tetap menuntut akses server dan `config:clear`. Bagi pemilik SaaS yang duduk di panel, jaraknya sama saja dengan hard-coded.
+  Yang membuatnya lebih dari sekadar "pindahkan ke tabel": angka itu hari ini adalah **satu angka untuk semua** dan **hanya berbentuk harian**. Ketiga bentuk yang disebut catatan tidak muat di dalamnya — kuota per paket (`[BL-046]`), reset serentak, dan promo berjangka waktu masing-masing menuntut yang berbeda. Reset serentak butuh cara membatalkan hitungan berjalan (`ai_usages` disimpan per tanggal, jadi "reset semua hari ini" = menghapus baris tanggal itu, bukan menyetel ulang sebuah angka). Promo berjangka butuh masa berlaku, dan tanpa `effective_from`/`effective_until` ia akan berakhir sebagai angka yang lupa dikembalikan.
+  Catatan juga menyentuh "api key ai bisa di setup gratisan": itu **sudah** berjalan — `AiProviderFactory:16` memakai kunci bersama bila tenant tidak mengisi kuncinya sendiri, dan kuota inilah yang menjaga tagihan kunci bersama itu.
+- **Usulan Perbaikan:**
+  **(a)** Pindahkan kebijakannya ke data dengan bentuk yang sama seperti `pricing_rules` — berlaku sejak kapan sampai kapan — bukan satu kolom pengaturan tunggal. Pola yang sudah terbukti di repo ini: `pricing_rules` + `effective_from`, dengan `PricingService` sebagai satu-satunya pembaca. Promo berjangka jadi baris biasa yang kedaluwarsa sendiri, bukan angka yang harus diingat untuk dikembalikan.
+  **(b)** Urutan pembacaan yang jelas dan tunggal: kuota paket (`[BL-046]`) → kebijakan/promo berlaku → bawaan `config/ai.php`. Tulis di satu kelas, jangan disebar; `assertQuota()` dan `SettingsController` harus memanggil kelas yang sama, karena angka yang dibacakan ke owner dan angka yang menolak permintaannya wajib identik.
+  **(c)** Halaman platform untuk mengaturnya, digerbang modul sendiri lewat `platform.can:` seperti modul lain, dan perubahannya tercatat di `PlatformAuditLog` — menaikkan kuota bersama berarti menaikkan tagihan kunci bersama, jadi jejaknya perlu ada.
+  **(d)** "Reset semua" ditulis sebagai aksi tersendiri (menghapus baris `ai_usages` tanggal berjalan), bukan sebagai efek samping mengubah angka kuota. Dua hal yang berbeda artinya jangan dijadikan satu tombol.
+
+### [BL-048] Jalur Harga Adaptif Bisa Dipilih Siapa Saja — Belum Ada Pagar Kelayakan, dan Pagarnya Menabrak Gerbang Privasi
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Keputusan pemilik 2026-08-01 — "khusus yang memiliki omset cukup tinggi sudah hanya bisa bayar premium, tanpa subsidi atau harga adaptif lagi, adaptif khusus omset rendah atau yang saya tentukan baru bisa dapat"
+- **Status:** Open — **butuh keputusan pemilik (ambang omset) sebelum bisa dikerjakan**
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php:145-151` — `canSwitchTrack()`: **satu-satunya** penjaga perpindahan jalur, dan ia hanya memeriksa **jarak waktu** (`track_switch_minimum_months`), bukan kelayakan apa pun
+  - `app/Http/Controllers/Billing/ConsentController.php:84,129` — owner menyetujui dokumen subsidi → `switchToSubsidized()` langsung dipanggil; tidak ada pemeriksaan lain di antaranya
+  - `app/Services/SubscriptionService.php:171-182` — `switchToSubsidized()`: menulis jalur, tanpa syarat
+  - `app/Jobs/ComputeTenantMonthlyRevenue.php:43-54` — **gerbang privasi dua lapis**: omset HANYA dihitung untuk tenant yang sudah di jalur `subsidized` **dan** consent-nya masih berlaku
+  - `app/Services/Pricing/DimensionRegistry.php:68-80` — dimensi ber-`requires_consent` padam sendiri untuk tenant tanpa persetujuan
+  - `app/Http/Controllers/Billing/SubscriptionController.php:68` — `bracket` hanya diisi bila `isSubsidized()`
+- **Deskripsi:**
+  Hari ini **setiap** tenant bisa memilih jalur Harga Adaptif kapan pun ia mau. Yang berdiri di depannya cuma dua hal: dokumen persetujuan yang harus dibaca, dan jarak 3 bulan dari perpindahan sebelumnya. Tidak ada apa pun yang menanyakan berapa omsetnya. Warung beromset besar bisa menyeberang ke Adaptif hari ini juga — dan justru itu yang keputusan 2026-08-01 tutup.
+  **Masalah sebenarnya bukan menambah `if`.** Untuk menolak tenant karena omsetnya terlalu tinggi, sistem harus **tahu** omsetnya. Tapi omset hanya dihitung untuk tenant yang **sudah** di jalur Adaptif dengan consent aktif (`ComputeTenantMonthlyRevenue:43-54`) — gerbang privasi yang dibangun dengan sengaja dan didokumentasikan di dokumen consent jalur normal: jalur Harga Tetap **tidak membuka data penjualan sama sekali**. Jadi:
+  > Untuk menilai kelayakan masuk, dibutuhkan data yang baru boleh dikumpulkan setelah masuk.
+  Ini melingkar, dan tidak bisa dipecahkan dengan diam-diam menghitung omset semua tenant — itu membatalkan janji tertulis di `resources/consents/normal-v1.md` dan berlaku surut bagi tenant yang sudah menyetujuinya.
+  Arah sebaliknya **tidak** bermasalah dan sudah punya datanya: tenant yang sudah di jalur Adaptif lalu tumbuh melewati ambang sudah terlihat omsetnya (ia consent), jadi memindahkannya keluar ke Premium bisa dikerjakan tanpa menyentuh privasi siapa pun.
+- **Usulan Perbaikan:**
+  Frasa **"atau yang saya tentukan"** di catatan pemilik ternyata bukan pelengkap — itu jalan keluar dari lingkaran di atas, dan sebaiknya jadi **mekanisme utamanya**, bukan cadangan:
+  **(a) Kelayakan sebagai pemberian, bukan perhitungan.** Tambahkan penanda kelayakan per tenant (mis. `subsidy_eligible_at` + alasan) yang **hanya** bisa disetel pemilik SaaS dari platform console, tercatat di `PlatformAuditLog`. `canSwitchTrack()` memeriksanya sebagai syarat tambahan. Tidak ada data omset yang perlu dikumpulkan lebih dulu, tidak ada janji consent yang dilanggar, dan pemilik SaaS tetap memegang kendali penuh yang ia minta. Ini juga cocok dengan kenyataan lapangan: keringanan untuk UMKM biasanya diberikan setelah dilihat kasusnya, bukan dihitung mesin.
+  **(b) Ambang omset sebagai pintu keluar, bukan pintu masuk.** Untuk tenant yang **sudah** di jalur Adaptif, datanya ada. Tandai tenant yang melewati ambang untuk dipindahkan ke Premium pada periode berikutnya — dengan **pemberitahuan lebih dulu**, bukan kejutan di tagihan. Jangan pindahkan di tengah periode: `price_locked` dan `invoices.pricing_context` dibangun supaya harga yang sedang berjalan bisa dipertanggungjawabkan.
+  **Ambangnya TIDAK perlu jadi angka baru — cukup satu baris syarat.** Keputusan pemilik 2026-08-01 (kedua) meminta batas Adaptif diturunkan dari harga Premium, bukan disetel terpisah. Ternyata model datanya sudah bisa menyatakan itu apa adanya. Keadaan seeded hari ini (query 2026-08-01):
+  | Bracket | Syarat | Harga |
+  |---|---|---|
+  | A | `monthly_revenue >= 0` **dan** `< 2.000.000` | 10.000 |
+  | B | `>= 2.000.000` **dan** `< 5.000.000` | 25.000 |
+  | C | `>= 5.000.000` **dan** `< 15.000.000` | 50.000 |
+  | D | `>= 15.000.000` — **tanpa batas atas** | 100.000 |
+  Bracket D adalah satu-satunya yang tidak punya pasangan `lt`, jadi ia menelan **setiap** tenant beromset tinggi selamanya di Rp 100k. Menutup batas Adaptif = menambahkan satu `PricingRuleCondition` `monthly_revenue lt <ambang>` pada bracket D. Tidak ada kolom baru, tidak ada migrasi, dan pemilik SaaS bisa melakukannya sendiri dari `/platform/pricing-rules`.
+  Yang membuatnya cocok dengan rencana **tiga tier Premium**: Adaptif dan Premium adalah dua tangga harga yang berdampingan, bukan dua wilayah yang harus dipisah garis. Puncak Adaptif boleh sejajar dengan Premium tier ke-2 di tengah tangga — yang menentukan batasnya bukan "di mana Premium mulai", melainkan **di mana tangga Adaptif berhenti**. Menambah atau menggeser tier Premium tidak menuntut menyentuh bracket sama sekali.
+  **Peringatan yang harus dipegang saat mengerjakannya:** `PricingService::resolveFor()` mengembalikan `price = null` ketika tak ada aturan yang cocok (`PricingService.php:104`), dan null itu hari ini **ambigu — tiga sebab berbeda menghasilkan nilai yang sama**: (1) omset di atas bracket teratas — yang justru sinyal yang kita inginkan; (2) ada lubang di tabel bracket karena salah setel; (3) tenant tak punya data omset sama sekali karena jalur normal, sebab `DimensionRegistry:80` memadamkan dimensi ber-consent. Memperlakukan null begitu saja sebagai "tidak layak Adaptif" berarti **satu bracket yang salah ketik akan diam-diam mendorong seluruh tenant ke Premium**. Kelayakan harus memeriksa secara eksplisit "omsetnya di atas nilai `lt` tertinggi di tabel", bukan sekadar "tidak ada yang cocok".
+- **Diuji langsung 2026-08-01 — batasnya bekerja, dan ambiguitasnya nyata.** Bracket D diterbitkan ulang dari `/platform/pricing-rules` dengan syarat tambahan `monthly_revenue lt 50.000.000`, tanpa satu baris kode pun. Hasil `PricingService::bracketFor()`:
+  | Omzet | Bracket | Harga |
+  |---|---|---|
+  | 0 / 1,5 jt | A | 10.000 |
+  | 3 jt | B | 25.000 |
+  | 8 jt | C | 50.000 |
+  | 20 jt / 49 jt | D | 100.000 |
+  | **50 jt / 75 jt / 200 jt** | **tidak ada** | **null** |
+  Batas itu **tertutup rapi persis di angka yang diminta**, dan aturan lama yang tak berbatas tetap tersimpan sebagai riwayat (`unique()` per label di `matchContext` membuat yang terbaru menang). Jejak audit `pricing-rules.create` mencatat kedua syaratnya lengkap.
+  **Ambiguitas null pun terbukti, bukan kekhawatiran teoretis:** `resolveFor()` atas dua tenant nyata yang keduanya di jalur `normal` mengembalikan `label = TIDAK ADA, price = null` — **sinyal yang identik** dengan tenant beromset Rp 200 jt. Di tingkat `price`, keduanya mustahil dibedakan.
+  **Tapi pengujian yang sama menemukan pembedanya, dan letaknya bukan di `price`.** `resolveFor()` juga mengembalikan `context`, dan di sanalah keduanya berpisah tegas:
+  - tenant jalur normal → `context['monthly_revenue'] === null` (dimensinya dipadamkan gerbang consent)
+  - tenant Adaptif beromset tinggi → `context['monthly_revenue']` berisi **angka nyata** yang di atas `lt` tertinggi
+  Jadi pemeriksaan kelayakan yang benar adalah: **`context['monthly_revenue'] !== null` DAN nilainya ≥ `lt` tertinggi di tabel bracket** — bukan `price === null`. Rumusan itu kebal terhadap ketiga sebab sekaligus: tenant tanpa consent tersaring oleh syarat pertama, dan lubang salah-setel di tengah tabel tidak lolos karena angkanya tidak akan ≥ `lt` tertinggi. Pakai rumusan ini, jangan yang lebih pendek.
+  **(c) Halaman Langganan harus jujur soal pagarnya.** Tenant yang tidak layak jangan disodori tombol yang akan menolaknya. `SubscriptionController:62` sudah mengirim `can_switch`; perluas jadi menyertakan **alasan** (belum layak / masih dalam jarak 3 bulan / omset di atas ambang) supaya penolakannya bisa dijelaskan di layar, bukan cuma tombol yang mati.
+  **Yang perlu Anda putuskan sebelum (b) bisa dikerjakan:** nilai `lt` yang menutup bracket D (turunan dari tangga harga Premium, lihat `[BL-041]`), dan apakah tenant yang terlanjur di Adaptif dengan omset di atas ambang dipindahkan atau di-*grandfather*.
+  **Bergantung pada `[BL-046]`** — pintu keluar di (b) baru ada artinya setelah paket Premium benar-benar ada dan tenant bisa dipindahkan antar paket.
+
 ### [BL-032] Landing Page Tidak Lagi Menggambarkan Produk yang Sudah Jadi
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "landing perbaiki menyesuaikan sekarang", "perbaiki gambar2 di landing page"
@@ -184,8 +356,33 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-041] Tarif Belum Ditetapkan, dan Halaman Harga Publik Belum Dinamis
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "Pemberian Kelas, dan sesuai Omset / Sesuaikan Tarif kembali", "berikan halaman pricing dan dynamic, perjelas batasan batasan dari owner yang membayar full, subsidi dan lain lain"
-- **Status:** Open — **sebagian butuh keputusan pemilik (angka tarif)**
+- **Status:** Open — **sebagian butuh keputusan pemilik (angka tarif)**; struktur tarif sudah diputuskan 2026-08-01, lihat blok di bawah
 - **Prioritas:** High
+- **Keputusan pemilik 2026-08-01 — struktur tarif:**
+  Menjawab pertanyaan yang menggantung di butir (a) dan di `[BL-044]`:
+  1. **Rp 100k adalah puncak bracket Harga Adaptif**, bukan tarif dasar jalur Harga Tetap. Bracket D di `config/subscription.php:89` sudah memakai angka itu, jadi benih migrasi `pricing_rules` **tidak perlu diubah** untuk keputusan ini.
+  2. **Puncak Adaptif sejajar dengan harga Premium.** Artinya kedua jalur bertemu di ujung atas: tenant yang omsetnya sampai di bracket D membayar sama besar dengan tenant Premium, sehingga tidak ada insentif menahan diri di jalur Adaptif hanya demi harga.
+  3. **Omset tinggi tidak lagi berhak atas Harga Adaptif** — di atas ambang tertentu, satu-satunya jalur adalah Premium. Adaptif menyempit jadi apa yang memang dimaksudkannya sejak awal: keringanan untuk usaha beromset rendah.
+  4. **Kelayakan Adaptif ditentukan pemilik SaaS**, bukan dipilih sendiri oleh tenant — baik lewat ambang omset maupun penetapan manual ("atau yang saya tentukan baru bisa dapat").
+  Butir 3 dan 4 **bukan sekadar angka**: keduanya menuntut pagar kelayakan yang hari ini tidak ada sama sekali, dan pagar itu menabrak batas privasi yang sudah dibangun. Dipisah jadi `[BL-048]` supaya entri ini tetap tentang tarif.
+- **Keputusan pemilik 2026-08-01 (kedua) — bentuk tangga harga:**
+  Menjawab tiga pertanyaan yang saya gantung di blok sebelumnya, dan mengubah dua di antaranya dari "angka yang harus ditetapkan" jadi "angka yang tidak perlu ada":
+  5. **Premium mungkin persis sejajar dengan puncak Adaptif** (Rp 100k) — belum dikunci, dan sengaja dibiarkan terbuka.
+  6. **Ambang pemisah Adaptif↔Premium tidak disetel terpisah.** Ia diturunkan dari tangga harga Premium: Adaptif berlaku sampai sebelum angka Premium. Satu angka lebih sedikit untuk dijaga tetap sinkron.
+  7. **Premium kelak bisa lebih dari satu tier** (rencana: tiga), dan puncak Adaptif boleh mendarat di **tengah** tangga itu — mis. sejajar tier ke-2, bukan di ujungnya.
+  Butir 7 membatalkan cara berpikir "Adaptif dan Premium adalah dua wilayah yang dipisah satu garis". Yang benar: keduanya **dua tangga harga berdampingan yang boleh tumpang tindih**, dan batasnya bukan "di mana Premium mulai" melainkan **di mana tangga Adaptif berhenti**. Konsekuensi praktisnya bagus — menambah atau menggeser tier Premium tidak menuntut menyentuh bracket Adaptif sama sekali.
+  **Temuan yang mendukungnya (query, bukan dugaan):** batas itu ternyata **sudah bisa dinyatakan tanpa kolom baru**. Bracket A–C masing-masing punya sepasang syarat `gte`+`lt`; bracket D hanya punya `gte 15.000.000` **tanpa batas atas**, sehingga ia menelan setiap tenant beromset tinggi selamanya di Rp 100k. Menutup tangga Adaptif = menambah satu baris syarat `lt` pada bracket D, dari `/platform/pricing-rules`, tanpa migrasi. Rinciannya beserta satu jebakan yang harus dihindari ada di **`[BL-048]`**(b).
+  **Yang masih menunggu keputusan:** nominal tiap tier Premium (dan berapa tier yang benar-benar akan dibuka di awal — tiga tier di hari pertama jauh lebih mahal dijelaskan ke calon pelanggan daripada satu), serta nilai `lt` yang menutup bracket D. Harga seat tambahan **sudah terjawab**, lihat `[BL-046]`.
+- **Angka percobaan sudah TERPASANG di basis data pengembangan 2026-08-01 — bukan usulan di atas kertas.** Atas permintaan pemilik, tarifnya diisi langsung lewat `/platform/pricing-rules` untuk diuji:
+  | Paket | Tarif bulanan | Pengguna termasuk | Seat tambahan |
+  |---|---|---|---|
+  | Dasar | Rp 0 | 1 | Rp 0 |
+  | Premium 1 | Rp 100.000 | 3 | Rp 15.000 |
+  | Premium 2 | Rp 150.000 | 5 | Rp 12.500 |
+  | Premium 3 | Rp 200.000 | 10 | Rp 10.000 |
+  Bracket D ditutup di `< Rp 50.000.000` (lihat `[BL-048]`). **Dua angka di sini adalah asumsi saya, bukan keputusan pemilik, dan perlu ditinjau:** (1) **`included_seats` 3/5/10 dan seat tambahan 15k/12,5k/10k** — dipilih supaya tangganya masuk akal (makin tinggi tier, makin murah seat tambahannya), tapi tidak pernah diminta siapa pun; (2) **ambang Rp 50 jt** — dipilih mengikuti pola rasio bracket sebelumnya (2 jt → 5 jt → 15 jt, kelipatan 2,5–3×), bukan dari data pasar.
+  Perlu disadari juga: `Premium 1` bertarif **sama persis** dengan puncak Adaptif (Rp 100.000). Itu memang yang diminta butir 2, tapi konsekuensinya harus disengaja — tenant di bracket D dan tenant Premium 1 membayar sama, sehingga satu-satunya pembeda keduanya tinggal seat dan kuota, bukan harga. Bila itu tidak diinginkan, yang digeser sebaiknya harga Premium 1, bukan bracket D.
+  Semua perubahan tercatat di `platform_audit_logs` (`plans.create` ×3, `pricing-rules.create` ×1). **Ini basis data lokal pengembangan**, bukan produksi.
 - **Area Terdampak:**
   - `database/migrations/2026_07_24_181634_create_plans_table.php:38-47` — paket `dasar`: `base_price = 0`, `included_seats = 1`, `extra_seat_price = 0`
   - `config/subscription.php:85-90` — benih bracket A–D: Rp 10k / 25k / 50k / 100k
