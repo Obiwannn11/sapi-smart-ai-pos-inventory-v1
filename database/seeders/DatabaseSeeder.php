@@ -31,7 +31,7 @@ class DatabaseSeeder extends Seeder
             'status' => Tenant::STATUS_ACTIVE,
         ]);
 
-        // 1b. Langganan — seat dibuka untuk owner + kasir demo di bawah.
+        // 1b. Langganan — seat dibuka untuk owner + dua kasir demo di bawah.
         app(SubscriptionService::class)->startTrial($tenant)->update(['seats' => 5]);
 
         // 2. Users
@@ -56,7 +56,27 @@ class DatabaseSeeder extends Seeder
             'email_verified_at' => now(),
         ]);
 
-        // 2b. Contoh role per-tenant + assign ke kasir demo.
+        // Kasir KEDUA, sengaja ada meski demo bisa berjalan tanpanya.
+        //
+        // Selama satu tenant hanya punya satu kasir, dua hal tidak pernah bisa
+        // terjadi di data demo: sesi laci yang tumpang-tindih, dan transaksi
+        // yang harus dipisahkan per laci. Keduanya adalah pokok `[BL-028]`
+        // Tahap B — cacatnya laten, dan cacat laten tidak bisa direproduksi
+        // pada data yang secara struktur tidak mampu memunculkannya.
+        //
+        // Ia juga membuat pemisahan hak akses terlihat: kasir pertama memegang
+        // `Kasir + Gudang`, yang kedua hanya `Kasir`. Satu-satunya pengguna
+        // ber-role tidak pernah membuktikan role itu membatasi apa pun.
+        $kasirKedua = User::create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Kasir Demo 2',
+            'email' => 'kasir2@sapi.test',
+            'password' => Hash::make('password'),
+            'role' => 'cashier',
+            'email_verified_at' => now(),
+        ]);
+
+        // 2b. Contoh role per-tenant + assign ke kedua kasir demo.
         app(PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
 
         $kasirPos = Role::findOrCreate('Kasir', 'web');
@@ -66,6 +86,7 @@ class DatabaseSeeder extends Seeder
         $kasirGudang->syncPermissions(['pos', 'cash_drawer', 'stock']);
 
         $kasir->assignRole($kasirGudang);
+        $kasirKedua->assignRole($kasirPos);
 
         // 3. Categories
         $kopi = Category::create(['tenant_id' => $tenant->id, 'name' => 'Kopi']);
