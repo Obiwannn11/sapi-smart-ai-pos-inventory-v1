@@ -205,16 +205,16 @@ class InvoiceController extends Controller
                 $subscription->update(['seats' => $invoice->grants_seats]);
             }
         } else {
-            $periodStart = now()->startOfDay();
-
             $subscription->update([
                 // Harga DIKUNCI dari nominal yang benar-benar dibayar, bukan
                 // dibaca ulang dari tabel tarif. Inilah grandfathering:
                 // mengubah tarif besok tidak boleh mengubah apa yang sudah
                 // disepakati hari ini.
                 'price_locked' => $invoice->amount,
-                'current_period_start' => $periodStart->toDateString(),
-                'current_period_end' => $periodStart->copy()->addMonth()->toDateString(),
+                // Tanggalnya dihitung service, bukan di sini. Periode menyambung
+                // dari periode sebelumnya dan mengikuti jangkar tanggal tagih —
+                // tiga aturan yang harus jalan bersama, dan tempatnya satu.
+                ...$this->subscriptions->renewPeriod($subscription),
                 // Puncak seat direset di awal periode baru — ia mengukur
                 // pemakaian periode berjalan, bukan sepanjang masa.
                 'seat_high_water' => $subscription->activeSeatsUsed(),

@@ -29,9 +29,14 @@ class SubscriptionFactory extends Factory
             'seats' => 1,
             'seat_high_water' => 1,
             'price_locked' => 0,
-            'trial_ends_at' => now()->addMonth(),
+            // `addMonthNoOverflow`, sejalan dengan `[BL-030]`: `addMonth()`
+            // telanjang membuat langganan yang lahir 31 Januari berakhir 3 Maret,
+            // dan factory yang meniru cacat produksi akan meloloskan test yang
+            // seharusnya menangkapnya.
+            'trial_ends_at' => now()->addMonthNoOverflow(),
             'current_period_start' => now()->toDateString(),
-            'current_period_end' => now()->addMonth()->toDateString(),
+            'current_period_end' => now()->addMonthNoOverflow()->toDateString(),
+            'billing_anchor_day' => now()->addMonthNoOverflow()->day,
         ];
     }
 

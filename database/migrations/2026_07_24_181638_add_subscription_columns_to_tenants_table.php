@@ -63,7 +63,12 @@ return new class extends Migration
                 'price_locked' => 0,
                 'trial_ends_at' => null,
                 'current_period_start' => $now->toDateString(),
-                'current_period_end' => $now->copy()->addMonth()->toDateString(),
+                // `addMonthNoOverflow`, sejalan dengan `[BL-030]`: instalasi baru
+                // yang kebetulan dijalankan tanggal 31 tidak boleh melahirkan
+                // langganan yang periodenya sudah meleset sejak baris pertamanya.
+                // Jangkar tanggal tagihnya ditulis migrasi berikutnya, yang
+                // membacanya dari tanggal ini.
+                'current_period_end' => $now->copy()->addMonthNoOverflow()->toDateString(),
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);

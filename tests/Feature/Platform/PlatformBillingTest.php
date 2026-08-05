@@ -151,8 +151,13 @@ test('menerima pembayaran mengaktifkan tenant dan mengunci harganya', function (
         // Harga dikunci dari nominal yang dibayar, bukan dibaca ulang dari
         // tabel tarif — mengubah tarif besok tidak menyentuh kesepakatan ini.
         ->and((float) $subscription->fresh()->price_locked)->toBe(75000.0)
+        // Periode MENYAMBUNG dari akhir periode sebelumnya, bukan mulai dari
+        // hari verifikasi ([BL-030]). Langganan factory berakhir sebulan dari
+        // sekarang, jadi periode barunya berakhir dua bulan dari sekarang.
+        ->and($subscription->fresh()->current_period_start->toDateString())
+        ->toBe(now()->addMonthNoOverflow()->toDateString())
         ->and($subscription->fresh()->current_period_end->toDateString())
-        ->toBe(now()->addMonth()->toDateString());
+        ->toBe(now()->addMonthsNoOverflow(2)->toDateString());
 });
 
 test('tagihan yang sudah lunas tidak bisa diverifikasi dua kali', function () {

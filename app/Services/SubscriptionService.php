@@ -92,7 +92,62 @@ class SubscriptionService
             'trial_ends_at' => $trialEndsAt,
             'current_period_start' => now()->toDateString(),
             'current_period_end' => $trialEndsAt->toDateString(),
+            // Jangkar tanggal tagih lahir di sini dan tidak pernah berubah lagi.
+            // Ia harus ditulis sekarang, bukan disimpulkan belakangan: begitu
+            // sebuah periode berakhir di bulan pendek, tanggalnya sudah terjepit
+            // dan hari aslinya tak bisa dipulihkan dari data mana pun.
+            'billing_anchor_day' => $trialEndsAt->day,
         ]);
+    }
+
+    /**
+     * Tanggal periode berbayar berikutnya, sebagai atribut siap-simpan.
+     *
+     * Satu-satunya tempat periode langganan dimajukan. Dituliskan di sini dan
+     * bukan di pemanggilnya karena aturannya bukan aritmetika tanggal biasa,
+     * melainkan tiga keputusan yang harus jalan bersama — dan tiga keputusan
+     * yang disalin ke pemanggil kedua pasti bercabang.
+     *
+     * **Menyambung, bukan mulai dari hari verifikasi.** Titik mulainya adalah
+     * akhir periode sebelumnya, bukan `now()`. Tanpa itu tenant yang telat bayar
+     * lima hari menggeser tanggal tagihnya maju lima hari, permanen — dan
+     * tanggal 29/30/31 bisa menjadi titik mulai periode hanya karena kebetulan
+     * bukti bayarnya diperiksa pada tanggal itu.
+     *
+     * **Mengikuti jangkar, bukan menambah satu bulan.** Lihat
+     * `Subscription::anchoredDateIn()`: penjepitan bulan pendek tidak menular ke
+     * bulan sesudahnya.
+     *
+     * **Tunggakan tidak ditumpuk.** Bila periode yang tersambung ternyata sudah
+     * lewat seluruhnya — tenant membayar setelah berbulan-bulan tertangguh —
+     * periodenya dimajukan sampai berakhir di masa depan. Satu pembayaran
+     * memulihkan satu periode ke depan, bukan menyeret tenant ke periode yang
+     * sudah usai lalu langsung menangguhkannya lagi. Keputusan ini perlu
+     * ditinjau ulang saat `[BL-044]` dikerjakan: begitu tagihan terbit otomatis
+     * tiap periode, tiap bulan yang terlewat punya tagihannya sendiri dan
+     * "melompati" periode berarti melompati tagihan.
+     *
+     * @return array{current_period_start: string, current_period_end: string, billing_anchor_day: int}
+     */
+    public function renewPeriod(Subscription $subscription): array
+    {
+        $today = now()->startOfDay();
+        $start = $subscription->current_period_end?->copy()->startOfDay() ?? $today->copy();
+        $end = $subscription->nextAnchoredDateAfter($start);
+
+        while ($end->lte($today)) {
+            $start = $end;
+            $end = $subscription->nextAnchoredDateAfter($start);
+        }
+
+        return [
+            'current_period_start' => $start->toDateString(),
+            'current_period_end' => $end->toDateString(),
+            // Ditulis ulang tiap kali supaya baris lama yang jangkarnya masih
+            // kosong mendapatkannya pada pembaruan periode pertamanya, bukan
+            // menunggu backfill kedua.
+            'billing_anchor_day' => $subscription->billingAnchorDay(),
+        ];
     }
 
     /**
@@ -144,10 +199,16 @@ class SubscriptionService
      */
     public function canSwitchTrack(Tenant $tenant): bool
     {
-        $changedAt = $this->ensureFor($tenant)->track_changed_at;
+        // Dihitung lewat `trackSwitchAvailableAt()`, bukan dengan menguranginya
+        // sendiri dari `now()`. Keduanya setara dalam aritmetika tanggal biasa,
+        // tapi TIDAK setara begitu penjaga luberan ikut bermain: 30 Nov + 3
+        // bulan dijepit ke 28 Feb, sementara 28 Feb − 3 bulan mendarat di 28
+        // Nov. Tanggal yang dipajang di layar akan menjanjikan 28 Februari
+        // sementara gerbangnya baru terbuka 2 Maret. Satu perhitungan, satu
+        // jawaban.
+        $availableAt = $this->trackSwitchAvailableAt($tenant);
 
-        return $changedAt === null
-            || $changedAt->lte(now()->subMonths(self::trackSwitchMinimumMonths()));
+        return $availableAt === null || $availableAt->lte(now());
     }
 
     /**
@@ -157,7 +218,10 @@ class SubscriptionService
     {
         $changedAt = $this->ensureFor($tenant)->track_changed_at;
 
-        return $changedAt?->copy()->addMonths(self::trackSwitchMinimumMonths());
+        // Kembaran `canSwitchTrack()` — keduanya wajib memakai penjaga luberan
+        // yang sama, kalau tidak tanggal yang dipajang di layar akan berselisih
+        // dengan tanggal yang benar-benar ditegakkan.
+        return $changedAt?->copy()->addMonthsNoOverflow(self::trackSwitchMinimumMonths());
     }
 
     /**

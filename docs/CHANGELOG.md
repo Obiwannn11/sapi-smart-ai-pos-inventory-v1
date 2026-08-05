@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-05 | DECISION | Langganan | Tanggal Tagih Jadi Jangkar: Bulan Pendek Menjepit Sementara, Tidak Menggeser Selamanya (BL-030) |
 | 2026-08-05 | HOTFIX | Auth | Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043) |
 | 2026-08-01 | DECISION | Demo | Seeder Transaksi Menambal Hari Kosong, Bukan Mereset atau Menumpuk |
 | 2026-08-01 | ADDITION | Platform | Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047) |
@@ -146,6 +147,33 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Tanggal Tagih Jadi Jangkar: Bulan Pendek Menjepit Sementara, Tidak Menggeser Selamanya (BL-030)
+- **Tanggal:** 2026-08-05
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-030]`
+- **Dampak:** Schema | Service | Model | Controller | Factory | Test
+- **Breaking Change:** Ya untuk semantik penagihan, dan disengaja. Tiga perilaku berubah: periode tidak lagi meluber di bulan pendek, tanggal tagih tidak lagi bergeser saat tenant telat bayar, dan penjepitan bulan pendek tidak lagi permanen. Tidak ada tanggal tagih pelanggan yang bergerak hari ini — `invoices` masih kosong dan kedua langganan yang ada berjangkar tanggal 24.
+- **Keputusan pemilik (2026-08-05), tiga butir:**
+  1. **Langganan yang mulai 31 Januari jatuh tempo 28 Februari**, bukan 3 Maret (perilaku lama) dan bukan 1 Maret. Tenant tidak pernah ditagih untuk hari yang belum dilaluinya, dan tanggal tagih tetap di akhir bulan.
+  2. **Periode berikutnya diturunkan dari jangkar tanggal tagih**, bukan dirantai dari akhir periode sebelumnya. 31 Jan → 28 Feb → **31** Mar.
+  3. **Periode menyambung dari periode sebelumnya, bukan dari hari verifikasi bukti bayar.** Tenant yang telat bayar tetap membayar bulan yang sama.
+- **Deskripsi:** `addMonth()` berarti "tanggal yang sama bulan depan, meluber bila tidak ada", sehingga periode yang mulai 31 Januari berakhir 3 Maret — 31 hari ditagih sebagai satu bulan, dan Februari dilewati sama sekali. Karena periode berikutnya dihitung dari akhir yang sudah meleset, pergeserannya menumpuk dan tidak pernah kembali. Terpisah dari itu, titik mulai periode adalah `now()` di `InvoiceController::verify()` — yaitu tanggal bukti bayar diperiksa, bukan awal periode langganan; inilah yang membuat tanggal 29/30/31 bisa menjadi titik mulai periode sama sekali, dan yang membuat tenant yang telat bayar lima hari menggeser tanggal tagihnya maju lima hari secara permanen.
+- **Alasan:** Butir 1 dan 3 langsung menyangkut berapa yang ditagih, jadi tidak boleh diubah diam-diam sambil membetulkan hal lain — itu sebabnya `[BL-029]` sengaja tidak memborongnya. Butir 2 adalah yang membedakan perbaikan ini dari sekadar mengganti `addMonth()` jadi `addMonthNoOverflow()`: rantai tanpa jangkar tetap menggeser, hanya sekali dan permanen (31 → 28 → 28 → 28), yang persis keluhan "bergeser maju dan tidak pernah kembali".
+- **File Terdampak:**
+  - `database/migrations/2026_08_05_155739_add_billing_anchor_day_to_subscriptions_table.php` — kolom `billing_anchor_day` + backfill dari `current_period_end`
+  - `app/Models/Subscription.php` — `billingAnchorDay()`, `anchoredDateIn()`, `nextAnchoredDateAfter()`
+  - `app/Services/SubscriptionService.php` — `renewPeriod()` baru; `startTrial()` menulis jangkar; `canSwitchTrack()` & `trackSwitchAvailableAt()` tidak lagi meluber
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `verify()` memanggil `renewPeriod()`, tidak lagi menghitung tanggal sendiri
+  - `database/migrations/2026_07_24_181638_add_subscription_columns_to_tenants_table.php` & `database/factories/SubscriptionFactory.php` — `addMonthNoOverflow()`
+  - `tests/Feature/Subscription/SubscriptionBillingDateTest.php` — 12 test baru; `tests/Feature/Platform/PlatformBillingTest.php` — ekspektasi periode disesuaikan
+- **Keputusan yang perlu diingat:**
+  - **Jangkar harus DISIMPAN, tidak bisa disimpulkan.** Begitu sebuah periode berakhir di bulan pendek, tanggalnya sudah terjepit dan hari aslinya tidak bisa dipulihkan dari data mana pun. Karena itu `billing_anchor_day` ditulis sejak `startTrial()`. Ini menambah satu kolom yang `[BL-030]` semula perkirakan tidak perlu — konsekuensi langsung dari memilih jangkar, bukan rantai.
+  - **`addMonthNoOverflow()` dipakai untuk berpindah bulan, bukan untuk menentukan tanggal.** Pindah bulan dari 31 Jan tanpa penjaga luberan mendarat di 3 Maret dan melewatkan Februari; tanggalnya kemudian ditentukan ulang oleh jangkar, sehingga penjepitan tidak menular.
+  - **Tunggakan tidak ditumpuk.** Bila periode yang tersambung ternyata sudah lewat seluruhnya, periodenya dimajukan sampai berakhir di masa depan — satu pembayaran memulihkan satu periode ke depan, bukan menyeret tenant ke periode usai lalu langsung menangguhkannya lagi di hari yang sama. **Perlu ditinjau ulang saat `[BL-044]` dikerjakan:** begitu tagihan terbit otomatis tiap periode, tiap bulan yang terlewat punya tagihannya sendiri, dan "melompati" periode berarti melompati tagihan.
+  - **Ditemukan saat mengerjakannya:** `canSwitchTrack()` mengurangi 3 bulan dari `now()` sementara `trackSwitchAvailableAt()` menambahkan 3 bulan ke `track_changed_at`. Setara dalam aritmetika biasa, **tidak** setara begitu penjaga luberan ikut bermain — 30 Nov + 3 bulan dijepit ke 28 Feb, tapi 28 Feb − 3 bulan mendarat di 28 Nov, sehingga layar menjanjikan 28 Februari sementara gerbangnya baru terbuka 2 Maret. `canSwitchTrack()` kini memanggil `trackSwitchAvailableAt()`; satu perhitungan, satu jawaban.
+  - **`InvoiceController::periodStart()` sengaja TIDAK disentuh.** Ia memakai `startOfMonth()` dan memang benar — titik waktu penetapan harga, bukan awal periode langganan. Dua hal berbeda di berkas yang sama.
 
 ---
 

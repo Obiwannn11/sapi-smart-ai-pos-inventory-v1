@@ -10,6 +10,28 @@
 
 ## Daftar Entri
 
+### [BL-030] Tanggal Jatuh Tempo Langganan Ikut Meluber di Bulan Pendek
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Sisa penyisiran `[BL-029]` — sengaja TIDAK ikut diperbaiki di sana karena menyangkut semantik penagihan, bukan sekadar salah turunan periode
+- **Status:** Selesai (2026-08-05) — lihat `[DECISION] Tanggal Tagih Jadi Jangkar: Bulan Pendek Menjepit Sementara, Tidak Menggeser Selamanya (BL-030)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium — bukan salah bulan seperti `[BL-029]`, tapi tanggal tagih yang bergeser maju dan **tidak pernah kembali**
+- **Area Terdampak:**
+  - `app/Http/Controllers/Platform/InvoiceController.php:202` — `$periodStart = now()->startOfDay()`, yaitu **tanggal bukti bayar diverifikasi**, bukan awal bulan. Inilah yang membuat tanggal 29/30/31 bisa jadi titik mulai periode sama sekali
+  - `app/Http/Controllers/Platform/InvoiceController.php:211` — `current_period_end = $periodStart->copy()->addMonth()`
+  - `database/migrations/2026_07_24_181638_add_subscription_columns_to_tenants_table.php:66` — pola yang sama saat backfill
+  - `database/factories/SubscriptionFactory.php:32,34` — `now()->addMonth()`
+  - `app/Services/SubscriptionService.php:150` & `:160` — jarak minimum pindah jalur, `subMonths()`/`addMonths()`
+  - **Jangan tertukar:** `InvoiceController::periodStart()` (`:169-172`) memang memakai `startOfMonth()` dan **tidak** bermasalah — ia titik waktu penetapan harga, bukan awal periode langganan. Dua hal berbeda di berkas yang sama
+- **Deskripsi:** `addMonth()` berarti "tanggal yang sama bulan depan, meluber bila tidak ada". Langganan yang periodenya mulai 31 Januari berakhir **3 Maret**, bukan 28/29 Februari — periode 31 hari yang ditagih sebagai satu bulan. Karena periode berikutnya dihitung dari tanggal akhir yang sudah meleset, pergeserannya **menumpuk**: tiap kali melewati bulan pendek, tanggal tagih maju beberapa hari dan tidak pernah balik.
+  Untuk `SubscriptionService`, akibatnya lebih ringan — jarak minimum 3 bulan bisa jadi 3 bulan + beberapa hari — tapi sumbernya persis sama.
+- **Kenapa tidak diborong ke `[BL-029]`:** `[BL-029]` memperbaiki turunan periode yang **jelas salah** (bulan berjalan dihitung sebagai bulan lalu) — tidak ada pilihan produk di sana. Yang ini menuntut keputusan: langganan mulai 31 Januari jatuh tempo **28 Februari** (`addMonthNoOverflow`, tanggal tagih tetap di akhir bulan) atau **1 Maret**? Keduanya bisa dibela, dan pilihannya menentukan berapa yang ditagih. Mengubahnya diam-diam sambil membetulkan bug lain akan menggeser tanggal tagih pelanggan tanpa ada yang memutuskan.
+- **Keputusan pemilik 2026-08-05 (menjawab poin 1):** jatuh tempo **28 Februari**; periode berikutnya diturunkan dari **jangkar tanggal tagih**, bukan dirantai dari akhir periode sebelumnya; dan periode **menyambung dari periode sebelumnya**, bukan mulai dari hari verifikasi bukti bayar. Rinciannya di entri CHANGELOG penutup.
+- **Catatan saat dikerjakan (yang usulan tidak sebutkan):**
+  - **Poin 2 usulan ("ganti ke `addMonthNoOverflow()`") tidak cukup sendirian, dan pemilik memilih yang lebih jauh.** Rantai tanpa jangkar tetap menggeser — 31 → 28 → 28 → 28 — hanya sekali dan permanen, yang persis keluhan "tidak pernah kembali". Karena itu ditambahkan kolom `subscriptions.billing_anchor_day`. **Ini membatalkan perkiraan "tanpa migrasi" di entri ini:** jangkar harus disimpan, tidak bisa disimpulkan, karena begitu sebuah periode terjepit di bulan pendek hari aslinya hilang dari data mana pun.
+  - **Poin 3 kosong biayanya seperti diperkirakan:** kedua langganan yang ada berjangkar tanggal 24 dan belum pernah melewati bulan pendek, jadi backfill migrasi cukup membaca `current_period_end` apa adanya.
+  - **Ditemukan saat mengerjakannya:** `canSwitchTrack()` dan `trackSwitchAvailableAt()` menghitung jarak 3 bulan dari dua arah berlawanan, yang berhenti setara begitu penjaga luberan dipasang — layar menjanjikan 28 Februari sementara gerbangnya baru terbuka 2 Maret. Disatukan jadi satu perhitungan.
+  - **Sisa yang sengaja ditinggalkan:** aturan "tunggakan tidak ditumpuk" (satu pembayaran memulihkan satu periode ke depan) perlu ditinjau ulang saat `[BL-044]` dikerjakan, karena penerbit tagihan otomatis akan memberi tiap bulan terlewat tagihannya sendiri.
+
 ### [BL-043] Login Platform Berhasil, Lalu Mendarat di Area Tenant
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Catatan pemilik saat menjalankan panel platform — "fix redirecting ketika login sebagai platform account, masalahnya adalah mengarahkan ke login, ke `/` dan tidak mengarahkan ke `/platform`"
