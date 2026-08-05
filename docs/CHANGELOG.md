@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-06 | ADDITION | Langganan | Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b) |
 | 2026-08-05 | DECISION | Langganan | Tanggal Tagih Jadi Jangkar: Bulan Pendek Menjepit Sementara, Tidak Menggeser Selamanya (BL-030) |
 | 2026-08-05 | HOTFIX | Auth | Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043) |
 | 2026-08-01 | DECISION | Demo | Seeder Transaksi Menambal Hari Kosong, Bukan Mereset atau Menumpuk |
@@ -147,6 +148,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b)
+- **Tanggal:** 2026-08-06
+- **Fase Terkait:** Di Luar Fase — menutup butir (b) `[BL-044]`; butir (c) sengaja ditunda
+- **Dampak:** Service | Command | Config | Controller | Test
+- **Breaking Change:** Tidak. Tidak ada tenant yang berpindah keadaan berbeda dari sebelumnya; yang bertambah hanya tagihan yang kini terbit sendiri. Penerbit manual di `/platform/invoices` tetap bekerja persis seperti dulu dan tetap menang atas penerbit otomatis untuk periode yang sama.
+- **Deskripsi:** `advanceLifecycle()` memindahkan tenant `trial → grace → suspended` tanpa pernah menerbitkan satu pun tagihan. Tenant tidak pernah diberi tahu berapa yang harus dibayar — ia hanya menemukan aplikasinya berubah jadi hanya-baca. Satu-satunya jalan tagihan bulanan lahir adalah pemilik SaaS mengetiknya sendiri untuk tiap tenant, tiap bulan. Kini tagihan periode berikutnya terbit otomatis **7 hari sebelum** periode berjalan habis (`config/subscription.php` → `invoice_lead_days`), dengan jatuh tempo di hari periodenya habis.
+- **Alasan:** Tagihan yang terbit tepat di hari periodenya habis sampai bersamaan dengan hilangnya kemampuan menulis — tenant membaca angkanya dan mendapati aplikasinya sudah setengah terkunci di menit yang sama. Menerbitkannya lebih awal membuat "berapa yang harus dibayar" tiba sebagai pemberitahuan, bukan sebagai penjelasan setelah kejadian.
+- **Keputusan pemilik (2026-08-06):** tenant yang **tidak bisa ditagih tetap menempuh siklus hidupnya** — tidak ada tagihan yang terbit, tapi masa tenggang dan penangguhan berjalan seperti biasa. Dua alternatifnya ditolak: memperpanjang periode tenant bertarif Rp 0 akan membuat masa coba terbengkalai tidak pernah berakhir (bertentangan dengan "bulan kedua wajib bayar"), dan membekukan tenant di tempat sama-sama mencabut jaminan lama. Tarif yang kebetulan belum ditetapkan tidak boleh diam-diam mengubah aturan main.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`, `invoiceLeadDays()`, `pricingAsOf()`; `advanceLifecycle()` memanggilnya lebih dulu
+  - `app/Console/Commands/AdvanceSubscriptionLifecycle.php` — tiga baris laporan baru, dua di antaranya peringatan
+  - `config/subscription.php` — `invoice_lead_days = 7`
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `periodStart()` jadi pembungkus `SubscriptionService::pricingAsOf()`
+  - `tests/Feature/Subscription/AutoInvoiceTest.php` — 12 test baru
+- **Keputusan yang perlu diingat:**
+  - **Penerbitannya menumpang di `advanceLifecycle()`, bukan jadi perintah terjadwal sendiri.** Ia harus berjalan sebelum tenant dipindahkan ke masa tenggang; sebagai dua baris jadwal, urutan itu bersandar pada kebetulan, dan jadwal yang kebetulan benar akan salah pada hari seseorang menggesernya.
+  - **Satu resolver, satu titik waktu penetapan harga.** Nominalnya keluar dari `PricingService::resolveFor()` — resolver yang sama dengan penerbit manual — dan `pricingAsOf()` pindah ke service supaya keduanya tidak bisa memakai tanggal yang berbeda. Dua titik waktu berbeda melahirkan dua nominal untuk periode yang sama, dan yang menang tinggal soal siapa yang menekan tombol.
+  - **Kunci periodenya adalah bulan tempat periode BERIKUTNYA dibuka.** Siklus berjangkar (`[BL-030]`) selalu membuka tepat satu periode per bulan kalender, jadi kunci `Y-m` tak pernah bertabrakan dengan dirinya sendiri. Penjaga duplikat yang sama dengan penerbit manual dipakai ulang, sehingga tagihan yang sudah diketik pemilik SaaS — mungkin dengan nominal keringanan — tidak pernah ditimpa.
+  - **Tarif Rp 0 dan tarif yang tidak ada dipisah, karena obatnya berbeda.** Rp 0 berarti angkanya belum ditetapkan (`[BL-041]`(a)) — tidak dicatat ke jejak audit karena selama itu berlaku ia terjadi untuk setiap tenant setiap hari, dan jejak yang terisi hal yang sama akan menenggelamkan kejadian yang perlu terlihat. Tarif `null` berarti tenant Adaptif tanpa bracket cocok **dan** tanpa paket penampung — salah setel, bukan kebijakan, jadi ia dicatat sebagai kejadian sensitif `invoices.unpriced`. Keduanya juga dilaporkan sebagai peringatan terpisah oleh perintahnya.
+  - **Menyembuhkan dirinya sendiri.** Begitu tarif paket ditetapkan di `/platform/pricing-rules`, tagihan mulai terbit tanpa satu baris kode pun berubah.
+  - **Butir (c) `[BL-044]` — momen pilihan jalur di akhir masa coba — sengaja TIDAK dikerjakan.** Menawarkan dua jalur menuntut pagar kelayakan Harga Adaptif yang belum ada (`[BL-048]`, masih menunggu ambang omset dari pemilik). Menawarkannya sekarang berarti menyodorkan pilihan yang sistem belum bisa tolak — persis yang keputusan 2026-08-01 tutup.
 
 ---
 

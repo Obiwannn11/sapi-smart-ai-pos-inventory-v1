@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\Plan;
+use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
@@ -11,6 +12,8 @@ use Illuminate\Support\Carbon;
 
 class SubscriptionService
 {
+    public function __construct(private readonly PricingService $pricing) {}
+
     /**
      * Panjang masa coba untuk tenant baru, dalam hari.
      */
@@ -25,6 +28,32 @@ class SubscriptionService
     public static function graceDays(): int
     {
         return (int) config('subscription.grace_days');
+    }
+
+    /**
+     * Berapa hari sebelum periode habis tagihan berikutnya terbit.
+     */
+    public static function invoiceLeadDays(): int
+    {
+        return (int) config('subscription.invoice_lead_days');
+    }
+
+    /**
+     * Titik waktu penetapan harga untuk periode tagihan `Y-m`.
+     *
+     * Awal bulan periodenya, bukan akhirnya: aturan yang mulai berlaku di
+     * tengah bulan tidak boleh mengubah harga bulan yang sudah berjalan. Yang
+     * dipakai adalah aturan yang sudah berdiri saat periodenya dibuka — itulah
+     * yang akan dikatakan kepada tenant bila ia bertanya.
+     *
+     * Tinggal di sini supaya penerbit otomatis dan penerbit manual di
+     * `Platform\InvoiceController` memakai titik waktu yang sama. Dua tanggal
+     * penetapan harga yang berbeda akan melahirkan dua nominal untuk periode
+     * yang sama, dan yang menang tinggal soal siapa yang menekan tombol.
+     */
+    public static function pricingAsOf(string $period): Carbon
+    {
+        return Carbon::createFromFormat('Y-m', $period)->startOfMonth();
     }
 
     /**
@@ -147,6 +176,137 @@ class SubscriptionService
             // kosong mendapatkannya pada pembaruan periode pertamanya, bukan
             // menunggu backfill kedua.
             'billing_anchor_day' => $subscription->billingAnchorDay(),
+        ];
+    }
+
+    /**
+     * Terbitkan tagihan periode berikutnya untuk tenant yang periodenya hampir
+     * habis.
+     *
+     * Sebelum ini, satu-satunya cara tagihan bulanan lahir adalah pemilik SaaS
+     * mengetiknya sendiri untuk tiap tenant, tiap bulan. Tenant tidak pernah
+     * diberi tahu berapa yang harus dibayar — ia hanya menemukan aplikasinya
+     * berubah jadi hanya-baca. Lihat `[BL-044]`.
+     *
+     * Nominalnya keluar dari `PricingService::resolveFor()`, resolver yang sama
+     * dengan penerbit manual, supaya keduanya tidak pernah bercabang.
+     *
+     * **Yang tidak bisa ditagih tidak menghentikan apa pun** (keputusan pemilik
+     * 2026-08-05). Tenant tanpa tarif tetap menempuh siklus hidupnya seperti
+     * biasa; perintah ini hanya menolak menerbitkan tagihan dan melaporkan
+     * jumlahnya. Dua sebabnya dipisah karena obatnya berbeda:
+     *
+     *   - **tarif nol** — paket Dasar masih Rp 0 selama angkanya belum
+     *     ditetapkan (`[BL-041]`(a)). Menerbitkan tagihan Rp 0 akan menuntut
+     *     tenant mengunggah bukti transfer nol rupiah (`[BL-049]`), jadi tidak
+     *     diterbitkan sama sekali. Menyembuhkan dirinya sendiri: begitu tarifnya
+     *     ditetapkan, tagihan mulai terbit tanpa satu baris kode pun berubah.
+     *   - **tarif tidak ada** — `resolveFor()` mengembalikan `null` untuk tenant
+     *     Adaptif tanpa bracket yang cocok dan tanpa paket penampung, persis
+     *     keadaan "menghilang dari penagihan tanpa satu pun tanda" yang
+     *     diperingatkan `PricingService::fallbackPlanFor()`. Ia dicatat sebagai
+     *     kejadian sensitif, karena ia salah setel, bukan kebijakan.
+     *
+     * @return array{issued: int, free: int, unpriced: int}
+     */
+    public function issueDuePeriodInvoices(bool $dryRun = false): array
+    {
+        $today = now()->startOfDay();
+        $horizon = $today->copy()->addDays(self::invoiceLeadDays());
+
+        $issued = 0;
+        $free = 0;
+        $unpriced = 0;
+
+        $due = Tenant::query()
+            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE])
+            ->whereHas('subscription', fn ($query) => $query->whereDate('current_period_end', '<=', $horizon))
+            ->with('subscription')
+            ->get();
+
+        foreach ($due as $tenant) {
+            $subscription = $tenant->subscription;
+
+            // Akhir periode berjalan adalah awal periode berikutnya — periode
+            // itulah yang ditagih di sini.
+            $periodStart = $subscription?->current_period_end;
+
+            if ($periodStart === null) {
+                continue;
+            }
+
+            $period = $periodStart->format('Y-m');
+
+            // Penjaga yang sama dengan penerbit manual. Siklus berjangkar selalu
+            // membuka tepat satu periode per bulan kalender, jadi kunci `Y-m`
+            // tidak pernah bertabrakan dengan dirinya sendiri — yang ditolaknya
+            // adalah tagihan yang sudah diketik pemilik SaaS untuk periode itu.
+            if (Invoice::where('tenant_id', $tenant->id)->where('period', $period)->exists()) {
+                continue;
+            }
+
+            $resolved = $this->pricing->resolveFor($tenant, self::pricingAsOf($period));
+            $price = $resolved['price'];
+
+            if ($price === null) {
+                $unpriced++;
+
+                if (! $dryRun) {
+                    PlatformAuditLog::record('invoices.unpriced', $tenant, [
+                        'tenant_id' => $tenant->id,
+                        'period' => $period,
+                        'pricing_track' => $subscription->pricing_track,
+                    ]);
+                }
+
+                continue;
+            }
+
+            if ($price <= 0.0) {
+                // Tidak dicatat ke jejak audit: selama tarifnya belum
+                // ditetapkan, keadaan ini berlaku untuk SETIAP tenant setiap
+                // bulan, dan jejak yang terisi hal yang sama tiap hari
+                // menenggelamkan kejadian yang benar-benar perlu terlihat.
+                // Angkanya dilaporkan perintahnya, dan itu cukup.
+                $free++;
+
+                continue;
+            }
+
+            $issued++;
+
+            if (! $dryRun) {
+                $invoice = Invoice::create([
+                    'tenant_id' => $tenant->id,
+                    'subscription_id' => $subscription->id,
+                    'period' => $period,
+                    'kind' => Invoice::KIND_SUBSCRIPTION,
+                    'amount' => $price,
+                    // Selalu terisi bila ada aturan yang cocok: penerbit ini
+                    // menagih persis tarif yang dihitung, jadi tidak ada kasus
+                    // "nominal diketik ulang" seperti pada penerbit manual.
+                    'pricing_rule_id' => $resolved['rule']?->id,
+                    'pricing_context' => $resolved['context'],
+                    'status' => Invoice::STATUS_UNPAID,
+                    // Jatuh tempo = hari periode berjalan habis. Sesudah itu
+                    // tenant masuk masa tenggang, bukan langsung tertutup.
+                    'due_date' => $periodStart->toDateString(),
+                ]);
+
+                PlatformAuditLog::record('invoices.auto-create', $invoice, [
+                    'tenant_id' => $tenant->id,
+                    'period' => $period,
+                    'amount' => $price,
+                    'pricing_rule' => $resolved['label'],
+                    'source' => $resolved['source'],
+                ]);
+            }
+        }
+
+        return [
+            'issued' => $issued,
+            'free' => $free,
+            'unpriced' => $unpriced,
         ];
     }
 
@@ -392,12 +552,26 @@ class SubscriptionService
      * memisahkannya jadi dua perintah terjadwal hanya menambah satu hal lagi
      * yang bisa lupa dipasang.
      *
-     * @return array{expired: int, suspended: int, reverted: int}
+     * Penerbitan tagihan menumpang di sini karena alasan yang sama, dan lebih
+     * kuat: ia harus berjalan SEBELUM tenant dipindahkan ke masa tenggang
+     * (`[BL-044]`). Sebagai perintah terjadwal sendiri, urutan itu bersandar
+     * pada dua baris jadwal yang kebetulan ditulis berurutan — dan jadwal yang
+     * kebetulan benar akan salah pada hari seseorang menggesernya. Di sini
+     * keduanya tak terpisahkan.
+     *
+     * Penerbitan tagihan TIDAK mengubah siapa yang berpindah keadaan. Tenant
+     * yang tak bisa ditagih tetap menempuh masa tenggang dan penangguhan seperti
+     * biasa — keputusan pemilik 2026-08-05, supaya tidak ada jaminan lama yang
+     * diam-diam tercabut oleh tarif yang kebetulan belum ditetapkan.
+     *
+     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int}
      */
     public function advanceLifecycle(bool $dryRun = false): array
     {
         $today = now()->startOfDay();
         $graceCutoff = $today->copy()->subDays(self::graceDays());
+
+        $billing = $this->issueDuePeriodInvoices($dryRun);
 
         $expiring = fn () => Tenant::query()
             ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE])
@@ -444,6 +618,9 @@ class SubscriptionService
             'expired' => $expiredCount,
             'suspended' => $suspendedCount,
             'reverted' => $revertedCount,
+            'invoiced' => $billing['issued'],
+            'free' => $billing['free'],
+            'unpriced' => $billing['unpriced'],
         ];
     }
 }

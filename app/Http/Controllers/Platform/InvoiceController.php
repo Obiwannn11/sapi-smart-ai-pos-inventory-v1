@@ -167,14 +167,14 @@ class InvoiceController extends Controller
     /**
      * Awal bulan periode tagihan, sebagai titik waktu penetapan harga.
      *
-     * Awal periode, bukan akhirnya: aturan yang mulai berlaku di tengah bulan
-     * tidak boleh mengubah harga bulan yang sudah berjalan. Yang dipakai adalah
-     * aturan yang sudah berdiri saat periodenya dibuka — itulah yang akan
-     * dikatakan kepada tenant bila ia bertanya.
+     * Definisinya pindah ke `SubscriptionService::pricingAsOf()` supaya penerbit
+     * manual di sini dan penerbit otomatis memakai titik waktu yang sama
+     * (`[BL-044]`). Dibiarkan sebagai pembungkus karena nama `periodStart` lebih
+     * terbaca di tempat pemanggilannya.
      */
     protected function periodStart(string $period): Carbon
     {
-        return Carbon::createFromFormat('Y-m', $period)->startOfMonth();
+        return SubscriptionService::pricingAsOf($period);
     }
 
     /**

@@ -28,6 +28,17 @@ return [
     'grace_days' => 30,
 
     /**
+     * Berapa hari sebelum periode berakhir tagihan periode berikutnya terbit.
+     *
+     * Tagihan yang terbit tepat di hari periodenya habis sampai bersamaan
+     * dengan hilangnya kemampuan menulis — tenant membaca angkanya dan
+     * mendapati aplikasinya sudah setengah terkunci di menit yang sama.
+     * Menerbitkannya lebih awal membuat "berapa yang harus dibayar" tiba
+     * sebagai pemberitahuan, bukan sebagai penjelasan setelah kejadian.
+     */
+    'invoice_lead_days' => 7,
+
+    /**
      * Umur minimum tenant terbengkalai sebelum boleh dipangkas, dalam hari.
      *
      * "Terbengkalai" bermakna sempit dan sengaja: pemiliknya tidak pernah
