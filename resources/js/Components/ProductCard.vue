@@ -1,4 +1,6 @@
 <script setup>
+import ProductImage from '@/Components/ProductImage.vue';
+
 const props = defineProps({
     product: Object,
     disabled: { type: Boolean, default: false },
@@ -48,15 +50,8 @@ const handleClick = () => {
         </span>
 
         <!-- Product Image -->
-        <div class="w-full aspect-square bg-gray-100 rounded-lg mb-2 overflow-hidden flex items-center justify-center">
-            <img v-if="product.image"
-                 :src="`/storage/${product.image}`"
-                 :alt="product.name"
-                 class="w-full h-full object-cover" />
-            <svg v-else class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
+        <div class="w-full aspect-square bg-gray-100 rounded-lg mb-2 overflow-hidden">
+            <ProductImage :src="product.image_thumb_url" :name="product.name" />
         </div>
 
         <!-- Info -->

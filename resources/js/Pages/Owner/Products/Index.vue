@@ -4,6 +4,7 @@ import { useForm, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import ProductImage from '@/Components/ProductImage.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -124,17 +125,7 @@ const formatCurrency = (val) => {
             >
                 <!-- Image -->
                 <div class="aspect-square bg-gray-100 relative">
-                    <img
-                        v-if="product.image_url"
-                        :src="product.image_url"
-                        :alt="product.name"
-                        class="w-full h-full object-cover"
-                    />
-                    <div v-else class="w-full h-full flex items-center justify-center">
-                        <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                    </div>
+                    <ProductImage :src="product.image_url" :name="product.name" />
                     <!-- Status badge -->
                     <span
                         :class="[

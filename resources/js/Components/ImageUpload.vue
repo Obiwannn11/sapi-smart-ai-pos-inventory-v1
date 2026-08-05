@@ -129,7 +129,7 @@ const openPicker = () => {
                         Tarik &amp; lepas gambar baru di sini, atau
                         <span class="text-primary font-medium">klik untuk mengganti</span>.
                     </p>
-                    <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP. Maks 5 MB.</p>
+                    <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP. Maks 5 MB — otomatis dipotong persegi 800&times;800 WEBP.</p>
                 </div>
             </div>
 

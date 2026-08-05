@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-06 | DECISION | Produk | Gambar Produk Pindah ke Disk Privat, Diseragamkan Ukurannya, dan Punya Cadangan Inisial |
 | 2026-08-06 | ADDITION | Langganan | Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b) |
 | 2026-08-05 | DECISION | Langganan | Tanggal Tagih Jadi Jangkar: Bulan Pendek Menjepit Sementara, Tidak Menggeser Selamanya (BL-030) |
 | 2026-08-05 | HOTFIX | Auth | Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043) |
@@ -148,6 +149,34 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Gambar Produk Pindah ke Disk Privat, Diseragamkan Ukurannya, dan Punya Cadangan Inisial
+- **Tanggal:** 2026-08-06
+- **Fase Terkait:** Di Luar Fase — permintaan pemilik
+- **Dampak:** Service | Controller | Model | Route | Frontend | Test
+- **Breaking Change:** Ya, untuk berkas lama. Path `public/storage/products/**` tidak lagi disajikan; gambar yang sudah tersimpan di sana perlu diunggah ulang. Disepakati pemilik (2026-08-06) karena storage produksi masih kosong. Kolom `products.image` tidak berubah bentuk — isinya tetap path relatif, hanya disknya yang berpindah.
+- **Deskripsi:** Tiga hal sekaligus, karena ketiganya menyentuh berkas yang sama. (a) Gambar produk berhenti disajikan lewat symlink `public/storage` dan pindah ke disk privat, hanya keluar lewat rute ber-auth `GET /media/products/{product}/{size}`. (b) Setiap unggahan dinormalkan jadi WEBP persegi dalam dua ukuran tetap — 800×800 dan 200×200 — menggantikan konversi WEBP yang tidak pernah mengubah resolusi. (c) Produk tanpa gambar tidak lagi menampilkan ikon abu-abu yang seragam, melainkan inisial setiap kata namanya di atas warna yang diturunkan dari nama itu.
+- **Alasan:** Symlink publik berarti setiap gambar terbuka untuk siapa pun yang tahu path-nya, termasuk toko lain — UUID memang sulit ditebak, tapi "sulit ditebak" bukan gerbang, dan sekali sebuah URL tersalin ke luar ia berlaku selamanya untuk semua orang. Soal ukuran: foto kamera ponsel tersimpan apa adanya, jadi kisi POS mengunduh berkas berukuran megabyte untuk kartu selebar 170 px — mahal di jaringan warung, dan tiap kartu punya rasio berbeda sehingga barisnya tampak jomplang. Soal inisial: ikon "gunung" yang sama untuk semua produk tak bergambar membuat sederet kotak kembar yang harus dibaca teksnya satu per satu; itu menghapus keuntungan utama tampilan kisi.
+- **Temuan sampingan — unggah gambar selama ini SELALU gagal.** `ImageService` mengimpor `Intervention\Image\Laravel\Facades\Image`, facade milik paket `intervention/image-laravel` yang **tidak terpasang** (yang ada hanya paket inti `intervention/image`). Setiap unggahan berakhir 500 sejak fitur ini ditulis, dan tidak ada satu pun test yang menyentuh jalurnya. Diperbaiki dengan memakai `ImageManager::gd()` dari paket inti — tanpa menambah dependensi — dan jalurnya kini ditutup test.
+- **File Terdampak:**
+  - `app/Services/ImageService.php` — disk privat, dua rendition, `thumbPath()`/`pathFor()`; `url()` dihapus
+  - `app/Http/Controllers/MediaController.php` (baru) — satu-satunya pintu keluar berkas tenant
+  - `app/Models/Product.php` — `$appends` = `image_url`, `image_thumb_url`
+  - `routes/web.php` — `media.product-image`, di bawah `auth` saja
+  - `app/Http/Controllers/Owner/ProductController.php` — berhenti menyusun URL sendiri
+  - `resources/js/Components/ProductImage.vue` (baru), `ProductCard.vue`, `Pages/Owner/Products/Index.vue`, `ImageUpload.vue`
+  - `tests/Feature/Security/ProductImageAccessTest.php` (baru, 9 test), `tests/Feature/Owner/ProductTest.php` (4 test gambar)
+- **Keputusan yang perlu diingat:**
+  - **Rutenya di bawah `auth` SAJA, di luar grup `tenant`.** Tag `<img>` tidak bisa menampilkan halaman pengalihan: kalau rute ini ikut gerbang langganan atau verifikasi surel, gambar dijawab 302 ke HTML dan yang terlihat pengguna cuma ikon rusak. Pemisahan antar toko ditegakkan di controller — dan sekali lagi oleh `TenantScope` saat route-model binding mencari produknya.
+  - **Milik toko lain dijawab 404, bukan 403.** Jawaban yang membedakan "bukan milikmu" dari "tidak ada" mengubah URL ini jadi alat menghitung produk toko sebelah.
+  - **URL-nya relatif, bukan absolut.** URL absolut memakai `APP_URL`, yang di mesin pengembangan dan di belakang proxy kerap berbeda dari host yang sedang dipakai — dan gambar yang host-nya salah gagal diam-diam.
+  - **Penanda versi diturunkan dari path berkas, bukan dari `filemtime`.** Mengganti gambar menghasilkan nama berkas UUID baru, jadi `?v=` ikut berganti tanpa perlu menyentuh disk untuk setiap baris yang dirender. Itulah yang membuat `Cache-Control: private, max-age=1 tahun, immutable` aman dipakai.
+  - **URL gambar di-`$appends` pada model, tidak ditempel per controller.** Path di kolom `image` tidak boleh bocor ke browser; menempelkannya di satu tempat berarti tak ada halaman yang tergoda menyusun `"/storage/{$product->image}"` lagi — persis yang dulu dilakukan `ProductCard.vue`.
+  - **Kisi POS memakai rendition 200 px, halaman produk memakai 800 px.** Beda pemakainya, beda anggarannya: kasir membuka puluhan kartu sekaligus di jaringan yang buruk, owner membuka satu layar penuh sambil menyunting.
+  - **Inisialnya dipotong tiga huruf, dan ukurannya memakai satuan container query (`cqw`).** "Cafe Latte" jadi "CL" supaya tidak kembar dengan "Croissant"; lebih dari tiga huruf tak lagi terbaca sekilas di kartu kecil. `cqw` membuat hurufnya ikut skala kotak induk, jadi proporsinya sama di POS maupun daftar produk tanpa satu pun ukuran ditulis dua kali.
+  - **Gambar dipotong PERSEGI, bukan diskalakan menurut rasio aslinya.** Semua permukaan sudah memakai `aspect-square` + `object-cover`, jadi pemotongan itu toh sudah terjadi di browser — melakukannya saat unggah berarti byte yang dibuang tidak ikut dikirim.
 
 ---
 

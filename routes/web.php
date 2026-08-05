@@ -45,6 +45,18 @@ Route::middleware('auth')->group(function () {
         ->name('verification.send');
 });
 
+// --- Media bertenant ---
+// Juga 'auth' saja, di luar grup 'tenant', tapi dengan alasan berbeda: tag
+// <img> tidak bisa menampilkan halaman pengalihan. Kalau rute ini ikut gerbang
+// langganan atau verifikasi surel, gambar akan dijawab 302 ke halaman HTML dan
+// yang terlihat pengguna hanyalah ikon rusak. Pemisahan antar toko tetap
+// ditegakkan di MediaController, dan sekali lagi oleh TenantScope saat
+// route-model binding mencari produknya.
+Route::middleware('auth')
+    ->get('/media/products/{product}/{size}', [\App\Http\Controllers\MediaController::class, 'productImage'])
+    ->whereIn('size', ['full', 'thumb'])
+    ->name('media.product-image');
+
 // --- Langganan (sisi tenant) ---
 // Satu-satunya halaman bertenant yang tetap terbuka saat tenant ditangguhkan —
 // lihat daftar ALWAYS_ALLOWED di EnsureSubscriptionActive. Menutupnya berarti

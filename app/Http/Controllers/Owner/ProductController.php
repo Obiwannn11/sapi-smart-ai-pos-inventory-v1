@@ -22,13 +22,11 @@ class ProductController extends Controller
 
     public function index(): Response
     {
+        // URL gambar tidak ditempel di sini: Product meng-append image_url dan
+        // image_thumb_url sendiri, jadi setiap permukaan mendapatkannya.
         $products = Product::with(['category:id,name', 'variants:id,product_id,name,price,stock'])
             ->latest()
-            ->get()
-            ->map(function ($product) {
-                $product->image_url = $this->imageService->url($product->image);
-                return $product;
-            });
+            ->get();
 
         return Inertia::render('Owner/Products/Index', [
             'products' => $products,
@@ -68,7 +66,7 @@ class ProductController extends Controller
         }
 
         // Attach modifier groups
-        if (!empty($data['modifier_group_ids'])) {
+        if (! empty($data['modifier_group_ids'])) {
             $product->modifierGroups()->sync($data['modifier_group_ids']);
         }
 
@@ -79,7 +77,6 @@ class ProductController extends Controller
     public function edit(Product $product): Response
     {
         $product->load(['variants', 'modifierGroups:id']);
-        $product->image_url = $this->imageService->url($product->image);
 
         return Inertia::render('Owner/Products/Form', [
             'product' => $product,
