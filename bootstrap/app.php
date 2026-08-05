@@ -80,6 +80,29 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('platform', 'platform/*')
             ? route('platform.login')
             : route('login'));
+
+        // Kembarannya untuk arah sebaliknya: pengguna yang SUDAH masuk lalu
+        // membuka halaman khusus tamu (bookmark, tombol Back, mengetik ulang).
+        // Tanpa ini middleware `guest` memakai tujuan bawaan framework, yang
+        // mencari rute bernama persis `dashboard` lalu `home`. Aplikasi ini
+        // tidak punya keduanya — rutenya `owner.dashboard` dan
+        // `platform.dashboard` — sehingga jatuh ke '/', yaitu landing publik
+        // yang tombol utamanya menuju login TENANT. Akibatnya pemilik SaaS
+        // yang sesinya masih hidup terlempar ke dunia yang salah.
+        // Pemilahannya memakai prefiks yang sama dengan redirectGuestsTo di
+        // atas, dan ditaruh berdampingan supaya kedua arah pengalihan terbaca
+        // sebagai satu keputusan.
+        $middleware->redirectUsersTo(function (Request $request) {
+            if ($request->is('platform', 'platform/*')) {
+                return route('platform.dashboard');
+            }
+
+            // Sisi tenant memilih berdasarkan peran, persis seperti yang
+            // dilakukan Auth\AuthController::login() setelah kata sandi cocok.
+            return $request->user()?->isOwner()
+                ? route('owner.dashboard')
+                : route('cashier.pos');
+        });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Render a branded Inertia error page for 400/500 responses in

@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-05 | HOTFIX | Auth | Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043) |
 | 2026-08-01 | DECISION | Demo | Seeder Transaksi Menambal Hari Kosong, Bukan Mereset atau Menumpuk |
 | 2026-08-01 | ADDITION | Platform | Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047) |
 | 2026-08-01 | ADDITION | Langganan | Warna Khas per Jalur Harga, Jejak Persetujuan, & Perkiraan Tarif Adaptif |
@@ -145,6 +146,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043)
+- **Tanggal:** 2026-08-05
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-043]`
+- **Dampak:** Bootstrap | Controller | Test
+- **Breaking Change:** Tidak untuk akun platform. Ya dalam satu hal yang disengaja di sisi tenant: pengguna yang **sudah** masuk lalu membuka `/login` kini mendarat di areanya sendiri (owner → dashboard, kasir → POS), bukan di landing publik seperti sebelumnya.
+- **Deskripsi:** Guard, broker kata sandi, dan pengalihan **tamu** sudah lama terpisah rapi antara platform dan tenant — yang tidak pernah dipisah adalah pengalihan **setelah** berhasil masuk. Dua jalur berbeda, dua gejala berbeda, keduanya berakhir di luar `/platform`: (a) akun platform yang sesinya masih hidup lalu membuka `/platform/login` dilempar ke `/`, yaitu landing publik yang tombol utamanya menuju login **tenant**; (b) login platform pada peramban yang pernah menyentuh area tenant dalam keadaan keluar dibajak oleh `url.intended` yang tertinggal, sehingga berakhir di halaman masuk pemilik usaha meski login-nya berhasil dan `login.success` sudah tercatat.
+- **Alasan:** Cabang (a) terjadi karena `RedirectIfAuthenticated` bawaan framework mencari rute bernama persis `dashboard` lalu `home`; aplikasi ini tidak punya keduanya (rutenya `owner.dashboard` dan `platform.dashboard`), jadi jatuh ke `'/'`. Cabang (b) terjadi karena `url.intended` adalah **satu kunci untuk kedua guard** — sesinya satu — dan `intended()` polos memenangkan nilai itu atas argumen bawaannya. Gejala (b) bersyarat: sesi peramban yang bersih tidak pernah mengalaminya, dan itu sebabnya cacat ini lolos sekian lama — pengujian di jendela penyamaran yang baru akan selalu lulus.
+- **File Terdampak:**
+  - `bootstrap/app.php` — `redirectUsersTo()` dipasang berdampingan dengan `redirectGuestsTo()` yang sudah ada
+  - `app/Http/Controllers/Platform/AuthController.php` — `intendedPlatformUrl()` menggantikan `intended()` polos
+  - `tests/Feature/Platform/PlatformAuthTest.php` — 5 test baru (4 di antaranya gagal sebelum perbaikan ini)
+- **Keputusan yang perlu diingat:**
+  - **Kedua arah pengalihan ditaruh berdampingan di `bootstrap/app.php`**, memakai pemilahan prefiks yang sama persis. Yang membuat cacat ini mungkin adalah satu arah ditulis dan kembarannya tidak; menaruhnya bersebelahan membuat keduanya terbaca sebagai satu keputusan, sehingga arah yang hilang terlihat.
+  - **`url.intended` disaring, bukan dihapus.** Menghapusnya akan menghukum akun platform yang mengklik tautan langsung ke `/platform/tenants/7` lalu diminta masuk — ia tetap layak dikembalikan ke sana. Yang dibuang hanya tujuan di luar prefiks `platform`.
+  - **Dipakai `pull`, bukan `get`.** Tujuan yang ditolak harus ikut hangus; kalau hanya diabaikan, ia menunggu di sesi dan menyerang perpindahan halaman berikutnya yang kebetulan memakai `intended()`.
+  - **Dicocokkan sebagai segmen utuh dan host ikut diperiksa.** `'/platformx'` bukan area platform, dan memeriksa path saja akan meloloskan URL absolut ke host lain yang kebetulan memuat prefiks yang sama. Hari ini kunci itu hanya ditulis middleware kita sendiri — pemeriksaan host ada supaya itu tidak perlu tetap benar selamanya.
+  - **Sisi tenant ikut dibereskan karena callback-nya satu.** `redirectUsersTo` global, jadi cabang non-platform harus mengembalikan sesuatu; ia memilih berdasarkan peran persis seperti `Auth\AuthController::login()` setelah kata sandi cocok, alih-alih membuang keduanya ke landing.
 
 ---
 

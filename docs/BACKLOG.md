@@ -58,34 +58,11 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-01** — `[BL-043]`–`[BL-047]` berasal dari catatan menjalankan panel platform, dan sudah **diverifikasi terhadap kode**. Empat dari lima bukan "belum ada sama sekali" melainkan **setengah jadi**: gerbang hanya-baca sudah menegakkan dirinya tapi tak terlihat (`[BL-045]`), CRUD paket sudah ada tapi tak ada yang membacanya (`[BL-046]`), kuota AI sudah ada tapi tinggal di `.env` (`[BL-047]`), dan siklus hidup langganan sudah berpindah keadaan tapi tak pernah menerbitkan tagihan (`[BL-044]`). Hanya `[BL-043]` yang murni cacat. **Koreksi terhadap catatan 2026-07-31 (kedua) di atas:** butir (1) di sana — "pemisahan login platform vs login tenant sudah utuh" — benar untuk *guard, broker, dan pengalihan tamu*, tapi **tidak** untuk pengalihan **setelah** berhasil masuk; lihat `[BL-043]`.
 >
-> Urutan yang disarankan: `[BL-043]` (cacat, berdiri sendiri, kecil) → `[BL-030]` (mumpung `invoices` masih kosong) → `[BL-041]`(a) menetapkan angka → `[BL-044]` → `[BL-046]` → `[BL-047]` → `[BL-045]`.
+> Urutan yang disarankan: ~~`[BL-043]` (cacat, berdiri sendiri, kecil)~~ → `[BL-030]` (mumpung `invoices` masih kosong) → `[BL-041]`(a) menetapkan angka → `[BL-044]` → `[BL-046]` → `[BL-047]` → `[BL-045]`. Yang dicoret selesai 2026-08-05.
 
 > **Keputusan pemilik 2026-08-01 (struktur tarif)** — Rp 100k ditetapkan sebagai **puncak bracket Harga Adaptif**, sejajar dengan harga Premium; tenant beromset tinggi tidak lagi berhak atas Adaptif dan hanya bisa Premium; kelayakan Adaptif ditentukan pemilik SaaS. Rinciannya di blok "Keputusan pemilik" pada `[BL-041]`. Dampaknya menyebar ke tiga entri: `[BL-044]` (pertanyaan tarifnya terjawab), `[BL-046]` (Premium dapat pembeda kedua, dan jalur pindah paket berubah dari nyaman jadi wajib), dan satu entri baru **`[BL-048]`** — pagar kelayakan jalur Adaptif, yang ternyata **menabrak gerbang privasi**: menilai kelayakan masuk butuh data omset yang baru boleh dikumpulkan setelah masuk. Baca `[BL-048]` sebelum menyentuh `canSwitchTrack()`.
 >
 > **Keputusan pemilik 2026-08-01 (kedua)** — batas Adaptif diturunkan dari tangga harga Premium, bukan disetel sebagai angka tersendiri; Premium kelak bisa tiga tier dengan puncak Adaptif mendarat di tengahnya. Dua akibat yang menghemat pekerjaan: batas itu **sudah bisa dinyatakan tanpa kolom atau migrasi baru** — cukup satu baris syarat `lt` pada bracket D yang hari ini tidak punya batas atas (`[BL-048]`(b)) — dan permintaan soal harga seat tambahan (**tidak nullable, wajib ditulis walau 0**) ternyata **sudah dipenuhi kode hari ini**, hanya prefill formulirnya yang belum ada (`[BL-046]`).
-
-### [BL-043] Login Platform Berhasil, Lalu Mendarat di Area Tenant
-- **Ditemukan:** 2026-08-01
-- **Sumber:** Catatan pemilik saat menjalankan panel platform — "fix redirecting ketika login sebagai platform account, masalahnya adalah mengarahkan ke login, ke `/` dan tidak mengarahkan ke `/platform`"
-- **Status:** Open
-- **Prioritas:** High
-- **Area Terdampak:**
-  - `bootstrap/app.php:80-82` — `redirectGuestsTo()` dipasang; **`redirectUsersTo()` tidak pernah dipasang**
-  - `routes/web.php:260` — grup `guest:platform` membungkus `/platform/login` dan seluruh alur reset kata sandi
-  - `app/Http/Controllers/Platform/AuthController.php:48` — `redirect()->intended(route('platform.dashboard'))`
-  - `app/Http/Middleware/EnsureTenant.php:15` — `redirect()->route('login')` untuk pengunjung tanpa tenant
-  - `routes/web.php:410` — `/` adalah landing publik (`Public\LandingController@index`), bukan pengalih
-- **Deskripsi:**
-  Dua jalur berbeda, dua gejala berbeda, keduanya berakhir di luar `/platform` — persis dua tujuan yang disebut catatan.
-- **Terbukti langsung di browser 2026-08-01.** Cabang (a) direproduksi: masuk sebagai `platform@sapi.test`, mendarat benar di `/platform`, lalu membuka `http://localhost:8001/platform/login` → berakhir di `http://localhost:8001/` dengan judul halaman "SAPI - Smart AI POS & Inventory untuk UMKM", yaitu landing publik. Bukan dugaan.
-  Satu penyempurnaan dari pengujian itu: cabang (b) **tidak selalu muncul**. Login pada sesi peramban yang bersih mendarat benar di `platform.dashboard`, karena `url.intended` memang belum pernah terisi. Jadi gejalanya bersyarat — ia hanya menyerang peramban yang pernah menyentuh area tenant dalam keadaan keluar. Itu menjelaskan mengapa cacat ini bisa lolos: pengujian di jendela penyamaran yang baru akan selalu lulus.
-- **Dugaan Penyebab — sudah ditelusuri, bukan dugaan lagi:**
-  **(a) Mendarat di `/`.** `guest:platform` memakai `RedirectIfAuthenticated` bawaan framework. Tujuannya berasal dari `redirectTo()` → `defaultRedirectUri()`, yang mencari rute bernama persis `dashboard` lalu `home`. Aplikasi ini tidak punya keduanya — rutenya bernama `owner.dashboard` dan `platform.dashboard` (dipastikan lewat `php artisan route:list --name=dashboard`), jadi jatuh ke `return '/'`. Akibatnya: akun platform yang sesinya masih hidup lalu membuka `/platform/login` (bookmark, tombol Back, atau mengetik ulang) dilempar ke landing publik — halaman yang tombol utamanya "Masuk" ke login **tenant**. `redirectGuestsTo` di `bootstrap/app.php:80` sudah memilah tamu dengan benar; kembarannya untuk pengguna yang **sudah** masuk tidak pernah ditulis.
-  **(b) Mendarat di `login` tenant.** `redirect()->intended()` membaca kunci sesi `url.intended`, dan sesi itu **satu** untuk kedua guard. Urutan yang sangat mungkin terjadi di satu peramban: buka `/owner/dashboard` dalam keadaan keluar → `Authenticate` menyimpan `url.intended = /owner/dashboard` → pindah ke `/platform/login` dan masuk sebagai akun platform → `intended()` menang atas argumen bawaannya dan mengirim ke `/owner/dashboard` → `EnsureTenant` melihat pengguna tanpa tenant → `redirect()->route('login')`. Login berhasil, audit log mencatat `login.success`, tapi layar yang muncul adalah halaman masuk pemilik usaha.
-- **Usulan Perbaikan:**
-  **(a)** Tambahkan `$middleware->redirectUsersTo(...)` di `bootstrap/app.php`, bersebelahan dengan `redirectGuestsTo` yang sudah ada dan memakai pemilahan prefiks yang sama (`$request->is('platform', 'platform/*')` → `route('platform.dashboard')`, selain itu `/owner/dashboard`). Menaruhnya berdampingan membuat kedua arah pengalihan terbaca sebagai satu keputusan.
-  **(b)** Di `Platform\AuthController::login()`, jangan pakai `intended()` polos. Entah bersihkan kuncinya lebih dulu (`$request->session()->forget('url.intended')`), atau — lebih aman — terima `intended()` hanya bila URL-nya benar-benar berada di bawah prefiks `platform`, selain itu paksa `route('platform.dashboard')`. Alasan memilih penyaringan, bukan penghapusan: akun platform yang mengklik tautan langsung ke `/platform/tenants/7` lalu diminta masuk tetap layak dikembalikan ke sana.
-  Sertakan test fitur untuk keduanya: masuk dengan `url.intended` menunjuk ke area tenant harus tetap berakhir di `platform.dashboard`, dan membuka `/platform/login` dalam keadaan sudah masuk harus berakhir di `platform.dashboard` — bukan `/`.
 
 ### [BL-044] Trial Habis Tanpa Ada yang Menerbitkan Tagihan — Bulan Kedua Tidak Pernah Menagih
 - **Ditemukan:** 2026-08-01
@@ -706,6 +683,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-043` | Login platform berhasil, lalu mendarat di area tenant | 2026-08-05 | `[HOTFIX] Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043)` |
 | `BL-026` | Identitas pesanan (nama / no. meja / kode panggil) belum bisa diisi dari kasir | 2026-08-01 | `[ADDITION] Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026)` |
 | `BL-042` | Daftar tenant memajang kolom informasi, bukan jalan masuk ke rincian | 2026-08-01 | `[ADDITION] Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042)` |
 | `BL-040` | Halaman langganan & tagihan tidak punya pintu masuk dari dashboard | 2026-07-31 | `[ADDITION] Pintu Masuk Langganan & Ringkasan Tagihan di Dashboard (BL-040)` |

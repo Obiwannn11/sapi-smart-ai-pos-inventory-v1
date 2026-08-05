@@ -10,6 +10,33 @@
 
 ## Daftar Entri
 
+### [BL-043] Login Platform Berhasil, Lalu Mendarat di Area Tenant
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik saat menjalankan panel platform — "fix redirecting ketika login sebagai platform account, masalahnya adalah mengarahkan ke login, ke `/` dan tidak mengarahkan ke `/platform`"
+- **Status:** Selesai (2026-08-05) — lihat `[HOTFIX] Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043)` di `docs/CHANGELOG.md`
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `bootstrap/app.php:80-82` — `redirectGuestsTo()` dipasang; **`redirectUsersTo()` tidak pernah dipasang**
+  - `routes/web.php:260` — grup `guest:platform` membungkus `/platform/login` dan seluruh alur reset kata sandi
+  - `app/Http/Controllers/Platform/AuthController.php:48` — `redirect()->intended(route('platform.dashboard'))`
+  - `app/Http/Middleware/EnsureTenant.php:15` — `redirect()->route('login')` untuk pengunjung tanpa tenant
+  - `routes/web.php:410` — `/` adalah landing publik (`Public\LandingController@index`), bukan pengalih
+- **Deskripsi:**
+  Dua jalur berbeda, dua gejala berbeda, keduanya berakhir di luar `/platform` — persis dua tujuan yang disebut catatan.
+- **Terbukti langsung di browser 2026-08-01.** Cabang (a) direproduksi: masuk sebagai `platform@sapi.test`, mendarat benar di `/platform`, lalu membuka `http://localhost:8001/platform/login` → berakhir di `http://localhost:8001/` dengan judul halaman "SAPI - Smart AI POS & Inventory untuk UMKM", yaitu landing publik. Bukan dugaan.
+  Satu penyempurnaan dari pengujian itu: cabang (b) **tidak selalu muncul**. Login pada sesi peramban yang bersih mendarat benar di `platform.dashboard`, karena `url.intended` memang belum pernah terisi. Jadi gejalanya bersyarat — ia hanya menyerang peramban yang pernah menyentuh area tenant dalam keadaan keluar. Itu menjelaskan mengapa cacat ini bisa lolos: pengujian di jendela penyamaran yang baru akan selalu lulus.
+- **Dugaan Penyebab — sudah ditelusuri, bukan dugaan lagi:**
+  **(a) Mendarat di `/`.** `guest:platform` memakai `RedirectIfAuthenticated` bawaan framework. Tujuannya berasal dari `redirectTo()` → `defaultRedirectUri()`, yang mencari rute bernama persis `dashboard` lalu `home`. Aplikasi ini tidak punya keduanya — rutenya bernama `owner.dashboard` dan `platform.dashboard` (dipastikan lewat `php artisan route:list --name=dashboard`), jadi jatuh ke `return '/'`. Akibatnya: akun platform yang sesinya masih hidup lalu membuka `/platform/login` (bookmark, tombol Back, atau mengetik ulang) dilempar ke landing publik — halaman yang tombol utamanya "Masuk" ke login **tenant**. `redirectGuestsTo` di `bootstrap/app.php:80` sudah memilah tamu dengan benar; kembarannya untuk pengguna yang **sudah** masuk tidak pernah ditulis.
+  **(b) Mendarat di `login` tenant.** `redirect()->intended()` membaca kunci sesi `url.intended`, dan sesi itu **satu** untuk kedua guard. Urutan yang sangat mungkin terjadi di satu peramban: buka `/owner/dashboard` dalam keadaan keluar → `Authenticate` menyimpan `url.intended = /owner/dashboard` → pindah ke `/platform/login` dan masuk sebagai akun platform → `intended()` menang atas argumen bawaannya dan mengirim ke `/owner/dashboard` → `EnsureTenant` melihat pengguna tanpa tenant → `redirect()->route('login')`. Login berhasil, audit log mencatat `login.success`, tapi layar yang muncul adalah halaman masuk pemilik usaha.
+- **Cara Perbaikan (yang benar-benar dikerjakan):**
+  **(a)** `$middleware->redirectUsersTo(...)` dipasang di `bootstrap/app.php` bersebelahan dengan `redirectGuestsTo`, memakai pemilahan prefiks yang sama.
+  **(b)** `Platform\AuthController::login()` tidak lagi memakai `intended()` polos: `url.intended` di-`pull` lalu **disaring** — hanya dihormati bila host-nya milik aplikasi ini dan path-nya benar-benar berada di bawah segmen `platform`. Dipilih penyaringan, bukan penghapusan, supaya tautan langsung ke `/platform/tenants/7` tetap mengantar ke sana setelah masuk.
+- **Catatan saat dikerjakan (yang usulan di atas tidak sebutkan):**
+  - **Sisi tenant ikut berubah, dan itu tidak bisa dihindari.** `redirectUsersTo` adalah satu callback global, jadi cabang non-platform harus mengembalikan sesuatu. Ia memilih berdasarkan peran (owner → `owner.dashboard`, kasir → `cashier.pos`) persis seperti `Auth\AuthController::login()`, alih-alih membuang keduanya ke landing seperti perilaku lama.
+  - **`pull` bukan `get`**, supaya tujuan yang ditolak ikut hangus dan tidak menunggu di sesi untuk menyerang perpindahan halaman berikutnya.
+  - **Prefiks dicocokkan sebagai segmen utuh** (`platform` atau `platform/...`), bukan awalan string — `'/platformx'` bukan area platform.
+  - Dari 5 test yang ditambahkan, **4 gagal sebelum perbaikan ini**. Satu yang sudah lulus sejak awal (`tujuan platform tetap dihormati`) sengaja tetap ditulis: ia menjaga agar perbaikannya tidak berlebihan.
+
 ### [BL-026] Identitas Pesanan (Nama / No. Meja / Kode Panggil) Belum Bisa Diisi dari Kasir
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Catatan pemilik — "buatkan menu untuk menambahkan sistem nama, sistem nomor meja, atau sistem kode (misal mau pakai untuk pemanggilan)"

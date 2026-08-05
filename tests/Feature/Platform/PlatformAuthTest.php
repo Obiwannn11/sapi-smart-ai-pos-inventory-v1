@@ -40,6 +40,89 @@ test('wrong credentials are rejected', function () {
     get('/platform')->assertRedirect('/platform/login');
 });
 
+// ── Pengalihan setelah masuk (BL-043) ────────────────────────────────────────
+// Guard, broker, dan pengalihan tamu sudah lama terpisah rapi; yang tidak
+// terpisah adalah pengalihan SETELAH berhasil masuk. Dua jalur, dua gejala,
+// keduanya berakhir di luar /platform.
+
+test('a tenant destination left in the session does not hijack the platform login', function () {
+    PlatformUser::factory()->withAllModules()->create([
+        'email' => 'pemilik@sapi.test',
+        'password' => 'rahasia123',
+    ]);
+
+    // Persis jejak yang ditinggalkan peramban yang pernah membuka area tenant
+    // dalam keadaan keluar: Authenticate menyimpannya, lalu tidak ada yang
+    // membersihkannya. Sesi peramban yang bersih tidak pernah punya kunci ini,
+    // dan itu sebabnya cacat ini lolos dari pengujian di jendela penyamaran.
+    session(['url.intended' => url('/owner/dashboard')]);
+
+    post('/platform/login', [
+        'email' => 'pemilik@sapi.test',
+        'password' => 'rahasia123',
+    ])->assertRedirect('/platform');
+
+    // Ikut hangus, bukan sekadar diabaikan sekali.
+    expect(session()->has('url.intended'))->toBeFalse();
+});
+
+test('a platform destination left in the session is still honoured', function () {
+    PlatformUser::factory()->withAllModules()->create([
+        'email' => 'pemilik@sapi.test',
+        'password' => 'rahasia123',
+    ]);
+
+    // Akun platform yang mengklik tautan langsung lalu diminta masuk tetap
+    // layak dikembalikan ke tujuannya — pagarnya menyaring, bukan menghapus.
+    session(['url.intended' => url('/platform/tenants')]);
+
+    post('/platform/login', [
+        'email' => 'pemilik@sapi.test',
+        'password' => 'rahasia123',
+    ])->assertRedirect(url('/platform/tenants'));
+});
+
+test('a look-alike destination outside the platform prefix is rejected', function () {
+    PlatformUser::factory()->withAllModules()->create([
+        'email' => 'pemilik@sapi.test',
+        'password' => 'rahasia123',
+    ]);
+
+    // Dicocokkan sebagai segmen utuh: '/platformx' bukan area platform.
+    session(['url.intended' => url('/platformx/anything')]);
+
+    post('/platform/login', [
+        'email' => 'pemilik@sapi.test',
+        'password' => 'rahasia123',
+    ])->assertRedirect('/platform');
+});
+
+test('an already signed-in platform user reopening the login lands on the console', function () {
+    $platformUser = PlatformUser::factory()->withAllModules()->create();
+
+    actingAs($platformUser, 'platform');
+
+    // Tanpa redirectUsersTo, tujuan bawaan framework (rute `dashboard`/`home`)
+    // tidak ketemu dan jatuh ke '/' — landing publik yang tombol utamanya
+    // menuju login TENANT.
+    get('/platform/login')->assertRedirect('/platform');
+    get('/platform/forgot-password')->assertRedirect('/platform');
+});
+
+test('an already signed-in tenant user reopening the login lands in their own area', function () {
+    $tenant = Tenant::factory()->create();
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+    $cashier = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    // Sisi tenant memakai callback yang sama, jadi pemilahan perannya ikut
+    // diuji di sini — bukan dilempar ke landing seperti sebelumnya.
+    actingAs($owner);
+    get('/login')->assertRedirect(route('owner.dashboard'));
+
+    actingAs($cashier);
+    get('/login')->assertRedirect(route('cashier.pos'));
+});
+
 // ── Dua dunia tidak boleh saling menyeberang ─────────────────────────────────
 test('tenant user cannot reach the platform console', function () {
     $tenant = Tenant::factory()->create();

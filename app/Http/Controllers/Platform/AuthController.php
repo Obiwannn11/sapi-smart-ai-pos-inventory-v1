@@ -45,7 +45,51 @@ class AuthController extends Controller
         // adalah kegagalannya, bukan keberhasilannya.
         PlatformAuditLog::recordRoutine('login.success');
 
-        return redirect()->intended(route('platform.dashboard'));
+        return redirect()->to($this->intendedPlatformUrl($request) ?? route('platform.dashboard'));
+    }
+
+    /**
+     * Tujuan tersimpan dari `url.intended`, tapi HANYA bila ia benar-benar
+     * berada di area platform.
+     *
+     * Kuncinya satu untuk kedua guard karena sesinya satu, jadi peramban yang
+     * pernah menyentuh area tenant dalam keadaan keluar meninggalkan tujuan
+     * tenant di sana. `intended()` polos memenangkan nilai itu atas argumen
+     * bawaannya: login platform berhasil, audit log mencatat `login.success`,
+     * lalu EnsureTenant menolak dan layar yang muncul adalah halaman masuk
+     * pemilik usaha. Gejalanya bersyarat — sesi peramban yang bersih tidak
+     * pernah mengalaminya, dan itu sebabnya ia bisa lolos sekian lama.
+     *
+     * Disaring, bukan dihapus: akun platform yang mengklik tautan langsung ke
+     * /platform/tenants/7 lalu diminta masuk tetap layak dikembalikan ke sana.
+     */
+    private function intendedPlatformUrl(Request $request): ?string
+    {
+        // `pull` dan bukan `get`: nilai yang ditolak harus ikut hangus, kalau
+        // tidak ia akan menunggu di sesi dan menyerang perpindahan halaman
+        // berikutnya yang kebetulan memakai intended().
+        $intended = $request->session()->pull('url.intended');
+
+        if (! is_string($intended) || $intended === '') {
+            return null;
+        }
+
+        // Host ikut diperiksa. Hari ini kunci itu hanya ditulis middleware kita
+        // sendiri, tapi memeriksa path saja akan meloloskan URL absolut ke host
+        // lain yang kebetulan memuat prefiks yang sama.
+        $host = parse_url($intended, PHP_URL_HOST);
+
+        if ($host !== null && $host !== $request->getHost()) {
+            return null;
+        }
+
+        $path = trim((string) parse_url($intended, PHP_URL_PATH), '/');
+
+        // Dicocokkan sebagai segmen utuh, bukan awalan string: '/platformx'
+        // bukan area platform.
+        return ($path === 'platform' || str_starts_with($path, 'platform/'))
+            ? $intended
+            : null;
     }
 
     public function logout(Request $request): RedirectResponse
