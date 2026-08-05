@@ -63,6 +63,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 |---|---|---|---|
 | 2026-08-01 | ADDITION | Platform | Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047) |
 | 2026-08-01 | ADDITION | Langganan | Warna Khas per Jalur Harga, Jejak Persetujuan, & Perkiraan Tarif Adaptif |
+| 2026-08-01 | DECISION | Langganan | Halaman Langganan Masuk ke Shell Owner, dan Sidebar Mati Saat Ditangguhkan |
 | 2026-08-01 | ADDITION | Kasir | Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026) |
 | 2026-08-01 | ADDITION | Platform | Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042) |
 | 2026-07-31 | DECISION | Platform | Jenis Usaha Berpindah ke Pemilik Toko, dan "Subsidi" Jadi "Harga Adaptif" |
@@ -201,6 +202,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - **Kelas warna Tailwind ditulis UTUH, bukan dirakit runtime.** `text-${warna}-600` tidak pernah ikut ter-generate karena Tailwind memindai berkas sebagai teks; warnanya akan hilang diam-diam di build produksi, bukan gagal ramai-ramai saat dikembangkan.
   - **Tiga keadaan persetujuan, bukan dua.** "Pernah setuju tapi teksnya sudah kami ganti" bukan hal yang sama dengan "belum pernah setuju" — yang pertama bukan kelalaian tenant, dan menyebutnya begitu menuduh orang atas perubahan yang kami sendiri yang melakukannya.
   - **Tindakan berbentuk tombol, bukan teks bergaris bawah.** "Baca dokumen persetujuan" dan "Cabut persetujuan Harga Adaptif" sebelumnya tautan telanjang di antara paragraf. Keduanya tindakan yang punya akibat — yang kedua bahkan menghapus data seketika — dan tindakan sebesar itu tidak pantas menyaru sebagai kalimat. Bobotnya dibedakan: persetujuan yang sudah ada dapat tombol bergaris netral, pencabutan dapat tombol bergaris merah.
+
+---
+
+### [DECISION] Halaman Langganan Masuk ke Shell Owner, dan Sidebar Mati Saat Ditangguhkan
+- **Tanggal:** 2026-08-01
+- **Fase Terkait:** Di Luar Fase — kelanjutan `[BL-040]`
+- **Dampak:** Middleware | Frontend | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** `/langganan` tidak lagi berdiri sendiri. Ia memakai `OwnerLayout` seperti halaman tenant lainnya, sehingga kehilangan kop "SAPI POS", judul mandiri, dan tautan "Kembali ke aplikasi"-nya — semuanya sudah disediakan cangkangnya. Sebagai gantinya `OwnerLayout` belajar satu keadaan baru: saat `auth.tenant.is_suspended`, seluruh item sidebar selain `/langganan` dirender sebagai `<span>` mati (`aria-disabled`, `cursor-not-allowed`, warna teredam), pintasan **Kasir** di topbar disembunyikan, dan sebuah keterangan singkat muncul di atas navigasi. Halaman **persetujuan** (`/langganan/persetujuan`) sengaja TIDAK ikut — lihat keputusan di bawah.
+- **Alasan:** Keputusan sebelumnya (entri `[BL-040]`, 2026-07-31) menahan halaman ini di luar `OwnerLayout` dengan alasan yang sah: ia harus masuk akal bagi kasir dan bagi tenant yang ditangguhkan, dan sidebar penuh tautan yang semuanya memantul balik ke halaman yang sama lebih menyesatkan daripada tidak ada sidebar. Alasan itu tidak dibantah — ia dijawab. Keberatannya sebenarnya bukan tentang *cangkangnya*, melainkan tentang *navigasi yang berbohong*; begitu navigasinya jujur mengaku mati, satu-satunya sisa dari halaman mandiri adalah ketidakseragaman. Pemilik menempuh jalur yang sama seperti halaman lain, dan tidak ada lagi satu halaman tenant yang tampilannya beda sendiri.
+- **File Terdampak:**
+  - `app/Http/Middleware/HandleInertiaRequests.php` — `auth.tenant.is_suspended`
+  - `resources/js/Layouts/OwnerLayout.vue` — `isSuspended`/`isLocked`, item nav jadi `<component :is>`, pintasan Kasir bersyarat, keterangan di atas nav
+  - `resources/js/Pages/Billing/Show.vue` — `defineOptions({ layout: OwnerLayout })`, cangkang mandiri & `backHref` dilepas, blok `flashError` sebaris dihapus
+  - `tests/Feature/Subscription/SubscriptionLifecycleTest.php` — 2 test baru
+- **Keputusan yang perlu diingat:**
+  - **Item nav DIMATIKAN, bukan disembunyikan.** Sidebar yang menyusut jadi satu baris membuat aplikasinya tampak hilang, bukan terkunci — dan kasir yang mendarat di sini justru perlu melihat bahwa yang dipegangnya masih ada, hanya sedang tertutup. Menyembunyikan juga menghapus satu-satunya penjelasan visual atas kenapa ia terlempar ke sini.
+  - **`is_suspended` dibagikan sebagai skalar, BUKAN masuk `features`.** `features` menjawab "apakah outlet ini punya fitur X"; ini menjawab "apakah semua pintu lain sedang terkunci". Menumpangkannya ke `features` akan membuat `hasFeature()` menjawab pertanyaan yang bukan miliknya. Tenant-nya sudah dimuat, jadi tidak ada query tambahan.
+  - **Gerbangnya tetap `EnsureSubscriptionActive`, sidebar hanya cermin.** Item mati tidak mengamankan apa pun; ia hanya berhenti berbohong. Prinsip yang sama sudah berlaku untuk penyaringan per-permission di layout ini.
+  - **Rute `billing.show` tetap TIDAK digerbang `role:owner`.** Tidak ada yang berubah di sisi rute — kasir tetap boleh membukanya, dan kini ia mendarat di cangkang yang dikenalnya dengan navigasi yang jujur, bukan di halaman asing.
+  - **`Consent.vue` tetap mandiri.** Ia alur baca-sampai-habis-lalu-setuju yang tombolnya sengaja baru hidup setelah teksnya digulir tuntas. Sidebar di sekelilingnya mengundang keluar dari alur yang justru dirancang untuk tidak bisa dilewati — persetujuan yang bisa ditinggalkan setengah jalan lewat menu bukan persetujuan yang lebih baik.
+  - **Blok galat sebaris di halaman langganan dihapus, bukan dipertahankan berdampingan.** `OwnerLayout` sudah merender `FlashMessage`, dan pesan penangguhannya sendiri sudah dijelaskan panjang lebar oleh kartu keadaan (`state.suspended`). Yang tersisa hanya duplikasi.
 
 ---
 

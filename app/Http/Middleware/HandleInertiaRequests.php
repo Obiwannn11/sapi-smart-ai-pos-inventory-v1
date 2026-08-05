@@ -54,6 +54,14 @@ class HandleInertiaRequests extends Middleware
                     // bukan pintu mana yang terbuka ([BL-026]). Skalar biasa —
                     // tenant-nya sudah dimuat, jadi tidak ada query tambahan.
                     'order_identity_mode' => $user->tenant->order_identity_mode,
+                    // Juga bukan kapabilitas: ia menjawab "apakah semua pintu
+                    // lain sedang terkunci?", bukan "apakah outlet ini punya
+                    // fitur X". Sidebar memerlukannya karena pada tenant yang
+                    // ditangguhkan setiap tautannya memantul balik ke halaman
+                    // langganan — menu yang tak satu pun bisa dibuka lebih
+                    // menyesatkan daripada menu yang jujur mengaku mati.
+                    // Skalar biasa; tenant-nya sudah dimuat.
+                    'is_suspended' => $user->tenant->isSuspended(),
                     'features' => fn () => [
                         'kitchen_queue' => $user->tenant->hasFeature('kitchen_queue'),
                         'self_order' => $user->tenant->hasFeature('self_order'),

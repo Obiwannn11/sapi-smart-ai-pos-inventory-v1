@@ -166,6 +166,15 @@ const visibleGroups = computed(() =>
         .filter((g) => g.items.length),
 );
 
+// ── Keadaan ditangguhkan ───────────────────────────────────────────────────
+// EnsureSubscriptionActive hanya meloloskan `billing.*` dan `logout`; sisanya
+// diarahkan balik ke halaman langganan. Jadi di keadaan ini sidebar penuh
+// tautan yang semuanya bermuara ke satu halaman yang sama. Item-nya tetap
+// ditampilkan — menyembunyikannya membuat aplikasi tampak menyusut, bukan
+// terkunci — tapi dirender mati supaya tidak ada klik yang berakhir memantul.
+const isSuspended = computed(() => auth.tenant?.is_suspended === true);
+const isLocked = (item) => isSuspended.value && item.href !== '/langganan';
+
 const isActive = (href) => {
     const url = page.url;
     if (href === '/owner/dashboard') return url === '/owner/dashboard';
@@ -274,6 +283,13 @@ const logout = async () => {
 
             <!-- Nav items -->
             <nav class="flex-1 overflow-y-auto py-3 px-3 scrollbar-sidebar" aria-label="Navigasi utama">
+                <p
+                    v-if="isSuspended && sidebarOpen"
+                    class="mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] leading-relaxed text-foreground"
+                >
+                    Akses ditangguhkan. Hanya halaman langganan yang masih terbuka.
+                </p>
+
                 <template v-for="(group, gIdx) in visibleGroups" :key="gIdx">
                     <!-- Group label — collapsible toggle; hidden in icon-only rail mode -->
                     <button
@@ -299,23 +315,29 @@ const logout = async () => {
                         class="overflow-hidden transition-[max-height] duration-200 ease-in-out"
                         :class="group.label && collapsedGroups[group.label] && sidebarOpen ? 'max-h-0' : 'max-h-96'"
                     >
-                        <Link
+                        <component
+                            :is="isLocked(item) ? 'span' : Link"
                             v-for="item in group.items"
                             :key="item.href"
-                            :href="item.href"
-                            @click="handleNavClick"
-                            :title="!sidebarOpen ? item.name : undefined"
+                            :href="isLocked(item) ? undefined : item.href"
+                            :aria-disabled="isLocked(item) ? 'true' : undefined"
+                            @click="isLocked(item) ? undefined : handleNavClick()"
+                            :title="isLocked(item)
+                                ? `${item.name} — terkunci selama langganan ditangguhkan`
+                                : (!sidebarOpen ? item.name : undefined)"
                             :class="[
                                 'flex items-center rounded-md text-sm transition-colors duration-150 mb-0.5 h-9',
                                 sidebarOpen ? 'gap-2.5 px-3' : 'justify-center px-0',
-                                isActive(item.href)
-                                    ? 'bg-primary/10 text-primary font-medium'
-                                    : 'text-foreground/60 font-normal hover:bg-muted hover:text-foreground',
+                                isLocked(item)
+                                    ? 'text-muted-foreground/40 font-normal cursor-not-allowed select-none'
+                                    : isActive(item.href)
+                                        ? 'bg-primary/10 text-primary font-medium'
+                                        : 'text-foreground/60 font-normal hover:bg-muted hover:text-foreground',
                             ]"
                         >
                             <NavIcon :name="item.icon" />
                             <span v-show="sidebarOpen" class="whitespace-nowrap">{{ item.name }}</span>
-                        </Link>
+                        </component>
                     </div>
                 </template>
             </nav>
@@ -390,6 +412,7 @@ const logout = async () => {
                     <div class="flex items-center gap-3 flex-shrink-0">
                         <span class="hidden md:block text-xs text-muted-foreground">{{ todayLabel }}</span>
                         <Link
+                            v-if="!isSuspended"
                             href="/cashier/pos"
                             class="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md border border-border text-foreground/60 hover:bg-muted hover:text-foreground transition-colors duration-150"
                         >

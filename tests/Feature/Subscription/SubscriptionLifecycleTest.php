@@ -4,6 +4,7 @@ use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\SubscriptionService;
+use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
 
 use function Pest\Laravel\actingAs;
@@ -68,6 +69,22 @@ test('halaman langganan tetap terbuka justru saat ditangguhkan', function () {
 
     actingAs($owner);
     get('/langganan')->assertStatus(200);
+});
+
+test('penangguhan ikut dibagikan ke sidebar agar navigasinya bisa dimatikan', function () {
+    ['owner' => $owner] = makeBillingContext(Tenant::STATUS_SUSPENDED, -90);
+
+    actingAs($owner);
+    get('/langganan')
+        ->assertInertia(fn (Assert $page) => $page->where('auth.tenant.is_suspended', true));
+});
+
+test('tenant aktif tidak menandai dirinya ditangguhkan', function () {
+    ['owner' => $owner] = makeBillingContext(Tenant::STATUS_ACTIVE);
+
+    actingAs($owner);
+    get('/langganan')
+        ->assertInertia(fn (Assert $page) => $page->where('auth.tenant.is_suspended', false));
 });
 
 test('logout tetap bisa saat ditangguhkan', function () {
