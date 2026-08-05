@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Plan;
 use App\Models\PricingRule;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
 use App\Services\Pricing\DimensionRegistry;
@@ -20,6 +22,15 @@ use Illuminate\Support\Facades\DB;
  */
 class PricingService
 {
+    /** Tarifnya keluar dari aturan yang cocok. */
+    public const SOURCE_RULE = 'rule';
+
+    /** Tak ada aturan yang cocok; yang berlaku tarif paket penampung. */
+    public const SOURCE_PLAN = 'plan';
+
+    /** Tak ada aturan DAN tak ada paket penampung — tarifnya belum ada. */
+    public const SOURCE_NONE = 'none';
+
     public function __construct(private readonly DimensionRegistry $dimensions) {}
 
     /**
@@ -42,6 +53,37 @@ class PricingService
     {
         return DB::transaction(function () use ($attributes, $conditions) {
             $rule = PricingRule::create($attributes);
+
+            foreach ($conditions as $condition) {
+                $rule->conditions()->create($condition);
+            }
+
+            return $rule->load('conditions');
+        });
+    }
+
+    /**
+     * Sunting aturan yang belum berlaku berikut syarat-syaratnya.
+     *
+     * Syaratnya ditulis ulang seluruhnya, bukan dicocokkan satu per satu, dan
+     * itu pilihan yang disengaja: syarat tidak punya identitas sendiri di mata
+     * penggunanya — yang ia lihat adalah sekumpulan baris yang boleh ditambah,
+     * dihapus, dan diubah urutannya. Mencoba mengenali "syarat yang sama" di
+     * antara dua kiriman form hanya melahirkan tebakan yang kadang benar.
+     *
+     * Satu transaksi karena sesaat di tengahnya aturan ini tidak punya syarat
+     * sama sekali — dan aturan tanpa syarat berarti "cocok untuk semua tenant".
+     * Gagal di titik itu meninggalkan aturan yang berlaku paling luas, kegagalan
+     * yang justru paling mahal. Alasan yang sama seperti di `publishRule()`.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  array<int, array{dimension: string, operator: string, value: string}>  $conditions
+     */
+    public function reviseRule(PricingRule $rule, array $attributes, array $conditions): PricingRule
+    {
+        return DB::transaction(function () use ($rule, $attributes, $conditions) {
+            $rule->update($attributes);
+            $rule->conditions()->delete();
 
             foreach ($conditions as $condition) {
                 $rule->conditions()->create($condition);
@@ -91,19 +133,78 @@ class PricingService
      * membekukannya di `invoices.pricing_context`. Menghitung ulang belakangan
      * hanya akan mengembalikan nilai hari ini.
      *
-     * @return array{rule: PricingRule|null, label: string|null, price: float|null, context: array<string, float|string|null>}
+     * `source` menyebutkan DARI MANA angkanya, dan itu bukan hiasan: sejak ada
+     * paket penampung, harga yang keluar dari aturan dan harga yang keluar
+     * karena tak ada aturan sama-sama berupa angka. Tanpa penanda ini keduanya
+     * mustahil dibedakan pemanggil, dan "tenant ini kena tarif paket karena
+     * bracketnya dihapus" akan terlihat sama persis dengan "tenant ini memang
+     * masuk bracket seharga sekian".
+     *
+     * @return array{rule: PricingRule|null, source: string, label: string|null, price: float|null, context: array<string, float|string|null>}
      */
     public function resolveFor(Tenant $tenant, ?Carbon $asOf = null): array
     {
         $context = $this->dimensions->contextFor($tenant, $asOf);
         $rule = $this->matchContext($context, $asOf);
 
+        if ($rule !== null) {
+            return [
+                'rule' => $rule,
+                'source' => self::SOURCE_RULE,
+                'label' => $rule->label,
+                'price' => (float) $rule->price,
+                'context' => $context,
+            ];
+        }
+
+        $plan = $this->fallbackPlanFor($tenant);
+
         return [
-            'rule' => $rule,
-            'label' => $rule?->label,
-            'price' => $rule === null ? null : (float) $rule->price,
+            'rule' => null,
+            'source' => $plan === null ? self::SOURCE_NONE : self::SOURCE_PLAN,
+            'label' => $plan?->name,
+            'price' => $plan === null ? null : (float) $plan->base_price,
             'context' => $context,
         ];
+    }
+
+    /**
+     * Paket yang menampung tenant ketika tak ada aturan tarif yang cocok.
+     *
+     * Sebelum ini keadaan itu berakhir sebagai harga `null` — tenant tanpa
+     * tarif sama sekali. Untuk jalur Harga Tetap null itu tidak pernah jadi
+     * soal karena tarifnya memang bukan dari aturan; untuk jalur Harga Adaptif
+     * ia berarti satu aturan yang dihapus, atau satu tenant yang tumbuh
+     * melampaui bracket teratas, menghilang dari penagihan tanpa satu pun tanda.
+     *
+     * Karena itu keduanya dijawab, dan jawabannya berbeda:
+     *
+     *   - jalur Harga Tetap → paketnya sendiri. Itu memang tarif yang berlaku
+     *     baginya sejak awal; aturan adaptif tidak pernah ditujukan kepadanya.
+     *   - jalur Harga Adaptif → paket yang DITUNJUK pemilik SaaS sebagai
+     *     penampung (mis. Premium). Bukan paketnya sendiri: tenant adaptif
+     *     lazimnya masih memegang paket dasar seharga Rp 0, dan menjatuhkannya
+     *     ke situ berarti bracket yang terhapus diam-diam menggratiskan layanan.
+     *
+     * Bila belum ada paket penampung yang ditunjuk, tenant adaptif tetap
+     * berakhir tanpa tarif — dan itu disengaja. Menjatuhkannya ke paketnya
+     * sendiri terdengar lebih ramah, tapi paket tenant adaptif lazimnya paket
+     * dasar seharga Rp 0: satu aturan yang dihentikan akan diam-diam
+     * menggratiskan layanan bagi seluruh kelompoknya, tanpa seorang pun
+     * memutuskannya dan tanpa satu pun tanda di layar. Tarif kosong yang
+     * kelihatan lebih baik daripada tarif nol yang tidak.
+     */
+    protected function fallbackPlanFor(Tenant $tenant): ?Plan
+    {
+        $subscription = Subscription::where('tenant_id', $tenant->id)->with('plan')->first();
+
+        if ($subscription === null) {
+            return null;
+        }
+
+        return $subscription->isSubsidized()
+            ? Plan::adaptiveFallback()
+            : $subscription->plan;
     }
 
     /**
@@ -156,7 +257,12 @@ class PricingService
      * `revenue` tetap dikembalikan apa adanya karena halaman langganan tenant
      * menampilkannya kepada pemiliknya sendiri.
      *
-     * @return array{period: string, label: string|null, price: float|null, revenue: float}|null
+     * `source` diteruskan apa adanya supaya halaman langganan bisa mengatakan
+     * yang sebenarnya kepada tenant: tarif yang berlaku karena bracketnya cocok
+     * dan tarif yang berlaku karena tak ada bracket yang cocok adalah dua hal
+     * berbeda, dan yang kedua pantas disebutkan namanya.
+     *
+     * @return array{period: string, source: string, label: string|null, price: float|null, revenue: float}|null
      */
     public function currentBracketFor(Tenant $tenant): ?array
     {
@@ -170,6 +276,7 @@ class PricingService
 
         return [
             'period' => $metric->period,
+            'source' => $resolved['source'],
             'label' => $resolved['label'],
             'price' => $resolved['price'],
             'revenue' => (float) $metric->revenue,

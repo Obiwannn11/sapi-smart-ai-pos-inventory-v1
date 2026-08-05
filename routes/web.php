@@ -338,6 +338,8 @@ Route::prefix('platform')
                     ->name('pricing-rules.index');
                 Route::post('/pricing-rules', [\App\Http\Controllers\Platform\PricingRuleController::class, 'storeRule'])
                     ->name('pricing-rules.store');
+                Route::put('/pricing-rules/{rule}', [\App\Http\Controllers\Platform\PricingRuleController::class, 'updateRule'])
+                    ->name('pricing-rules.update');
                 Route::delete('/pricing-rules/{rule}', [\App\Http\Controllers\Platform\PricingRuleController::class, 'destroyRule'])
                     ->name('pricing-rules.destroy');
                 Route::post('/plans', [\App\Http\Controllers\Platform\PricingRuleController::class, 'storePlan'])

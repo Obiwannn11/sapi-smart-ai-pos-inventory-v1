@@ -6,12 +6,20 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 class PricingRule extends Model
 {
     /** @use HasFactory<\Database\Factories\PricingRuleFactory> */
     use HasFactory;
+
+    /**
+     * Aturan yang dihapus berhenti dinilai seketika, tapi barisnya tetap ada
+     * bagi `invoices.pricing_rule_id` yang menautnya. Menghapusnya sungguhan
+     * akan memutus tautan itu dan membuat tagihan lama tak bisa dijelaskan.
+     */
+    use SoftDeletes;
 
     protected $fillable = ['label', 'priority', 'price', 'effective_from'];
 

@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-01 | ADDITION | Platform | Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047) |
 | 2026-08-01 | ADDITION | Kasir | Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026) |
 | 2026-08-01 | ADDITION | Platform | Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042) |
 | 2026-07-31 | DECISION | Platform | Jenis Usaha Berpindah ke Pemilik Toko, dan "Subsidi" Jadi "Harga Adaptif" |
@@ -141,6 +142,40 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047)
+- **Tanggal:** 2026-08-01
+- **Fase Terkait:** Di Luar Fase — kelanjutan `PHASE SAAS`, menutup sebagian `[BL-046]` & `[BL-047]`
+- **Dampak:** Migrasi | Model | Service | Controller | Job | Frontend | Test
+- **Breaking Change:** Tidak. `PricingService::resolveFor()` bertambah kunci `source`; kunci lama tidak berubah artinya.
+- **Deskripsi:** Halaman `/platform/pricing-rules` sebelumnya hanya bisa MENERBITKAN aturan dan MEMBATALKAN yang belum berlaku. Kini ia punya empat aksi yang jelas namanya: **Ubah** (aturan yang belum berlaku, disunting di tempat berikut syaratnya), **Revisi** (aturan yang sudah berlaku — membuka form terisi dengan label & syarat yang sama dan tanggal berlaku besok), **Batalkan**, dan **Hentikan** (aturan yang sudah berlaku, lewat dialog konfirmasi yang menyebutkan ke mana tenantnya akan jatuh). Paket mendapat dua kolom baru: **batas analisis AI harian** dan penanda **paket penampung jalur Adaptif**. Dua kolom tabel yang tidak menjawab pertanyaan siapa pun — "Tarif pengguna tambahan" dan "Ketersediaan" — turun dari tabel; yang pertama tetap ada di form karena ia benar-benar menagih, yang kedua dicabut seluruhnya karena tidak menggerbangi apa pun. Ditambah dua panel penjelas di bawah tabel: **untuk apa prioritas** dan **apa yang terjadi bila tak ada aturan yang cocok**.
+- **Alasan:** Tiga hal yang saling menahan. **(1)** Larangan menghapus aturan yang sudah berlaku benar alasannya — ia dasar harga periode yang sudah ditagihkan — tapi keliru kesimpulannya: pemilik SaaS jadi tidak punya cara APA PUN menghentikan aturan yang telanjur salah terbit, dan "terbitkan pengganti berlabel sama" tidak menolong bila yang diinginkan justru meniadakan kelompoknya. **(2)** Menghentikan aturan tanpa penampung berarti tenant kehilangan tarif sama sekali — `resolveFor()` mengembalikan `price = null`, dan tagihannya harus diketik manual tanpa dasar. **(3)** Batas AI hidup di `.env` sebagai satu angka untuk semua, sehingga paket Premium yang sudah bisa dibuat dari panel tidak punya satu pun pembeda yang berakibat pada perilaku aplikasi.
+- **File Terdampak:**
+  - `database/migrations/2026_08_01_024155_add_limits_and_fallback_to_plans_table.php` — **baru**: `plans.limits` (JSON), `plans.is_adaptive_fallback`
+  - `database/migrations/2026_08_01_024156_add_soft_deletes_to_pricing_rules_table.php` — **baru**: `pricing_rules.deleted_at`
+  - `app/Services/Ai/AiQuota.php` — **baru**: satu-satunya pembaca kuota AI
+  - `app/Models/Plan.php` — `limit()`, `setLimit()`, `setAdaptiveFallback()`, `adaptiveFallback()`
+  - `app/Models/PricingRule.php` — `SoftDeletes`
+  - `app/Services/PricingService.php` — `reviseRule()`, `fallbackPlanFor()`, kunci `source` pada `resolveFor()`/`currentBracketFor()`
+  - `app/Http/Controllers/Platform/PricingRuleController.php` — `updateRule()`, `destroyRule()` dirombak, validasi paket bertambah
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `suggestion()` mengirim `source`
+  - `app/Jobs/RunAiAnalysisJob.php` — kuota lewat `AiQuota`; **perbaikan** `incrementUsage()`
+  - `app/Http/Controllers/Owner/SettingsController.php` — angka kuota dibaca dari `AiQuota`
+  - `routes/web.php` — `PUT /platform/pricing-rules/{rule}`
+  - `resources/js/Pages/Platform/PricingRules/Index.vue`, `resources/js/Pages/Platform/Tenants/Show.vue`
+  - `tests/Feature/Platform/PricingGrandfatherTest.php` (+7), `tests/Feature/Ai/RunAiAnalysisJobTest.php` (+4)
+- **Keputusan yang perlu diingat:**
+  - **Menghapus aturan = `SoftDeletes`, bukan `DELETE`.** `invoices.pricing_rule_id` ber-`nullOnDelete`: penghapusan sungguhan memutus tautan tagihan lama ke aturan yang menghasilkannya, dan pertanyaan "kenapa angkanya segini" jadi tak terjawab justru pada tagihan yang paling mungkin dipersoalkan. `deleted_at` memuaskan keduanya — berhenti dinilai seketika, barisnya tetap ada.
+  - **Aturan yang sudah berlaku tetap TIDAK bisa disunting di tempat.** Yang ditambahkan adalah suntingan untuk aturan yang BELUM berlaku, plus jalan pintas "Revisi" yang mengisi form penerbitan dengan isi aturan lama. Grandfathering tidak dilonggarkan sedikit pun; yang hilang hanya keharusan mengetik ulang seluruh syarat demi memperbaiki satu angka.
+  - **Paket penampung ditunjuk, tidak ditebak.** Bila belum ada yang ditunjuk, tenant jalur Adaptif yang tak cocok aturan mana pun tetap berakhir tanpa tarif. Menjatuhkannya ke paketnya sendiri terdengar lebih ramah, tapi paket tenant adaptif lazimnya paket dasar seharga Rp 0: satu aturan yang dihentikan akan diam-diam menggratiskan layanan bagi seluruh kelompoknya. Tarif kosong yang kelihatan lebih baik daripada tarif nol yang tidak.
+  - **Jalur Harga Tetap jatuh ke paketnya sendiri, jalur Adaptif ke penampung.** Dua jawaban berbeda untuk pertanyaan yang sama, karena aturan adaptif memang tidak pernah ditujukan kepada tenant jalur tetap.
+  - **`source` ditambahkan karena harga yang lahir dari aturan dan harga yang lahir dari ketiadaan aturan sama-sama berupa angka.** Tanpa penanda itu, keduanya mustahil dibedakan pemanggil — dan formulir tagihan akan menyodorkan tarif paket seolah hasil aturan.
+  - **Batas paket sebagai SATU kolom JSON `limits`, bukan satu kolom per batas** (`[BL-046]`(b)). Kunci yang tidak ada berarti "ikut bawaan platform", bukan nol; `0` yang ditulis sendiri berarti paket ini tidak menyertakan AI. Bedanya ditampilkan apa adanya di tabel ("5 — bawaan" / "10" / "Tidak termasuk") supaya angka yang kebetulan sama dengan bawaan hari ini tidak tertukar dengan angka yang memang disetel.
+  - **Kuota AI dibaca satu kelas** (`AiQuota`), dipakai `RunAiAnalysisJob` DAN halaman Pengaturan owner. Angka yang dibacakan ke owner dan angka yang menolak permintaannya wajib identik; selama keduanya menghitung sendiri-sendiri, cepat atau lambat layar menjanjikan sisa yang ditolak antrean.
+  - **Kolom `plans.is_active` dicabut dari panel.** Ia tidak menggerbangi apa pun di seluruh aplikasi — tidak ada pemilih paket yang menyaringnya — sehingga "Ketersediaan" adalah kolom yang menjanjikan kendali yang tidak ada. Kolomnya tetap di basis data; yang dihapus adalah klaimnya di layar.
+  - **Ditemukan sambil lewat: analisis AI KEDUA seorang tenant di hari yang sama selalu gagal.** `incrementUsage()` memakai `firstOrCreate` berkunci tanggal, padahal kolom `date` tersimpan sebagai datetime — barisnya tak pernah ketemu, lalu penyisipan keduanya ditolak indeks unik. Diperbaiki dengan `whereDate`, dengan test yang gagal sebelum perbaikannya.
 
 ---
 

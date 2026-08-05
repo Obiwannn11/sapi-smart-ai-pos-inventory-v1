@@ -158,11 +158,15 @@ const fetchSuggestion = async () => {
 
         const data = await response.json();
         suggestion.value = data;
-        suggestionState.value = data.matched ? 'matched' : 'unmatched';
+        // Tiga keadaan, bukan dua: tarif dari aturan, tarif dari paket
+        // penampung karena tak ada aturan yang cocok, dan tak ada tarif sama
+        // sekali. Yang kedua dulu menyatu dengan yang ketiga, sehingga tenant
+        // yang bracketnya dihapus terlihat seperti tenant tanpa harga.
+        suggestionState.value = { rule: 'matched', plan: 'plan' }[data.source] ?? 'unmatched';
 
         // Hanya mengisi kolom yang masih kosong. Menimpa angka yang sudah
         // diketik akan membuang keputusan yang baru saja diambil orangnya.
-        if (data.matched && invoiceForm.amount === '') {
+        if (data.amount !== null && invoiceForm.amount === '') {
             invoiceForm.amount = data.amount;
         }
     } catch {
@@ -179,7 +183,7 @@ const openInvoiceForm = () => {
 };
 
 const applySuggestion = () => {
-    if (suggestion.value?.matched) {
+    if (suggestion.value?.amount !== null && suggestion.value?.amount !== undefined) {
         invoiceForm.amount = suggestion.value.amount;
     }
 };
@@ -710,9 +714,17 @@ const revenueColumns = [
                                 Pakai angka ini
                             </button>
                         </span>
+                        <span v-else-if="suggestionState === 'plan'" class="text-amber-700">
+                            Tidak ada aturan harga yang cocok pada periode tersebut. Yang berlaku tarif paket
+                            <span class="font-medium text-foreground">{{ suggestion.label }}</span>,
+                            {{ formatRupiah(suggestion.amount) }}.
+                            <button type="button" class="font-medium text-primary hover:underline" @click="applySuggestion">
+                                Pakai angka ini
+                            </button>
+                        </span>
                         <span v-else-if="suggestionState === 'unmatched'" class="text-amber-700">
-                            Tidak ada aturan harga yang cocok untuk tenant ini pada periode tersebut — nominalnya perlu
-                            ditetapkan sendiri.
+                            Tidak ada aturan harga yang cocok untuk tenant ini pada periode tersebut, dan belum ada paket
+                            penampung yang ditunjuk — nominalnya perlu ditetapkan sendiri.
                         </span>
                         <span v-else-if="suggestionState === 'error'" class="text-amber-700">
                             Usulan tarif gagal diambil. Nominalnya tetap bisa diisi manual.

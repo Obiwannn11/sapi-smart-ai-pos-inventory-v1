@@ -9,12 +9,14 @@ import Notice from '@/Components/Platform/Notice.vue';
 import FormField from '@/Components/Platform/FormField.vue';
 import Button from '@/Components/Button.vue';
 import Modal from '@/Components/Modal.vue';
+import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import { formatRupiah, formatDate, inputClass } from '@/support/platform';
 
 const props = defineProps({
     plans: { type: Array, required: true },
     rules: { type: Array, required: true },
     dimensions: { type: Array, required: true },
+    aiDailyDefault: { type: Number, required: true },
 });
 
 // --- Katalog dimensi ---
@@ -65,27 +67,32 @@ const describeCondition = (condition) => {
 // yang membedakan paket gratis dari paket berbayar adalah harganya, dan kolom
 // terpisah hanya akan menghadirkan kemungkinan keduanya berselisih — paket
 // bertanda "Gratis" seharga Rp 50.000.
-//
-// Sebelumnya kolom ini berbunyi "Aktif / Nonaktif", yang menjawab pertanyaan
-// yang tidak sedang ditanyakan siapa pun. Yang ingin diketahui saat menatap
-// daftar paket adalah golongan mana ini, dan apakah ia masih ditawarkan.
 const planTier = (plan) =>
     plan.base_price === 0
         ? { label: 'Gratis', tone: 'neutral' }
         : { label: 'Berbayar', tone: 'success' };
 
-const planAvailability = (plan) =>
-    plan.is_active
-        ? { label: 'Ditawarkan', tone: 'success' }
-        : { label: 'Tidak ditawarkan', tone: 'neutral' };
+// Batas AI paket. Tiga keadaan yang bunyinya harus berbeda: paket menyetel
+// sendiri, paket mengikuti bawaan platform, dan paket yang sengaja tidak
+// menyertakan AI. Menampilkan ketiganya sebagai satu angka akan membuat
+// "10 karena paket ini" tak bisa dibedakan dari "10 karena kebetulan itu
+// bawaannya hari ini" — dan bawaannya bisa berubah tanpa paketnya disentuh.
+const aiLimitLabel = (plan) => {
+    if (plan.ai_daily_limit === null) {
+        return `${props.aiDailyDefault} — bawaan`;
+    }
+
+    return plan.ai_daily_limit === 0 ? 'Tidak termasuk' : `${plan.ai_daily_limit}`;
+};
+
+const fallbackPlan = computed(() => props.plans.find((plan) => plan.is_adaptive_fallback) ?? null);
 
 const planColumns = [
     { key: 'name', label: 'Paket' },
     { key: 'tier', label: 'Golongan' },
     { key: 'base', label: 'Tarif bulanan', align: 'right' },
     { key: 'seats', label: 'Pengguna termasuk', align: 'right' },
-    { key: 'extra', label: 'Tarif pengguna tambahan', align: 'right' },
-    { key: 'availability', label: 'Ketersediaan' },
+    { key: 'ai', label: 'Analisis AI / hari', align: 'right' },
     { key: 'actions', label: 'Aksi', align: 'right' },
 ];
 
@@ -105,7 +112,18 @@ const planForm = useForm({
     base_price: 0,
     included_seats: 1,
     extra_seat_price: 0,
-    is_active: true,
+    ai_daily_limit: '',
+    is_adaptive_fallback: false,
+});
+
+// Kolom kosong berarti "ikut bawaan platform" dan harus sampai ke server
+// sebagai null — bukan sebagai string kosong, yang akan ditolak validasi
+// integer, dan bukan sebagai 0, yang artinya justru sebaliknya: AI dimatikan.
+const withNullableAiLimit = (data) => ({
+    ...data,
+    ai_daily_limit: data.ai_daily_limit === '' || data.ai_daily_limit === null
+        ? null
+        : Number(data.ai_daily_limit),
 });
 
 const openPlan = (plan) => {
@@ -113,13 +131,14 @@ const openPlan = (plan) => {
     planForm.base_price = plan.base_price;
     planForm.included_seats = plan.included_seats;
     planForm.extra_seat_price = plan.extra_seat_price;
-    planForm.is_active = plan.is_active;
+    planForm.ai_daily_limit = plan.ai_daily_limit === null ? '' : plan.ai_daily_limit;
+    planForm.is_adaptive_fallback = plan.is_adaptive_fallback;
     planForm.clearErrors();
     editingPlan.value = plan;
 };
 
 const submitPlan = () => {
-    planForm.put(`/platform/plans/${editingPlan.value.id}`, {
+    planForm.transform(withNullableAiLimit).put(`/platform/plans/${editingPlan.value.id}`, {
         preserveScroll: true,
         onSuccess: () => { editingPlan.value = null; },
     });
@@ -136,6 +155,8 @@ const newPlanForm = useForm({
     base_price: 0,
     included_seats: 1,
     extra_seat_price: 0,
+    ai_daily_limit: '',
+    is_adaptive_fallback: false,
 });
 
 const openPlanCreate = () => {
@@ -145,7 +166,7 @@ const openPlanCreate = () => {
 };
 
 const submitNewPlan = () => {
-    newPlanForm.post('/platform/plans', {
+    newPlanForm.transform(withNullableAiLimit).post('/platform/plans', {
         preserveScroll: true,
         onSuccess: () => {
             showPlanCreate.value = false;
@@ -155,7 +176,24 @@ const submitNewPlan = () => {
 };
 
 // --- Aturan harga ---
+// Satu form untuk tiga maksud yang berbeda, dan bedanya disebutkan terus terang
+// di judul dialognya:
+//   create — aturan baru
+//   edit   — menyunting aturan yang BELUM berlaku, di tempat
+//   revise — menerbitkan revisi aturan yang SUDAH berlaku, berlabel sama dengan
+//            tanggal berlaku ke depan. Bukan menyunting: yang lama tetap ada
+//            sebagai dasar harga periode yang sudah lewat.
+const ruleMode = ref('create');
+const ruleTarget = ref(null);
 const showRuleForm = ref(false);
+
+const besok = () => {
+    const date = new Date();
+    date.setDate(date.getDate() + 1);
+
+    return date.toISOString().slice(0, 10);
+};
+
 const ruleForm = useForm({
     label: '',
     priority: 0,
@@ -163,6 +201,60 @@ const ruleForm = useForm({
     effective_from: new Date().toISOString().slice(0, 10),
     conditions: [],
 });
+
+const ruleDialog = computed(() => ({
+    create: {
+        title: 'Terbitkan aturan tarif',
+        description: 'Berlaku sejak tanggal yang Anda pilih, dan tidak menyentuh periode sebelumnya.',
+        submit: 'Terbitkan',
+    },
+    edit: {
+        title: `Ubah aturan ${ruleTarget.value?.label ?? ''}`,
+        description: 'Aturan ini belum berlaku, jadi masih bisa disunting di tempat tanpa meninggalkan versi lama.',
+        submit: 'Simpan',
+    },
+    revise: {
+        title: `Terbitkan revisi aturan ${ruleTarget.value?.label ?? ''}`,
+        description: 'Aturan yang sudah berlaku tidak disunting. Revisi berlabel sama menggantikannya sejak tanggal berlaku, dan yang lama tetap tersimpan sebagai dasar harga periode sebelumnya.',
+        submit: 'Terbitkan revisi',
+    },
+}[ruleMode.value]));
+
+// Field diisikan satu per satu, bukan lewat `defaults()` + `reset()`: yang
+// terakhir itu mengubah arti "reset" untuk seluruh sisa umur form, sehingga
+// membuka dialog untuk satu aturan meninggalkan jejaknya pada dialog berikutnya.
+const fillRuleForm = (values) => {
+    Object.assign(ruleForm, values);
+    ruleForm.clearErrors();
+};
+
+const openRuleCreate = () => {
+    ruleMode.value = 'create';
+    ruleTarget.value = null;
+    fillRuleForm({
+        label: '',
+        priority: 0,
+        price: 0,
+        effective_from: besok(),
+        conditions: [],
+    });
+    showRuleForm.value = true;
+};
+
+// Syaratnya disalin, bukan dirujuk: form yang menyunting array milik props akan
+// mengubah tampilan tabel di belakang dialog sebelum apa pun tersimpan.
+const openRuleEdit = (rule, mode) => {
+    ruleMode.value = mode;
+    ruleTarget.value = rule;
+    fillRuleForm({
+        label: rule.label,
+        priority: rule.priority,
+        price: rule.price,
+        effective_from: mode === 'edit' ? rule.effective_from : besok(),
+        conditions: rule.conditions.map((condition) => ({ ...condition })),
+    });
+    showRuleForm.value = true;
+};
 
 const addCondition = () => {
     const dimension = props.dimensions[0];
@@ -189,17 +281,51 @@ const removeCondition = (index) => ruleForm.conditions.splice(index, 1);
 const conditionError = (index, field) => ruleForm.errors[`conditions.${index}.${field}`];
 
 const submitRule = () => {
-    ruleForm.post('/platform/pricing-rules', {
-        preserveScroll: true,
-        onSuccess: () => {
-            showRuleForm.value = false;
-            ruleForm.reset();
-        },
-    });
+    const onSuccess = () => {
+        showRuleForm.value = false;
+        ruleTarget.value = null;
+    };
+
+    if (ruleMode.value === 'edit') {
+        ruleForm.put(`/platform/pricing-rules/${ruleTarget.value.id}`, { preserveScroll: true, onSuccess });
+
+        return;
+    }
+
+    ruleForm.post('/platform/pricing-rules', { preserveScroll: true, onSuccess });
 };
 
+// --- Hentikan aturan ---
+// Lewat konfirmasi, bukan langsung: menghentikan aturan yang sudah berlaku
+// memindahkan tarif setiap tenant yang masuk kelompoknya, dan akibat sebesar
+// itu tidak boleh berjarak satu klik tak sengaja.
+const deletingRule = ref(null);
 const deleteForm = useForm({});
-const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.id}`, { preserveScroll: true });
+
+const deleteMessage = computed(() => {
+    const rule = deletingRule.value;
+
+    if (rule === null) {
+        return '';
+    }
+
+    if (!rule.is_effective) {
+        return `Aturan ${rule.label} belum berlaku, jadi membatalkannya tidak mengubah tagihan siapa pun.`;
+    }
+
+    const penampung = fallbackPlan.value
+        ? `paket ${fallbackPlan.value.name} (${formatRupiah(fallbackPlan.value.base_price)}/bulan)`
+        : 'tidak ke mana-mana — belum ada paket penampung yang ditunjuk, dan tarif mereka akan kosong sampai ada';
+
+    return `Aturan ${rule.label} berhenti berlaku sejak sekarang. Tenant yang masuk kelompok ini akan dinilai ulang: bila tak ada aturan lain yang cocok, tarifnya jatuh ke ${penampung}. Periode yang sedang berjalan tidak berubah, dan tagihan lama tetap menautnya.`;
+});
+
+const confirmDelete = () => {
+    deleteForm.delete(`/platform/pricing-rules/${deletingRule.value.id}`, {
+        preserveScroll: true,
+        onFinish: () => { deletingRule.value = null; },
+    });
+};
 </script>
 
 <template>
@@ -224,9 +350,17 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                 <p class="mt-1 text-xs text-muted-foreground leading-relaxed max-w-2xl">
                     Tarif yang sama untuk semua tenant yang memakainya, berapa pun omzetnya. Tidak ada data usaha yang
                     dibuka. Paket bertarif Rp 0 adalah paket gratis; paket bertarif di atas nol adalah paket berbayar.
+                    Batas analisis AI harian ditetapkan per paket di sini.
                 </p>
             </div>
-            <Button size="sm" @click="openPlanCreate">Tambah Paket</Button>
+            <Button size="sm" @click="openPlanCreate">
+                <template #icon>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </template>
+                Tambah Paket
+            </Button>
         </div>
 
         <DataTable
@@ -240,6 +374,13 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                 <td :class="cellClass">
                     <p class="font-medium text-foreground">{{ plan.name }}</p>
                     <p class="text-xs text-muted-foreground font-mono">{{ plan.slug }}</p>
+                    <StatusBadge
+                        v-if="plan.is_adaptive_fallback"
+                        class="mt-1.5"
+                        label="Penampung jalur Adaptif"
+                        tone="info"
+                        title="Tenant jalur Harga Adaptif yang tidak cocok aturan mana pun ditagih dengan tarif paket ini"
+                    />
                 </td>
                 <td :class="cellClass">
                     <StatusBadge :label="planTier(plan).label" :tone="planTier(plan).tone" />
@@ -249,17 +390,19 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                 </td>
                 <td :class="[cellClass, 'text-right tabular-nums text-foreground']">{{ plan.included_seats }}</td>
                 <td :class="[cellClass, 'text-right tabular-nums text-foreground']">
-                    {{ formatRupiah(plan.extra_seat_price) }}
-                </td>
-                <td :class="cellClass">
-                    <StatusBadge
-                        :label="planAvailability(plan).label"
-                        :tone="planAvailability(plan).tone"
-                        title="Apakah paket ini masih ditawarkan ke tenant baru"
-                    />
+                    <span :class="plan.ai_daily_limit === null ? 'text-muted-foreground' : ''">
+                        {{ aiLimitLabel(plan) }}
+                    </span>
                 </td>
                 <td :class="[cellClass, 'text-right']">
-                    <Button size="sm" variant="soft" @click="openPlan(plan)">Ubah</Button>
+                    <Button size="sm" variant="secondary" :title="`Ubah paket ${plan.name}`" @click="openPlan(plan)">
+                        <template #icon>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                        </template>
+                        Ubah paket
+                    </Button>
                 </td>
             </tr>
         </DataTable>
@@ -273,7 +416,14 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                     usaha mereka, bukan daftar harga tetap — karena itu jalur ini disebut adaptif, bukan bantuan.
                 </p>
             </div>
-            <Button size="sm" @click="showRuleForm = true">Terbitkan Aturan</Button>
+            <Button size="sm" @click="openRuleCreate">
+                <template #icon>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </template>
+                Terbitkan Aturan
+            </Button>
         </div>
 
         <DataTable
@@ -301,38 +451,108 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                         v-if="rule.is_effective"
                         label="Berlaku"
                         tone="success"
-                        title="Sudah menjadi dasar harga — tidak bisa dihapus"
+                        title="Sudah menjadi dasar harga — perubahannya lewat revisi, bukan suntingan"
                     />
                     <StatusBadge
                         v-else
                         :label="`Mulai ${formatDate(rule.effective_from)}`"
                         tone="warning"
-                        title="Belum berlaku — masih bisa dibatalkan"
+                        title="Belum berlaku — masih bisa disunting atau dibatalkan"
                     />
                 </td>
                 <td :class="[cellClass, 'text-right']">
-                    <Button v-if="!rule.is_effective" size="sm" variant="destructiveSoft" @click="removeRule(rule)">
-                        Batalkan
-                    </Button>
-                    <span v-else class="text-xs text-muted-foreground">terkunci</span>
+                    <div class="flex justify-end gap-2">
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            :title="rule.is_effective
+                                ? `Terbitkan revisi aturan ${rule.label} dengan tanggal berlaku ke depan`
+                                : `Ubah aturan ${rule.label}`"
+                            @click="openRuleEdit(rule, rule.is_effective ? 'revise' : 'edit')"
+                        >
+                            <template #icon>
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                            </template>
+                            {{ rule.is_effective ? 'Revisi' : 'Ubah' }}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="destructiveSoft"
+                            :title="rule.is_effective
+                                ? `Hentikan aturan ${rule.label}`
+                                : `Batalkan aturan ${rule.label} yang belum berlaku`"
+                            @click="deletingRule = rule"
+                        >
+                            <template #icon>
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </template>
+                            {{ rule.is_effective ? 'Hentikan' : 'Batalkan' }}
+                        </Button>
+                    </div>
                 </td>
             </tr>
         </DataTable>
 
-        <div class="mt-4 space-y-2 text-xs text-muted-foreground leading-relaxed max-w-2xl">
-            <p>
-                Yang menang adalah aturan dengan <span class="font-medium text-foreground">prioritas tertinggi</span>
-                yang <span class="font-medium text-foreground">seluruh</span> syaratnya terpenuhi. Aturan umum sebaiknya
-                berprioritas rendah, supaya aturan yang lebih khusus bisa mendahuluinya.
-            </p>
-            <p>
-                Aturan yang sudah berlaku tidak bisa dihapus — ia adalah dasar harga periode yang sudah lewat. Untuk
-                mengubah tarif, terbitkan aturan baru dengan nama yang sama dan tanggal berlaku ke depan.
-            </p>
+        <!-- Prioritas & aturan main, ditulis di sebelah tabelnya karena di
+             sinilah pertanyaannya muncul. -->
+        <div class="mt-4 grid gap-4 lg:grid-cols-2 max-w-5xl">
+            <div class="rounded-lg border border-border bg-card p-4">
+                <h4 class="text-sm font-semibold text-foreground">Untuk apa prioritas?</h4>
+                <div class="mt-2 space-y-2 text-xs text-muted-foreground leading-relaxed">
+                    <p>
+                        Satu tenant bisa memenuhi syarat beberapa aturan sekaligus. Prioritas menentukan
+                        <span class="font-medium text-foreground">siapa yang menang</span> — angka tertinggi yang
+                        dipakai, sisanya diabaikan. Ia sama sekali tidak memengaruhi tarif; ia hanya memilih aturan.
+                    </p>
+                    <p>
+                        Karena itu <span class="font-medium text-foreground">aturan umum diberi angka rendah, aturan
+                        khusus diberi angka tinggi</span>. Contoh: “omzet di bawah 2 juta → Rp 10.000” di prioritas 0,
+                        dan “omzet di bawah 2 juta <span class="font-medium text-foreground">dan</span> tipe usaha
+                        kuliner → Rp 8.000” di prioritas 10. Tenant kuliner kena yang kedua, tenant lain kena yang
+                        pertama — tanpa perlu menuliskan “bukan kuliner” di aturan yang umum.
+                    </p>
+                    <p>
+                        Prioritas sama dimenangkan tanggal berlaku terbaru. Itu jaring pengaman, bukan cara menyusun
+                        aturan: dua aturan berprioritas sama yang saling tumpang-tindih sebaiknya diberi angka berbeda.
+                    </p>
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-border bg-card p-4">
+                <h4 class="text-sm font-semibold text-foreground">Kalau tidak ada aturan yang cocok</h4>
+                <div class="mt-2 space-y-2 text-xs text-muted-foreground leading-relaxed">
+                    <p v-if="fallbackPlan">
+                        Tenant jalur Adaptif yang tidak cocok aturan mana pun — aturannya dihentikan, atau omzetnya di
+                        atas kelompok teratas — ditagih dengan tarif paket
+                        <span class="font-medium text-foreground">{{ fallbackPlan.name }}</span>
+                        ({{ formatRupiah(fallbackPlan.base_price) }}/bulan). Perpindahannya berlaku pada periode
+                        berikutnya; periode yang sedang berjalan sudah terkunci di harga yang disepakati.
+                    </p>
+                    <p v-else class="text-amber-700">
+                        Belum ada paket penampung yang ditunjuk. Selama begitu, tenant jalur Adaptif yang tidak cocok
+                        aturan mana pun tidak punya tarif sama sekali, dan tagihannya harus diketik manual. Tunjuk satu
+                        paket lewat <span class="font-medium">Ubah paket → “Paket penampung jalur Adaptif”</span>.
+                    </p>
+                    <p>
+                        Aturan yang sudah berlaku tidak disunting di tempat — ia dasar harga periode yang sudah lewat.
+                        Tombol <span class="font-medium text-foreground">Revisi</span> menerbitkan versi baru berlabel
+                        sama dengan tanggal berlaku ke depan; yang lama tetap tersimpan sebagai riwayat.
+                    </p>
+                </div>
+            </div>
         </div>
 
         <!-- ── Ubah paket ───────────────────────────────────────────────── -->
-        <Modal :show="editingPlan !== null" title="Ubah paket" @close="editingPlan = null">
+        <Modal
+            :show="editingPlan !== null"
+            :title="`Ubah paket ${editingPlan?.name ?? ''}`"
+            description="Tenant yang sedang berjalan tetap di tarif lamanya sampai periode berikutnya."
+            @close="editingPlan = null"
+        >
             <form class="space-y-4" @submit.prevent="submitPlan">
                 <FormField label="Nama" :error="planForm.errors.name">
                     <input v-model="planForm.name" type="text" :class="inputClass" />
@@ -353,21 +573,45 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                     </template>
                 </FormField>
 
-                <FormField label="Tarif pengguna tambahan (Rp)" :error="planForm.errors.extra_seat_price">
+                <FormField
+                    label="Analisis AI per hari"
+                    :hint="`Kosongkan untuk mengikuti bawaan platform (${aiDailyDefault}/hari). Isi 0 bila paket ini tidak menyertakan AI.`"
+                    :error="planForm.errors.ai_daily_limit"
+                >
+                    <input
+                        v-model="planForm.ai_daily_limit"
+                        type="number"
+                        min="0"
+                        max="1000"
+                        :placeholder="`${aiDailyDefault} (bawaan)`"
+                        :class="inputClass"
+                    />
+                    <template #footnote>
+                        Hanya berlaku saat tenant memakai kunci AI bersama milik platform. Tenant yang mengisi kunci
+                        API-nya sendiri membayar pemakaiannya sendiri dan tidak dijatah.
+                    </template>
+                </FormField>
+
+                <FormField
+                    label="Tarif pengguna tambahan (Rp)"
+                    hint="Dipakai saat tenant membayar penambahan pengguna di luar jatah paket."
+                    :error="planForm.errors.extra_seat_price"
+                >
                     <input v-model.number="planForm.extra_seat_price" type="number" min="0" :class="inputClass" />
                 </FormField>
 
                 <label class="flex items-start gap-2 text-sm text-foreground">
                     <input
-                        v-model="planForm.is_active"
+                        v-model="planForm.is_adaptive_fallback"
                         type="checkbox"
                         class="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring"
                     />
                     <span>
-                        Masih ditawarkan
+                        Paket penampung jalur Adaptif
                         <span class="block text-xs text-muted-foreground">
-                            Mematikannya menyembunyikan paket dari tenant baru. Tenant yang sudah memakainya tidak
-                            dipindahkan ke mana pun.
+                            Tenant jalur Harga Adaptif yang tidak cocok aturan tarif mana pun ditagih dengan tarif
+                            paket ini. Hanya satu paket yang bisa memegang peran ini — menandai paket lain akan
+                            melepaskannya dari yang sekarang.
                         </span>
                     </span>
                 </label>
@@ -413,9 +657,42 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
                     <input v-model.number="newPlanForm.included_seats" type="number" min="1" :class="inputClass" />
                 </FormField>
 
-                <FormField label="Tarif pengguna tambahan (Rp)" :error="newPlanForm.errors.extra_seat_price">
+                <FormField
+                    label="Analisis AI per hari"
+                    :hint="`Kosongkan untuk mengikuti bawaan platform (${aiDailyDefault}/hari). Isi 0 bila paket ini tidak menyertakan AI.`"
+                    :error="newPlanForm.errors.ai_daily_limit"
+                >
+                    <input
+                        v-model="newPlanForm.ai_daily_limit"
+                        type="number"
+                        min="0"
+                        max="1000"
+                        :placeholder="`${aiDailyDefault} (bawaan)`"
+                        :class="inputClass"
+                    />
+                </FormField>
+
+                <FormField
+                    label="Tarif pengguna tambahan (Rp)"
+                    hint="Dipakai saat tenant membayar penambahan pengguna di luar jatah paket."
+                    :error="newPlanForm.errors.extra_seat_price"
+                >
                     <input v-model.number="newPlanForm.extra_seat_price" type="number" min="0" :class="inputClass" />
                 </FormField>
+
+                <label class="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                        v-model="newPlanForm.is_adaptive_fallback"
+                        type="checkbox"
+                        class="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring"
+                    />
+                    <span>
+                        Paket penampung jalur Adaptif
+                        <span class="block text-xs text-muted-foreground">
+                            Menampung tenant jalur Adaptif yang tidak cocok aturan tarif mana pun.
+                        </span>
+                    </span>
+                </label>
             </form>
 
             <template #footer>
@@ -426,11 +703,11 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
             </template>
         </Modal>
 
-        <!-- ── Terbitkan aturan ─────────────────────────────────────────── -->
+        <!-- ── Terbitkan / ubah aturan ──────────────────────────────────── -->
         <Modal
             :show="showRuleForm"
-            title="Terbitkan aturan tarif"
-            description="Berlaku sejak tanggal yang Anda pilih, dan tidak menyentuh periode sebelumnya."
+            :title="ruleDialog.title"
+            :description="ruleDialog.description"
             max-width="max-w-2xl"
             @close="showRuleForm = false"
         >
@@ -446,7 +723,10 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
 
                     <FormField label="Prioritas" :error="ruleForm.errors.priority">
                         <input v-model.number="ruleForm.priority" type="number" min="0" max="1000" :class="inputClass" />
-                        <template #footnote>Makin tinggi makin didahulukan.</template>
+                        <template #footnote>
+                            Dipakai bila satu tenant cocok dengan beberapa aturan: yang tertinggi menang. Aturan khusus
+                            diberi angka lebih tinggi daripada aturan umum.
+                        </template>
                     </FormField>
 
                     <FormField label="Tarif bulanan (Rp)" :error="ruleForm.errors.price">
@@ -543,9 +823,20 @@ const removeRule = (rule) => deleteForm.delete(`/platform/pricing-rules/${rule.i
             <template #footer>
                 <div class="flex justify-end gap-3">
                     <Button variant="secondary" @click="showRuleForm = false">Batal</Button>
-                    <Button :loading="ruleForm.processing" @click="submitRule">Terbitkan</Button>
+                    <Button :loading="ruleForm.processing" @click="submitRule">{{ ruleDialog.submit }}</Button>
                 </div>
             </template>
         </Modal>
+
+        <!-- ── Konfirmasi penghentian aturan ────────────────────────────── -->
+        <ConfirmDialog
+            :show="deletingRule !== null"
+            :title="deletingRule?.is_effective ? `Hentikan aturan ${deletingRule.label}?` : `Batalkan aturan ${deletingRule?.label}?`"
+            :message="deleteMessage"
+            :confirm-text="deletingRule?.is_effective ? 'Hentikan aturan' : 'Batalkan aturan'"
+            :variant="deletingRule?.is_effective ? 'danger' : 'warning'"
+            @confirm="confirmDelete"
+            @cancel="deletingRule = null"
+        />
     </PlatformLayout>
 </template>

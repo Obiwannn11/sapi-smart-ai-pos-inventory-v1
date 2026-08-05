@@ -11,6 +11,7 @@ use App\Services\Pricing\DimensionRegistry;
 use App\Services\PricingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
@@ -47,15 +48,24 @@ class PricingRuleController extends Controller
         PlatformAuditLog::recordRoutine('pricing-rules.index');
 
         return Inertia::render('Platform/PricingRules/Index', [
-            'plans' => Plan::orderBy('name')->get()->map(fn (Plan $plan) => [
+            'plans' => Plan::orderBy('base_price')->orderBy('name')->get()->map(fn (Plan $plan) => [
                 'id' => $plan->id,
                 'name' => $plan->name,
                 'slug' => $plan->slug,
                 'base_price' => (float) $plan->base_price,
                 'included_seats' => $plan->included_seats,
                 'extra_seat_price' => (float) $plan->extra_seat_price,
-                'is_active' => $plan->is_active,
+                // `null` berarti paket ini tidak menyetel batasnya sendiri dan
+                // mengikuti bawaan platform. Dikirim apa adanya, bukan sudah
+                // diselesaikan jadi angka: panel perlu bisa MENAMPILKAN bedanya
+                // supaya "10/hari karena paket ini" tidak tertukar dengan
+                // "10/hari karena kebetulan itu bawaannya hari ini".
+                'ai_daily_limit' => $plan->limit(Plan::LIMIT_AI_DAILY),
+                'is_adaptive_fallback' => $plan->is_adaptive_fallback,
             ]),
+            // Bawaan platform, untuk ditampilkan sebagai angka yang berlaku bila
+            // paket tidak menyetel batasnya sendiri.
+            'aiDailyDefault' => (int) config('ai.free_tier.daily_limit'),
             // Katalog dimensi menggerakkan form: pilihan dimensi, operator yang
             // masuk akal per tipe, dan nilai sah untuk dimensi beratribut. Panel
             // tidak menyalin daftar ini — ia menerimanya, sehingga dimensi baru
@@ -81,25 +91,7 @@ class PricingRuleController extends Controller
 
     public function storeRule(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'label' => ['required', 'string', 'max:20'],
-            // Menang yang tertinggi. Aturan umum sebaiknya berprioritas rendah
-            // supaya aturan yang lebih spesifik bisa mendahuluinya tanpa harus
-            // menuliskan syarat penyangkal di aturan umumnya.
-            'priority' => ['required', 'integer', 'min:0', 'max:1000'],
-            'price' => ['required', 'numeric', 'min:0'],
-            // Tidak boleh mundur ke masa lalu. Aturan yang berlaku surut akan
-            // mengubah dasar harga periode yang sudah ditagihkan — persis hal
-            // yang seluruh mekanisme ini dibangun untuk mencegahnya.
-            'effective_from' => ['required', 'date', 'after_or_equal:today'],
-            // `present`, bukan `required`: aturan tanpa syarat itu sah — ia
-            // tarif bawaan yang cocok untuk siapa pun — tapi ketiadaannya harus
-            // disengaja, bukan akibat field yang lupa dikirim.
-            'conditions' => ['present', 'array', 'max:10'],
-            'conditions.*.dimension' => ['required', 'string', Rule::in($this->dimensions->names())],
-            'conditions.*.operator' => ['required', 'string', Rule::in(PricingRuleCondition::allOperators())],
-            'conditions.*.value' => ['required', 'string', 'max:255'],
-        ]);
+        $validated = $request->validate($this->ruleValidationRules());
 
         $this->validateConditionShapes($validated['conditions']);
 
@@ -119,47 +111,110 @@ class PricingRuleController extends Controller
         return back()->with('success', "Aturan {$rule->label} berlaku mulai {$rule->effective_from->toDateString()}.");
     }
 
-    public function destroyRule(PricingRule $rule): RedirectResponse
+    /**
+     * Sunting aturan yang BELUM berlaku, berikut seluruh syaratnya.
+     *
+     * Hanya yang belum berlaku, dan batas itu bukan kehati-hatian berlebih:
+     * menyunting aturan yang sudah berlaku mengubah dasar harga periode yang
+     * sudah ditagihkan tanpa meninggalkan versi sebelumnya di mana pun. Untuk
+     * aturan yang sudah berlaku, yang benar adalah menerbitkan revisi berlabel
+     * sama dengan tanggal berlaku ke depan — `matchContext()` memenangkan revisi
+     * terbaru per label, sementara yang lama tetap bisa dibaca sebagai riwayat.
+     *
+     * Sebelum ini panel hanya punya "terbitkan" dan "batalkan", sehingga
+     * memperbaiki satu angka salah ketik pada aturan yang belum berlaku pun
+     * menuntut menghapusnya lalu mengetik ulang seluruh syaratnya.
+     */
+    public function updateRule(Request $request, PricingRule $rule): RedirectResponse
     {
-        // Aturan yang SUDAH berlaku tidak boleh dihapus: ia adalah dasar harga
-        // periode yang sudah lewat, dan menghapusnya membuat penetapan harga
-        // waktu itu tak bisa lagi dijelaskan. Untuk mengubah tarif, terbitkan
-        // aturan baru dengan tanggal berlaku ke depan.
         if ($rule->effective_from->isPast()) {
-            return back()->with('error', 'Aturan yang sudah berlaku tidak bisa dihapus. Terbitkan aturan baru dengan tanggal berlaku ke depan.');
+            return back()->with('error', 'Aturan yang sudah berlaku tidak bisa disunting. Terbitkan revisi dengan nama yang sama dan tanggal berlaku ke depan.');
         }
 
+        $validated = $request->validate($this->ruleValidationRules());
+
+        $this->validateConditionShapes($validated['conditions']);
+
+        $rule->loadMissing('conditions');
+
+        $sebelum = [
+            'label' => $rule->label,
+            'price' => (float) $rule->price,
+            'priority' => $rule->priority,
+            'effective_from' => $rule->effective_from->toDateString(),
+            'conditions' => $rule->conditionSummary(),
+        ];
+
+        $rule = $this->pricing->reviseRule($rule, $validated, $validated['conditions']);
+
+        // Nilai lama DAN baru, dengan alasan yang sama seperti pada paket:
+        // "tarifnya diubah jadi sekian" tidak menjawab "dari berapa", dan
+        // pertanyaan itu justru yang muncul saat angkanya dipersoalkan.
+        PlatformAuditLog::record('pricing-rules.update', $rule, [
+            'before' => $sebelum,
+            'after' => [
+                'label' => $rule->label,
+                'price' => (float) $rule->price,
+                'priority' => $rule->priority,
+                'effective_from' => $rule->effective_from->toDateString(),
+                'conditions' => $rule->conditionSummary(),
+            ],
+        ]);
+
+        return back()->with('success', "Aturan {$rule->label} diperbarui.");
+    }
+
+    /**
+     * Hentikan sebuah aturan.
+     *
+     * Dulu aturan yang sudah berlaku tidak bisa dihapus sama sekali. Alasannya
+     * benar — ia dasar harga periode yang sudah lewat — tapi akibatnya pemilik
+     * SaaS tidak punya cara apa pun menghentikan aturan yang telanjur salah
+     * terbit, dan satu-satunya jalan keluarnya (menerbitkan pengganti berlabel
+     * sama) tidak menolong bila yang diinginkan justru meniadakan kelompoknya.
+     *
+     * Yang menyelesaikannya adalah `SoftDeletes`: barisnya tetap ada bagi
+     * `invoices.pricing_rule_id` yang menautnya, sehingga tagihan lama tetap
+     * bisa dijelaskan, sementara setiap query penetapan harga berhenti
+     * melihatnya sejak detik ini.
+     *
+     * Tenant yang tadinya cocok dengan aturan ini akan jatuh ke aturan lain yang
+     * masih cocok; bila tak ada satu pun, ke paket penampung jalur adaptif —
+     * lihat `PricingService::fallbackPlanFor()`. Tarif periode yang SEDANG
+     * berjalan tidak berubah: `subscriptions.price_locked` sudah memegangnya.
+     */
+    public function destroyRule(PricingRule $rule): RedirectResponse
+    {
         $rule->loadMissing('conditions');
 
         PlatformAuditLog::record('pricing-rules.delete', $rule, [
             'label' => $rule->label,
             'price' => (float) $rule->price,
             'effective_from' => $rule->effective_from->toDateString(),
+            'was_effective' => $rule->effective_from->isPast(),
             'conditions' => $rule->conditionSummary(),
         ]);
 
+        $sudahBerlaku = $rule->effective_from->isPast();
+
         $rule->delete();
 
-        return back()->with('success', 'Aturan yang belum berlaku dibatalkan.');
+        return back()->with('success', $sudahBerlaku
+            ? "Aturan {$rule->label} dihentikan. Tenant yang tadinya masuk kelompok ini akan dinilai ulang pada periode berikutnya."
+            : 'Aturan yang belum berlaku dibatalkan.');
     }
 
     public function updatePlan(Request $request, Plan $plan): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'base_price' => ['required', 'numeric', 'min:0'],
-            'included_seats' => ['required', 'integer', 'min:1', 'max:1000'],
-            'extra_seat_price' => ['required', 'numeric', 'min:0'],
-            'is_active' => ['required', 'boolean'],
-        ]);
+        $validated = $request->validate($this->planValidationRules());
 
-        $sebelum = [
-            'base_price' => (float) $plan->base_price,
-            'included_seats' => $plan->included_seats,
-            'extra_seat_price' => (float) $plan->extra_seat_price,
-        ];
+        $sebelum = $this->planSnapshot($plan);
 
-        $plan->update($validated);
+        $plan->fill(Arr::except($validated, ['ai_daily_limit', 'is_adaptive_fallback']));
+        $plan->setLimit(Plan::LIMIT_AI_DAILY, $validated['ai_daily_limit']);
+        $plan->save();
+
+        $plan->setAdaptiveFallback($validated['is_adaptive_fallback']);
 
         // Nilai lama DAN baru sama-sama dicatat. Mencatat hanya nilai barunya
         // membuat pertanyaan "naik dari berapa?" tak terjawab justru saat
@@ -167,11 +222,7 @@ class PricingRuleController extends Controller
         PlatformAuditLog::record('plans.update', $plan, [
             'name' => $plan->name,
             'before' => $sebelum,
-            'after' => [
-                'base_price' => (float) $plan->base_price,
-                'included_seats' => $plan->included_seats,
-                'extra_seat_price' => (float) $plan->extra_seat_price,
-            ],
+            'after' => $this->planSnapshot($plan->fresh()),
         ]);
 
         return back()->with('success', 'Paket diperbarui. Tenant yang sedang berjalan tetap di tarif lamanya sampai periode berikutnya.');
@@ -179,22 +230,94 @@ class PricingRuleController extends Controller
 
     public function storePlan(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+        $validated = $request->validate($this->planValidationRules() + [
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('plans', 'slug')],
-            'base_price' => ['required', 'numeric', 'min:0'],
-            'included_seats' => ['required', 'integer', 'min:1', 'max:1000'],
-            'extra_seat_price' => ['required', 'numeric', 'min:0'],
         ]);
 
-        $plan = Plan::create($validated + ['is_active' => true]);
+        $plan = Plan::create(Arr::except($validated, ['ai_daily_limit', 'is_adaptive_fallback']) + ['is_active' => true]);
+        $plan->setLimit(Plan::LIMIT_AI_DAILY, $validated['ai_daily_limit']);
+        $plan->save();
 
-        PlatformAuditLog::record('plans.create', $plan, [
+        $plan->setAdaptiveFallback($validated['is_adaptive_fallback']);
+
+        PlatformAuditLog::record('plans.create', $plan, $this->planSnapshot($plan->fresh()) + [
             'name' => $plan->name,
-            'base_price' => (float) $plan->base_price,
         ]);
 
         return back()->with('success', 'Paket baru dibuat.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function planValidationRules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'base_price' => ['required', 'numeric', 'min:0'],
+            'included_seats' => ['required', 'integer', 'min:1', 'max:1000'],
+            'extra_seat_price' => ['required', 'numeric', 'min:0'],
+            // `present` + `nullable`: kosong berarti "ikut bawaan platform",
+            // dan itu jawaban yang sah — tapi harus benar-benar dikirim.
+            // Field yang hilang dari payload tidak boleh diam-diam menghapus
+            // batas yang sudah disetel. Nol pun sah, artinya paket ini tidak
+            // menyertakan AI sama sekali.
+            'ai_daily_limit' => ['present', 'nullable', 'integer', 'min:0', 'max:1000'],
+            'is_adaptive_fallback' => ['required', 'boolean'],
+        ];
+    }
+
+    /**
+     * Nilai paket yang layak muncul di jejak audit.
+     *
+     * Batas dan peran penampung ikut, bukan cuma angka rupiahnya: menaikkan
+     * kuota AI sebuah paket menaikkan tagihan kunci bersama, dan menunjuk
+     * penampung baru memindahkan tarif setiap tenant adaptif yang tak cocok
+     * aturan mana pun. Keduanya keputusan berbiaya, jadi keduanya berjejak.
+     *
+     * @return array<string, mixed>
+     */
+    protected function planSnapshot(Plan $plan): array
+    {
+        return [
+            'base_price' => (float) $plan->base_price,
+            'included_seats' => $plan->included_seats,
+            'extra_seat_price' => (float) $plan->extra_seat_price,
+            'ai_daily_limit' => $plan->limit(Plan::LIMIT_AI_DAILY),
+            'is_adaptive_fallback' => $plan->is_adaptive_fallback,
+        ];
+    }
+
+    /**
+     * Aturan validasi yang sama untuk penerbitan dan penyuntingan.
+     *
+     * Satu tempat karena keduanya menghasilkan baris yang sama persis; dua
+     * salinan akan mulai berselisih pada aturan yang paling jarang disentuh,
+     * dan yang lebih longgar di antaranya menjadi pintu masuk sebenarnya.
+     *
+     * @return array<string, mixed>
+     */
+    protected function ruleValidationRules(): array
+    {
+        return [
+            'label' => ['required', 'string', 'max:20'],
+            // Menang yang tertinggi. Aturan umum sebaiknya berprioritas rendah
+            // supaya aturan yang lebih spesifik bisa mendahuluinya tanpa harus
+            // menuliskan syarat penyangkal di aturan umumnya.
+            'priority' => ['required', 'integer', 'min:0', 'max:1000'],
+            'price' => ['required', 'numeric', 'min:0'],
+            // Tidak boleh mundur ke masa lalu. Aturan yang berlaku surut akan
+            // mengubah dasar harga periode yang sudah ditagihkan — persis hal
+            // yang seluruh mekanisme ini dibangun untuk mencegahnya.
+            'effective_from' => ['required', 'date', 'after_or_equal:today'],
+            // `present`, bukan `required`: aturan tanpa syarat itu sah — ia
+            // tarif bawaan yang cocok untuk siapa pun — tapi ketiadaannya harus
+            // disengaja, bukan akibat field yang lupa dikirim.
+            'conditions' => ['present', 'array', 'max:10'],
+            'conditions.*.dimension' => ['required', 'string', Rule::in($this->dimensions->names())],
+            'conditions.*.operator' => ['required', 'string', Rule::in(PricingRuleCondition::allOperators())],
+            'conditions.*.value' => ['required', 'string', 'max:255'],
+        ];
     }
 
     /**

@@ -87,6 +87,12 @@ class InvoiceController extends Controller
         return response()->json([
             'amount' => $resolved['price'],
             'label' => $resolved['label'],
+            // `source` membedakan tarif yang keluar dari aturan dari tarif yang
+            // keluar karena TIDAK ada aturan yang cocok. Keduanya kini berupa
+            // angka, dan formulir tagihan harus mengatakan yang mana — angka
+            // paket penampung yang disodorkan seolah hasil aturan adalah
+            // kekeliruan yang baru ketahuan saat tenant bertanya.
+            'source' => $resolved['source'],
             'matched' => $resolved['rule'] !== null,
         ]);
     }
