@@ -216,3 +216,153 @@ test('riwayat persetujuan tetap tersimpan setelah dicabut', function () {
     expect($consent->revoked_at)->not->toBeNull()
         ->and($consent->version)->toBe('1');
 });
+
+// --- Perkiraan tarif adaptif untuk tenant jalur tetap ---
+
+/**
+ * Tenant jalur tetap dengan tarif berjalan yang jelas, plus penjualan di bulan
+ * yang baru tutup — bahan minimum untuk sebuah perkiraan.
+ *
+ * @return array{tenant: Tenant, owner: User}
+ */
+function makeEstimateContext(float $currentPrice = 100_000, float $revenue = 3_000_000): array
+{
+    $tenant = Tenant::factory()->active()->create();
+    Subscription::factory()->create([
+        'tenant_id' => $tenant->id,
+        'price_locked' => $currentPrice,
+        'current_period_end' => now()->addDays(20)->toDateString(),
+    ]);
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+        'status' => Transaction::STATUS_COMPLETED,
+        'total_amount' => $revenue,
+        'occurred_at' => now()->startOfMonth()->subMonth()->addDays(5),
+    ]);
+
+    return ['tenant' => $tenant, 'owner' => $owner];
+}
+
+test('tenant jalur tetap diberi tahu bahwa omzetnya masuk kelompok lebih murah', function () {
+    App\Models\PricingRule::query()->delete();
+    App\Models\PricingRule::factory()
+        ->revenueBetween(0, 5_000_000)
+        ->create(['label' => 'KECIL', 'price' => 25_000]);
+
+    ['owner' => $owner] = makeEstimateContext(currentPrice: 100_000, revenue: 3_000_000);
+
+    actingAs($owner);
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('subsidy.estimate.revenue', 3_000_000)
+        ->where('subsidy.estimate.label', 'KECIL')
+        ->where('subsidy.estimate.price', 25_000)
+        ->where('subsidy.estimate.current_price', 100_000)
+        ->where('subsidy.estimate.is_cheaper', true)
+    );
+});
+
+test('omzet yang tidak masuk kelompok lebih murah tidak diklaim menguntungkan', function () {
+    App\Models\PricingRule::query()->delete();
+    App\Models\PricingRule::factory()
+        ->revenueBetween(0, 5_000_000)
+        ->create(['label' => 'KECIL', 'price' => 250_000]);
+
+    ['owner' => $owner] = makeEstimateContext(currentPrice: 100_000, revenue: 3_000_000);
+
+    actingAs($owner);
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('subsidy.estimate.price', 250_000)
+        ->where('subsidy.estimate.is_cheaper', false)
+    );
+});
+
+test('perkiraan tidak menuliskan ringkasan omzet apa pun', function () {
+    App\Models\PricingRule::query()->delete();
+    App\Models\PricingRule::factory()
+        ->revenueBetween(0, 5_000_000)
+        ->create(['label' => 'KECIL', 'price' => 25_000]);
+
+    ['tenant' => $tenant, 'owner' => $owner] = makeEstimateContext();
+
+    actingAs($owner);
+    get('/langganan')->assertStatus(200);
+
+    // Inti gerbang privasinya: melihat perkiraan tidak boleh melahirkan baris
+    // yang bisa dibaca halaman platform. Omzet baru mengalir ke sana setelah
+    // tenant menyetujuinya, bukan sebelum.
+    expect(TenantMonthlyMetric::where('tenant_id', $tenant->id)->count())->toBe(0);
+});
+
+test('transaksi batal tidak ikut diperkirakan', function () {
+    App\Models\PricingRule::query()->delete();
+    App\Models\PricingRule::factory()
+        ->revenueBetween(0, 5_000_000)
+        ->create(['label' => 'KECIL', 'price' => 25_000]);
+
+    ['tenant' => $tenant, 'owner' => $owner] = makeEstimateContext(revenue: 3_000_000);
+
+    Transaction::factory()->voided()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+        'total_amount' => 9_000_000,
+        'occurred_at' => now()->startOfMonth()->subMonth()->addDays(6),
+    ]);
+
+    actingAs($owner);
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('subsidy.estimate.revenue', 3_000_000)
+        ->where('subsidy.estimate.transaction_count', 1)
+    );
+});
+
+test('tenant yang sudah di jalur adaptif tidak diberi perkiraan', function () {
+    ['owner' => $owner] = makeSubsidyContext();
+
+    actingAs($owner);
+    agreeSubsidy();
+
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('subsidy.estimate', null)
+        ->where('subsidy.is_active', true)
+    );
+});
+
+// --- Jejak persetujuan di halaman langganan ---
+
+test('halaman langganan menyebut versi, tanggal, dan penyetuju', function () {
+    ['owner' => $owner] = makeSubsidyContext();
+
+    actingAs($owner);
+    post('/langganan/persetujuan', ['version' => '1', 'agreed' => true]);
+
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('consent.agreed', true)
+        ->where('consent.agreed_version', '1')
+        ->where('consent.agreed_at', now()->toDateString())
+        ->where('consent.agreed_by', $owner->name)
+    );
+});
+
+test('persetujuan versi lama dibedakan dari belum pernah menyetujui', function () {
+    ['tenant' => $tenant, 'owner' => $owner] = makeSubsidyContext();
+
+    // Versi yang sudah tidak berlaku lagi — tenant pernah setuju, tapi bukan
+    // pada teks yang berlaku sekarang.
+    TenantConsent::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+        'type' => TenantConsent::TYPE_NORMAL,
+        'version' => '0',
+    ]);
+
+    actingAs($owner);
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('consent.agreed', false)
+        ->where('consent.agreed_version', '0')
+        ->where('consent.current_version', '1')
+    );
+});

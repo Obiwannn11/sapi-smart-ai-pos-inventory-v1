@@ -62,6 +62,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-08-01 | ADDITION | Platform | Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047) |
+| 2026-08-01 | ADDITION | Langganan | Warna Khas per Jalur Harga, Jejak Persetujuan, & Perkiraan Tarif Adaptif |
 | 2026-08-01 | ADDITION | Kasir | Identitas Pesanan Bisa Diisi dari Kasir, & Nomor Panggil Lepas dari Papan Dapur (BL-026) |
 | 2026-08-01 | ADDITION | Platform | Rincian Tenant Bertab, dan Daftarnya Kembali Jadi Daftar (BL-042) |
 | 2026-07-31 | DECISION | Platform | Jenis Usaha Berpindah ke Pemilik Toko, dan "Subsidi" Jadi "Harga Adaptif" |
@@ -176,6 +177,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - **Kuota AI dibaca satu kelas** (`AiQuota`), dipakai `RunAiAnalysisJob` DAN halaman Pengaturan owner. Angka yang dibacakan ke owner dan angka yang menolak permintaannya wajib identik; selama keduanya menghitung sendiri-sendiri, cepat atau lambat layar menjanjikan sisa yang ditolak antrean.
   - **Kolom `plans.is_active` dicabut dari panel.** Ia tidak menggerbangi apa pun di seluruh aplikasi — tidak ada pemilih paket yang menyaringnya — sehingga "Ketersediaan" adalah kolom yang menjanjikan kendali yang tidak ada. Kolomnya tetap di basis data; yang dihapus adalah klaimnya di layar.
   - **Ditemukan sambil lewat: analisis AI KEDUA seorang tenant di hari yang sama selalu gagal.** `incrementUsage()` memakai `firstOrCreate` berkunci tanggal, padahal kolom `date` tersimpan sebagai datetime — barisnya tak pernah ketemu, lalu penyisipan keduanya ditolak indeks unik. Diperbaiki dengan `whereDate`, dengan test yang gagal sebelum perbaikannya.
+
+---
+
+### [ADDITION] Warna Khas per Jalur Harga, Jejak Persetujuan, & Perkiraan Tarif Adaptif
+- **Tanggal:** 2026-08-01
+- **Fase Terkait:** Di Luar Fase — kelanjutan `PHASE SAAS Tahap C`
+- **Dampak:** Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Halaman `/langganan` mendapat tiga hal. **(1) Identitas warna per jalur harga** — Masa Coba ungu, Harga Tetap biru, Harga Adaptif hijau — berupa chip di sebelah judul dan kepala berwarna di kartu detail paket, yang kini juga menyebut tarif pengguna tambahan, akhir periode, dan bar pemakaian kursi. **(2) Jejak persetujuan** — status "Disetujui / Perlu disetujui ulang / Belum disetujui" sebagai chip, plus versi, tanggal, dan nama penyetujunya. **(3) Perkiraan tarif adaptif** untuk tenant jalur tetap: omzet bulan lalu miliknya sendiri, kelompok tarif yang ia masuki, perbandingan "tarif sekarang → perkiraan adaptif", dan CTA yang berubah jadi tombol hijau **"Pindah ke Harga Adaptif"** hanya bila memang lebih murah.
+- **Alasan:** Ajakan pindah ke Harga Adaptif sebelumnya meminta tenant menyerahkan angka penjualannya demi tarif yang tak pernah ia lihat lebih dulu — tukar-menukar yang tidak seimbang, dan ajakan yang wajar diabaikan. Sementara itu "Sudah disetujui" tanpa versi, tanggal, atau nama menyuruh tenant memercayai catatan yang tidak bisa ia periksa, padahal seluruh rancangan persetujuan di fase SAAS justru dibangun agar bisa diperiksa. Warna jalur menyelesaikan hal ketiga: tiga model harga yang berbeda mendasar sebelumnya hanya dibedakan satu baris teks di tengah halaman.
+- **File Terdampak:**
+  - `app/Services/Pricing/SubsidyEstimator.php` — **baru**
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — `subsidy.estimate`, versi & jejak `consent`
+  - `resources/js/Pages/Billing/Show.vue` — `trackIdentity`, `consentState`, `subsidyEstimate`, kartu paket & persetujuan dirombak
+  - `tests/Feature/Subscription/SubsidyTrackTest.php` — 7 test baru
+- **Keputusan yang perlu diingat:**
+  - **Perkiraan dihitung on-the-fly dan TIDAK PERNAH disimpan.** Gerbang privasi `ComputeTenantMonthlyRevenue` menjaga **pandangan pengelola layanan**, bukan pandangan pemilik toko atas datanya sendiri — pemilik sudah bisa menjumlahkan angka yang sama dari Laporan Harian. Yang tidak boleh lahir adalah baris `tenant_monthly_metrics` yang bisa dibaca halaman platform, dan ada test yang menjaganya tetap nol setelah halaman dibuka.
+  - **`SubsidyEstimator` sengaja BUKAN `DimensionResolver`.** Satu-satunya jalan dari data penjualan ke tagihan tetap `tenant_monthly_metrics`; itulah yang membuat batasnya bisa ditegakkan `PlatformArchTest`. Kelas ini hanya boleh dipakai menampilkan, tidak pernah menagih.
+  - **Perkiraan memakai bulan yang sudah TUTUP, dengan aturan hitung yang sama persis dengan job sungguhan** (hanya `completed`, memakai tanggal efektif). Perkiraan yang aturannya berbeda akan meleset justru pada tenant yang paling perlu memercayainya. Bulan berjalan ditolak karena angkanya berubah tiap hari.
+  - **Nol penjualan TIDAK diperlakukan sebagai omzet nol.** Tanpa penjagaan itu, tenant baru akan jatuh ke kelompok termurah dan disodori penghematan yang tidak nyata. Keadaan itu punya kalimatnya sendiri, begitu pula keadaan "belum ada kelompok tarif yang cocok".
+  - **CTA hijau hanya muncul saat memang lebih murah.** Bila tidak, halamannya berkata terus terang bahwa Harga Tetap masih lebih menguntungkan dan tombolnya turun jadi tautan biasa. Mendorong tenant pindah jalur ke tarif yang lebih mahal — sambil meminta datanya — adalah ajakan yang merugikan orang yang menerimanya.
+  - **Kelas warna Tailwind ditulis UTUH, bukan dirakit runtime.** `text-${warna}-600` tidak pernah ikut ter-generate karena Tailwind memindai berkas sebagai teks; warnanya akan hilang diam-diam di build produksi, bukan gagal ramai-ramai saat dikembangkan.
+  - **Tiga keadaan persetujuan, bukan dua.** "Pernah setuju tapi teksnya sudah kami ganti" bukan hal yang sama dengan "belum pernah setuju" — yang pertama bukan kelalaian tenant, dan menyebutnya begitu menuduh orang atas perubahan yang kami sendiri yang melakukannya.
+  - **Tindakan berbentuk tombol, bukan teks bergaris bawah.** "Baca dokumen persetujuan" dan "Cabut persetujuan Harga Adaptif" sebelumnya tautan telanjang di antara paragraf. Keduanya tindakan yang punya akibat — yang kedua bahkan menghapus data seketika — dan tindakan sebesar itu tidak pantas menyaru sebagai kalimat. Bobotnya dibedakan: persetujuan yang sudah ada dapat tombol bergaris netral, pencabutan dapat tombol bergaris merah.
 
 ---
 

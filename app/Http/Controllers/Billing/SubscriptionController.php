@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Billing;
 use App\Http\Controllers\Controller;
 use App\Models\TenantConsent;
 use App\Services\ConsentService;
+use App\Services\Pricing\SubsidyEstimator;
 use App\Services\PricingService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
@@ -26,10 +27,14 @@ class SubscriptionController extends Controller
         SubscriptionService $subscriptions,
         ConsentService $consents,
         PricingService $pricing,
+        SubsidyEstimator $estimator,
     ): Response {
         $tenant = $request->user()->tenant;
         $subscription = $subscriptions->ensureFor($tenant);
         $subscription->loadMissing('plan');
+
+        $effectivePrice = (float) ($subscription->price_locked ?? $subscription->plan->base_price);
+        $normalConsent = $consents->latestFor($tenant, TenantConsent::TYPE_NORMAL);
 
         return inertia('Billing/Show', [
             'tenant' => [
@@ -55,6 +60,17 @@ class SubscriptionController extends Controller
             ],
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),
+                // Versi dikirim BERPASANGAN supaya halamannya bisa membedakan
+                // dua keadaan yang sebelumnya menyatu jadi "belum disetujui":
+                // belum pernah menyetujui apa pun, versus pernah menyetujui
+                // teks yang kini sudah diganti. Yang kedua bukan kelalaian
+                // tenant, dan menyebutnya begitu tidak jujur.
+                'current_version' => $consents->currentVersion(TenantConsent::TYPE_NORMAL),
+                'agreed_version' => $normalConsent?->version,
+                'agreed_at' => $normalConsent?->agreed_at?->toDateString(),
+                // Nama penyetujunya, bukan sekadar "sudah disetujui". Ini bukti,
+                // dan bukti yang tidak menyebut siapa membuktikan lebih sedikit.
+                'agreed_by' => $normalConsent?->user?->name,
             ],
             'subsidy' => [
                 'is_active' => $subscription->isSubsidized(),
@@ -68,6 +84,17 @@ class SubscriptionController extends Controller
                 'bracket' => $subscription->isSubsidized()
                     ? $pricing->currentBracketFor($tenant)
                     : null,
+                // Perkiraan untuk tenant yang BELUM di jalur adaptif: apakah
+                // omsetnya memang jatuh di kelompok bertarif lebih rendah.
+                // Tanpa ini, ajakan pindah jalur meminta tenant menyerahkan
+                // angka penjualannya demi tarif yang tak pernah ia lihat lebih
+                // dulu — tukar-menukar yang tidak seimbang.
+                //
+                // Dihitung on-the-fly dan tidak pernah disimpan; lihat docblock
+                // SubsidyEstimator untuk batasnya terhadap gerbang privasi.
+                'estimate' => $subscription->isSubsidized()
+                    ? null
+                    : $estimator->estimateFor($tenant, $effectivePrice),
             ],
             'invoices' => $tenant->invoices()
                 ->latest('id')

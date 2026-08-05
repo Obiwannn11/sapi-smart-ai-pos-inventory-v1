@@ -240,6 +240,30 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **Yang perlu Anda putuskan sebelum (b) bisa dikerjakan:** nilai `lt` yang menutup bracket D (turunan dari tangga harga Premium, lihat `[BL-041]`), dan apakah tenant yang terlanjur di Adaptif dengan omset di atas ambang dipindahkan atau di-*grandfather*.
   **Bergantung pada `[BL-046]`** — pintu keluar di (b) baru ada artinya setelah paket Premium benar-benar ada dan tenant bisa dipindahkan antar paket.
 
+### [BL-049] "Tambah Pengguna" Menerbitkan Tagihan Rp 0 dan Meminta Bukti Transfernya — Harganya Belum Ada, dan Kursi Tidak Pernah Bisa Turun
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Permintaan pemilik saat merapikan halaman Langganan — "tambah pengguna masih under development pricing-nya"
+- **Status:** Open — **terhalang `[BL-046]` dan `[BL-041]`(a)**; mekanismenya sudah jadi, angkanya yang belum
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php:215-231` — `requestSeatUpgrade()`: `amount = plan->extra_seat_price × additional_seats`
+  - `app/Services/SubscriptionService.php:75-90` — `startTrial()`: **setiap** tenant lahir di paket `dasar`
+  - `app/Http/Controllers/Billing/UpgradeController.php:44-76` — `storeProof()`: bukti transfer wajib sebelum seat berlaku
+  - `resources/js/Pages/Billing/Show.vue` — panel "Tambah pengguna", tombol "Terbitkan tagihan · Rp 0"
+  - `app/Models/Subscription.php:94-95` & `app/Services/Pricing/ActiveSeatsResolver.php:27` — `seat_high_water` hanya naik
+- **Deskripsi:**
+  Query paket 2026-08-01: `dasar` = `base_price 0`, `included_seats 1`, `extra_seat_price 0`. Paket Premium sudah punya angka nyata (`premium-1/2/3` → seat tambahan 15.000 / 12.500 / 10.000), tapi **tidak ada tenant yang bisa berada di sana** — itu `[BL-046]`. Karena setiap tenant lahir di `dasar` dan tidak punya jalan pindah paket, `extra_seat_price` yang benar-benar dipakai hari ini selalu **nol**.
+  Akibatnya panel "Tambah pengguna" di halaman langganan menawarkan tombol **"Terbitkan tagihan · Rp 0"**, dan alurnya tetap berjalan penuh sesudah itu: tagihan `KIND_UPGRADE` senilai Rp 0 terbit dengan jatuh tempo 7 hari, lalu seat baru **baru aktif setelah tenant mengunggah bukti transfer** (`storeProof` → `applyProvisionalUpgrade`). Tenant diminta membuktikan bahwa ia sudah mentransfer nol rupiah, dan pemilik SaaS diminta memeriksa bukti itu. Bukan cacat kode — kodenya justru bekerja persis seperti dirancang — melainkan **kebijakan harga yang belum ada** yang muncul ke permukaan sebagai alur yang menggelikan.
+  **Temuan kedua, terpisah dan lebih berumur panjang: kursi tidak pernah bisa turun.** Tidak ada satu pun jalur di kode yang menurunkan `seats`. `seat_high_water` hanya naik (`Subscription.php:94-95`), dan `ActiveSeatsResolver` sengaja memakai nilai tertinggi itu, bukan cacah aktif hari ini. Untuk tenant jalur Harga Adaptif ini berarti **satu kasir yang pernah dipekerjakan sebulan akan terus menaikkan tarif selamanya**, karena `active_seats` adalah dimensi harga. Warung musiman — yang justru paling mungkin jadi sasaran Harga Adaptif — paling dirugikan olehnya. Perilaku "high water" itu disengaja untuk mencegah tenant memangkas seat sesaat sebelum penagihan, jadi memperbaikinya bukan sekadar mengizinkan pengurangan.
+- **Usulan Perbaikan:**
+  **(a) Tetapkan `extra_seat_price` paket `dasar` lebih dulu** — bagian dari `[BL-041]`(a). Bila jawabannya memang **0** (paket dasar dipatok satu pengguna, penambahan hanya lewat naik paket), maka panelnya jangan menawarkan tagihan sama sekali: ganti jadi ajakan naik ke Premium. Tombol yang menerbitkan tagihan nol rupiah bukan jawaban yang benar untuk harga nol.
+  **(b) Lewati keharusan bukti untuk tagihan Rp 0.** Selama masih mungkin ada tagihan bernilai nol, `storeProof` tidak boleh jadi satu-satunya pintu ke `applyProvisionalUpgrade()`. Tagihan Rp 0 semestinya langsung lunas dan seat-nya langsung berlaku — tanpa unggahan, tanpa antrean pemeriksaan yang tidak memeriksa apa pun.
+  **(c) Sembunyikan atau tandai panelnya sampai (a) terjawab.** Pilihan paling jujur untuk sekarang: tampilkan panel dengan keterangan bahwa penambahan pengguna sedang disiapkan, alih-alih tombol yang bekerja tapi menghasilkan tagihan tak bermakna.
+  **(d) Putuskan cara kursi bisa turun.** Bukan dengan membuang `seat_high_water`, melainkan memberinya batas waktu: mis. nilai tertinggi **dalam periode berjalan**, yang direset tiap penerbitan tagihan. Itu tetap menutup celah "pangkas seat sesaat sebelum ditagih" — celah yang jadi alasan keberadaannya — sambil membiarkan tenant yang benar-benar mengecil ikut mengecil tagihannya. Berkaitan dengan `[BL-044]` karena reset-nya menempel di momen penerbitan tagihan.
+  **Bergantung pada `[BL-046]`** (paket kedua harus bisa dihuni) dan **`[BL-041]`(a)** (angkanya).
+
+---
+
 ### [BL-032] Landing Page Tidak Lagi Menggambarkan Produk yang Sudah Jadi
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "landing perbaiki menyesuaikan sekarang", "perbaiki gambar2 di landing page"
