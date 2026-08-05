@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-01 | DECISION | Demo | Seeder Transaksi Menambal Hari Kosong, Bukan Mereset atau Menumpuk |
 | 2026-08-01 | ADDITION | Platform | Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung (BL-046, BL-047) |
 | 2026-08-01 | ADDITION | Langganan | Warna Khas per Jalur Harga, Jejak Persetujuan, & Perkiraan Tarif Adaptif |
 | 2026-08-01 | DECISION | Langganan | Halaman Langganan Masuk ke Shell Owner, dan Sidebar Mati Saat Ditangguhkan |
@@ -144,6 +145,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Seeder Transaksi Menambal Hari Kosong, Bukan Mereset atau Menumpuk
+- **Tanggal:** 2026-08-01
+- **Fase Terkait:** Di Luar Fase — perawatan data demo
+- **Dampak:** Seeder | Dokumentasi | Test
+- **Breaking Change:** Tidak untuk aplikasi. Ya untuk kebiasaan: `CafeStudyCaseSeeder` **tidak lagi menghapus** data transaksional Kopi Story sebelum menyemai, jadi ia bukan lagi cara mendapatkan data yang bersih. Untuk itu jalurnya `migrate:fresh --seed`.
+- **Deskripsi:** Kedua seeder transaksi demo kini hanya menyemai **tanggal yang belum punya transaksi sama sekali**. `DemoTransactionSeeder` berhenti menumpuk (dulu menjalankannya dua kali menggandakan omzet Kopi Nusantara), dan `CafeStudyCaseSeeder` berhenti mereset (dulu ia menghapus seluruh transaksi & mutasi stok tenant lalu membangunnya ulang). Restock bulanan Kopi Story juga hanya ditambahkan untuk bulan yang belum punya restock, dan sesi kas hariannya hanya dibuat untuk hari yang penjualannya baru saja lahir dari seeder itu. Penomoran kode transaksi direset per hari.
+- **Alasan:** Keduanya menyemai "sampai `now()`", jadi keduanya basi begitu dibiarkan beberapa hari — dan keduanya dijalankan ulang tepat pada hari demo, saat kesalahan paling mahal. Dua-duanya punya cara gagal masing-masing, dan dua-duanya buruk: yang menumpuk membuat omzet berlipat tanpa peringatan, yang mereset membuang transaksi yang baru saja dibuat lewat UI untuk keperluan demo itu sendiri. Menambal hari kosong tidak melakukan keduanya, dan tidak menuntut siapa pun mengingat seeder mana yang berperilaku bagaimana.
+- **File Terdampak:**
+  - `database/seeders/Concerns/FillsMissingSalesDays.php` — **baru**, satu-satunya pembaca kalender penjualan
+  - `database/seeders/DemoTransactionSeeder.php` — jendela 90 hari, lewati hari terisi, penghitung kode per hari
+  - `database/seeders/CafeStudyCaseSeeder.php` — `resetTransactionalData()` **dihapus**; restock per bulan yang kosong; stok berangkat dari nilai sekarang, bukan baseline
+  - `tests/Feature/DemoSeederTest.php` — **baru**, 4 test
+  - `PANDUAN-DEMO.md` — ditulis ulang menyeluruh (lihat catatan di bawah)
+- **Keputusan yang perlu diingat:**
+  - **Yang dipakai adalah tanggal efektif (`COALESCE(occurred_at, created_at)`), bukan `created_at` mentah.** Alasannya sama seperti seluruh laporan: penjualan offline disinkronkan setelah kejadiannya, dan hari yang sebenarnya sudah terisi akan tampak kosong bila dinilai dari waktu sinkronisasi.
+  - **Hari yang isinya TIPIS tetap dianggap terisi.** Satu transaksi hasil uji coba membuat hari itu dilewati, dan di grafik 7 hari terakhir ia tampak sebagai lekukan. Ambang minimum sengaja tidak dipasang: angka berapa pun yang dipilih akan menimpa penjualan sungguhan pada hari yang di bawahnya, dan seeder yang boleh menambah baris ke hari yang sudah dipakai orang adalah seeder yang tidak bisa dipercaya menjelang demo.
+  - **Penomoran kode direset tiap hari.** `transactions` unik pada `(tenant_id, code)` dan tanggalnya sudah ikut di dalam kodenya, jadi penomoran per hari tak pernah bertabrakan dengan hari lain. Penghitung yang berjalan lintas hari tidak menjamin itu — rentang yang disemai berbeda tiap kali dijalankan, sehingga hari yang sama bisa menerima nomor yang sama dua kali. Formatnya tetap 5 digit, berbeda dari 3 digit milik `TransactionService`, jadi kode seeder dan kode aplikasi tak pernah berebut nomor pada hari yang sama.
+  - **Stok Kopi Story berangkat dari nilai yang tercatat sekarang, bukan dari baseline.** Mengembalikannya ke baseline tiap kali dijalankan berarti menghadiahkan stok yang sudah terjual — kekeliruan yang dulu tertutupi karena seluruh penjualannya memang ikut dihapus.
+  - **Sesi kas hanya untuk hari yang benar-benar baru disemai.** Angka `expected_amount` dihitung dari kas yang dikumpulkan seeder pada hari itu; menerapkannya ke hari yang sudah berisi akan menimpa sesi kas yang sudah cocok dengan penjualan tunai yang tercatat di sana.
+  - **`DatabaseSeeder` sengaja TIDAK diikutkan.** Ia memakai `Tenant::create()` dan memang bukan seeder yang dijalankan berulang; menjadikannya idempotent adalah pekerjaan tersendiri dengan pertanyaannya sendiri (apa yang terjadi pada menu yang sudah disunting owner?).
+- **Catatan:** `PANDUAN-DEMO.md` terakhir ditulis 2026-07-25 dan sejak itu dua puluh dua commit mendarat. Yang paling salah bukan angkanya melainkan satu kalimatnya: panduan itu masih menyatakan layar antrean dapur "tidak ada halamannya", padahal `[BL-019]` menutupnya 2026-07-29. Penulisan ulangnya menambahkan bagian **§1 SAPI dalam Satu Halaman** — ringkasan fitur, enam pembeda, dan batas yang belum terpasang — supaya produk ini bisa dijelaskan tanpa membaca delapan bagian lainnya.
 
 ---
 

@@ -12,12 +12,15 @@ use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\User;
 use Carbon\Carbon;
+use Database\Seeders\Concerns\FillsMissingSalesDays;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class CafeStudyCaseSeeder extends Seeder
 {
+    use FillsMissingSalesDays;
+
     /**
      * Studi kasus: coffee shop bergaya kedai kopi susu kekinian populer
      * (mis. Kopi Kenangan/Fore/Janji Jiwa), lengkap dengan menu bervariasi,
@@ -27,11 +30,14 @@ class CafeStudyCaseSeeder extends Seeder
      * Tenant terpisah dari seeder demo lain (slug: kopi-story) agar tidak
      * mengganggu data yang dipakai DatabaseSeeder / DemoTransactionSeeder.
      *
-     * Idempotent: menu/tenant/user/payment method pakai firstOrCreate, sesi kas
-     * pakai updateOrCreate, dan data transaksional (transactions, items,
-     * payments, stock movements) di-reset lebih dulu untuk tenant ini sebelum
-     * dibuat ulang — sehingga seeder ini aman dijalankan berkali-kali tanpa
-     * duplikasi data.
+     * Idempotent, dan sejak 2026-08-01 caranya berubah: menu/tenant/user/payment
+     * method tetap `firstOrCreate` dan sesi kas tetap `updateOrCreate`, tapi
+     * data transaksional tidak lagi dihapus lebih dulu. Yang disemai hanya hari
+     * yang belum punya transaksi sama sekali, dan restock hanya untuk bulan yang
+     * belum punya restock. Menjalankannya ulang menjelang demo kini menambal
+     * jarak sejak seed terakhir — tanpa menggandakan omzet, dan tanpa membuang
+     * transaksi yang baru saja dibuat lewat UI. Untuk data yang benar-benar
+     * bersih, jalurnya `migrate:fresh --seed`.
      */
     private const START_DATE = '2026-01-01';
 
@@ -48,25 +54,11 @@ class CafeStudyCaseSeeder extends Seeder
         $this->seedModifiers($tenant, $products);
         $paymentMethods = $this->seedPaymentMethods($tenant);
 
-        $this->resetTransactionalData($tenant, $variants);
-
         $stockLevels = $this->seedMonthlyStock($tenant, $variants);
         $dailySummary = $this->seedDailyTransactions($tenant, $variants, $paymentMethods, $stockLevels);
         $this->seedCashDrawerSessions($tenant, $dailySummary);
 
         $this->command->info('✅ CafeStudyCaseSeeder selesai.');
-    }
-
-    /**
-     * Hapus data transaksional tenant ini (transactions cascade ke items &
-     * payments, plus stock_movements) dan kembalikan stok variant ke baseline,
-     * agar seeder ini bisa dijalankan ulang tanpa menumpuk data lama.
-     */
-    private function resetTransactionalData(Tenant $tenant, \Illuminate\Support\Collection $variants): void
-    {
-        DB::table('transactions')->where('tenant_id', $tenant->id)->delete();
-        DB::table('stock_movements')->where('tenant_id', $tenant->id)->delete();
-        DB::table('product_variants')->whereIn('id', $variants->pluck('id'))->update(['stock' => self::INITIAL_STOCK]);
     }
 
     private function seedTenantAndUsers(): Tenant
@@ -207,21 +199,48 @@ class CafeStudyCaseSeeder extends Seeder
     }
 
     /**
-     * Restock bulanan (tanggal 1 tiap bulan, Jan-Jul 2026) menggunakan
+     * Restock bulanan (tanggal 1 tiap bulan, sejak Januari 2026) menggunakan
      * StockMovement type=restock, dan mengembalikan stok berjalan tiap variant
      * (dilacak di memori) agar penjualan harian tidak melebihi stok tersedia.
+     *
+     * Bulan yang sudah punya restock dilewati. Tanpa itu, seeder yang tidak
+     * lagi menghapus data lebih dulu akan menambah satu gelombang restock tiap
+     * kali dijalankan — stok mengembang, dan riwayat mutasi memperlihatkan
+     * kiriman barang yang tak pernah datang.
+     *
+     * Titik awal stoknya adalah nilai yang tercatat sekarang, bukan baseline:
+     * penjualan hari-hari sebelumnya sudah memotongnya, dan mengembalikannya ke
+     * baseline berarti menghadiahkan stok yang sudah terjual.
      *
      * @return array<int, int> stock level per product_variant_id
      */
     private function seedMonthlyStock(Tenant $tenant, \Illuminate\Support\Collection $variants): array
     {
-        $stockLevels = $variants->pluck('stock', 'id')->all();
+        $stockLevels = DB::table('product_variants')
+            ->whereIn('id', $variants->pluck('id'))
+            ->pluck('stock', 'id')
+            ->map(fn ($stock) => (int) $stock)
+            ->all();
+
+        $bulanTerisi = DB::table('stock_movements')
+            ->where('tenant_id', $tenant->id)
+            ->where('type', 'restock')
+            ->selectRaw('DISTINCT '.$this->monthExpression('created_at').' AS restock_month')
+            ->pluck('restock_month')
+            ->flip()
+            ->all();
 
         $end = Carbon::now()->startOfDay();
         $cursor = Carbon::parse(self::START_DATE)->startOfMonth();
 
         $movements = [];
         while ($cursor->lte($end)) {
+            if (isset($bulanTerisi[$cursor->format('Y-m')])) {
+                $cursor->addMonthNoOverflow();
+
+                continue;
+            }
+
             foreach ($variants as $variant) {
                 $stockLevels[$variant->id] += self::RESTOCK_QTY;
 
@@ -238,9 +257,24 @@ class CafeStudyCaseSeeder extends Seeder
             $cursor->addMonthNoOverflow();
         }
 
-        DB::table('stock_movements')->insert($movements);
+        if (! empty($movements)) {
+            DB::table('stock_movements')->insert($movements);
+        }
 
         return $stockLevels;
+    }
+
+    /**
+     * Ekspresi SQL "bulan dari sebuah kolom tanggal" sebagai 'YYYY-MM'.
+     *
+     * MySQL dan SQLite tidak berbagi satu fungsi tanggal untuk ini, dan suite
+     * test berjalan di SQLite sementara demo berjalan di MySQL.
+     */
+    private function monthExpression(string $column): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "strftime('%Y-%m', {$column})"
+            : "DATE_FORMAT({$column}, '%Y-%m')";
     }
 
     /**
@@ -261,11 +295,26 @@ class CafeStudyCaseSeeder extends Seeder
         $itemsBulk = [];
         $paymentsBulk = [];
         $movementsBulk = [];
-        $txCounter = 1;
         $totalTransactions = 0;
+        $hariDiisi = 0;
+        $hariDilewati = 0;
         $dailySummary = [];
 
+        $hariTerisi = $this->existingSalesDays($tenant->id, $start, $end);
+
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+            if (isset($hariTerisi[$date->toDateString()])) {
+                $hariDilewati++;
+
+                continue;
+            }
+            $hariDiisi++;
+
+            // Direset tiap hari: kode transaksi unik per (tenant, code) dan
+            // tanggalnya sudah ikut di dalam kodenya, jadi penomoran per hari
+            // tak pernah bertabrakan dengan hari yang disemai di kesempatan lain.
+            $txCounter = 1;
+
             $isWeekend = in_array($date->dayOfWeek, [Carbon::SATURDAY, Carbon::SUNDAY]);
             $dailyTarget = $isWeekend ? rand(1_600_000, 2_000_000) : rand(1_000_000, 1_600_000);
 
@@ -407,7 +456,7 @@ class CafeStudyCaseSeeder extends Seeder
             DB::table('product_variants')->where('id', $variantId)->update(['stock' => $stock]);
         }
 
-        $this->command->info("Transaksi harian: {$totalTransactions} baris ({$start->toDateString()} s.d. {$end->toDateString()}).");
+        $this->command->info("Transaksi harian: {$totalTransactions} baris pada {$hariDiisi} hari kosong; {$hariDilewati} hari dilewati ({$start->toDateString()} s.d. {$end->toDateString()}).");
 
         return $dailySummary;
     }
@@ -419,7 +468,10 @@ class CafeStudyCaseSeeder extends Seeder
      * agar data demo mencakup skenario nyata rekonsiliasi kas.
      *
      * updateOrCreate dikunci ke tenant_id+user_id+opened_at supaya seeder ini
-     * aman dijalankan ulang tanpa membuat sesi kas duplikat.
+     * aman dijalankan ulang tanpa membuat sesi kas duplikat. Yang masuk ke sini
+     * hanya hari yang penjualannya baru saja dibuat seeder ini; hari yang sudah
+     * berisi tidak ikut, karena angka kasnya harus tetap cocok dengan penjualan
+     * tunai yang sudah tercatat di sana.
      *
      * @param  array<string, array{cash_collected: float, change_given: float, day: Carbon}>  $dailySummary
      */
