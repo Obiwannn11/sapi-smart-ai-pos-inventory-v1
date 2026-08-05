@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Models\AiAnalysis;
-use App\Models\AiUsage;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Services\Ai\AiQuota;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -21,8 +21,9 @@ class SettingsController extends Controller
     {
         $user = auth()->user();
         $tenant = $user->tenant;
-        $usedToday = AiUsage::whereDate('date', now()->toDateString())->value('count') ?? 0;
-        $dailyLimit = (int) config('ai.free_tier.daily_limit');
+        // Lewat AiQuota, bukan config: angka yang dibacakan ke owner dan angka
+        // yang menolak permintaannya di antrean wajib berasal dari satu tempat.
+        $quota = app(AiQuota::class);
 
         return Inertia::render('Owner/Settings/Index', [
             'tenant' => [
@@ -76,8 +77,8 @@ class SettingsController extends Controller
                 'pending_analyses' => AiAnalysis::where('status', AiAnalysis::STATUS_PENDING)->count(),
             ],
             'aiFreeTier' => [
-                'daily_limit' => $dailyLimit,
-                'remaining' => max(0, $dailyLimit - $usedToday),
+                'daily_limit' => $quota->dailyLimitFor($tenant),
+                'remaining' => $quota->remainingFor($tenant),
             ],
             'mcp' => [
                 'token_set' => $user->tokens()->where('name', self::MCP_TOKEN_NAME)->exists(),

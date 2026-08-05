@@ -6,6 +6,7 @@ use App\Models\AiAnalysis;
 use App\Models\AiUsage;
 use App\Models\Tenant;
 use App\Services\Ai\AiProviderFactory;
+use App\Services\Ai\AiQuota;
 use App\Services\AiContextService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -82,24 +83,50 @@ class RunAiAnalysisJob implements ShouldQueue
         }
     }
 
+    /**
+     * Batasnya datang dari paket langganan tenant, bukan lagi dari satu angka
+     * yang sama untuk semua orang — lihat `App\Services\Ai\AiQuota`.
+     */
     private function assertQuota(Tenant $tenant): void
     {
-        $used = AiUsage::withoutGlobalScopes()
-            ->where('tenant_id', $tenant->id)
-            ->whereDate('date', now())
-            ->value('count') ?? 0;
+        $quota = app(AiQuota::class);
+        $limit = $quota->dailyLimitFor($tenant);
 
-        if ($used >= (int) config('ai.free_tier.daily_limit')) {
-            throw new RuntimeException('Kuota harian free tier habis. Isi API key sendiri di Pengaturan untuk pemakaian tanpa batas.');
+        if ($limit <= 0) {
+            throw new RuntimeException('Paket ini tidak menyertakan analisis AI. Isi API key sendiri di Pengaturan, atau naikkan paket.');
+        }
+
+        if ($quota->usedTodayBy($tenant) >= $limit) {
+            throw new RuntimeException("Kuota AI hari ini habis ({$limit}/hari). Isi API key sendiri di Pengaturan untuk pemakaian tanpa batas.");
         }
     }
 
+    /**
+     * Naikkan hitungan pemakaian hari ini.
+     *
+     * Barisnya dicari dengan `whereDate`, bukan `firstOrCreate` berkunci
+     * tanggal, dan bedanya bukan gaya penulisan: kolom `date` tersimpan sebagai
+     * datetime, sehingga `where('date', '2026-08-01')` tidak pernah cocok
+     * dengan baris berisi `2026-08-01 00:00:00`. `firstOrCreate` yang tidak
+     * menemukan barisnya lalu mencoba menyisipkan baris kedua untuk (tenant,
+     * tanggal) yang sama — dan indeks uniknya menolak. Akibatnya analisis KEDUA
+     * seorang tenant di hari yang sama gagal, padahal jatahnya masih ada.
+     */
     private function incrementUsage(Tenant $tenant): void
     {
-        $usage = AiUsage::withoutGlobalScopes()->firstOrCreate(
-            ['tenant_id' => $tenant->id, 'date' => now()->toDateString()],
-            ['count' => 0],
-        );
+        $usage = AiUsage::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->whereDate('date', now())
+            ->first();
+
+        if ($usage === null) {
+            $usage = AiUsage::withoutGlobalScopes()->create([
+                'tenant_id' => $tenant->id,
+                'date' => now()->toDateString(),
+                'count' => 0,
+            ]);
+        }
+
         $usage->increment('count');
     }
 
