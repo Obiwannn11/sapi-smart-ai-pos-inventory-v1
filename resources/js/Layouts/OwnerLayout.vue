@@ -1,6 +1,7 @@
 <script setup>
 import { usePage, router, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import { ref, computed, h, defineComponent } from 'vue';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
 
@@ -424,6 +425,13 @@ const logout = async () => {
                     </div>
                 </div>
             </header>
+
+            <!--
+                Di luar <main>, tepat di bawah topbar: <main> yang menggulir,
+                dan peringatan yang ikut tergulir keluar layar adalah peringatan
+                yang tidak dibaca siapa pun ([BL-045]).
+            -->
+            <SubscriptionBanner />
 
             <FlashMessage />
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\TenantConsent;
+use App\Services\Billing\InvoiceSettlement;
 use App\Services\ConsentService;
 use App\Services\Pricing\SubsidyEstimator;
 use App\Services\PricingService;
@@ -28,6 +29,7 @@ class SubscriptionController extends Controller
         ConsentService $consents,
         PricingService $pricing,
         SubsidyEstimator $estimator,
+        InvoiceSettlement $settlement,
     ): Response {
         $tenant = $request->user()->tenant;
         $subscription = $subscriptions->ensureFor($tenant);
@@ -117,6 +119,12 @@ class SubscriptionController extends Controller
                 // tahu bahwa penambahan pengguna kini menunggu pemeriksaan, dan
                 // kenapa.
                 'is_provisional_blocked' => $subscription->provisional_blocked,
+            ],
+            // Peragaan (`[BL-045]`). `false` di produksi dan untuk tenant biasa,
+            // sehingga panelnya tidak pernah dirender sama sekali di sana —
+            // bukan sekadar disembunyikan CSS.
+            'simulation' => [
+                'enabled' => $settlement->canSimulate($tenant),
             ],
         ]);
     }

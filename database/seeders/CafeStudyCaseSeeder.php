@@ -63,9 +63,12 @@ class CafeStudyCaseSeeder extends Seeder
 
     private function seedTenantAndUsers(): Tenant
     {
+        // `is_demo` hanya berlaku saat barisnya baru dibuat — seeder ini
+        // dirancang bisa dijalankan ulang, dan menimpa penanda tenant yang
+        // sudah ada bukan urusannya. Lihat `[BL-045]`.
         $tenant = Tenant::firstOrCreate(
             ['slug' => 'kopi-story'],
-            ['name' => 'Kopi Story']
+            ['name' => 'Kopi Story', 'is_demo' => true]
         );
 
         User::firstOrCreate(

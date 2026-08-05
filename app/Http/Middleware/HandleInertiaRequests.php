@@ -4,8 +4,10 @@ namespace App\Http\Middleware;
 
 use App\Models\PaymentMethod;
 use App\Models\PlatformUser;
+use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -62,6 +64,19 @@ class HandleInertiaRequests extends Middleware
                     // menyesatkan daripada menu yang jujur mengaku mati.
                     // Skalar biasa; tenant-nya sudah dimuat.
                     'is_suspended' => $user->tenant->isSuspended(),
+                    // Keadaan langganan yang membatasi, dibagikan ke SETIAP
+                    // layar ([BL-045]). Penegakannya sudah lama benar, tapi ia
+                    // tak terlihat: kasir yang membuka POS langsung, atau owner
+                    // yang seharian di halaman Produk, tidak tahu apa-apa
+                    // sampai ia menekan Simpan dan mendapat penolakan.
+                    // Peringatan sebelum tombol ditekan jauh lebih murah
+                    // daripada penolakan sesudahnya.
+                    //
+                    // `null` untuk tenant yang tidak sedang dibatasi, dan itu
+                    // yang membuatnya gratis pada jalur panas: `status` sudah
+                    // ada di baris tenant yang termuat, jadi mayoritas request
+                    // tidak pernah menyentuh query tambahan sama sekali.
+                    'subscription' => $this->restrictionFor($user->tenant),
                     'features' => fn () => [
                         'kitchen_queue' => $user->tenant->hasFeature('kitchen_queue'),
                         'self_order' => $user->tenant->hasFeature('self_order'),
@@ -103,6 +118,37 @@ class HandleInertiaRequests extends Middleware
                 'mcpToken' => fn () => $request->session()->get('mcpToken'),
             ],
         ]);
+    }
+
+    /**
+     * Keadaan langganan yang membatasi tenant ini, atau null bila tidak ada.
+     *
+     * Hanya `grace` dan `suspended` yang menghasilkan isi. Peringatan sebelum
+     * periodenya lewat — tagihan yang sudah terbit tapi belum jatuh tempo —
+     * sengaja TIDAK ikut di sini dan tetap tinggal di kartu langganan Dashboard
+     * (`[BL-040]`): mengetahuinya menuntut satu query tagihan pada setiap
+     * request, termasuk tiap ketukan di POS, dan itu ongkos yang tidak sepadan
+     * untuk keterangan yang belum mendesak. Yang mendesak — akses sudah
+     * menyempit — justru tidak butuh query apa pun untuk diketahui.
+     *
+     * @return array{status: string, suspends_at: string|null, period_ends_at: string|null}|null
+     */
+    private function restrictionFor(Tenant $tenant): ?array
+    {
+        if (! $tenant->isReadOnly() && ! $tenant->isSuspended()) {
+            return null;
+        }
+
+        $subscriptions = app(SubscriptionService::class);
+
+        return [
+            'status' => $tenant->status,
+            // Dihitung, bukan disimpan — satu-satunya sumbernya sama dengan
+            // yang dipakai kartu Dashboard, supaya tanggal di pita dan tanggal
+            // di kartu tidak pernah berselisih.
+            'suspends_at' => $subscriptions->suspensionDateFor($tenant)?->toDateString(),
+            'period_ends_at' => $subscriptions->ensureFor($tenant)->current_period_end?->toDateString(),
+        ];
     }
 
     /**

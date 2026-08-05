@@ -29,6 +29,11 @@ class DatabaseSeeder extends Seeder
             'name' => 'Kopi Nusantara',
             'slug' => 'kopi-nusantara',
             'status' => Tenant::STATUS_ACTIVE,
+            // Membuka tombol "simulasikan pembayaran" di halaman Langganan,
+            // supaya alur "bayar lalu akses pulih" bisa diperagakan tanpa
+            // transfer sungguhan ([BL-045]). Penanda ini tidak berarti apa-apa
+            // sendirian — di produksi tombolnya tetap tidak ada.
+            'is_demo' => true,
         ]);
 
         // 1b. Langganan — seat dibuka untuk owner + dua kasir demo di bawah.

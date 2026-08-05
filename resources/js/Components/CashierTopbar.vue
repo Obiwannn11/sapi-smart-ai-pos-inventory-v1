@@ -5,6 +5,7 @@ import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
+import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useFlash } from '@/composables/useFlash';
@@ -203,6 +204,17 @@ const logout = async () => {
 </script>
 
 <template>
+    <!--
+        Pembungkus `shrink-0` menggantikan `shrink-0` yang dulu ada di <header>:
+        kelima halaman kasir menaruh komponen ini sebagai anak langsung sebuah
+        flex-col setinggi layar, jadi yang harus menolak menyusut adalah akar
+        komponennya, bukan bagian dalamnya. Dibungkus karena pita langganan ikut
+        di sini — memasangnya di tiap halaman kasir satu per satu berarti halaman
+        keenam pasti akan melupakannya.
+    -->
+    <div class="shrink-0">
+    <SubscriptionBanner />
+
     <header class="bg-card border-b border-border shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] px-4 py-2.5 flex items-center justify-between shrink-0 z-10">
         <!-- Left: back-to-POS + brand -->
         <div class="flex items-center gap-2 min-w-0">
@@ -427,4 +439,5 @@ const logout = async () => {
             @close="showSettleReceipt = false; settledTransaction = null"
         />
     </header>
+    </div>
 </template>

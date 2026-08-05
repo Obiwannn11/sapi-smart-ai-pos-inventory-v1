@@ -10,6 +10,31 @@
 
 ## Daftar Entri
 
+### [BL-045] Keadaan Hanya-Baca Sudah Ditegakkan tapi Tak Terlihat, dan Membayar Belum Memulihkan Akses Sendiri
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik — "buat peringatan dalam dashboard owner jika misal sudah harus membayar atau melewati waktunya ... tidak bisa transaksi atau melakukan apa pun selain read saja ... bisa melakukan aksi di bagian pembayaran ... maka akan refresh web dan memperbarui akses dari read only menjadi normal kembali"
+- **Status:** Selesai (2026-08-06) — lihat `[ADDITION] Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Middleware/EnsureSubscriptionActive.php:62-68` — penegakan hanya-baca **sudah ada**: `grace` + method tidak aman → ditolak
+  - `app/Http/Middleware/EnsureSubscriptionActive.php:54-60` — `suspended` → dialihkan ke halaman langganan
+  - `resources/js/Pages/Owner/Dashboard.vue:66-94,136-182` — kartu ringkasan langganan **sudah ada** (hasil `[BL-040]`, arsip 2026-07-31)
+  - `app/Http/Controllers/Platform/InvoiceController.php:173+` — `verify()`: satu-satunya tempat tenant kembali `active`, dijalankan **pemilik SaaS**
+  - `routes/web.php:53-75` — grup `billing.*`: owner mengunggah bukti bayar, tidak melunasi apa pun sendiri
+- **Deskripsi:**
+  Tiga dari empat hal yang diminta catatan ini **sudah benar-benar berjalan** dan tidak perlu dibangun ulang: data tidak dihapus, tulisan ditolak sementara baca tetap terbuka, dan halaman langganan/tagihan selalu bisa dibuka lewat `ALWAYS_ALLOWED`. Dashboard owner pun sudah memajang keadaan langganan beserta tagihan terbuka.
+  Dua hal yang benar-benar belum ada. **(1) Peringatannya hanya di satu layar.** Kartu itu hidup di Dashboard; kasir yang membuka POS langsung, atau owner yang seharian di halaman Produk, tidak melihat apa-apa sampai ia menekan Simpan dan mendapat `back()->with('error', ...)`. Penolakannya benar, tapi kejutan. **(2) Membayar tidak memulihkan akses sendiri.** Tidak ada jalur yang membuat akses pulih segera setelah tenant membayar, jadi "refresh lalu normal kembali" yang diminta catatan belum ada wujudnya.
+- **Keputusan pemilik 2026-08-06 (butir 2):** simulasi digerbang **penanda tenant peragaan**, dengan maksud pemakaian di lingkungan non-produksi, plus kerangka payment gateway untuk nanti. Diterapkan sebagai dua gerbang yang keduanya wajib — `tenants.is_demo` DAN lingkungan bukan produksi.
+- **Catatan saat dikerjakan (yang usulan tidak sebutkan):**
+  - **Prop bersamanya sengaja `null` untuk tenant yang tidak dibatasi.** Usulan (1) hanya menyebut "naikkan jadi prop bersama"; yang tidak disebut adalah ongkosnya. Menggerbangnya pada `status` — yang sudah termuat di baris tenant — membuat mayoritas request tidak menyentuh query tambahan sama sekali. Konsekuensinya: peringatan *sebelum* periode lewat tidak ikut di pita dan tetap di kartu Dashboard.
+  - **Sisi kasir tidak punya layout bersama.** Pitanya menumpang di `CashierTopbar`, satu-satunya hal yang dipakai kelima halaman kasir; akar komponennya berubah jadi pembungkus `shrink-0`.
+  - **Kasir tidak ditautkan ke halaman Langganan** — setiap tombol di sana `role:owner`.
+  - **`InvoiceSettlement` lahir dari usulan (2).** Usulan meminta "pakai kembali `verify()`", tapi `verify()` hidup di controller ber-`auth:platform` yang mustahil dipanggil dari sisi tenant. Isinya diangkat jadi service; `verify()` kini pemanggil. Itu sekaligus kerangka payment gateway yang diminta.
+  - **Kolom baru `invoices.settled_via`.** Begitu ada lebih dari satu cara melunasi, `verified_by` yang kosong jadi ambigu — simulasi, webhook, atau baris lama.
+  - **Ditemukan saat mengerjakannya:** menguji gerbang produksi lewat HTTP request tidak membuktikan apa pun — berpindah ke lingkungan `production` sekalian menyalakan penjaga CSRF, sehingga requestnya tertolak 419 sebelum gerbangnya sempat dinilai. Diuji di tingkat `canSimulate()`.
+  - **Belum ada UI untuk menyalakan `is_demo`** — disetel seeder. Toggle "tenant ini boleh melewati pembayaran" adalah permukaan risiko tersendiri.
+  - Untuk produksi, yang sebenarnya dibutuhkan tetap payment gateway; kerangkanya ada di `InvoiceSettlement`, keputusan memasangnya belum diambil.
+
 ### [BL-030] Tanggal Jatuh Tempo Langganan Ikut Meluber di Bulan Pendek
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Sisa penyisiran `[BL-029]` — sengaja TIDAK ikut diperbaiki di sana karena menyangkut semantik penagihan, bukan sekadar salah turunan periode

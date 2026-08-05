@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-06 | ADDITION | Langganan | Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045) |
 | 2026-08-06 | DECISION | Produk | Gambar Produk Pindah ke Disk Privat, Diseragamkan Ukurannya, dan Punya Cadangan Inisial |
 | 2026-08-06 | ADDITION | Langganan | Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b) |
 | 2026-08-05 | DECISION | Langganan | Tanggal Tagih Jadi Jangkar: Bulan Pendek Menjepit Sementara, Tidak Menggeser Selamanya (BL-030) |
@@ -149,6 +150,36 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045)
+- **Tanggal:** 2026-08-06
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-045]`
+- **Dampak:** Schema | Middleware | Service | Controller | Frontend | Seeder | Test
+- **Breaking Change:** Tidak. Penegakan hanya-baca tidak berubah sama sekali — yang bertambah hanya peringatannya. Jalur pelunasan pemilik SaaS berperilaku persis seperti sebelumnya; isinya pindah tempat, bukan berubah.
+- **Deskripsi:** Dua hal yang hilang dari `[BL-045]`. **(1)** Peringatan keadaan langganan hanya hidup di kartu Dashboard, sehingga kasir yang membuka POS langsung — atau owner yang seharian di halaman Produk — tidak tahu apa-apa sampai ia menekan Simpan dan mendapat penolakan. Keadaan itu kini prop bersama di `HandleInertiaRequests` dan dirender sebagai pita di shell owner **dan** shell kasir. **(2)** Membayar tidak memulihkan akses sendiri. Kini ada tombol "Simulasikan pembayaran" di halaman Langganan yang melunasi tagihan tanpa bukti transfer, digerbang **dua** syarat sekaligus.
+- **Alasan:** Peringatan sebelum tombol ditekan jauh lebih murah daripada penolakan sesudahnya — dan penolakan itu datang justru saat pembeli sedang menunggu di depan meja kasir.
+- **Keputusan pemilik (2026-08-06):** simulasi digerbang **penanda tenant peragaan**, dengan maksud pemakaian di lingkungan non-produksi, plus kerangka untuk payment gateway nanti. Diterapkan sebagai **dua gerbang yang keduanya wajib** — `tenants.is_demo` **dan** lingkungan bukan produksi.
+- **File Terdampak:**
+  - `database/migrations/2026_08_05_192316_add_is_demo_to_tenants_table.php`, `2026_08_05_192711_add_settled_via_to_invoices_table.php`
+  - `app/Services/Billing/InvoiceSettlement.php` — **baru**, satu-satunya pintu menuju `active`
+  - `app/Http/Controllers/Billing/SimulatedPaymentController.php` — **baru**; rute `billing.simulate.store`
+  - `app/Http/Middleware/HandleInertiaRequests.php` — `restrictionFor()`
+  - `resources/js/Components/SubscriptionBanner.vue` — **baru**; dipasang di `OwnerLayout` & `CashierTopbar`
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `verify()` jadi pemanggil, bukan implementasi
+  - `tests/Feature/Subscription/SubscriptionBannerTest.php` (6 test), `SimulatedPaymentTest.php` (10 test)
+- **Keputusan yang perlu diingat:**
+  - **Pita hanya lahir untuk `grace` dan `suspended`, dan itulah yang membuatnya gratis.** `status` sudah ada di baris tenant yang termuat, jadi mayoritas request tidak menyentuh query tambahan sama sekali. Peringatan *sebelum* periode lewat — tagihan sudah terbit tapi belum jatuh tempo — sengaja TIDAK ikut dan tetap di kartu Dashboard: mengetahuinya menuntut satu query tagihan pada setiap request, termasuk tiap ketukan di POS, dan itu ongkos yang tidak sepadan untuk keterangan yang belum mendesak.
+  - **Pita dipasang di `CashierTopbar`, bukan di kelima halaman kasir.** Sisi kasir tidak punya layout bersama; memasangnya satu per satu berarti halaman keenam pasti akan melupakannya. Akar komponennya jadi `<div class="shrink-0">` yang membungkus pita + `<header>`.
+  - **Kasir tidak ditawari tautan ke halaman Langganan.** Ia boleh membukanya, tapi setiap tombol di sana digerbang `role:owner` — mengarahkan staf ke halaman yang tak satu pun aksinya bisa ia tekan hanya memindahkan kebuntuan.
+  - **Pita tidak bisa ditutup.** Ia bukan notifikasi yang lewat seperti `FlashMessage`, melainkan keadaan yang masih berlaku sedetik kemudian.
+  - **`InvoiceSettlement` adalah satu-satunya tempat `Tenant::STATUS_ACTIVE` ditulis.** Isinya diangkat dari `InvoiceController::verify()` begitu ada cara kedua melunasi tagihan. Menyalinnya berarti menyalin juga aturan periode, penguncian harga, dan reset puncak seat — salinan yang bercabang di jalur uang adalah kesalahan yang paling lama tidak terlihat.
+  - **Kerangka payment gateway.** Menambah gateway kelak = satu `SOURCE_*` baru + satu controller webhook yang memanggil `settle()`. Tiga hal sengaja belum dijawab dan didokumentasikan di docblock kelasnya: idempotensi webhook, selisih antara nominal yang ditagih dan yang benar-benar diterima, dan verifikasi tanda tangan panggilan. Ketiganya bergantung pada gateway yang dipilih.
+  - **Dua gerbang, bukan satu.** Penanda `is_demo` saja tidak cukup: ia ikut terbawa bila basis data peragaan pernah disalin ke produksi, dan satu salah setel akan membuka jalur yang melunasi tagihan tanpa bukti — persis lubang yang `provisional_blocked` dibangun untuk menutup. Syarat lingkungan membuat jalurnya tidak pernah ADA di produksi.
+  - **404, bukan 403.** Di luar tenant peragaan rute simulasi menjawab "tidak ada". Menjawab "terlarang" memberi tahu penanyanya bahwa ada sesuatu di sini yang bisa dibuka dalam keadaan lain.
+  - **`verified_by` sengaja null untuk simulasi**, dan `invoices.settled_via` yang menjawab "lewat jalur mana". `verified_by` menjawab "siapa yang memeriksa" — dan tidak ada yang memeriksa apa pun di jalur ini. Jejak audit `invoices.simulate` tetap dicatat **sensitif**: tagihan berpindah ke lunas tanpa seorang pun memeriksa bukti, dan itu justru yang paling perlu terlihat.
+  - **Belum ada UI untuk menyalakan `is_demo`.** Disetel seeder untuk kedua tenant peragaan. Toggle "tenant ini boleh melewati pembayaran" adalah permukaan risiko tersendiri, dan jalurnya toh sudah mati di produksi.
 
 ---
 

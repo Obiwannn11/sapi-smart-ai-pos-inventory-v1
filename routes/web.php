@@ -87,6 +87,15 @@ Route::middleware(['auth', 'tenant'])
                 ->name('upgrade.store');
             Route::post('/langganan/tagihan/{invoice}/bukti', [\App\Http\Controllers\Billing\UpgradeController::class, 'storeProof'])
                 ->name('proof.store');
+
+            // Pelunasan peragaan — melunasi tagihan TANPA bukti transfer.
+            // Rutenya selalu terdaftar, tapi aksinya menjawab 404 di luar
+            // tenant peragaan dan di produksi (`InvoiceSettlement::canSimulate`).
+            // Gerbangnya sengaja di controller, bukan di sini: syaratnya
+            // bergantung pada tenant yang sedang masuk, dan middleware yang
+            // hanya bisa membaca lingkungan akan memberi rasa aman yang keliru.
+            Route::post('/langganan/tagihan/{invoice}/simulasi-bayar', [\App\Http\Controllers\Billing\SimulatedPaymentController::class, 'store'])
+                ->name('simulate.store');
         });
     });
 

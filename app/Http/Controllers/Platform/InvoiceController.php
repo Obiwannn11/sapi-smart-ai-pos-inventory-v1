@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Services\Billing\InvoiceSettlement;
 use App\Services\PricingService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
@@ -33,6 +34,7 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly SubscriptionService $subscriptions,
         private readonly PricingService $pricing,
+        private readonly InvoiceSettlement $settlement,
     ) {}
 
     public function index(Request $request): Response
@@ -186,42 +188,16 @@ class InvoiceController extends Controller
             return back()->with('error', 'Tagihan ini sudah lunas.');
         }
 
-        $invoice->update([
-            'status' => Invoice::STATUS_PAID,
-            'paid_at' => now(),
-            'verified_by' => $request->user()->id,
-            'verified_at' => now(),
-            'rejection_reason' => null,
-        ]);
-
-        $subscription = $invoice->subscription;
-
-        if ($invoice->isUpgrade()) {
-            // Upgrade hanya menambah seat. Ia TIDAK memperpanjang periode dan
-            // TIDAK mengubah tarif bulanan — biaya sekali-bayar untuk kasir
-            // tambahan bukan harga langganan, dan menukar keduanya akan membuat
-            // tagihan bulan depan salah.
-            if ($invoice->grants_seats !== null) {
-                $subscription->update(['seats' => $invoice->grants_seats]);
-            }
-        } else {
-            $subscription->update([
-                // Harga DIKUNCI dari nominal yang benar-benar dibayar, bukan
-                // dibaca ulang dari tabel tarif. Inilah grandfathering:
-                // mengubah tarif besok tidak boleh mengubah apa yang sudah
-                // disepakati hari ini.
-                'price_locked' => $invoice->amount,
-                // Tanggalnya dihitung service, bukan di sini. Periode menyambung
-                // dari periode sebelumnya dan mengikuti jangkar tanggal tagih —
-                // tiga aturan yang harus jalan bersama, dan tempatnya satu.
-                ...$this->subscriptions->renewPeriod($subscription),
-                // Puncak seat direset di awal periode baru — ia mengukur
-                // pemakaian periode berjalan, bukan sepanjang masa.
-                'seat_high_water' => $subscription->activeSeatsUsed(),
-            ]);
-
-            $invoice->tenant->update(['status' => Tenant::STATUS_ACTIVE]);
-        }
+        // Isinya pindah ke `InvoiceSettlement` — satu-satunya pintu menuju
+        // keadaan `active`, dipakai bersama tombol peragaan dan (kelak) webhook
+        // payment gateway. Menyalinnya berarti menyalin juga aturan periode,
+        // penguncian harga, dan reset puncak seat; salinan yang bercabang di
+        // jalur uang adalah kesalahan yang paling lama tidak terlihat.
+        $this->settlement->settle(
+            $invoice,
+            InvoiceSettlement::SOURCE_PLATFORM_VERIFY,
+            verifiedBy: $request->user()->id,
+        );
 
         PlatformAuditLog::record('invoices.verify', $invoice, [
             'tenant_id' => $invoice->tenant_id,

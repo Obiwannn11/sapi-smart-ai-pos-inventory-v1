@@ -1,0 +1,117 @@
+<?php
+
+namespace App\Services\Billing;
+
+use App\Models\Invoice;
+use App\Models\Tenant;
+use App\Services\SubscriptionService;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Satu-satunya pintu menuju keadaan `active`.
+ *
+ * Sebelum ini isinya tinggal di dalam `Platform\InvoiceController::verify()`,
+ * dan itu cukup selama hanya ada satu cara tagihan dilunasi. Begitu ada cara
+ * kedua — tombol simulasi (`[BL-045]`), dan kelak webhook payment gateway —
+ * menyalin logikanya berarti menyalin juga aturan periode, penguncian harga,
+ * dan reset puncak seat. Salinan yang bercabang di jalur uang adalah jenis
+ * kesalahan yang paling lama tidak terlihat.
+ *
+ * **Kerangka untuk payment gateway.** Ketika gateway dipasang, yang perlu
+ * ditambahkan hanyalah satu `SOURCE_*` baru dan satu controller webhook yang
+ * memanggil `settle()`. Yang TIDAK boleh dilakukan adalah menulis
+ * `Tenant::STATUS_ACTIVE` di tempat lain. Tiga hal yang masih harus dipikirkan
+ * di titik itu, dan sengaja belum dijawab di sini karena jawabannya bergantung
+ * pada gateway yang dipilih:
+ *
+ *   1. **Idempotensi webhook.** Gateway lazim mengirim notifikasi yang sama
+ *      berkali-kali. Penjaga `isPaid()` di bawah sudah menolak pelunasan ganda,
+ *      tapi pemanggilnya tetap harus menjawab dengan 200 supaya gateway
+ *      berhenti mengulang.
+ *   2. **Nominal yang benar-benar diterima.** `settle()` mengunci
+ *      `price_locked` dari `invoice->amount`, yaitu yang DITAGIH. Bila gateway
+ *      mengirim nominal yang berbeda (potongan biaya admin, kurang bayar),
+ *      selisihnya harus diputuskan sebelum dilunasi, bukan sesudah.
+ *   3. **Keaslian panggilan.** Verifikasi tanda tangan webhook adalah syarat
+ *      masuk, bukan pelengkap — `settle()` mempercayai pemanggilnya sepenuhnya.
+ */
+class InvoiceSettlement
+{
+    /** Pemilik SaaS memeriksa bukti transfer di panel platform. */
+    public const SOURCE_PLATFORM_VERIFY = 'platform_verify';
+
+    /** Tombol peragaan; hanya hidup untuk tenant demo di luar produksi. */
+    public const SOURCE_SIMULATION = 'simulation';
+
+    public function __construct(private readonly SubscriptionService $subscriptions) {}
+
+    /**
+     * Lunasi tagihan, lalu bawa langganannya ke keadaan yang seharusnya.
+     *
+     * `$verifiedBy` adalah id akun platform bila ada orangnya. Pelunasan yang
+     * tidak diperiksa manusia — simulasi hari ini, gateway kelak — meninggalkan
+     * kolom itu null, dan itu disengaja: kolomnya menjawab "siapa yang
+     * memeriksa", dan mengisinya dengan siapa pun yang kebetulan lewat akan
+     * membuat jejaknya berbohong.
+     */
+    public function settle(Invoice $invoice, string $source, ?int $verifiedBy = null): void
+    {
+        DB::transaction(function () use ($invoice, $source, $verifiedBy) {
+            $invoice->update([
+                'status' => Invoice::STATUS_PAID,
+                'paid_at' => now(),
+                'verified_by' => $verifiedBy,
+                'verified_at' => now(),
+                'rejection_reason' => null,
+                'settled_via' => $source,
+            ]);
+
+            $subscription = $invoice->subscription;
+
+            if ($invoice->isUpgrade()) {
+                // Upgrade hanya menambah seat. Ia TIDAK memperpanjang periode
+                // dan TIDAK mengubah tarif bulanan — biaya sekali-bayar untuk
+                // kasir tambahan bukan harga langganan, dan menukar keduanya
+                // akan membuat tagihan bulan depan salah.
+                if ($invoice->grants_seats !== null) {
+                    $subscription->update(['seats' => $invoice->grants_seats]);
+                }
+
+                return;
+            }
+
+            $subscription->update([
+                // Harga DIKUNCI dari nominal yang benar-benar dibayar, bukan
+                // dibaca ulang dari tabel tarif. Inilah grandfathering:
+                // mengubah tarif besok tidak boleh mengubah apa yang sudah
+                // disepakati hari ini.
+                'price_locked' => $invoice->amount,
+                // Tanggalnya dihitung service, bukan di sini. Periode
+                // menyambung dari periode sebelumnya dan mengikuti jangkar
+                // tanggal tagih — tiga aturan yang harus jalan bersama, dan
+                // tempatnya satu.
+                ...$this->subscriptions->renewPeriod($subscription),
+                // Puncak seat direset di awal periode baru — ia mengukur
+                // pemakaian periode berjalan, bukan sepanjang masa.
+                'seat_high_water' => $subscription->activeSeatsUsed(),
+            ]);
+
+            $invoice->tenant->update(['status' => Tenant::STATUS_ACTIVE]);
+        });
+    }
+
+    /**
+     * Boleh tenant ini melunasi tagihannya sendiri lewat tombol peragaan?
+     *
+     * DUA syarat, dan keduanya wajib. Penanda `is_demo` saja tidak cukup: ia
+     * ikut terbawa kalau basis data peragaan pernah disalin ke produksi, dan
+     * satu salah setel akan membuka jalur yang melunasi tagihan tanpa bukti
+     * apa pun — persis lubang yang `provisional_blocked` dibangun untuk
+     * menutup. Syarat lingkungan membuat jalur itu tidak pernah ADA di
+     * produksi, bukan sekadar sulit dicapai.
+     */
+    public function canSimulate(Tenant $tenant): bool
+    {
+        return $tenant->is_demo && ! app()->environment('production');
+    }
+}

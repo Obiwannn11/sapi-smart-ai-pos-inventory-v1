@@ -33,7 +33,7 @@ class Invoice extends Model
         'tenant_id', 'subscription_id', 'period', 'kind', 'grants_seats',
         'previous_seats', 'amount', 'pricing_rule_id', 'pricing_context', 'status', 'due_date',
         'proof_path', 'submitted_at', 'paid_at', 'verified_by', 'verified_at',
-        'rejection_reason',
+        'settled_via', 'rejection_reason',
     ];
 
     protected $attributes = ['kind' => self::KIND_SUBSCRIPTION];

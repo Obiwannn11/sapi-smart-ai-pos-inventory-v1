@@ -56,7 +56,7 @@ class Tenant extends Model
     public const ORDER_IDENTITY_CODE = 'code';
 
     protected $fillable = [
-        'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'pricing_track',
+        'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'is_demo', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled',
@@ -73,6 +73,7 @@ class Tenant extends Model
      */
     protected $attributes = [
         'status' => self::STATUS_TRIAL,
+        'is_demo' => false,
         'business_type' => self::BUSINESS_TYPE_DEFAULT,
         'pricing_track' => Subscription::TRACK_NORMAL,
         'kitchen_queue_enabled' => false,
@@ -91,6 +92,7 @@ class Tenant extends Model
             'self_order_enabled' => 'boolean',
             'ai_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
+            'is_demo' => 'boolean',
         ];
     }
 
