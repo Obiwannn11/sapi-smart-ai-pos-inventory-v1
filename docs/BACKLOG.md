@@ -64,6 +64,28 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > **Keputusan pemilik 2026-08-01 (kedua)** — batas Adaptif diturunkan dari tangga harga Premium, bukan disetel sebagai angka tersendiri; Premium kelak bisa tiga tier dengan puncak Adaptif mendarat di tengahnya. Dua akibat yang menghemat pekerjaan: batas itu **sudah bisa dinyatakan tanpa kolom atau migrasi baru** — cukup satu baris syarat `lt` pada bracket D yang hari ini tidak punya batas atas (`[BL-048]`(b)) — dan permintaan soal harga seat tambahan (**tidak nullable, wajib ditulis walau 0**) ternyata **sudah dipenuhi kode hari ini**, hanya prefill formulirnya yang belum ada (`[BL-046]`).
 
+> **Keputusan pemilik 2026-08-07 (struktur harga final) — angkanya SUDAH TERPASANG.** Ini keputusan yang menutup `[BL-041]`(a) dan mengubah bentuk `[BL-048]` dari pagar kelayakan menjadi alur pengajuan. Ringkasnya:
+>
+> | | |
+> |---|---|
+> | Paket | `free` (2 seat, 5 AI, Rp 0) · `paid-1` (3 seat, 15 AI, Rp 100k) · `paid-2` (5 seat, 30 AI, Rp 150k) · `paid-3` (10 seat, 60 AI, Rp 200k) |
+> | Masa gratis | **2 bulan**, dihitung `addMonthsNoOverflow`, jangkar tagih = **tanggal daftar** |
+> | Akhir masa gratis | dipaksa pindah ke `paid-1` |
+> | Harga Adaptif | `paid-1` yang **didiskon**: A 10k (90%) · B 25k (75%) · C 50k (50%) · **D 75k (25%)**; ≥ Rp 50 jt tidak layak |
+> | Kelayakan Adaptif | **diajukan tenant + consent, dinilai otomatis** — bukan diberikan manual |
+> | Tenggat | 30 hari bertingkat: notif halus 1–14, intensif 15–19, tulis dicabut 20–30 |
+> | Harga khusus | dropdown paket = mengunci ke depan · input manual = **satu bulan saja** + alasan wajib |
+>
+> **Tiga hal yang ditemukan saat menyusunnya, dan ketiganya mengubah keputusan sebelumnya — bukan sekadar melengkapinya:**
+>
+> 1. **Bracket D dulu memberi diskon 0%.** Karena Adaptif adalah `paid-1` yang didiskon, dan bracket D berharga sama persis dengan `paid-1` (Rp 100k), tenant di rentang Rp 15–50 jt menyerahkan data penjualannya dan menerima **nol rupiah** keringanan. Tangga Adaptif sebenarnya berakhir di Rp 15 juta, bukan Rp 50 juta. Karena itu D turun ke Rp 75.000 dan tangganya jadi monoton 90/75/50/25/0.
+> 2. **Alur pengajuan membubarkan kebuntuan privasi `[BL-048]`.** Consent diberikan **saat mengajukan**, jadi data omset dikumpulkan setelah tenant memintanya — bukan sebelum. Lingkaran "butuh data yang baru boleh dikumpulkan setelah masuk" tidak pernah terbentuk, dan penilaian otomatis penuh jadi sah, bukan kompromi. Usulan lama (kelayakan sebagai pemberian manual) **dibatalkan**.
+> 3. **Tenggat hari ini sudah mematikan kasir sejak hari pertama.** `EnsureSubscriptionActive` memblokir seluruh permintaan non-GET begitu tenant masuk tenggat. Prinsip lama di `config/subscription.php` ("tenggat mencabut kemampuan MENAMBAH data") ternyata berarti toko tidak bisa berjualan — dan toko yang tidak bisa berjualan tidak punya uang untuk membayar. Prinsipnya dicabut dan diganti tangga tiga tahap; penegaknya belum ada (`[BL-054]`).
+>
+> **Akibat terbesar yang harus disadari:** begitu pengajuan Adaptif otomatis dan bisa dilakukan sendiri, **tangga bracket adalah daftar harga yang sesungguhnya** — Rp 100.000 tinggal harga daftar bagi yang menolak membuka omset. ARPU realistis ada di Rp 25.000–50.000. Setel bracket seolah-olah itu daftar harganya, karena memang akan jadi itu.
+>
+> Yang sudah terpasang 2026-08-07: paket, bracket, `trial_months`, jangkar tanggal daftar, dan tangga tenggat di config. Yang **belum** dan jadi entri baru: `[BL-052]` perpindahan otomatis akhir masa gratis, `[BL-053]` seat & kuota AI jadi komponen bulanan, `[BL-054]` penegak tenggat bertingkat, `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` harga khusus per tenant.
+
 ### [BL-044] Trial Habis Tanpa Ada yang Menerbitkan Tagihan — Bulan Kedua Tidak Pernah Menagih
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Catatan pemilik — "tambahan status jika akun masih gratis, untuk bulan pertama tetapkan full gratis, tapi jika sudah masuk bulan kedua wajib melakukan ajukan subsidi atau kena tagihan biaya normal yaitu 100 k"
@@ -123,8 +145,26 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-048] Jalur Harga Adaptif Bisa Dipilih Siapa Saja — Belum Ada Pagar Kelayakan, dan Pagarnya Menabrak Gerbang Privasi
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Keputusan pemilik 2026-08-01 — "khusus yang memiliki omset cukup tinggi sudah hanya bisa bayar premium, tanpa subsidi atau harga adaptif lagi, adaptif khusus omset rendah atau yang saya tentukan baru bisa dapat"
-- **Status:** Open — **butuh keputusan pemilik (ambang omset) sebelum bisa dikerjakan**
+- **Status:** Open — **kebuntuannya BUBAR 2026-08-07**; ambang omset ditetapkan dan terpasang. Sisa pekerjaannya berpindah ke `[BL-055]` (alur pengajuan) dan `[BL-052]` (pemindahan otomatis)
 - **Prioritas:** High
+- **Pemutakhiran 2026-08-07 — usulan (a) DIBATALKAN, dan penyebabnya membubarkan seluruh kebuntuan entri ini.**
+  Entri ini macet di satu lingkaran: *untuk menilai kelayakan dibutuhkan data omset yang baru boleh dikumpulkan setelah masuk jalur Adaptif*. Usulan (a) — kelayakan sebagai pemberian manual pemilik SaaS — adalah jalan memutarnya, bukan jawabannya.
+  Alur yang diputuskan pemilik memotong lingkarannya langsung: **consent diberikan pada saat MENGAJUKAN.** Tenant yang tidak sanggup membayar `paid-1` menekan "ajukan keringanan", mencentang persetujuan membuka omset, dan barulah sistem berhak mengukurnya. Tidak ada data yang dikumpulkan dari orang yang tidak meminta apa pun, tidak ada janji di `resources/consents/normal-v1.md` yang dilanggar, dan tidak ada yang berlaku surut. Lingkarannya tidak pernah terbentuk.
+  **Akibatnya penilaian otomatis penuh menjadi sah, bukan kompromi.** Verifikasi manual admin tidak membeli privasi — privasinya sudah aman lewat consent. Yang dibelinya cuma kontrol penipuan, dan itu pun sedikit: omset dihitung dari transaksi yang tercatat di POS, jadi tenant yang mengincar harga murah cukup tidak mencatat sebagian penjualannya, dan admin yang menatap angka di layar tidak bisa membedakannya. Yang benar-benar menahan itu dua hal, keduanya bukan verifikasi manual: mencatat lebih rendah **merusak laporan dan stok tenant sendiri**, dan **pemeriksaan ulang berkala** menaikkan harganya begitu omsetnya naik. Karena itu pemilik memilih otomatis, dengan override manual untuk kasus khusus.
+- **Pemutakhiran 2026-08-07 (kedua) — Adaptif akhirnya punya definisi, dan definisi itu menelanjangi bracket D.**
+  Selama ini "Harga Adaptif" tidak pernah didefinisikan relatif terhadap apa pun. Pemilik menetapkannya: **Adaptif = `paid-1` dengan harga didiskon menurut omset yang disepakati consent-nya.** Tenant Adaptif duduk di paket `paid-1` — 3 seat, 15 analisis AI — dan yang berbeda hanya nominal tagihannya.
+  Begitu itu ditulis, diskon tiap bracket bisa dihitung, dan hasilnya mengejutkan:
+
+  | Bracket | Omset | Harga lama | Diskon lama | Harga baru | Diskon baru |
+  |---|---|---|---|---|---|
+  | A | 0–2 jt | 10.000 | 90% | 10.000 | 90% |
+  | B | 2–5 jt | 25.000 | 75% | 25.000 | 75% |
+  | C | 5–15 jt | 50.000 | 50% | 50.000 | 50% |
+  | D | 15–50 jt | 100.000 | **0%** | **75.000** | **25%** |
+
+  **Tangga Adaptif sebenarnya berakhir di Rp 15 juta, bukan Rp 50 juta.** Di rentang Rp 15–50 jt, tenant menyerahkan data penjualannya dan menerima nol rupiah — ongkos privasi tanpa imbalan, dan hal pertama yang akan disadari pelanggan yang teliti. Ambang Rp 50 juta pun jadi pemberitahuan kosong: melewatinya tidak mengubah tagihan sama sekali, karena bracket D dan `paid-1` sama-sama Rp 100.000.
+  Dengan D di Rp 75.000, tangganya jadi monoton **90/75/50/25/0** — mudah dipajang di halaman harga, dan ambang Rp 50 juta akhirnya berarti sesuatu (Rp 75.000 → Rp 100.000).
+- **Yang sudah terpasang 2026-08-07 (bukan rencana):** bracket D diterbitkan ulang seharga Rp 75.000 dengan syarat `gte 15.000.000` + `lt 50.000.000`, berlaku sejak 2026-08-07, lewat `PricingService::publishRule()`. Revisi berlabel sama, bukan sunting di tempat — dua aturan D sebelumnya tetap tersimpan sebagai riwayat, dan `unique()` per label di `matchContext()` memenangkan yang terbaru. Diverifikasi: 1,5 jt → A · 3 jt → B · 9 jt → C · 20 jt & 49.999.999 → **D Rp 75.000** · 50 jt & 200 jt → **tidak ada bracket**. Jejak di `platform_audit_logs` (`pricing-rules.create`).
 - **Area Terdampak:**
   - `app/Services/SubscriptionService.php:145-151` — `canSwitchTrack()`: **satu-satunya** penjaga perpindahan jalur, dan ia hanya memeriksa **jarak waktu** (`track_switch_minimum_months`), bukan kelayakan apa pun
   - `app/Http/Controllers/Billing/ConsentController.php:84,129` — owner menyetujui dokumen subsidi → `switchToSubsidized()` langsung dipanggil; tidak ada pemeriksaan lain di antaranya
@@ -140,7 +180,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   Arah sebaliknya **tidak** bermasalah dan sudah punya datanya: tenant yang sudah di jalur Adaptif lalu tumbuh melewati ambang sudah terlihat omsetnya (ia consent), jadi memindahkannya keluar ke Premium bisa dikerjakan tanpa menyentuh privasi siapa pun.
 - **Usulan Perbaikan:**
   Frasa **"atau yang saya tentukan"** di catatan pemilik ternyata bukan pelengkap — itu jalan keluar dari lingkaran di atas, dan sebaiknya jadi **mekanisme utamanya**, bukan cadangan:
-  **(a) Kelayakan sebagai pemberian, bukan perhitungan.** Tambahkan penanda kelayakan per tenant (mis. `subsidy_eligible_at` + alasan) yang **hanya** bisa disetel pemilik SaaS dari platform console, tercatat di `PlatformAuditLog`. `canSwitchTrack()` memeriksanya sebagai syarat tambahan. Tidak ada data omset yang perlu dikumpulkan lebih dulu, tidak ada janji consent yang dilanggar, dan pemilik SaaS tetap memegang kendali penuh yang ia minta. Ini juga cocok dengan kenyataan lapangan: keringanan untuk UMKM biasanya diberikan setelah dilihat kasusnya, bukan dihitung mesin.
+  ~~**(a) Kelayakan sebagai pemberian, bukan perhitungan.** Tambahkan penanda kelayakan per tenant (mis. `subsidy_eligible_at` + alasan) yang **hanya** bisa disetel pemilik SaaS dari platform console.~~ — **DIBATALKAN 2026-08-07.** Jalan memutar ini tidak diperlukan lagi: consent yang diberikan saat mengajukan membuat pengukuran omset sah tanpa penanda apa pun. Yang menggantikannya adalah `[BL-055]`. Jangan dikerjakan; menambah `subsidy_eligible_at` sekarang berarti membangun gerbang kedua di depan gerbang yang sudah benar.
   **(b) Ambang omset sebagai pintu keluar, bukan pintu masuk.** Untuk tenant yang **sudah** di jalur Adaptif, datanya ada. Tandai tenant yang melewati ambang untuk dipindahkan ke Premium pada periode berikutnya — dengan **pemberitahuan lebih dulu**, bukan kejutan di tagihan. Jangan pindahkan di tengah periode: `price_locked` dan `invoices.pricing_context` dibangun supaya harga yang sedang berjalan bisa dipertanggungjawabkan.
   **Ambangnya TIDAK perlu jadi angka baru — cukup satu baris syarat.** Keputusan pemilik 2026-08-01 (kedua) meminta batas Adaptif diturunkan dari harga Premium, bukan disetel terpisah. Ternyata model datanya sudah bisa menyatakan itu apa adanya. Keadaan seeded hari ini (query 2026-08-01):
   | Bracket | Syarat | Harga |
@@ -167,7 +207,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - tenant Adaptif beromset tinggi → `context['monthly_revenue']` berisi **angka nyata** yang di atas `lt` tertinggi
   Jadi pemeriksaan kelayakan yang benar adalah: **`context['monthly_revenue'] !== null` DAN nilainya ≥ `lt` tertinggi di tabel bracket** — bukan `price === null`. Rumusan itu kebal terhadap ketiga sebab sekaligus: tenant tanpa consent tersaring oleh syarat pertama, dan lubang salah-setel di tengah tabel tidak lolos karena angkanya tidak akan ≥ `lt` tertinggi. Pakai rumusan ini, jangan yang lebih pendek.
   **(c) Halaman Langganan harus jujur soal pagarnya.** Tenant yang tidak layak jangan disodori tombol yang akan menolaknya. `SubscriptionController:62` sudah mengirim `can_switch`; perluas jadi menyertakan **alasan** (belum layak / masih dalam jarak 3 bulan / omset di atas ambang) supaya penolakannya bisa dijelaskan di layar, bukan cuma tombol yang mati.
-  **Yang perlu Anda putuskan sebelum (b) bisa dikerjakan:** nilai `lt` yang menutup bracket D (turunan dari tangga harga Premium, lihat `[BL-041]`), dan apakah tenant yang terlanjur di Adaptif dengan omset di atas ambang dipindahkan atau di-*grandfather*.
+  ~~**Yang perlu Anda putuskan sebelum (b) bisa dikerjakan:** nilai `lt` yang menutup bracket D, dan apakah tenant yang terlanjur di Adaptif dengan omset di atas ambang dipindahkan atau di-*grandfather*.~~ — **Terjawab 2026-08-07.** Ambangnya **Rp 50 juta** dan sudah terpasang. Tenant yang melewatinya **dipindahkan**, bukan di-*grandfather*: ia diberi notifikasi bahwa omsetnya terdeteksi melewati batas tier, lalu diarahkan ke `paid-1`. Pemindahannya berlaku pada periode berikutnya, bukan di tengah periode berjalan. Sisa pekerjaan (b) — penandaan dan pemindahan otomatisnya — pindah ke `[BL-055]`.
+  **Sudah terlihat pada data nyata, bukan skenario.** Query 2026-08-07 atas `Kopi Nusantara` (jalur `subsidized`, consent aktif): omset bulanan **Rp 105.946.000**, jauh di atas ambang. `resolveFor()` mengembalikan `source = plan`, `label = Paid 1`, `price = Rp 100.000` — tepat seperti yang dirancang: tidak ada bracket yang cocok, jadi ia jatuh ke paket penampung dan membayar harga penuh. Yang belum terjadi otomatis hanyalah **membalik `pricing_track`-nya ke `normal`**; hari ini ia masih tercatat di jalur Adaptif sambil membayar harga non-Adaptif.
   ~~**Bergantung pada `[BL-046]`**~~ — **terjawab 2026-08-06.** `SubscriptionService::changePlan()` dan aksi platform `PUT /platform/subscriptions/{subscription}/plan` sudah ada, jadi pintu keluar di (b) kini punya tujuan yang benar-benar bisa dihuni. Yang tersisa untuk (b) adalah **penandaan otomatisnya** — mengenali tenant Adaptif yang melewati ambang lalu memindahkannya pada periode berikutnya dengan pemberitahuan lebih dulu — dan itu masih menunggu nilai `lt` yang menutup bracket D. Pemindahan manualnya sendiri sudah bisa dilakukan pemilik SaaS hari ini.
 
 ### [BL-049] "Tambah Pengguna" Menerbitkan Tagihan Rp 0 dan Meminta Bukti Transfernya — Harganya Belum Ada, dan Kursi Tidak Pernah Bisa Turun
@@ -236,6 +277,142 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Usulan Perbaikan:**
   **(a)** Putuskan mana yang berlaku: (i) tetap manual — pemulihan memang lewat percakapan, dan itu wajar untuk basis tenant sekecil ini; (ii) tombol "aktifkan kembali" di halaman langganan yang menerbitkan **satu** tagihan pemulihan atas permintaan tenant sendiri; atau (iii) penerbitan otomatis penuh seperti `grace`. Opsi (ii) paling dekat dengan bentuk yang sudah ada — ia meminjam alur `UpgradeController`, dan tagihannya lahir karena tenant memintanya, bukan karena kalender.
   **(b)** Apa pun pilihannya, **jangan** menerbitkan satu tagihan per bulan yang terlewat. Aturan "tunggakan tidak ditumpuk" di `renewPeriod()` memulihkan tepat satu periode ke depan per pembayaran; begitu ada dua tagihan langganan terbuka untuk satu tenant, melompati periode berarti benar-benar melompati uang, dan kedua aturan itu mulai bertabrakan. Ditinjau ulang 2026-08-07 dan dinyatakan aman **justru karena** penerbit tidak pernah melahirkan tagihan kedua — lihat docblock `renewPeriod()`.
+
+---
+
+### [BL-052] Masa Gratis Habis Tanpa Perpindahan ke `paid-1` — Tenant Bertarif Rp 0 Tidak Pernah Ditagih, Ia Jatuh ke Tenggang
+- **Ditemukan:** 2026-08-07 (saat memasang keputusan struktur harga)
+- **Sumber:** Keputusan pemilik 2026-08-07 — "jika user sudah lewat dari masa paket free itu sistem akan otomatis memaksa pindah ke paid 1"
+- **Status:** Open — **penghalang penagihan yang nyata, bukan penyempurnaan**
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `price <= 0` dihitung sebagai `free` lalu `continue`
+  - `app/Services/SubscriptionService.php` — `startTrial()`: menulis `trial_ends_at`, tapi tak ada yang membacanya saat masa itu habis
+  - `app/Services/SubscriptionService.php` — `advanceLifecycle()`: memindahkan keadaan tenant, tidak pernah memindahkan paketnya
+  - `app/Services/SubscriptionService.php` — `changePlan()`: mekanisme pemindahannya **sudah ada**, tinggal tak ada yang memanggilnya otomatis
+- **Deskripsi:**
+  Paket `free` berharga Rp 0, dan itu memang disengaja. Tapi penerbit tagihan memperlakukan harga nol sebagai "tidak ada yang perlu ditagih" lalu melewatinya — **tanpa menerbitkan tagihan dan tanpa memperpanjang periodenya**. Periode itu kemudian lewat, dan `advanceLifecycle()` menurunkan tenant ke masa tenggang.
+  Artinya paket gratis **tidak bisa hidup** di sistem ini: tenant yang duduk di `free` akan jatuh ke tenggang tiap periode, selamanya. Keputusan pemilik menutupnya dengan membatasi masa gratis jadi dua bulan lalu memindahkan tenant ke `paid-1` — tapi **pemindahan itu belum ada penggeraknya.** `trial_ends_at` ditulis dan tidak pernah dibaca lagi.
+- **Keadaan nyata per 2026-08-07 (query, bukan dugaan):** `Kopi Story` — jalur `normal`, paket `free`, `resolveFor()` mengembalikan `source = plan`, `price = Rp 0`. Periodenya berakhir 2026-08-24, penerbitan jatuh 2026-08-17. Ia **tidak akan ditagih apa pun**, lalu turun ke masa tenggang 2026-08-25. Kedua tenant yang ada juga ber-`trial_ends_at = null` — mereka `active` di paket gratis secara permanen, keadaan yang tidak lagi punya tempat dalam struktur baru.
+- **Usulan Perbaikan:**
+  **(a)** Di `advanceLifecycle()`, sebelum penerbitan tagihan: tenant yang `trial_ends_at`-nya sudah lewat dan masih di paket `free` dipindahkan ke `Plan` bawaan berbayar lewat `changePlan()`, dengan jejak `PlatformAuditLog`. Urutannya penting — pindah dulu, baru tagih, supaya tagihan pertamanya sudah memakai harga paket barunya.
+  **(b)** Tujuannya jangan di-*hardcode* ke slug `paid-1`. Pola `is_adaptive_fallback` sudah membuktikan bentuk yang benar: satu penanda "paket tujuan setelah masa gratis" yang ditunjuk pemilik SaaS dari panel, sehingga mengganti paket masuk tidak menuntut deploy.
+  **(c)** Beri tahu tenant **sebelum** hari-H, bukan lewat tagihan yang tiba-tiba muncul. `invoice_lead_days` = 7 sudah menyediakan jendelanya.
+  **(d)** Dua tenant lama (`trial_ends_at = null`, paket `free`) harus diputuskan terpisah: dipindahkan ke `paid-1` dengan pemberitahuan, atau dibiarkan gratis sebagai tenant demo. Selama belum diputuskan, keduanya akan jatuh ke tenggang. Terkait `price_locked = 0.00` di `[BL-041]`.
+
+---
+
+### [BL-053] Seat Tambahan dan Kuota AI Masih Biaya Sekali Bayar — Keputusan Pemilik Menyebutnya Bulanan
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Keputusan pemilik 2026-08-07 — "seat tambahan include dalam bulanan, begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
+- **Status:** Open
+- **Prioritas:** High — angkanya sudah terpasang, jadi satuannya salah **sejak sekarang**, bukan nanti
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `'amount' => $price`, tanpa komponen seat apa pun
+  - `app/Services/SubscriptionService.php` — `requestSeatUpgrade()`: `amount = extra_seat_price × jumlah`, tagihan `KIND_UPGRADE` sekali bayar
+  - `app/Models/Subscription.php` — `seat_high_water` + `recordSeatUsage()`: **sudah ada dan memang untuk ini**
+- **Deskripsi:**
+  Tagihan langganan otomatis hanya memuat harga paket. Seat tambahan ditagih **sekali** lewat invoice `KIND_UPGRADE`, lalu seat-nya melekat permanen. Artinya `extra_seat_price` Rp 20.000 hari ini berbunyi *"Rp 20.000 sekali, seat itu milik Anda selamanya"* — bukan Rp 20.000 per bulan.
+  Angka 20k/15k/12,5k/10k sudah dipasang 2026-08-07 dengan maksud bulanan. Sampai komponen bulanannya ada, **nilainya benar tapi satuannya salah**, dan tiap seat yang dibeli sekarang jadi kesepakatan permanen yang jauh lebih murah daripada yang dimaksud.
+- **Yang membuatnya lebih murah dari perkiraan:** model datanya sudah menunggu. `seat_high_water` ada beserta alasannya yang tertulis — *"Puncak inilah, bukan jumlah aktif saat penagihan, yang menjadi dasar tagihan periode berjalan"* — dengan penjaga akal-akalan yang sudah dipikirkan: menonaktifkan staf sehari sebelum tanggal tagih tidak boleh menghemat sebulan penuh. Yang belum ada hanya komponennya di penerbit.
+- **Usulan Perbaikan:**
+  **(a)** `amount` tagihan langganan jadi `harga + (seat_high_water − included_seats) × extra_seat_price`, dengan rinciannya ikut dibekukan di `pricing_context` — tagihan yang tidak bisa dijelaskan pecahannya akan jadi tiket dukungan pertama.
+  **(b)** **Putuskan tiga hal yang mengikutinya, jangan disimpulkan saat menulis kode:** (1) seat yang terlanjur diberikan seharga Rp 0 — kedua tenant hari ini memegangnya — mulai ditagih atau di-*grandfather*; (2) penambahan di tengah periode: prorata sisa periode lalu masuk tagihan bulanan, atau tunggu periode berikutnya; (3) **tenant Adaptif harganya dari bracket, tapi harga seat-nya dari paket** — dan sejak 2026-08-07 paketnya `paid-1`, jadi seat-nya Rp 15.000 sementara langganannya bisa Rp 10.000. Itu konsisten dengan "Adaptif = `paid-1` yang didiskon", tapi harus disengaja.
+  **(c)** Kuota AI tambahan belum punya bentuk sama sekali — tidak ada kolom, tidak ada alur beli. Kerjakan setelah (a), dan pakai pola yang sama; `Plan::limits` sudah berupa JSON, jadi penambahan kuota per langganan sebaiknya hidup di `subscriptions`, bukan melahirkan paket baru per tenant.
+
+---
+
+### [BL-054] Masa Tenggang Belum Bertingkat — Kasir Mati Sejak Hari Pertama, Padahal Keputusan Barunya Tiga Tahap
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Keputusan pemilik 2026-08-07 — "selama tenggat masih boleh jualan"; tangga notif 1–14 / 15–19 / 20–30
+- **Status:** Open — **config-nya sudah ada, penegaknya belum**
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Http/Middleware/EnsureSubscriptionActive.php:62` — `isReadOnly() && ! isMethodSafe()` → memblokir **semua** tulis sejak hari pertama tenggat
+  - `app/Models/Tenant.php` — `canWrite()`, `isReadOnly()`: hanya mengenal dua keadaan, tanpa umur tenggat
+  - `config/subscription.php` — `grace_intensive_from_day` = 15, `grace_lock_from_day` = 20 (**sudah dipasang 2026-08-07**, belum ada pembacanya)
+  - `app/Http/Middleware/HandleInertiaRequests.php` — prop yang menggerakkan tampilan tenggat
+  - `resources/js/Layouts/OwnerLayout.vue:176-177` — `isSuspended` + `isLocked`, satu-satunya penguncian menu yang ada
+- **Deskripsi:**
+  Tenggat hari ini bukan "aplikasi masih jalan, dashboard mati". Ia memblokir **seluruh permintaan non-GET** sejak hari pertama — kasir tidak bisa menyimpan satu transaksi pun, artinya toko tidak bisa berjualan. Prinsip lama di config ("tenggat mencabut kemampuan MENAMBAH data, bukan MEMBACA") ternyata berarti persis itu, dan konsekuensinya tidak pernah diperiksa: warung yang tidak bisa berjualan tidak punya uang untuk membayar, jadi tekanannya merusak sumber pembayarannya sendiri.
+  Keputusan pemilik menggantinya dengan tangga tiga tahap. Config-nya sudah dipasang; middleware, prop, dan tampilannya belum.
+- **Bentuk yang diputuskan:**
+
+  | Hari tenggat | Jualan (POS) | Dashboard analitik | Menu lain | Notifikasi |
+  |---|---|---|---|---|
+  | 1–14 | boleh | terbuka | normal | halus |
+  | 15–19 | boleh | terbuka | normal | intensif, mengganggu |
+  | 20–30 | **berhenti** | terbuka, baca saja | halaman "selesaikan tagihan" + CTA ke pembayaran | paksa |
+  | > 30 | ditangguhkan | tertutup | tertutup | — |
+
+- **Usulan Perbaikan:**
+  **(a)** `Tenant` mendapat umur tenggat (`graceDay()`), dan `EnsureSubscriptionActive` memakainya: tulis diblokir hanya sejak `grace_lock_from_day`, tidak sejak hari pertama. Jangan menaruh angkanya di middleware — ketiganya sudah di config supaya kebijakan tenggat bisa diubah tanpa membaca kelas mana pun.
+  **(b)** Tahap 3 **bukan pengalihan otomatis.** Menu yang terkunci menampilkan halaman pesan sendiri ("selesaikan tagihan untuk membuka halaman ini") dengan tombol ke pembayaran — pengalihan diam-diam membuat pengguna mengira aplikasinya rusak.
+  **(c)** Notifikasi: satu penanda di topbar, plus modal. **Modal-nya padam begitu pembayaran sedang diproses atau pengajuan Adaptif sudah dilakukan** — menagih orang yang sudah membayar adalah cara tercepat kehilangan mereka.
+  **(d) Jebakan yang harus dijaga:** menyenyapkan notifikasi **tidak boleh menghentikan jam tenggat**. Kalau mengunggah bukti bayar ikut menunda hari ke-20, mengunggah gambar kosong membeli 10 hari gratis, berulang kali. Unggahan mematikan notifikasinya; hitungan harinya jalan terus. Bukti yang ditolak menyalakannya kembali di hari yang seharusnya, bukan mundur.
+  **(e)** Prinsip lama di `config/subscription.php` sudah ditulis ulang 2026-08-07 supaya tidak ada dua kebijakan yang berselisih di satu berkas. Jangan menghidupkannya kembali sebagian.
+
+---
+
+### [BL-055] Pengajuan Harga Adaptif Belum Punya Wujud — Halaman, Penilaian Otomatis, dan Pemindahan Saat Melewati Ambang
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Keputusan pemilik 2026-08-07 — alur "bayar `paid-1` atau ajukan diskon", dinilai otomatis
+- **Status:** Open — menggantikan `[BL-048]`(a) yang dibatalkan, dan menyerap sisa `[BL-048]`(b)
+- **Prioritas:** High — **ini jembatan satu-satunya** dari Rp 0 ke Rp 100.000
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `canSwitchTrack()`, `switchToSubsidized()`: sudah ada, belum punya pemanggil dari sisi tenant
+  - `app/Http/Controllers/Billing/ConsentController.php` — consent sudah tercatat; ia yang jadi pintu pengajuan
+  - `app/Jobs/ComputeTenantMonthlyRevenue.php` — gerbang privasi dua lapis, tetap dihormati apa adanya
+  - `app/Services/PricingService.php` — `resolveFor()`: `context['monthly_revenue']` inilah pembeda yang benar, bukan `price`
+  - `app/Http/Controllers/Billing/SubscriptionController.php:62` — `can_switch` dikirim tanpa alasan
+- **Deskripsi:**
+  Sejak paket berbayar termurah adalah Rp 100.000, tenant yang tidak sanggup membayarnya tidak punya jalan lain selain jalur Adaptif — dan jalur itu hari ini hanya bisa dimasuki lewat halaman consent yang tidak pernah menyebut dirinya sebagai pengajuan keringanan. **Adaptif naik pangkat jadi tier masuk de facto**, dan taruhannya jauh lebih tinggi daripada saat `[BL-048]` ditulis: kalau jalannya lambat atau tidak terlihat, tenant menabrak dinding tepat di bulan ketiga, setelah datanya terlanjur pindah ke aplikasi ini.
+- **Usulan Perbaikan:**
+  **(a) Halaman pengajuan**, yang isinya dari data — bukan HTML: harga yang berlaku baginya, kapan terakhir diterapkan, dan tangga bracket lengkap. Kerjakan bersama `[BL-041]`(c); keduanya halaman yang sama.
+  **(b) Penilaian otomatis, tanpa antrean admin.** Consent dicentang → omset boleh dihitung → bracket ditetapkan → harga berlaku. Override manual tetap disediakan untuk kasus khusus, tapi ia bukan jalur utama. Alasannya di `[BL-048]` pemutakhiran pertama.
+  **(c) Layar tenant menyatakan hasilnya apa adanya.** Bila omsetnya di atas ambang, jangan diam — katakan bahwa omsetnya terlalu tinggi untuk keringanan dan arahkan ke `paid-1`. `can_switch` diperluas dengan **alasan** (belum layak / masih dalam jarak 3 bulan / omset di atas ambang) supaya penolakannya bisa dijelaskan, bukan cuma tombol yang mati.
+  **(d) Pemeriksaan ulang berkala, dan ini bukan pelengkap.** Tenant yang baru selesai masa gratis punya omset tercatat yang masih kecil, jadi **hampir semua tenant baru mendarat di bracket A atau B**. Tanpa pemeriksaan ulang yang menaikkan mereka saat omsetnya naik, semua orang membeku di harga termurah yang pernah mereka dapat.
+  **(e) Melewati Rp 50 juta → notifikasi + pindah ke `paid-1`** pada periode berikutnya, bukan di tengah periode: `price_locked` dan `invoices.pricing_context` dibangun supaya harga berjalan bisa dipertanggungjawabkan. `changePlan()` dan aksi platformnya sudah ada sejak 2026-08-06.
+  **(f) Peringatan yang harus dipegang:** kelayakan diperiksa lewat **`context['monthly_revenue'] !== null` DAN nilainya ≥ `lt` tertinggi**, bukan `price === null`. Tiga sebab berbeda menghasilkan `price = null`, dan memperlakukannya sama berarti **satu bracket yang salah ketik akan diam-diam mendorong seluruh tenant ke `paid-1`**. Sudah dibuktikan pada data nyata — lihat `[BL-048]`.
+
+---
+
+### [BL-056] Pengajuan Harga Adaptif Berlaku untuk Bulan Mana — Bulan Pengajuan atau Bulan Berikutnya?
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Pemilik saat menutup keputusan struktur harga — "apakah ajukan itu untuk bulan pengajuan itu, atau bulan depan... catat saja dulu"
+- **Status:** Open — **menunggu keputusan pemilik**, sengaja belum dibahas
+- **Prioritas:** Medium sekarang; naik jadi High begitu `[BL-055]` mulai dikerjakan, karena ia menentukan bentuknya
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `pricingAsOf()`: harga ditetapkan dari awal bulan periode tagihan
+  - `app/Models/Invoice.php` — `amount` dan `pricing_context` dibekukan saat tagihan terbit
+- **Deskripsi:**
+  Tagihan periode berjalan sudah terbit dengan nominal tetap dan konteks harga yang dibekukan. Tidak ada apa pun hari ini yang menghitung ulang tagihan **terbuka** ketika jalur harga tenant berubah.
+  Akibatnya, dalam alur tenggat yang menawarkan "bayar `paid-1` atau ajukan diskon", tenant bisa mengajukan, disetujui, lalu **tetap melihat nominal lama** di layar — putus tepat di titik yang paling menentukan.
+  Yang sudah aman dan tidak perlu dikhawatirkan: kekhawatiran pemilik bahwa sistem akan memeriksa omset **bulan berjalan** padahal tunggakannya dari bulan lalu. `pricingAsOf()` memakai awal bulan periode tagihan, dan `current_period_end` membeku selama tenant belum membayar — jadi omset yang dipakai memang omset periode yang tertunggak.
+- **Usulan Perbaikan:**
+  Putuskan salah satu, lalu `[BL-055]` mengikutinya: **(i)** berlaku bulan berikutnya — paling sederhana, tidak menyentuh tagihan yang sudah terbit, tapi tenant yang sedang terjepit harus membayar penuh dulu; **(ii)** berlaku untuk bulan pengajuan — tagihan terbuka diterbitkan ulang atau disesuaikan, dengan tagihan lama dibatalkan bukan dihapus. Opsi (ii) menjawab alur tenggat, tapi menuntut aturan tegas soal tagihan yang sudah sebagian dibayar.
+  **Jangan pilih (ii) tanpa penjaga:** pengajuan yang bisa memotong tunggakan berjalan adalah jalan keluar dari tagihan mana pun. Penjaga alaminya sudah ada — harganya dihitung dari penjualan yang tenant catat sendiri, jadi menekannya merusak datanya sendiri — tapi itu perlu dinyatakan, bukan diandalkan diam-diam.
+
+---
+
+### [BL-057] Harga Khusus per Tenant: Dropdown Mengunci ke Depan, Input Manual Sebulan Saja — Alasannya Belum Wajib
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Keputusan pemilik 2026-08-07 — "bisa pilih berdasarkan paket yang ada (dropdown)... atau saya input manual dan paksa berikan komentar atau alasan"
+- **Status:** Open — **separuhnya ternyata sudah berdiri**
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`: `amount` bebas dengan `min:0`, **tanpa kolom alasan**
+  - `app/Http/Controllers/Platform/InvoiceController.php` — jejak audit sudah mencatat `follows_rule`
+  - `app/Http/Controllers/Platform/SubscriptionController.php` — `updatePlan()`: dropdown paket, `reason` **sudah wajib**
+- **Deskripsi:**
+  Dua mekanisme yang diminta pemilik ternyata sebagian besar sudah ada, dan yang dulu terlihat sebagai cacat justru jadi fiturnya:
+  - **Dropdown paket = mengunci ke depan.** `changePlan()` + `PUT /platform/subscriptions/{id}/plan` sudah ada, `reason` sudah wajib, jejaknya sudah `SEVERITY_SENSITIVE`. **Tidak ada pekerjaan.**
+  - **Input manual = berlaku sebulan saja.** Penerbit manual sudah menerima nominal bebas, dan `issueDuePeriodInvoices()` **tidak pernah membaca `price_locked`** — jadi bulan berikutnya otomatis kembali ke harga aturan. Itu persis yang diminta. Lihat koreksi di `[BL-041]`.
+  Yang benar-benar belum ada tinggal satu: **kolom alasan wajib** pada penerbit manual, khususnya ketika nominalnya menyimpang dari aturan.
+- **Usulan Perbaikan:**
+  **(a)** Tambahkan `reason` di `Platform\InvoiceController::store()`, wajib **ketika `follows_rule` bernilai false** — memaksa alasan untuk tagihan yang persis mengikuti aturan hanya melatih orang mengetik "sesuai aturan" tanpa membacanya. Deteksinya sudah ada di controller, tinggal dipakai sebagai syarat validasi.
+  **(b)** Alasannya masuk `meta` jejak audit berdampingan dengan `follows_rule`, dan ikut terlihat di layar tagihan tenant — nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang.
+  **(c)** Jangan menambahkan kolom "harga khusus permanen" per tenant. Pemilik sudah memutuskan harga tetap datang dari paket; harga khusus yang berdiri sendiri berarti membuat paket bayangan yang tidak muncul di daftar mana pun. Bila suatu tenant memang perlu harga tetap yang lain, yang benar adalah **membuat paket baru** — ia auditable dan muncul di panel.
 
 ---
 
@@ -367,8 +544,16 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-041] Tarif Belum Ditetapkan, dan Halaman Harga Publik Belum Dinamis
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "Pemberian Kelas, dan sesuai Omset / Sesuaikan Tarif kembali", "berikan halaman pricing dan dynamic, perjelas batasan batasan dari owner yang membayar full, subsidi dan lain lain"
-- **Status:** Open — **sebagian butuh keputusan pemilik (angka tarif)**; struktur tarif sudah diputuskan 2026-08-01, lihat blok di bawah
-- **Prioritas:** High
+- **Status:** Open — **butir (a) SELESAI 2026-08-07** (angkanya ditetapkan dan terpasang); sisa butir (b) dan (c)
+- **Prioritas:** Medium — turun dari High: yang tersisa bukan lagi penghalang penagihan, melainkan penjelasan harga di layar
+- **Butir (a) terjawab 2026-08-07 — angkanya ditetapkan, dan dua di antaranya bukan yang diusulkan siapa pun sebelumnya.**
+  Tabel final ada di blok "Keputusan pemilik 2026-08-07" di kepala berkas ini. Yang perlu dicatat di sini adalah **apa yang berubah dari rencana**, karena itulah yang tidak bisa disimpulkan dari tabelnya:
+  - **Paket `dasar` mati sebagai tier berbayar.** Ia berganti nama jadi `free` dan berubah sifat: bukan lagi tempat tinggal termurah, melainkan **masa gratis dua bulan** yang berakhir dengan perpindahan paksa ke `paid-1`. Usulan sebelumnya (memberi `dasar` tarif Rp 49.000) dibatalkan pemilik setelah ditimbang ulang. Akibatnya tangga harganya jadi Rp 0 → 100k → 150k → 200k, tanpa anak tangga di lompatan terberatnya — dan **jalur Adaptif-lah jembatannya**, yang menaikkan taruhan `[BL-055]` jauh di atas perkiraan awal.
+  - **Bracket D turun dari Rp 100.000 ke Rp 75.000.** Bukan penyesuaian pasar. Karena Adaptif didefinisikan sebagai `paid-1` yang didiskon, D yang berharga sama dengan `paid-1` berarti **diskon 0%** — tenant menyerahkan data penjualannya dan menerima nol. Itu bukan sekadar sia-sia, itu ongkos privasi tanpa imbalan. Rinciannya di `[BL-048]`.
+  - **Jatah seat `free` naik 1 → 2**, lewat migrasi, bukan lewat panel. Satu seat berarti pemilik toko satu-satunya yang bisa masuk — tidak ada kasir. Untuk aplikasi POS itu bukan paket terbatas melainkan paket yang tidak bisa dipakai, dan selama dua bulan pertama paket inilah wajah produknya.
+  - **Kuota AI diisi eksplisit di keempat paket (5/15/30/60).** Sebelumnya hanya `Premium 1` yang menyetelnya; `Premium 2` dan `3` bernilai `null` sehingga ikut bawaan platform **5/hari** — artinya Rp 200.000 memberi kuota AI yang sama persis dengan paket gratis, dan **separuh** dari paket Rp 100.000 di bawahnya. Tangga harganya naik sementara nilainya turun. Ini cacat data, bukan keputusan, dan sudah diperbaiki berbarengan.
+  - **Yang TIDAK ikut ditetapkan:** harga seat tambahan sebagai biaya **bulanan**. Angkanya sudah dipasang (20k/15k/12,5k/10k) tapi penerbit tagihan hari ini masih menagihnya **sekali** — lihat `[BL-053]`. Sampai itu beres, keempat angka itu benar nilainya dan salah satuannya.
+  - **Keadaan terpasang per 2026-08-07 (query, bukan dugaan):** `free` Rp 0 / 2 seat / seat+ Rp 20.000 / AI 5 · `paid-1` Rp 100.000 / 3 / Rp 15.000 / AI 15 / **penampung adaptif** · `paid-2` Rp 150.000 / 5 / Rp 12.500 / AI 30 · `paid-3` Rp 200.000 / 10 / Rp 10.000 / AI 60. Bracket A–D 10k/25k/50k/**75k**, D ditutup di `< 50.000.000`. Jejaknya di `platform_audit_logs` (`plans.update` ×4, `pricing-rules.create` ×1). **Basis data lokal pengembangan**, bukan produksi.
 - **Keputusan pemilik 2026-08-01 — struktur tarif:**
   Menjawab pertanyaan yang menggantung di butir (a) dan di `[BL-044]`:
   1. **Rp 100k adalah puncak bracket Harga Adaptif**, bukan tarif dasar jalur Harga Tetap. Bracket D di `config/subscription.php:89` sudah memakai angka itu, jadi benih migrasi `pricing_rules` **tidak perlu diubah** untuk keputusan ini.
@@ -395,8 +580,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   Perlu disadari juga: `Premium 1` bertarif **sama persis** dengan puncak Adaptif (Rp 100.000). Itu memang yang diminta butir 2, tapi konsekuensinya harus disengaja — tenant di bracket D dan tenant Premium 1 membayar sama, sehingga satu-satunya pembeda keduanya tinggal seat dan kuota, bukan harga. Bila itu tidak diinginkan, yang digeser sebaiknya harga Premium 1, bukan bracket D.
   Semua perubahan tercatat di `platform_audit_logs` (`plans.create` ×3, `pricing-rules.create` ×1). **Ini basis data lokal pengembangan**, bukan produksi.
 - **Area Terdampak:**
-  - `database/migrations/2026_07_24_181634_create_plans_table.php:38-47` — paket `dasar`: `base_price = 0`, `included_seats = 1`, `extra_seat_price = 0`
-  - `config/subscription.php:85-90` — benih bracket A–D: Rp 10k / 25k / 50k / 100k
+  - ~~`database/migrations/2026_07_24_181634_create_plans_table.php:38-47` — paket `dasar`: `base_price = 0`, `included_seats = 1`, `extra_seat_price = 0`~~ — di-rename `free` dengan 2 seat oleh `2026_08_07_110647_rename_default_plan_to_free`
+  - ~~`config/subscription.php` — benih bracket A–D: Rp 10k / 25k / 50k / 100k~~ — bracket D jadi Rp 75k berbatas Rp 50 jt, 2026-08-07
   - `resources/views/public/landing.blade.php:686-745` — yang dipajang publik: Rp 149k dan Rp 299k
   - `app/Http/Controllers/Billing/SubscriptionController.php:68-70` — `bracket` diisi **hanya** bila `isSubsidized()`; tenant jalur Harga Tetap tidak pernah melihat kelas apa pun
   - `routes/web.php:390-398` — rute publik hanya `/`, `/api-docs`, `/dokumentasi`; tidak ada halaman harga tersendiri
@@ -406,8 +591,13 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Keadaan data per 2026-08-01 (hasil query, bukan dugaan):** 2 tenant, keduanya paket `Dasar` dengan `base_price = 0.00`, `extra_seat_price = 0.00`, dan `price_locked = 0.00`; keduanya di jalur `normal`. Tabel `invoices` **kosong — belum pernah ada satu tagihan pun terbit**. `pricing_rules` berisi 4 baris: bracket A–D bawaan migrasi, yang hanya terpakai di jalur Harga Adaptif, sementara **0 tenant** ada di jalur itu. Artinya seluruh mesin penagihan berdiri lengkap dan belum pernah menagih siapa pun — dan itu bukan keadaan yang bisa dilihat dari layar mana pun.
 - ~~**Jendela yang akan tertutup:**~~ **terpakai 2026-08-05.** `[BL-030]` sudah ditutup selagi `invoices` masih kosong, jadi tidak ada tanggal tagih siapa pun yang bergeser. Butir (a) di bawah kini bebas dijalankan kapan pun tanpa menyeret pekerjaan data.
 - **Usulan Perbaikan:**
-  Berurutan, karena masing-masing bergantung pada yang sebelumnya. **(a)** Pemilik menetapkan tarif jalur Harga Tetap (base + harga seat tambahan) dan meninjau ulang bracket Harga Adaptif — ini keputusan bisnis, bukan pekerjaan kode. **(b)** Perluas `bracket` di `SubscriptionController` agar juga terisi untuk jalur Harga Tetap memakai dimensi yang tidak butuh consent (seat aktif, tipe usaha), sehingga tiap owner bisa melihat kelasnya sendiri tanpa membuka data penjualan yang tidak pernah ia setujui — batas privasi di `config/pricing-dimensions.php` harus tetap dihormati. **(c)** Baru kemudian buat `/harga` yang merender aturan berlaku dari `PricingService`, dengan tabel perbandingan tegas antara jalur Harga Tetap dan Harga Adaptif: apa yang dibuka, apa yang dibatasi, dan syarat berpindah jalur (`track_switch_minimum_months` = 3). Landing menaut ke sana, menggantikan bagian harga yang sekarang (`[BL-032]`).
-  **Dua tenant yang sudah ada memegang `price_locked = 0.00`.** Grandfathering yang sudah dibangun (`InvoiceController::verify()` mengunci harga dari nominal yang benar-benar dibayar) akan mempertahankan angka nol itu apa adanya — benar sebagai mekanisme, tapi keduanya adalah tenant demo/awal, bukan kesepakatan yang perlu dihormati selamanya. Putuskan sekalian di butir (a): dibiarkan nol, atau dinaikkan ke tarif baru dengan pemberitahuan. Jangan diam-diam.
+  ~~**(a)** Pemilik menetapkan tarif jalur Harga Tetap dan meninjau ulang bracket Harga Adaptif.~~ **Selesai 2026-08-07**, lihat blok di atas. Dua yang tersisa:
+  **(b)** Perluas `bracket` di `SubscriptionController` agar juga terisi untuk jalur Harga Tetap memakai dimensi yang tidak butuh consent (seat aktif, tipe usaha), sehingga tiap owner bisa melihat kelasnya sendiri tanpa membuka data penjualan yang tidak pernah ia setujui — batas privasi di `config/pricing-dimensions.php` harus tetap dihormati.
+  **(c)** Buat `/harga` yang merender aturan berlaku dari `PricingService`, dengan tabel perbandingan tegas antara Harga Tetap dan Harga Adaptif: apa yang dibuka, apa yang dibatasi, dan syarat berpindah jalur (`track_switch_minimum_months` = 3). Landing menaut ke sana, menggantikan bagian harga yang sekarang (`[BL-032]`). **Sejak 2026-08-07 halaman ini berubah sifat**: ia bukan lagi sekadar etalase, melainkan **jalan masuk ke pengajuan diskon** — halaman yang sama dipakai `[BL-055]` untuk menampilkan harga yang berlaku bagi tenant beserta kapan terakhir diterapkan. Kerjakan keduanya bersama, jangan berurutan.
+- **Koreksi 2026-08-07 — klaim *grandfathering* di entri ini SALAH, dan koreksinya penting.**
+  Entri ini dulu menyatakan `price_locked` "akan mempertahankan angka nol itu apa adanya". Penguncian harganya memang nyata — `InvoiceSettlement` menulisnya dari nominal yang benar-benar dibayar (`InvoiceSettlement.php:91`) — tapi **tidak ada satu pun pembaca di jalur penagihan.** `issueDuePeriodInvoices()` selalu menghitung ulang lewat `resolveFor()` dan memakai hasilnya apa adanya (`SubscriptionService.php:317`); `price_locked` hanya dibaca dua tempat, keduanya untuk tampilan layar (`Billing\SubscriptionController:38`, `AccountOverview:181`).
+  Artinya nominal manual **tidak pernah bertahan ke bulan berikutnya** — tagihan otomatis kembali ke harga aturan. Kebetulan itu justru **persis perilaku yang diminta** keputusan 2026-08-07 untuk input manual (berlaku sebulan saja), jadi yang dulu terlihat sebagai cacat sekarang jadi separuh fitur. Yang belum ada tinggal kolom alasan wajibnya — `[BL-057]`.
+- **Dua tenant lama memegang `price_locked = 0.00`, dan itu belum diputuskan.** Keduanya tenant demo/awal, bukan kesepakatan yang perlu dihormati selamanya. Karena penagih tidak membaca `price_locked`, angka nol itu **tidak** akan menular ke tagihan berikutnya — yang menentukan nasib mereka adalah paketnya, dan keduanya masih di `free` seharga Rp 0. Lihat `[BL-052]`.
 
 ### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
 - **Ditemukan:** 2026-07-31

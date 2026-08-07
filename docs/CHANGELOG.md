@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-07 | DECISION | Langganan | Struktur Harga Ditetapkan: Free Dua Bulan, Adaptif Jadi Diskon `paid-1`, dan Tenggat Berhenti Mematikan Kasir |
 | 2026-08-07 | HOTFIX | Langganan | Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau |
 | 2026-08-07 | HOTFIX | Langganan | Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c) |
 | 2026-08-06 | ADDITION | Platform | Paket Kedua Akhirnya Bisa Dihuni: Tenant Bisa Dipindahkan, Seat Bayarnya Ikut (BL-046) |
@@ -153,6 +154,42 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Struktur Harga Ditetapkan: Free Dua Bulan, Adaptif Jadi Diskon `paid-1`, dan Tenggat Berhenti Mematikan Kasir
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-041]`(a) dan membubarkan kebuntuan `[BL-048]`
+- **Dampak:** Config | Model | Service | Migrasi | Data | Test | Dokumentasi
+- **Breaking Change:** Ya, dua. (1) `config('subscription.trial_days')` **dihapus**, diganti `trial_months`; `SubscriptionService::trialDays()` → `trialMonths()`. (2) Slug paket bawaan berganti `dasar` → `free`, berpasangan dengan `Plan::SLUG_DEFAULT`. Keduanya gagal keras bila tidak sinkron (`firstOrFail()`), bukan diam-diam salah.
+- **Deskripsi:** Seluruh mesin penagihan sudah berdiri sejak Juli dan belum pernah menagih siapa pun, karena angkanya tidak pernah ditetapkan. Sesi ini menetapkannya. Yang menarik bukan angkanya, melainkan **tiga hal yang ditemukan saat menyusunnya, yang masing-masing mengubah keputusan sebelumnya**.
+
+  **1. Bracket D ternyata memberi diskon 0%.** Pemilik mendefinisikan Harga Adaptif sebagai *`paid-1` yang didiskon menurut omset*. Begitu definisi itu ditulis, diskon tiap bracket bisa dihitung — dan bracket D (Rp 15–50 jt) berharga **sama persis** dengan `paid-1`, Rp 100.000. Tenant di rentang itu menyerahkan data penjualannya dan menerima nol rupiah: ongkos privasi tanpa imbalan. Tangga Adaptif sebenarnya berakhir di Rp 15 juta, bukan Rp 50 juta seperti yang diasumsikan `[BL-048]`. D turun ke **Rp 75.000**, dan tangganya jadi monoton 90/75/50/25/0 — yang juga membuat ambang Rp 50 juta akhirnya berarti sesuatu, karena sebelumnya melewatinya tidak mengubah tagihan sama sekali.
+
+  **2. Alur pengajuan membubarkan kebuntuan privasi `[BL-048]`.** Entri itu macet di lingkaran: menilai kelayakan butuh data omset yang baru boleh dikumpulkan setelah masuk. Usulannya waktu itu — kelayakan sebagai pemberian manual pemilik SaaS — adalah jalan memutar. Pemilik memotongnya langsung: **consent diberikan saat MENGAJUKAN**, jadi pengukuran terjadi setelah tenant memintanya. Lingkarannya tidak pernah terbentuk, dan penilaian otomatis penuh jadi sah alih-alih kompromi. Usulan `[BL-048]`(a) dibatalkan; jangan menambahkan `subsidy_eligible_at`.
+
+  **3. Masa tenggang ternyata sudah mematikan kasir sejak hari pertama.** `EnsureSubscriptionActive` memblokir seluruh permintaan non-GET begitu tenant masuk tenggat — artinya toko tidak bisa berjualan. Prinsip yang tertulis di config ("tenggat mencabut kemampuan MENAMBAH data, bukan MEMBACA") ternyata berarti persis itu, dan konsekuensinya tidak pernah diperiksa: warung yang tidak bisa berjualan tidak punya uang untuk membayar. Prinsipnya dicabut dan diganti tangga tiga tahap — notif halus hari 1–14, intensif 15–19, tulis dicabut 20–30, dengan dashboard tetap terbaca sepanjang tenggat. Config-nya dipasang sekarang; penegaknya `[BL-054]`.
+
+- **Yang berubah di kode:**
+  - `config/subscription.php` — `trial_days` → **`trial_months` = 2**; ditambah `grace_intensive_from_day` = 15 dan `grace_lock_from_day` = 20. Ketiganya berdampingan karena menggambarkan satu tangga; kebijakan tenggat harus bisa diubah tanpa membaca middleware. Benih `revenue_brackets` ikut disesuaikan (D = 75k, batas atas 50 jt) untuk pemasangan baru.
+  - `SubscriptionService::startTrial()` — `addMonthsNoOverflow()`, bukan `addMonths()`: dua bulan dari 31 Desember tanpa penjaga luberan mendarat di 3 Maret dan **melewatkan Februari sama sekali**.
+  - `SubscriptionService::startTrial()` — **`billing_anchor_day` diambil dari tanggal DAFTAR**, bukan tanggal masa gratis berakhir. Keduanya hampir selalu sama, kecuali saat akhir masa gratis terjepit bulan pendek: yang daftar 31 Desember berakhir 28 Februari, dan jangkar yang diambil dari situ mengunci tanggal tagihnya di **28 selamanya**. Mesin penjepitnya (`anchoredDateIn()`) sudah benar sejak `[BL-030]` — yang salah cuma sumber jangkarnya.
+  - `Plan::SLUG_DEFAULT` `dasar` → `free`, berpasangan dengan migrasi `rename_default_plan_to_free`.
+- **Migrasi:** `2026_08_07_110647_rename_default_plan_to_free` — rename slug/nama, dan **`included_seats` 1 → 2**. Yang terakhir bukan angka komersial melainkan bentuk produk: satu seat berarti pemilik toko satu-satunya yang bisa masuk, tanpa kasir. Untuk aplikasi POS itu bukan paket terbatas melainkan paket yang tidak bisa dipakai — dan selama dua bulan pertama, paket inilah wajah produknya. Harga dan kuota AI sengaja **tidak** disentuh migrasi: keduanya milik pemilik SaaS lewat panel, dan migrasi yang menimpanya menghapus keputusan komersial yang mungkin sudah berbeda di produksi.
+- **Data yang dipasang (basis data pengembangan, lewat model & service yang sama dengan panel):**
+
+  | Paket | Tarif | Seat | Seat tambahan | AI/hari |
+  |---|---|---|---|---|
+  | `free` | Rp 0 | 2 | Rp 20.000 | 5 |
+  | `paid-1` | Rp 100.000 | 3 | Rp 15.000 | 15 |
+  | `paid-2` | Rp 150.000 | 5 | Rp 12.500 | 30 |
+  | `paid-3` | Rp 200.000 | 10 | Rp 10.000 | 60 |
+
+  Bracket A–D: 10k / 25k / 50k / **75k**, D ditutup `< Rp 50 juta`. Diverifikasi: 20 jt & 49.999.999 → D Rp 75.000; 50 jt & 200 jt → tidak ada bracket. Jejak di `platform_audit_logs` (`plans.update` ×4, `pricing-rules.create` ×1), `platform_user_id` null — perubahan ini memang tidak lahir dari sesi pengguna platform, dan mencatatnya seolah-olah begitu akan berbohong.
+- **Cacat data yang ikut ketahuan dan diperbaiki:** hanya `Premium 1` yang menyetel `ai_daily`; `Premium 2` dan `3` bernilai `null` sehingga ikut bawaan platform **5/hari**. Artinya Rp 200.000 memberi kuota AI yang sama persis dengan paket gratis, dan **separuh** dari paket Rp 100.000 di bawahnya — tangga harganya naik sementara nilainya turun. Keempat paket sekarang menyetelnya eksplisit.
+- **Koreksi terhadap `[BL-041]`:** entri itu menyatakan *grandfathering* akan mempertahankan `price_locked` tenant lama. Penguncian harganya nyata (`InvoiceSettlement.php:91`), tapi **tidak ada pembaca di jalur penagihan** — `issueDuePeriodInvoices()` selalu menghitung ulang lewat `resolveFor()`. `price_locked` hanya dibaca dua tempat, keduanya untuk tampilan. Kebetulan itu justru perilaku yang diminta untuk harga manual (berlaku sebulan saja), jadi yang dulu terlihat sebagai cacat sekarang jadi separuh fitur — lihat `[BL-057]`.
+- **Test:** `724 passed`. Empat tes ikut berubah premisnya, dan itu memang tandanya keputusan ini menyentuh perilaku: jangkar tagih (ditulis ulang untuk kasus 31 Desember), panjang masa gratis (×3), jatah seat paket bawaan, dan nama paket di jejak audit. Ditambah satu tes baru yang mengunci penutupan tangga Adaptif — 49.999.999 masih D, 50 juta tidak punya bracket sama sekali.
+- **Yang sengaja BELUM dikerjakan**, masing-masing jadi entri sendiri: `[BL-052]` perpindahan otomatis di akhir masa gratis (**paket `free` masih Rp 0, jadi tenant yang duduk di sana tetap tidak tertagih dan jatuh ke tenggang**), `[BL-053]` seat & kuota AI jadi komponen bulanan (angkanya sudah dipasang, tapi penerbit masih menagihnya sekali — nilainya benar, satuannya salah), `[BL-054]` penegak tenggat bertingkat, `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` alasan wajib pada tagihan manual.
 
 ---
 
