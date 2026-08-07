@@ -89,7 +89,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - **Keputusan pemilik 2026-08-06:** tenant yang tak bisa ditagih **tetap** menempuh masa tenggang dan penangguhan. Tarif Rp 0 dilaporkan sebagai peringatan perintah; tarif `null` (Adaptif tanpa bracket & tanpa paket penampung) dicatat sebagai kejadian sensitif `invoices.unpriced`.
   - Keadaan nyata per 2026-08-06 (query): kedua tenant berperiode `2026-08-24`, jadi penerbitan pertamanya jatuh **2026-08-17**. `Kopi Nusantara` (Adaptif, jatuh ke paket penampung `Premium 1`) akan ditagih **Rp 100.000**; `Kopi Story` (Harga Tetap, paket `Dasar`) resolve ke **Rp 0** dan tidak akan ditagih apa pun — ia akan turun ke masa tenggang 2026-08-25. Itu bukan cacat kode, itu `[BL-041]`(a) yang belum diputuskan, dan sekarang angkanya terlihat di keluaran perintah.
   - **Sisa yang belum: butir (c).** Ditunda atas keputusan pemilik 2026-08-06 karena menawarkan dua jalur menuntut pagar kelayakan `[BL-048]` yang belum ada — menyodorkan pilihan yang sistem belum bisa tolak persis yang keputusan 2026-08-01 tutup. Kartu langganan di dashboard (`[BL-040]`) sudah menampilkan tagihan terbuka, jadi tenant tetap tahu berapa yang harus dibayar.
-  - **Yang perlu ditinjau ulang saat (c) atau tunggakan disentuh:** `renewPeriod()` memakai aturan "tunggakan tidak ditumpuk" (`[BL-030]`) — satu pembayaran memulihkan satu periode ke depan. Sekarang tiap periode punya tagihannya sendiri, jadi memajukan periode melewati bulan yang terlewat berarti melewati tagihannya juga.
+  - ~~**Yang perlu ditinjau ulang saat (c) atau tunggakan disentuh:** `renewPeriod()` memakai aturan "tunggakan tidak ditumpuk" (`[BL-030]`).~~ — **ditinjau 2026-08-07, aturannya tetap.** Tiap periode TIDAK punya tagihannya sendiri: `current_period_end` tidak pernah maju selama tenant belum membayar, jadi kunci `Y-m` periodenya membeku dan penjaga periode-ganda menolak penerbitan sesudahnya. Satu pelanggaran = satu tagihan, satu pembayaran = satu periode; keduanya bertemu, bukan bertabrakan. Dipatok test *"a lapse only ever produces one invoice, and one payment clears it"*. Syarat yang mematahkannya dicatat di `[BL-051]`.
+  - **Ditemukan saat meninjaunya (sudah diperbaiki 2026-08-07):** tenant yang turun ke masa tenggang **tanpa pernah ditagih** — tarifnya masih Rp 0 atau `null` saat periodenya habis — dikecualikan penerbit selamanya, jadi menetapkan tarifnya besok tidak menerbitkan apa pun. Itu persis nasib yang menunggu `Kopi Story` pada 2026-08-25. Lihat entri CHANGELOG *"Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau"*.
 
 ### [BL-047] Kuota AI Gratis Terkunci di `.env` — Bukan Kebijakan yang Bisa Diatur Pemilik SaaS
 - **Ditemukan:** 2026-08-01
@@ -216,6 +217,25 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   Uniknya sebenarnya hanya dibutuhkan untuk `KIND_SUBSCRIPTION`; tagihan upgrade tidak butuh keunikan apa pun. MySQL tidak punya indeks unik parsial, jadi pola yang portabel adalah **kolom kunci turunan yang null untuk upgrade** — mis. `period_key` berisi `period` untuk tagihan langganan dan `NULL` untuk upgrade, dengan `unique(['tenant_id', 'period_key'])`. MySQL maupun SQLite sama-sama mengabaikan baris ber-NULL pada indeks unik, jadi penjaga tagihan-ganda tetap utuh sementara upgrade bebas berulang.
   **Yang wajib ikut diperiksa saat mengerjakannya:** `issueDuePeriodInvoices()` dan `Platform\InvoiceController::store()` sama-sama memakai `where('period', ...)->exists()` sebagai penjaga periode-ganda, bukan indeksnya. Keduanya harus ikut berpindah ke kunci yang baru, kalau tidak penjaga aplikasinya dan penjaga basis datanya akan menjaga dua hal yang berbeda.
   Setelah itu, `hasUpgradeInvoiceThisPeriod()` beserta prop `closed_for_period` dan kalimatnya di `Show.vue` dibuang — ketiganya ada semata-mata untuk membungkus batas ini dengan sopan.
+
+---
+
+### [BL-051] Tenant yang Sudah Ditangguhkan Tidak Punya Tagihan untuk Dibayar
+- **Ditemukan:** 2026-08-07 (saat meninjau `renewPeriod()` × `[BL-044]`)
+- **Sumber:** Telaah, bukan laporan — sisi lain dari lubang masa tenggang yang ditutup 2026-08-07
+- **Status:** Open — **butuh keputusan pemilik**, bukan pekerjaan kode
+- **Prioritas:** Low sekarang (belum ada satu pun tenant `suspended`); naik ke Medium begitu tenant pertama benar-benar tertangguh
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`, daftar status yang ikut ditagih
+  - `app/Services/SubscriptionService.php` — `renewPeriod()`, aturan "tunggakan tidak ditumpuk"
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`, satu-satunya jalan keluar hari ini
+- **Deskripsi:**
+  Penerbit otomatis menagih tenant `trial`, `active`, dan (sejak 2026-08-07) `grace`. `suspended` sengaja di luar: aksesnya sudah tertutup penuh, dan menerbitkan tagihan atas bulan yang tidak bisa dipakai berarti menumbuhkan utang yang tidak pernah diminta siapa pun.
+  Konsekuensinya baru terlihat dari sisi tenant yang ingin **kembali**. Sekali tertangguh tanpa tagihan terbuka — misalnya tagihannya pernah ditolak lalu kedaluwarsa, atau ia tertangguh sebelum tarifnya pernah ditetapkan — tidak ada apa pun yang bisa ia bayar untuk pulih. `current_period_end` beku, penerbit tidak menyentuhnya, dan satu-satunya pintu adalah pemilik SaaS mengetikkan tagihannya manual di `/platform/invoices`. Itu persis keadaan yang `[BL-044]` tutup, hanya bergeser satu status ke kanan.
+  Yang membuat ini keputusan dan bukan cacat: kedua jawabannya masuk akal dan berbeda artinya. Menagih otomatis berarti tenant yang sudah pergi tetap menerima tagihan bulanan. Tidak menagih berarti tenant yang ingin kembali harus menghubungi manusia lebih dulu.
+- **Usulan Perbaikan:**
+  **(a)** Putuskan mana yang berlaku: (i) tetap manual — pemulihan memang lewat percakapan, dan itu wajar untuk basis tenant sekecil ini; (ii) tombol "aktifkan kembali" di halaman langganan yang menerbitkan **satu** tagihan pemulihan atas permintaan tenant sendiri; atau (iii) penerbitan otomatis penuh seperti `grace`. Opsi (ii) paling dekat dengan bentuk yang sudah ada — ia meminjam alur `UpgradeController`, dan tagihannya lahir karena tenant memintanya, bukan karena kalender.
+  **(b)** Apa pun pilihannya, **jangan** menerbitkan satu tagihan per bulan yang terlewat. Aturan "tunggakan tidak ditumpuk" di `renewPeriod()` memulihkan tepat satu periode ke depan per pembayaran; begitu ada dua tagihan langganan terbuka untuk satu tenant, melompati periode berarti benar-benar melompati uang, dan kedua aturan itu mulai bertabrakan. Ditinjau ulang 2026-08-07 dan dinyatakan aman **justru karena** penerbit tidak pernah melahirkan tagihan kedua — lihat docblock `renewPeriod()`.
 
 ---
 

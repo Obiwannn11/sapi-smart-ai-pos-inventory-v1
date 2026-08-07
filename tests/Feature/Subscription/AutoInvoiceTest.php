@@ -5,6 +5,7 @@ use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Services\Billing\InvoiceSettlement;
 use App\Services\SubscriptionService;
 use Illuminate\Support\Carbon;
 
@@ -165,12 +166,58 @@ test('a zero tariff leaves no audit noise', function () {
 // ── Yang tidak ikut ditagih ──────────────────────────────────────────────────
 
 test('a tenant already in grace is not billed again', function () {
-    ['tenant' => $tenant] = billableTenant(daysUntilPeriodEnd: -2, status: Tenant::STATUS_GRACE);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(
+        daysUntilPeriodEnd: -2,
+        status: Tenant::STATUS_GRACE,
+    );
+
+    // Tagihannya sudah terbit saat ia masih aktif — keadaan yang sebenarnya
+    // dijaga di sini, dan yang dulu hanya diandaikan oleh fixture-nya.
+    Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'period' => now()->subDays(2)->format('Y-m'),
+    ]);
 
     artisan('subscriptions:advance-lifecycle')->assertSuccessful();
 
-    // Tagihannya sudah terbit saat ia masih aktif. Menagihnya lagi tiap hari
-    // selama masa tenggang akan menumpuk tunggakan yang tak pernah diminta.
+    // Menagihnya lagi tiap hari selama masa tenggang akan menumpuk tunggakan
+    // yang tak pernah diminta. Yang menolaknya adalah penjaga periode-ganda,
+    // bukan status tenantnya.
+    expect(Invoice::where('tenant_id', $tenant->id)->count())->toBe(1);
+});
+
+test('a tenant that lapsed into grace unbilled is billed once its tariff exists', function () {
+    // Persis keadaan `Kopi Story` per 2026-08-06: tarifnya masih Rp 0 saat
+    // periodenya habis, jadi tak ada tagihan yang terbit, lalu ia turun ke masa
+    // tenggang. Selama `grace` dikecualikan penerbit, pengecualian itu permanen
+    // — `current_period_end` tak pernah maju, jadi ia tak akan pernah kembali
+    // aktif sendiri, dan menetapkan tarifnya besok tidak menerbitkan apa pun.
+    ['tenant' => $tenant] = billableTenant(
+        daysUntilPeriodEnd: -2,
+        basePrice: 0,
+        status: Tenant::STATUS_GRACE,
+    );
+
+    Plan::query()->update(['base_price' => 100000]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
+
+    expect((float) $invoice->amount)->toBe(100000.0)
+        // Jatuh temponya tidak boleh di masa lalu: hari ini barulah pertama kali
+        // tenant melihat angkanya.
+        ->and($invoice->due_date->toDateString())->toBe(now()->toDateString());
+});
+
+test('a suspended tenant is not billed at all', function () {
+    ['tenant' => $tenant] = billableTenant(daysUntilPeriodEnd: -40, status: Tenant::STATUS_SUSPENDED);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Aksesnya sudah tertutup penuh. Menagih bulan yang tak bisa dipakai berarti
+    // menumbuhkan utang yang tak pernah diminta siapa pun — `[BL-051]`.
     expect(Invoice::where('tenant_id', $tenant->id)->count())->toBe(0);
 });
 
@@ -204,6 +251,43 @@ test('paying an auto-issued invoice moves the period onto the next anchor', func
     // Jangkar 31 dijepit Februari, dan tetap utuh — lihat `[BL-030]`.
     expect($renewed['current_period_start'])->toBe('2026-01-31')
         ->and($renewed['current_period_end'])->toBe('2026-02-28');
+});
+
+test('a lapse only ever produces one invoice, and one payment clears it', function () {
+    // Inilah yang membuat aturan "tunggakan tidak ditumpuk" di `renewPeriod()`
+    // tetap benar setelah tagihan terbit otomatis (`[BL-030]` × `[BL-044]`).
+    // Kekhawatirannya: tiap bulan terlewat punya tagihannya sendiri, jadi
+    // melompati periode berarti melompati tagihan. Yang menahannya adalah
+    // `current_period_end` yang tidak pernah maju selama tenant belum membayar
+    // — kunci `Y-m` periodenya membeku, dan penjaga periode-ganda menolak
+    // semua penerbitan sesudahnya.
+    Carbon::setTestNow('2026-01-24');
+
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 7);
+
+    foreach (['2026-01-24', '2026-02-01', '2026-03-05', '2026-04-10'] as $hari) {
+        Carbon::setTestNow($hari);
+        artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+    }
+
+    // Empat bulan menunggak, tetap satu tagihan — bukan empat.
+    $invoices = Invoice::where('tenant_id', $tenant->id)->get();
+    expect($invoices)->toHaveCount(1)
+        ->and($invoices->first()->period)->toBe('2026-01')
+        ->and($tenant->fresh()->status)->toBe(Tenant::STATUS_SUSPENDED);
+
+    app(InvoiceSettlement::class)->settle(
+        $invoices->first(),
+        InvoiceSettlement::SOURCE_PLATFORM_VERIFY,
+    );
+
+    // Satu pembayaran memulihkan satu periode ke depan — dan tidak ada tagihan
+    // lain yang tertinggal di belakangnya untuk dilompati.
+    $fresh = $subscription->fresh();
+    expect($fresh->current_period_start->toDateString())->toBe('2026-03-31')
+        ->and($fresh->current_period_end->toDateString())->toBe('2026-04-30')
+        ->and($tenant->fresh()->status)->toBe(Tenant::STATUS_ACTIVE)
+        ->and(Invoice::where('tenant_id', $tenant->id)->count())->toBe(1);
 });
 
 test('the reported counts separate issued, free, and unpriced', function () {

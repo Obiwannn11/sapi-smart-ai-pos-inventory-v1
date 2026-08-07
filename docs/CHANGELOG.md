@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-07 | HOTFIX | Langganan | Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau |
 | 2026-08-07 | HOTFIX | Langganan | Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c) |
 | 2026-08-06 | ADDITION | Platform | Paket Kedua Akhirnya Bisa Dihuni: Tenant Bisa Dipindahkan, Seat Bayarnya Ikut (BL-046) |
 | 2026-08-06 | ADDITION | Langganan | Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045) |
@@ -152,6 +153,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — menutup peninjauan yang dijanjikan `[BL-044]`/`[BL-030]`, dan menambal lubang yang ditemukan di dalamnya
+- **Dampak:** Service | Test | Dokumentasi
+- **Breaking Change:** Tidak. Tenant yang sudah punya tagihan untuk periodenya tidak menerima tagihan kedua — penjaga periode-ganda yang menolaknya, dan penjaga itu tidak berubah.
+- **Deskripsi:** Dua hal, keduanya berangkat dari satu pertanyaan yang ditinggalkan `[BL-044]`(b): apakah aturan "tunggakan tidak ditumpuk" di `renewPeriod()` masih benar sekarang setelah tagihan terbit sendiri?
+
+  **Jawabannya ya, dan alasannya sekarang tertulis.** Kekhawatirannya waktu itu: bila tiap periode punya tagihannya sendiri, maka `renewPeriod()` yang memajukan periode melewati bulan-bulan yang terlewat berarti memajukan tenant melewati **tagihan** yang belum dibayar. Ternyata tiap periode tidak pernah punya tagihannya sendiri. `current_period_end` hanya maju di dalam `renewPeriod()`, yang hanya berjalan saat tagihan dilunasi — jadi selama tenant belum membayar, kunci `Y-m` periodenya membeku dan penjaga periode-ganda menolak setiap penerbitan sesudahnya. Satu pelanggaran melahirkan tepat satu tagihan; satu pembayaran memulihkan tepat satu periode. Kedua aturan itu bertemu, bukan bertabrakan. Sekarang dipatok test yang menjalankan siklusnya empat bulan berturut-turut dan menuntut jumlah tagihannya tetap satu.
+
+  **Lubang yang ditemukan sambil memeriksanya sudah ditambal.** Penerbit hanya menagih tenant `trial` dan `active`, dengan alasan "tenant di masa tenggang tagihannya sudah terbit saat ia masih aktif". Alasan itu benar untuk tenant yang memang sudah ditagih — dan justru tidak berlaku untuk tenant yang lewat **tanpa** tagihan, yaitu dua keadaan yang penerbitnya sendiri buat: tarif Rp 0 dan tarif `null`. Bagi mereka pengecualiannya permanen: periodenya beku sehingga mereka tak akan pernah kembali `active` sendiri, dan menetapkan tarifnya besok tidak menerbitkan apa pun. Janji "menyembuhkan dirinya sendiri" di dokumentasi butir (b) tidak berlaku untuk mereka. Kini `grace` ikut ditagih; yang menahan tagihan kedua adalah penjaga periode-ganda, yang memang sudah memegang alasan sebenarnya dan tidak peduli status tenantnya.
+- **Alasan:** Bukan hipotesis. Per catatan `[BL-044]` 2026-08-06, `Kopi Story` beresolve ke Rp 0 dan akan turun ke masa tenggang **2026-08-25** tanpa satu pun tagihan. Sebelum perbaikan ini, menetapkan tarif Premium besok pun tidak akan menerbitkan apa-apa untuknya — ia menunggu di masa tenggang, lalu tertangguh, dan satu-satunya jalan keluarnya adalah pemilik SaaS mengetikkan tagihannya manual. Itu persis keadaan yang `[BL-044]` dibuat untuk menutup.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()` menyertakan `STATUS_GRACE`; jatuh tempo tidak lagi bisa lahir di masa lalu; `renewPeriod()` mencatat hasil peninjauannya beserta syarat yang akan mematahkannya
+  - `tests/Feature/Subscription/AutoInvoiceTest.php` — tiga test baru (tenant tenggang yang belum ditagih, tenant tertangguh yang tetap tidak ditagih, satu-pelanggaran-satu-tagihan); test masa tenggang yang lama kini benar-benar membuat tagihan pendahulunya alih-alih mengandaikannya
+  - `docs/BACKLOG.md` — `[BL-051]` baru; catatan peninjauan `[BL-044]` ditutup
+- **Keputusan yang Diambil:**
+  - **`suspended` tetap di luar penerbitan.** Aksesnya sudah tertutup penuh, dan menagih bulan yang tak bisa dipakai berarti menumbuhkan utang yang tak pernah diminta siapa pun. Akibatnya tenant yang ingin kembali tetap harus lewat pemilik SaaS — itu keputusan produk, bukan kelalaian, dan dicatat sebagai `[BL-051]` supaya dipilih dengan sadar, bukan diwarisi.
+  - **Jatuh tempo tagihan susulan = hari ini, bukan tanggal periodenya habis.** Tenant yang ditagih susulan di masa tenggang periodenya memang sudah lewat, tapi tagihan yang lahir sudah lewat tempo di hari yang sama membacanya seperti tunggakan yang ia abaikan — padahal hari itu barulah pertama kali ia melihat angkanya.
+  - **Aturan `[BL-030]` tidak diubah sama sekali.** Peninjauan yang dijanjikan menghasilkan pembenaran, bukan penggantian. Yang ditambahkan hanyalah alasannya dan test yang menjaganya — karena alasan yang tidak tertulis akan ditinjau ulang dari nol oleh orang berikutnya.
 
 ---
 

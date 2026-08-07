@@ -151,10 +151,24 @@ class SubscriptionService
      * lewat seluruhnya — tenant membayar setelah berbulan-bulan tertangguh —
      * periodenya dimajukan sampai berakhir di masa depan. Satu pembayaran
      * memulihkan satu periode ke depan, bukan menyeret tenant ke periode yang
-     * sudah usai lalu langsung menangguhkannya lagi. Keputusan ini perlu
-     * ditinjau ulang saat `[BL-044]` dikerjakan: begitu tagihan terbit otomatis
-     * tiap periode, tiap bulan yang terlewat punya tagihannya sendiri dan
-     * "melompati" periode berarti melompati tagihan.
+     * sudah usai lalu langsung menangguhkannya lagi.
+     *
+     * **Ditinjau ulang 2026-08-07, setelah `[BL-044]`(b) berjalan — aturannya
+     * tetap.** Kekhawatirannya waktu itu: begitu tagihan terbit otomatis tiap
+     * periode, tiap bulan yang terlewat punya tagihannya sendiri, jadi
+     * "melompati" periode berarti melompati tagihan. Itu tidak terjadi, karena
+     * `issueDuePeriodInvoices()` hanya menerbitkan satu tagihan per pelanggaran:
+     * `current_period_end` tidak pernah maju selama tenant belum membayar, jadi
+     * kunci `Y-m` periodenya membeku dan penjaga periode-ganda menolak semua
+     * penerbitan sesudahnya. Satu pembayaran memulihkan satu periode, dan hanya
+     * pernah ada satu tagihan langganan terbuka untuk dipulihkan — kedua aturan
+     * itu bertemu, bukan bertabrakan.
+     *
+     * Yang akan mematahkannya, bila kelak ditulis: penerbit yang menagih tiap
+     * bulan terlewat secara terpisah, atau penerbitan yang ikut berjalan untuk
+     * tenant `suspended` (yang periodenya juga beku). Keduanya melahirkan
+     * tagihan kedua, dan sejak saat itu melompati periode berarti benar-benar
+     * melompati uang. Lihat `[BL-051]`.
      *
      * @return array{current_period_start: string, current_period_end: string, billing_anchor_day: int}
      */
@@ -200,12 +214,31 @@ class SubscriptionService
      *     ditetapkan (`[BL-041]`(a)). Menerbitkan tagihan Rp 0 akan menuntut
      *     tenant mengunggah bukti transfer nol rupiah (`[BL-049]`), jadi tidak
      *     diterbitkan sama sekali. Menyembuhkan dirinya sendiri: begitu tarifnya
-     *     ditetapkan, tagihan mulai terbit tanpa satu baris kode pun berubah.
+     *     ditetapkan, tagihan mulai terbit tanpa satu baris kode pun berubah —
+     *     termasuk untuk tenant yang keburu turun ke masa tenggang sementara
+     *     tarifnya masih nol; lihat catatan `grace` di bawah.
      *   - **tarif tidak ada** — `resolveFor()` mengembalikan `null` untuk tenant
      *     Adaptif tanpa bracket yang cocok dan tanpa paket penampung, persis
      *     keadaan "menghilang dari penagihan tanpa satu pun tanda" yang
      *     diperingatkan `PricingService::fallbackPlanFor()`. Ia dicatat sebagai
      *     kejadian sensitif, karena ia salah setel, bukan kebijakan.
+     *
+     * **Masa tenggang ikut ditagih; penangguhan tidak.** Awalnya `grace`
+     * dikecualikan dengan alasan "tagihannya sudah terbit saat ia masih aktif" —
+     * benar untuk tenant yang memang sudah ditagih, dan justru tidak berlaku
+     * untuk tenant yang kedua sebabnya di atas membuatnya lewat tanpa tagihan.
+     * Bagi mereka pengecualian itu permanen: `current_period_end` tidak pernah
+     * maju selama tenant belum membayar, jadi ia tak akan pernah kembali ke
+     * `active` sendiri, dan menetapkan tarifnya besok tidak menerbitkan apa pun.
+     * Satu-satunya jalan keluar adalah pemilik SaaS mengetiknya manual — persis
+     * keadaan yang `[BL-044]` tutup. Alasan sebenarnya sudah dipegang penjaga
+     * periode-ganda di bawah, yang menolak tagihan kedua tanpa peduli status
+     * tenantnya, jadi pengecualian statusnya bisa dilepas tanpa membuka apa pun.
+     *
+     * `suspended` tetap di luar: aksesnya sudah tertutup penuh, dan menerbitkan
+     * tagihan atas bulan yang tak bisa dipakai berarti menumbuhkan utang yang
+     * tak pernah diminta siapa pun. Melonggarkannya adalah keputusan pemilik,
+     * bukan pembersihan kode — dicatat di `[BL-051]`.
      *
      * @return array{issued: int, free: int, unpriced: int}
      */
@@ -219,7 +252,7 @@ class SubscriptionService
         $unpriced = 0;
 
         $due = Tenant::query()
-            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE])
+            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE, Tenant::STATUS_GRACE])
             ->whereHas('subscription', fn ($query) => $query->whereDate('current_period_end', '<=', $horizon))
             ->with('subscription')
             ->get();
@@ -290,7 +323,13 @@ class SubscriptionService
                     'status' => Invoice::STATUS_UNPAID,
                     // Jatuh tempo = hari periode berjalan habis. Sesudah itu
                     // tenant masuk masa tenggang, bukan langsung tertutup.
-                    'due_date' => $periodStart->toDateString(),
+                    //
+                    // Tidak pernah di masa lalu. Tenant yang ditagih susulan di
+                    // masa tenggang periodenya memang sudah lewat, dan tagihan
+                    // yang lahir sudah lewat tempo hari itu juga membacanya
+                    // seperti tunggakan yang ia abaikan — padahal hari ini
+                    // barulah pertama kali ia melihat angkanya.
+                    'due_date' => $periodStart->max($today)->toDateString(),
                 ]);
 
                 PlatformAuditLog::record('invoices.auto-create', $invoice, [
