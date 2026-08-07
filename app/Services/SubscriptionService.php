@@ -343,6 +343,44 @@ class SubscriptionService
     }
 
     /**
+     * Pindahkan langganan ke paket lain.
+     *
+     * Sampai sekarang `plan_id` ditulis sekali seumur hidup langganan, di
+     * `startTrial()`, dan tidak ada satu pun jalur yang mengubahnya lagi
+     * (`[BL-046]`(2)). Akibatnya paket kedua hanya bisa dibuat, tidak bisa
+     * dihuni — dan keputusan pemilik 2026-08-01 ("tenant beromset tinggi hanya
+     * bisa Premium") tidak punya cara ditegakkan sama sekali.
+     *
+     * **Seat tambahan yang sudah dibayar ikut pindah.** Batas pengguna sebuah
+     * langganan adalah jatah paketnya ditambah seat yang dibelinya sendiri lewat
+     * tagihan `KIND_UPGRADE`. Menyalin `seats` apa adanya akan menelan jatah
+     * paket baru bagi tenant yang tak pernah membeli tambahan, sementara
+     * menyetelnya ke jatah paket baru saja akan mencabut seat yang sudah dibayar
+     * — keduanya kekeliruan yang baru terlihat berbulan-bulan kemudian, saat
+     * tenant menabrak batas yang tak pernah ia setujui. Yang dipertahankan adalah
+     * selisihnya, karena selisih itulah yang benar-benar ia beli.
+     *
+     * **Tarif periode berjalan tidak disentuh.** `price_locked` sudah memegang
+     * harga yang disepakati, dan `pricingAsOf()` menetapkan harga periode
+     * berikutnya dari aturan yang berdiri saat periodenya dibuka. Pemindahan di
+     * tengah periode karena itu berlaku pada tagihan berikutnya, bukan pada
+     * tagihan yang sedang berjalan.
+     */
+    public function changePlan(Subscription $subscription, Plan $plan): void
+    {
+        $subscription->loadMissing('plan');
+
+        $seatsDibeli = max(0, $subscription->seats - ($subscription->plan?->included_seats ?? 0));
+
+        $subscription->update([
+            'plan_id' => $plan->id,
+            'seats' => $plan->included_seats + $seatsDibeli,
+        ]);
+
+        $subscription->setRelation('plan', $plan);
+    }
+
+    /**
      * Jarak minimum antar perpindahan jalur harga, dalam bulan.
      */
     public static function trackSwitchMinimumMonths(): int

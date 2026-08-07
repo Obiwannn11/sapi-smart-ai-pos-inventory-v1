@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Invoice;
+use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\PlatformUser;
 use App\Models\Product;
@@ -311,4 +312,135 @@ test('batas pengguna tertutup bagi pemegang modul pembayaran saja', function () 
         ->assertForbidden();
 
     expect($subscription->fresh()->seats)->toBe(3);
+});
+
+// --- Perpindahan paket ---
+//
+// Sampai `[BL-046]`(2), `plan_id` ditulis sekali seumur hidup langganan dan tak
+// pernah berubah lagi — paket kedua bisa dibuat tapi tidak bisa dihuni, dan
+// keputusan "tenant beromset tinggi hanya bisa Premium" tidak punya cara
+// ditegakkan sama sekali.
+
+test('tenant bisa dipindahkan ke paket lain, dan perpindahannya berjejak', function () {
+    ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
+
+    $premium = Plan::factory()->create([
+        'name' => 'Premium 1',
+        'base_price' => 100000,
+        'included_seats' => 3,
+        'limits' => [Plan::LIMIT_AI_DAILY => 10],
+    ]);
+
+    actingAs($platformUser, 'platform');
+
+    // Paket menentukan tarif, jatah seat, dan kuota AI sekaligus. Perpindahan
+    // tanpa alasan tertulis adalah tiga perubahan yang tak satu pun bisa
+    // dijelaskan saat tenant menanyakannya.
+    put("/platform/subscriptions/{$subscription->id}/plan", ['plan_id' => $premium->id])
+        ->assertSessionHasErrors('reason');
+
+    expect($subscription->fresh()->plan_id)->not->toBe($premium->id);
+
+    put("/platform/subscriptions/{$subscription->id}/plan", [
+        'plan_id' => $premium->id,
+        'reason' => 'Omzetnya melewati batas jalur Harga Adaptif.',
+    ])->assertSessionHas('success');
+
+    expect($subscription->fresh()->plan_id)->toBe($premium->id);
+
+    $log = PlatformAuditLog::where('action', 'subscriptions.plan.update')->firstOrFail();
+
+    expect($log->severity)->toBe(PlatformAuditLog::SEVERITY_SENSITIVE)
+        ->and($log->meta['before']['plan'])->toBe('Dasar')
+        ->and($log->meta['after']['plan'])->toBe('Premium 1')
+        // Batas AI ikut dicatat: "dipindah ke Premium" tidak menjawab kenapa
+        // analisis AI tenant tiba-tiba ditolak atau tiba-tiba diperbolehkan.
+        ->and($log->meta['before']['ai_daily_limit'])->toBeNull()
+        ->and($log->meta['after']['ai_daily_limit'])->toBe(10)
+        ->and($log->meta['reason'])->toBe('Omzetnya melewati batas jalur Harga Adaptif.');
+});
+
+test('seat tambahan yang sudah dibayar ikut pindah bersama paketnya', function () {
+    ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
+
+    // Paket Dasar menjatah 1; batas 3 berarti 2 seat sudah dibeli lewat tagihan
+    // penambahan pengguna.
+    $premium = Plan::factory()->create(['name' => 'Premium', 'included_seats' => 5]);
+
+    actingAs($platformUser, 'platform')
+        ->put("/platform/subscriptions/{$subscription->id}/plan", [
+            'plan_id' => $premium->id,
+            'reason' => 'Naik paket.',
+        ])->assertSessionHas('success');
+
+    // Bukan 5 (jatah paket baru saja — mencabut seat yang sudah dibayar) dan
+    // bukan 3 (batas lama disalin apa adanya — menelan jatah paket barunya).
+    expect($subscription->fresh()->seats)->toBe(7);
+});
+
+test('memindahkan ke paket yang sedang dihuni ditolak tanpa menulis jejak', function () {
+    ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
+
+    actingAs($platformUser, 'platform')
+        ->put("/platform/subscriptions/{$subscription->id}/plan", [
+            'plan_id' => $subscription->plan_id,
+            'reason' => 'Salah klik.',
+        ])->assertSessionHas('error');
+
+    expect(PlatformAuditLog::where('action', 'subscriptions.plan.update')->count())->toBe(0);
+});
+
+test('paket yang sudah dihentikan bukan tujuan perpindahan yang sah', function () {
+    ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
+
+    $lama = Plan::factory()->inactive()->create(['name' => 'Promo Lawas']);
+    $planSemula = $subscription->plan_id;
+
+    actingAs($platformUser, 'platform')
+        ->put("/platform/subscriptions/{$subscription->id}/plan", [
+            'plan_id' => $lama->id,
+            'reason' => 'Coba paket lama.',
+        ])->assertSessionHasErrors('plan_id');
+
+    expect($subscription->fresh()->plan_id)->toBe($planSemula);
+});
+
+test('perpindahan paket tertutup bagi pemegang modul pembayaran saja', function () {
+    ['subscription' => $subscription] = platformBillingContext();
+
+    $premium = Plan::factory()->create();
+    $planSemula = $subscription->plan_id;
+
+    $hanyaTagihan = PlatformUser::factory()->create();
+    $hanyaTagihan->modules()->create(['module' => 'payments']);
+
+    actingAs($hanyaTagihan, 'platform')
+        ->put("/platform/subscriptions/{$subscription->id}/plan", [
+            'plan_id' => $premium->id,
+            'reason' => 'coba-coba',
+        ])
+        ->assertForbidden();
+
+    expect($subscription->fresh()->plan_id)->toBe($planSemula);
+});
+
+test('katalog paket hanya ikut bagi pemegang modul langganan', function () {
+    ['tenant' => $tenant] = platformBillingContext();
+
+    Plan::factory()->create(['name' => 'Premium']);
+
+    $hanyaTagihan = PlatformUser::factory()->create();
+    $hanyaTagihan->modules()->create(['module' => 'payments']);
+
+    // Yang tidak boleh memindahkan tenant tidak perlu menerima daftar tujuannya
+    // — tidak terkirim sama sekali, bukan terkirim lalu disembunyikan di Vue.
+    actingAs($hanyaTagihan, 'platform')
+        ->get("/platform/tenants/{$tenant->id}")
+        ->assertInertia(fn (Assert $page) => $page->where('plans', null)->etc());
+
+    ['platformUser' => $platformUser] = platformBillingContext();
+
+    actingAs($platformUser, 'platform')
+        ->get("/platform/tenants/{$tenant->id}")
+        ->assertInertia(fn (Assert $page) => $page->has('plans', 2)->etc());
 });

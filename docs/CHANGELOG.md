@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-06 | ADDITION | Platform | Paket Kedua Akhirnya Bisa Dihuni: Tenant Bisa Dipindahkan, Seat Bayarnya Ikut (BL-046) |
 | 2026-08-06 | ADDITION | Langganan | Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045) |
 | 2026-08-06 | DECISION | Produk | Gambar Produk Pindah ke Disk Privat, Diseragamkan Ukurannya, dan Punya Cadangan Inisial |
 | 2026-08-06 | ADDITION | Langganan | Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b) |
@@ -150,6 +151,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Paket Kedua Akhirnya Bisa Dihuni: Tenant Bisa Dipindahkan, Seat Bayarnya Ikut (BL-046)
+- **Tanggal:** 2026-08-06
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-046]`
+- **Dampak:** Service | Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak. `plan_id` tetap ditulis `startTrial()` seperti biasa; yang bertambah hanyalah cara mengubahnya setelah itu. Tenant yang tidak pernah dipindahkan berperilaku persis seperti sebelumnya.
+- **Deskripsi:** Sampai hari ini `plan_id` ditulis **sekali seumur hidup langganan** dan tidak ada satu pun jalur yang mengubahnya lagi. Akibatnya paket Premium yang sudah bisa dibuat dari `/platform/pricing-rules` hanya berupa baris data yang tak berpenghuni — dan keputusan pemilik 2026-08-01 ("tenant beromset tinggi hanya bisa Premium, tidak lagi berhak Adaptif") tidak punya cara ditegakkan sama sekali. Kini ada `PUT /platform/subscriptions/{subscription}/plan`: pemilik SaaS memindahkan tenant antar paket dari tab **Langganan** di rincian tenant, wajib beralasan, dan perpindahannya dicatat sensitif berikut paket, batas pengguna, dan kuota AI lama-barunya.
+- **Alasan:** Aksi platform lebih dulu, bukan permintaan mandiri owner (`[BL-046]`(d)). Pemindahan ke Premium karena omset melewati batas adalah keputusan penyedia layanan — kalau satu-satunya jalannya adalah owner meminta sendiri, keputusan yang menolak seseorang bersandar pada persetujuan orang itu.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `changePlan()`, satu-satunya tempat `plan_id` berpindah
+  - `app/Http/Controllers/Platform/SubscriptionController.php` — `updatePlan()` + `planSnapshot()`
+  - `routes/web.php` — `platform.subscriptions.plan.update`, digerbang `platform.can:subscriptions`
+  - `app/Services/Platform/AccountOverview.php` — `planCatalog()`, `plan_id`/`plan_base_price`/`plan_ai_daily_limit`
+  - `resources/js/Pages/Platform/Tenants/Show.vue` — panel "Paket" + modal perpindahan
+  - `tests/Feature/Platform/PlatformBillingTest.php` — 6 test baru
+- **Keputusan yang perlu diingat:**
+  - **Seat tambahan yang sudah dibayar ikut pindah.** Batas pengguna sebuah langganan adalah jatah paket **ditambah** seat yang dibelinya lewat tagihan `KIND_UPGRADE`. Menyalin `seats` apa adanya menelan jatah paket baru; menyetelnya ke jatah paket baru saja mencabut seat yang sudah dibayar. Yang dipertahankan adalah selisihnya — Dasar (jatah 1, batas 3) → Premium (jatah 5) menghasilkan **7**, bukan 5 dan bukan 3. Kekeliruan di sini baru terlihat berbulan-bulan kemudian, saat tenant menabrak batas yang tak pernah ia setujui.
+  - **Tarif periode berjalan tidak disentuh.** `price_locked` sudah memegang harga yang disepakati dan `pricingAsOf()` menetapkan harga periode berikutnya dari aturan yang berdiri saat periodenya dibuka. Perpindahan di tengah periode karena itu berlaku pada tagihan berikutnya — dan kalimat itu ditulis apa adanya di pesan sukses, supaya tidak perlu ditebak.
+  - **Digerbang `subscriptions`, bukan `pricing_rules`.** Yang diatur di sini bukan bentuk paketnya melainkan penempatan satu tenant. Staf yang boleh menyunting daftar paket tidak dengan sendirinya boleh memindahkan klien di antaranya.
+  - **Hanya paket `is_active` yang jadi tujuan.** Memindahkan tenant ke paket yang sudah dihentikan berarti menaruhnya di tarif yang tidak lagi ditawarkan kepada siapa pun.
+  - **Memilih paket yang sedang dihuni ditolak tanpa menulis jejak.** Jejak audit yang berisi "dipindahkan dari Dasar ke Dasar" hanya menambah baris yang harus dilewati saat mencari perpindahan yang benar-benar terjadi.
+  - **Batas AI dikirim `null` apa adanya, bukan diselesaikan jadi angka bawaan** — di payload maupun di jejak audit. Bedanya sama seperti di halaman Aturan Harga: "10/hari karena paket ini" tidak boleh terbaca sama dengan "10/hari karena kebetulan itu bawaannya hari ini".
+  - **Katalog paket hanya terkirim ke pemegang modul `subscriptions`.** Yang tidak boleh memindahkan tenant tidak menerima daftar tujuannya sama sekali — bukan menerimanya lalu disembunyikan di Vue.
+  - **Permintaan naik paket mandiri oleh owner sengaja belum dibuat.** Pola `Invoice` `KIND_UPGRADE` sudah ada untuk itu kelak, tapi harganya menunggu `[BL-041]`(a) dan `[BL-049]`: hari ini `extra_seat_price` paket `dasar` masih Rp 0, jadi jalur mandiri apa pun akan menerbitkan tagihan nol rupiah.
 
 ---
 

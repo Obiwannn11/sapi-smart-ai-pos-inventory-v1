@@ -351,6 +351,14 @@ Route::prefix('platform')
             Route::middleware('platform.can:subscriptions')->group(function () {
                 Route::put('/subscriptions/{subscription}/seats', [\App\Http\Controllers\Platform\SubscriptionController::class, 'updateSeats'])
                     ->name('subscriptions.seats.update');
+
+                // Perpindahan paket. Digerbang modul yang sama dengan batas
+                // pengguna, bukan `pricing_rules`: yang diatur di sini bukan
+                // bentuk paketnya melainkan penempatan satu tenant — dan staf
+                // yang boleh menyunting daftar paket tidak dengan sendirinya
+                // boleh memindahkan klien di antaranya.
+                Route::put('/subscriptions/{subscription}/plan', [\App\Http\Controllers\Platform\SubscriptionController::class, 'updatePlan'])
+                    ->name('subscriptions.plan.update');
             });
 
             // Modul: Aturan Harga — tarif sebagai data, bukan konstanta di kode.

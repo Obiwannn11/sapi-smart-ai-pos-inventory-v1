@@ -26,6 +26,7 @@ import {
 const props = defineProps({
     tenant: { type: Object, required: true },
     subscription: { type: Object, default: null },
+    plans: { type: Array, default: null },
     invoices: { type: Object, default: null },
     bracket: { type: String, default: null },
     revenue: { type: Object, default: null },
@@ -113,6 +114,45 @@ const submitSeats = () => {
     seatForm.put(`/platform/subscriptions/${props.subscription.id}/seats`, {
         preserveScroll: true,
         onSuccess: () => { showSeatForm.value = false; },
+    });
+};
+
+// --- Perpindahan paket ---
+// Batas AI paket dikirim `null` bila paketnya tidak menyetelnya sendiri. Dibaca
+// apa adanya, bukan diganti angka bawaan: "10 karena paket ini" tidak boleh
+// terbaca sama dengan "10 karena kebetulan itu bawaan hari ini".
+const aiLimitLabel = (limit) => {
+    if (limit === null || limit === undefined) {
+        return 'ikut bawaan platform';
+    }
+
+    return limit === 0 ? 'tidak termasuk' : `${limit}/hari`;
+};
+
+const showPlanForm = ref(false);
+
+const planForm = useForm({ plan_id: null, reason: '' });
+
+// Seat tambahan yang sudah dibayar ikut pindah, jadi batas barunya bisa dihitung
+// di layar sebelum tombolnya ditekan — aturan yang sama dengan yang ditegakkan
+// `SubscriptionService::changePlan()`.
+const targetPlan = computed(() => (props.plans ?? []).find((plan) => plan.id === planForm.plan_id) ?? null);
+
+const seatsAfterPlanChange = computed(() =>
+    targetPlan.value === null ? null : targetPlan.value.included_seats + purchasedSeats.value,
+);
+
+const openPlanForm = () => {
+    planForm.plan_id = props.subscription?.plan_id ?? null;
+    planForm.reason = '';
+    planForm.clearErrors();
+    showPlanForm.value = true;
+};
+
+const submitPlan = () => {
+    planForm.put(`/platform/subscriptions/${props.subscription.id}/plan`, {
+        preserveScroll: true,
+        onSuccess: () => { showPlanForm.value = false; },
     });
 };
 
@@ -416,6 +456,42 @@ const revenueColumns = [
                 </dl>
             </Panel>
 
+            <Panel title="Paket" description="Yang menentukan tarif dasar, jatah pengguna, dan kuota AI akun ini.">
+                <template #actions>
+                    <Button size="sm" variant="soft" @click="openPlanForm">Pindahkan paket</Button>
+                </template>
+
+                <dl class="space-y-3 text-sm">
+                    <div class="flex justify-between gap-4">
+                        <dt class="text-muted-foreground">Paket sekarang</dt>
+                        <dd class="text-right font-medium text-foreground">{{ subscription.plan_name ?? '—' }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                        <dt class="text-muted-foreground">Tarif dasar paket</dt>
+                        <dd class="text-right tabular-nums text-foreground">
+                            {{ formatRupiah(subscription.plan_base_price) }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                        <dt class="text-muted-foreground">Jatah pengguna</dt>
+                        <dd class="text-right tabular-nums text-foreground">
+                            {{ subscription.plan_included_seats ?? 0 }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                        <dt class="text-muted-foreground">Analisis AI</dt>
+                        <dd class="text-right text-foreground">{{ aiLimitLabel(subscription.plan_ai_daily_limit) }}</dd>
+                    </div>
+                </dl>
+
+                <template #footer>
+                    <p class="text-xs text-muted-foreground leading-relaxed">
+                        Tarif dasar paket hanya berlaku bagi akun jalur Harga Tetap. Untuk jalur Harga Adaptif yang
+                        tarifnya keluar dari aturan harga, paket tetap menentukan jatah pengguna dan kuota AI-nya.
+                    </p>
+                </template>
+            </Panel>
+
             <Panel title="Batas pengguna" description="Berapa akun yang boleh aktif, dan dari mana angkanya datang.">
                 <template #actions>
                     <Button size="sm" variant="soft" @click="openSeatForm">Atur batas pengguna</Button>
@@ -680,6 +756,58 @@ const revenueColumns = [
                 <div class="flex justify-end gap-3">
                     <Button variant="secondary" @click="showSeatForm = false">Batal</Button>
                     <Button :loading="seatForm.processing" @click="submitSeats">Simpan</Button>
+                </div>
+            </template>
+        </Modal>
+
+        <!-- ── Pindahkan paket ──────────────────────────────────────────── -->
+        <Modal
+            :show="showPlanForm"
+            title="Pindahkan paket"
+            description="Berlaku pada tagihan berikutnya. Tarif periode yang sedang berjalan tidak berubah."
+            @close="showPlanForm = false"
+        >
+            <form class="space-y-4" @submit.prevent="submitPlan">
+                <FormField label="Paket tujuan" :error="planForm.errors.plan_id">
+                    <select v-model="planForm.plan_id" :class="inputClass">
+                        <option v-for="plan in plans ?? []" :key="plan.id" :value="plan.id">
+                            {{ plan.name }} — {{ formatRupiah(plan.base_price) }},
+                            {{ plan.included_seats }} pengguna, AI {{ aiLimitLabel(plan.ai_daily_limit) }}
+                        </option>
+                    </select>
+
+                    <template #footnote>
+                        <span v-if="targetPlan && targetPlan.id !== subscription?.plan_id">
+                            Batas penggunanya menjadi
+                            <span class="font-medium text-foreground tabular-nums">{{ seatsAfterPlanChange }}</span>
+                            <template v-if="purchasedSeats > 0">
+                                = {{ targetPlan.included_seats }} dari paket baru + {{ purchasedSeats }} tambahan yang
+                                sudah dibayar — seat yang sudah dibeli tidak hangus karena pindah paket.
+                            </template>
+                            <template v-else>, mengikuti jatah paket barunya.</template>
+                        </span>
+                        <span v-else>Paket yang sedang berjalan. Pilih paket lain untuk memindahkannya.</span>
+                    </template>
+                </FormField>
+
+                <FormField
+                    label="Alasan"
+                    hint="Dicatat di jejak audit bersama paket, batas pengguna, dan kuota AI lama-barunya."
+                    :error="planForm.errors.reason"
+                >
+                    <textarea
+                        v-model="planForm.reason"
+                        rows="3"
+                        placeholder="Mis. omzetnya melewati batas jalur Harga Adaptif, dipindahkan ke Premium."
+                        :class="inputClass"
+                    />
+                </FormField>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
+                    <Button variant="secondary" @click="showPlanForm = false">Batal</Button>
+                    <Button :loading="planForm.processing" @click="submitPlan">Pindahkan</Button>
                 </div>
             </template>
         </Modal>

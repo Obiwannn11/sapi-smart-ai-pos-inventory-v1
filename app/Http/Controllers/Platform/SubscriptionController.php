@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Platform;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Platform\SubscriptionResource;
 use App\Models\Invoice;
+use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\PricingService;
+use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -35,6 +38,8 @@ use Inertia\Response;
  */
 class SubscriptionController extends Controller
 {
+    public function __construct(private readonly SubscriptionService $subscriptions) {}
+
     public function index(Request $request, PricingService $pricing): Response
     {
         $viewer = $request->user();
@@ -135,6 +140,80 @@ class SubscriptionController extends Controller
         ]);
 
         return back()->with('success', "Batas pengguna diubah dari {$sebelum} menjadi {$subscription->seats}.");
+    }
+
+    /**
+     * Pindahkan satu tenant ke paket lain.
+     *
+     * Ini tindakan pemilik SaaS, bukan permintaan pemilik toko, dan urutan itu
+     * disengaja (`[BL-046]`(d)): pemindahan ke Premium karena omsetnya melewati
+     * batas jalur Adaptif adalah keputusan penyedia layanan. Permintaan naik
+     * paket mandiri oleh owner boleh menyusul lewat pola `Invoice` `KIND_UPGRADE`
+     * yang sudah ada, tapi tidak boleh menjadi satu-satunya jalan — kalau tidak,
+     * keputusan yang menolak seseorang bersandar pada persetujuan orang itu
+     * sendiri.
+     *
+     * `reason` wajib, dengan alasan yang sama seperti pada batas pengguna:
+     * paket menentukan tarif, jatah seat, dan kuota AI sekaligus. Perpindahan
+     * tanpa alasan tertulis adalah tiga perubahan yang tak satu pun bisa
+     * dijelaskan saat tenant menanyakannya.
+     */
+    public function updatePlan(Request $request, Subscription $subscription): RedirectResponse
+    {
+        $validated = $request->validate([
+            // Hanya paket yang masih aktif. Memindahkan tenant ke paket yang
+            // sudah dihentikan berarti menaruhnya di tarif yang tidak lagi
+            // ditawarkan kepada siapa pun.
+            'plan_id' => ['required', 'integer', Rule::exists('plans', 'id')->where('is_active', true)],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $subscription->loadMissing('plan');
+
+        if ($subscription->plan_id === (int) $validated['plan_id']) {
+            return back()->with('error', 'Tenant ini sudah berada di paket tersebut.');
+        }
+
+        $plan = Plan::findOrFail($validated['plan_id']);
+        $sebelum = $this->planSnapshot($subscription);
+
+        $this->subscriptions->changePlan($subscription, $plan);
+
+        PlatformAuditLog::record('subscriptions.plan.update', $subscription, [
+            'tenant_id' => $subscription->tenant_id,
+            'before' => $sebelum,
+            'after' => $this->planSnapshot($subscription),
+            'reason' => $validated['reason'],
+        ]);
+
+        return back()->with(
+            'success',
+            "{$sebelum['plan']} → {$plan->name}. Tarif periode berjalan tidak berubah; paket barunya berlaku pada tagihan berikutnya.",
+        );
+    }
+
+    /**
+     * Keadaan paket sebuah langganan yang layak muncul di jejak audit.
+     *
+     * Batas pengguna dan kuota AI ikut, bukan hanya nama paketnya: satu
+     * perpindahan mengubah ketiganya sekaligus, dan "dipindah ke Premium" tidak
+     * menjawab pertanyaan yang benar-benar diajukan tenant — kenapa batas
+     * penggunanya berubah, dan kenapa analisis AI-nya tiba-tiba ditolak.
+     *
+     * @return array<string, mixed>
+     */
+    private function planSnapshot(Subscription $subscription): array
+    {
+        $plan = $subscription->plan;
+
+        return [
+            'plan' => $plan?->name,
+            'plan_id' => $subscription->plan_id,
+            'base_price' => $plan === null ? null : (float) $plan->base_price,
+            'seats' => $subscription->seats,
+            'included_seats' => $plan?->included_seats,
+            'ai_daily_limit' => $plan?->limit(Plan::LIMIT_AI_DAILY),
+        ];
     }
 
     /**

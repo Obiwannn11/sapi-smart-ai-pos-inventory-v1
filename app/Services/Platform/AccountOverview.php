@@ -3,6 +3,7 @@
 namespace App\Services\Platform;
 
 use App\Http\Resources\Platform\InvoiceResource;
+use App\Models\Plan;
 use App\Models\PlatformUser;
 use App\Models\Subscription;
 use App\Models\Tenant;
@@ -63,6 +64,10 @@ class AccountOverview
         return [
             'tenant' => $this->tenantPayload($tenant),
             'subscription' => $bolehLangganan ? $this->subscriptionPayload($tenant) : null,
+            // Katalog paket, untuk form perpindahan. Ikut hanya bagi pemegang
+            // modul langganan — yang tidak boleh memindahkan tenant tidak perlu
+            // menerima daftar tujuannya.
+            'plans' => $bolehLangganan ? $this->planCatalog() : null,
             'invoices' => $bolehTagihan ? $this->invoicePayload($tenant) : null,
             // Kelompok harga adalah LABEL, bukan angka rupiah — setara dengan
             // yang sudah tampil di daftar. Angka omzetnya hidup di rute
@@ -149,7 +154,15 @@ class AccountOverview
 
         return [
             'id' => $subscription->id,
+            'plan_id' => $subscription->plan_id,
             'plan_name' => $subscription->plan?->name,
+            'plan_base_price' => $subscription->plan === null
+                ? null
+                : (float) $subscription->plan->base_price,
+            // Dikirim apa adanya, `null` berarti paket ini tidak menyetel
+            // batasnya sendiri — bedanya harus tetap terlihat di layar, persis
+            // seperti di halaman Aturan Harga.
+            'plan_ai_daily_limit' => $subscription->plan?->limit(Plan::LIMIT_AI_DAILY),
             // Angka inilah yang menjawab "kenapa tiap toko beda seat-nya":
             // batasnya berangkat dari jatah paket, lalu naik sendiri tiap kali
             // tenant membayar penambahan pengguna. Tanpa keduanya berdampingan,
@@ -172,6 +185,41 @@ class AccountOverview
             'current_period_start' => $subscription->current_period_start?->toDateString(),
             'current_period_end' => $subscription->current_period_end?->toDateString(),
         ];
+    }
+
+    /**
+     * Paket yang bisa dihuni tenant, beserta apa saja yang berubah bila ia
+     * dipindahkan ke sana.
+     *
+     * Ketiga angkanya ikut — tarif, jatah pengguna, kuota AI — karena satu
+     * perpindahan menggerakkan ketiganya sekaligus. Daftar berisi nama paket
+     * saja akan membuat pemilik SaaS memindahkan tenant sambil menebak
+     * akibatnya.
+     *
+     * `ai_daily_limit` dikirim `null` bila paketnya tidak menyetel batas
+     * sendiri. Menyelesaikannya jadi angka bawaan di sini akan membuat "10 karena
+     * paket ini" tak bisa dibedakan dari "10 karena kebetulan itu bawaan hari
+     * ini" — bedaan yang sama yang dijaga halaman Aturan Harga.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function planCatalog(): array
+    {
+        return Plan::query()
+            ->where('is_active', true)
+            ->orderBy('base_price')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Plan $plan) => [
+                'id' => $plan->id,
+                'name' => $plan->name,
+                'base_price' => (float) $plan->base_price,
+                'included_seats' => $plan->included_seats,
+                'extra_seat_price' => (float) $plan->extra_seat_price,
+                'ai_daily_limit' => $plan->limit(Plan::LIMIT_AI_DAILY),
+                'is_adaptive_fallback' => $plan->is_adaptive_fallback,
+            ])
+            ->all();
     }
 
     /**
