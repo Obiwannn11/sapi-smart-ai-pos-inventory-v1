@@ -298,7 +298,28 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(a)** Di `advanceLifecycle()`, sebelum penerbitan tagihan: tenant yang `trial_ends_at`-nya sudah lewat dan masih di paket `free` dipindahkan ke `Plan` bawaan berbayar lewat `changePlan()`, dengan jejak `PlatformAuditLog`. Urutannya penting — pindah dulu, baru tagih, supaya tagihan pertamanya sudah memakai harga paket barunya.
   **(b)** Tujuannya jangan di-*hardcode* ke slug `paid-1`. Pola `is_adaptive_fallback` sudah membuktikan bentuk yang benar: satu penanda "paket tujuan setelah masa gratis" yang ditunjuk pemilik SaaS dari panel, sehingga mengganti paket masuk tidak menuntut deploy.
   **(c)** Beri tahu tenant **sebelum** hari-H, bukan lewat tagihan yang tiba-tiba muncul. `invoice_lead_days` = 7 sudah menyediakan jendelanya.
-  **(d)** Dua tenant lama (`trial_ends_at = null`, paket `free`) harus diputuskan terpisah: dipindahkan ke `paid-1` dengan pemberitahuan, atau dibiarkan gratis sebagai tenant demo. Selama belum diputuskan, keduanya akan jatuh ke tenggang. Terkait `price_locked = 0.00` di `[BL-041]`.
+  ~~**(d)** Dua tenant lama (`trial_ends_at = null`, paket `free`) harus diputuskan terpisah.~~ — **Dikerjakan 2026-08-07 atas keputusan pemilik.** Keduanya dipindahkan ke `paid-1` lewat `changePlan()`, seat bayarannya ikut: `Kopi Nusantara` 4 → 5, `Kopi Story` 5 → 6. `Kopi Nusantara` juga dijadwalkan keluar dari jalur Adaptif pada 2026-08-24 (omset Rp 105.946.000, di atas ambang) — `track_reverts_at` disetel langsung, **bukan** lewat `scheduleTrackRevert()`, karena metode itu menghapus `tenant_monthly_metrics` (ia dibangun untuk consent yang dicabut) sementara di sini omsetnya justru bukti yang membenarkan pemindahannya. Jejaknya di `platform_audit_logs`. Keduanya kini resolve ke Rp 100.000 — tapi lihat `[BL-058]`, salah satunya masih tidak akan tertagih.
+
+---
+
+### [BL-058] Tagihan Upgrade Seat Menelan Tagihan Langganan di Bulan yang Sama — Tenant Lolos Sebulan Tanpa Terlihat
+- **Ditemukan:** 2026-08-07 (dry-run penerbitan setelah dua tenant dipindahkan ke `paid-1`)
+- **Sumber:** Telaah — dry-run pada 2026-08-17 menerbitkan **1** tagihan padahal dua tenant sama-sama jatuh tempo
+- **Status:** Open — **lubang pendapatan yang aktif**, bukan hutang teknis
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `where('tenant_id')->where('period')->exists()`, **tanpa menyaring `kind`**
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`: penjaga yang sama, cacat yang sama
+  - `database/migrations/...` — indeks unik `(tenant_id, period, kind)` **sudah** menyaring `kind`; penjaga aplikasinya yang tidak
+- **Deskripsi:**
+  Penjaga periode-ganda menolak penerbitan bila tenant sudah punya tagihan **apa pun** untuk periode `Y-m` itu. Tagihan penambahan seat (`KIND_UPGRADE`) memakai `period` yang sama dengan tagihan langganan, jadi satu penambahan seat di bulan X **membatalkan tagihan langganan bulan X** — diam-diam.
+  Diamnya yang paling mahal: `continue` terjadi **sebelum** harga dihitung, jadi tenant itu tidak masuk hitungan `issued`, `free`, maupun `unpriced`. Keluaran perintah terlihat normal. Satu-satunya cara menyadarinya adalah menghitung sendiri berapa tenant yang seharusnya ditagih.
+- **Terbukti pada data nyata:** `Kopi Story` memegang tagihan `upgrade` Rp 0 untuk periode `2026-08` (sisa alur seat gratis sebelum `[BL-049]` ditutup). Dry-run `issueDuePeriodInvoices()` pada 2026-08-17 menghasilkan `terbit=1, gratis=0, tanpa-tarif=0` — padahal **dua** tenant jatuh tempo dengan tarif Rp 100.000. Tenant itu mendapat sebulan gratis tanpa satu baris pun yang mencatatnya.
+- **Usulan Perbaikan:**
+  **(a)** Kedua penjaga menyaring `kind = KIND_SUBSCRIPTION`. Itu bukan sekadar tambalan — ia **menyelaraskan penjaga aplikasi dengan indeks uniknya**, yang sejak awal sudah memakai `(tenant_id, period, kind)`. Hari ini keduanya menjaga dua hal yang berbeda, persis yang diperingatkan `[BL-050]`.
+  **(b)** Tambahkan test yang menerbitkan tagihan langganan untuk tenant yang sudah punya tagihan `upgrade` di periode yang sama. Tanpa itu perbaikannya akan hilang lagi pada penulisan ulang berikutnya.
+  **(c)** Pertimbangkan menghitung tenant yang dilewati penjaga sebagai counter tersendiri di keluaran perintah. Tiga counter yang ada semuanya menjelaskan **kenapa** sebuah tagihan tidak terbit; yang keempat ini satu-satunya yang tidak, dan itulah yang membuatnya tak terlihat.
+  **(d)** Perbaikan ini **tidak** menunggu `[BL-050]`. Entri itu soal indeks yang membatasi upgrade jadi sekali sebulan; yang ini soal penjaga aplikasi yang menyaring terlalu longgar. Arah keduanya berlawanan, dan yang ini jauh lebih mahal.
 
 ---
 
