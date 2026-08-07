@@ -262,6 +262,12 @@ const submitUpgrade = () => upgradeForm.post('/langganan/tambah-pengguna', { pre
 
 const upgradeCost = computed(() => formatRupiah(props.upgrade.extra_seat_price * upgradeForm.additional_seats));
 
+// Selama paketnya mematok Rp 0 per pengguna tambahan, tidak ada tagihan yang
+// terbit dan tidak ada bukti yang perlu diunggah — jadi panelnya tidak boleh
+// menjanjikan keduanya. Turunan dari harga, bukan saklar tersendiri: begitu
+// tarifnya ditetapkan (`[BL-041]`), panel ini kembali sendiri ke alur tagihan.
+const seatsAreFree = computed(() => props.upgrade.extra_seat_price <= 0);
+
 // --- Unggah bukti bayar ---
 const proofTarget = ref(null);
 const proofForm = useForm({ proof: null });
@@ -595,7 +601,11 @@ const invoiceStatusLabels = {
             <div v-if="tenant.is_owner" class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
                 <p class="text-sm font-medium text-foreground">Tambah pengguna</p>
 
-                <p v-if="upgrade.is_provisional_blocked" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                <p v-if="seatsAreFree" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    Paket {{ subscription.plan_name }} tidak menagih biaya per pengguna, jadi penambahannya
+                    langsung aktif — tanpa tagihan dan tanpa bukti transfer.
+                </p>
+                <p v-else-if="upgrade.is_provisional_blocked" class="mt-1 text-sm text-muted-foreground leading-relaxed">
                     Bukti bayar Anda pernah ditolak, jadi penambahan pengguna kini baru berlaku setelah bukti
                     transfernya kami periksa.
                 </p>
@@ -605,6 +615,10 @@ const invoiceStatusLabels = {
 
                 <p v-if="upgrade.has_open_request" class="mt-3 text-sm text-foreground">
                     Ada permintaan penambahan yang belum selesai. Selesaikan tagihannya di bawah dulu.
+                </p>
+
+                <p v-else-if="upgrade.closed_for_period" class="mt-3 text-sm text-foreground">
+                    Penambahan pengguna untuk bulan ini sudah tercatat. Tambahan berikutnya bisa diajukan bulan depan.
                 </p>
 
                 <form v-else class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitUpgrade">
@@ -624,7 +638,7 @@ const invoiceStatusLabels = {
                         :disabled="upgradeForm.processing"
                         class="px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50"
                     >
-                        Terbitkan tagihan · {{ upgradeCost }}
+                        {{ seatsAreFree ? 'Tambah pengguna · gratis' : `Terbitkan tagihan · ${upgradeCost}` }}
                     </button>
                 </form>
 

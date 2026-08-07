@@ -115,6 +115,10 @@ class SubscriptionController extends Controller
             'upgrade' => [
                 'extra_seat_price' => (float) $subscription->plan->extra_seat_price,
                 'has_open_request' => $subscriptions->openUpgradeInvoice($tenant) !== null,
+                // Batas satu upgrade per bulan kalender, turunan indeks unik
+                // `(tenant_id, period, kind)`. Dikirim supaya formulirnya tidak
+                // ditawarkan untuk kemudian ditolak — lihat `[BL-050]`.
+                'closed_for_period' => $subscriptions->hasUpgradeInvoiceThisPeriod($tenant),
                 // Dinyatakan terus terang, bukan disembunyikan: tenant berhak
                 // tahu bahwa penambahan pengguna kini menunggu pemeriksaan, dan
                 // kenapa.

@@ -509,6 +509,32 @@ class SubscriptionService
     }
 
     /**
+     * Sudah ada tagihan penambahan seat untuk periode berjalan?
+     *
+     * `invoices` memakai indeks unik `(tenant_id, period, kind)`, jadi satu
+     * tenant hanya bisa punya SATU tagihan upgrade per bulan kalender — batas
+     * yang lahir sebagai efek samping penjaga tagihan-langganan-ganda, bukan
+     * sebagai keputusan produk.
+     *
+     * Selama tagihan upgrade tidak pernah selesai, batas itu tak pernah
+     * tersentuh: penjaga `openUpgradeInvoice()` sudah menolak permintaan kedua
+     * lebih dulu. Begitu upgrade bisa rampung — gratis seketika (`[BL-049]`)
+     * atau lewat verifikasi bukti — permintaan kedua di bulan yang sama lolos
+     * penjaga itu lalu menabrak indeksnya sebagai galat 500.
+     *
+     * Diperiksa di sini supaya yang terlihat tenant adalah kalimat yang bisa
+     * dimengerti. Melonggarkan batasnya sendiri menuntut perubahan skema dan
+     * dicatat terpisah di `[BL-050]`.
+     */
+    public function hasUpgradeInvoiceThisPeriod(Tenant $tenant): bool
+    {
+        return $tenant->invoices()
+            ->where('kind', Invoice::KIND_UPGRADE)
+            ->where('period', now()->format('Y-m'))
+            ->exists();
+    }
+
+    /**
      * Tagihan yang masih menuntut perhatian tenant — yang paling mendesak
      * lebih dulu.
      *

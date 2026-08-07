@@ -6,6 +6,7 @@ use App\Models\PlatformUser;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Billing\InvoiceSettlement;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -175,6 +176,120 @@ test('tenant yang pernah ditolak tidak lagi dapat pemberlakuan langsung', functi
     expect($invoice->fresh()->status)->toBe(Invoice::STATUS_AWAITING_VERIFICATION)
         // Tetap boleh membayar dan naik paket — hanya saja menunggu diperiksa.
         ->and($subscription->fresh()->seats)->toBe(1);
+});
+
+// --- Tagihan Rp 0 (`[BL-049]`) ---
+
+test('penambahan pengguna gratis langsung berlaku tanpa menuntut bukti transfer', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+    Plan::default()->update(['extra_seat_price' => 0]);
+
+    actingAs($owner);
+    requestUpgrade(2)->assertSessionHas('success');
+
+    $invoice = Invoice::firstOrFail();
+
+    expect($invoice->status)->toBe(Invoice::STATUS_PAID)
+        ->and($invoice->settled_via)->toBe(InvoiceSettlement::SOURCE_ZERO_AMOUNT)
+        // Tak ada yang memeriksa apa pun — tak ada yang perlu diperiksa.
+        ->and($invoice->verified_by)->toBeNull()
+        ->and($invoice->proof_path)->toBeNull()
+        ->and($subscription->fresh()->seats)->toBe(3);
+});
+
+test('permintaan kedua di bulan yang sama ditolak dengan kalimat, bukan galat 500', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+    Plan::default()->update(['extra_seat_price' => 0]);
+
+    actingAs($owner);
+    requestUpgrade(1)->assertSessionHas('success');
+
+    // Yang pertama sudah lunas, jadi `openUpgradeInvoice()` tidak lagi
+    // menahannya — dan tanpa penjaga periode, `Invoice::create()` menabrak
+    // indeks unik `(tenant_id, period, kind)`.
+    requestUpgrade(1)->assertSessionHas('error');
+
+    expect(Invoice::where('kind', Invoice::KIND_UPGRADE)->count())->toBe(1)
+        ->and($subscription->fresh()->seats)->toBe(2);
+});
+
+test('bukti yang pernah ditolak tidak mengunci penambahan yang memang gratis', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+    $subscription->update(['provisional_blocked' => true]);
+    Plan::default()->update(['extra_seat_price' => 0]);
+
+    actingAs($owner);
+    requestUpgrade(2);
+
+    // `provisional_blocked` menahan seat yang naik tanpa dibayar. Di sini tak
+    // ada yang harus dibayar, jadi menegakkannya hanya membuat jalan buntu.
+    expect($subscription->fresh()->seats)->toBe(3);
+});
+
+test('tagihan langganan Rp 0 TIDAK ikut dilunasi sendiri', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+
+    $invoice = Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'kind' => Invoice::KIND_SUBSCRIPTION,
+        'amount' => 0,
+    ]);
+
+    expect(app(InvoiceSettlement::class)->settleIfFree($invoice))->toBeFalse()
+        ->and($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID)
+        // Melunasinya akan menulis `price_locked = 0` lalu memperpanjang
+        // periodenya — mewariskan tarif nol yang belum pernah diputuskan.
+        ->and((float) $subscription->fresh()->price_locked)->toBe(0.0)
+        ->and($tenant->fresh()->status)->toBe(Tenant::STATUS_ACTIVE);
+});
+
+test('perintah melunasi tagihan gratis yang terlanjur menggantung', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = makeUpgradeContext(seats: 2);
+
+    $invoice = Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'kind' => Invoice::KIND_UPGRADE,
+        'amount' => 0,
+        'grants_seats' => 5,
+        'previous_seats' => 2,
+    ]);
+
+    $this->artisan('subscriptions:settle-free-upgrades', ['--dry-run' => true])->assertSuccessful();
+
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID)
+        ->and($subscription->fresh()->seats)->toBe(2);
+
+    $this->artisan('subscriptions:settle-free-upgrades')->assertSuccessful();
+
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_PAID)
+        ->and($subscription->fresh()->seats)->toBe(5);
+
+    // Idempoten: tidak ada lagi yang tersisa untuk dilunasi.
+    $this->artisan('subscriptions:settle-free-upgrades')
+        ->expectsOutputToContain('Tidak ada tagihan penambahan pengguna Rp 0 yang menggantung.')
+        ->assertSuccessful();
+});
+
+test('perintah tidak menyentuh tagihan gratis yang buktinya sudah ditolak', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = makeUpgradeContext(seats: 2);
+
+    $invoice = Invoice::factory()->rejected()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'kind' => Invoice::KIND_UPGRADE,
+        'amount' => 0,
+        'grants_seats' => 5,
+        'previous_seats' => 2,
+    ]);
+
+    $this->artisan('subscriptions:settle-free-upgrades')->assertSuccessful();
+
+    // Ada orang yang pernah memutuskan ini. Membatalkannya diam-diam bukan
+    // tugas sebuah perintah backfill.
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_REJECTED)
+        ->and($subscription->fresh()->seats)->toBe(2);
 });
 
 // --- Verifikasi ---

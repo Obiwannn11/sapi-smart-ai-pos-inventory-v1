@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Services\Billing\InvoiceSettlement;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,10 +17,16 @@ use Illuminate\Http\Request;
  * Menunggu verifikasi manual berarti warung yang kedatangan kasir baru pagi ini
  * tidak bisa mempekerjakannya sampai seseorang membuka email — dan itu alasan
  * yang buruk untuk menahan sebuah usaha.
+ *
+ * Bila paketnya tidak menagih biaya per pengguna, seluruh alur itu dilewati —
+ * lihat `InvoiceSettlement::settleIfFree()`.
  */
 class UpgradeController extends Controller
 {
-    public function __construct(private readonly SubscriptionService $subscriptions) {}
+    public function __construct(
+        private readonly SubscriptionService $subscriptions,
+        private readonly InvoiceSettlement $settlement,
+    ) {}
 
     public function store(Request $request): RedirectResponse
     {
@@ -33,7 +40,22 @@ class UpgradeController extends Controller
             return back()->with('error', 'Masih ada permintaan penambahan pengguna yang belum selesai. Selesaikan dulu yang itu.');
         }
 
-        $this->subscriptions->requestSeatUpgrade($tenant, $validated['additional_seats']);
+        // Batas satu tagihan upgrade per bulan datang dari indeks uniknya. Tanpa
+        // penjaga ini, permintaan kedua di bulan yang sama menabrak indeks itu
+        // dan yang dilihat tenant adalah halaman galat.
+        if ($this->subscriptions->hasUpgradeInvoiceThisPeriod($tenant)) {
+            return back()->with('error', 'Penambahan pengguna untuk bulan ini sudah tercatat. Ajukan lagi bulan depan, atau ajukan sekaligus dalam satu permintaan.');
+        }
+
+        $invoice = $this->subscriptions->requestSeatUpgrade($tenant, $validated['additional_seats']);
+
+        // Tagihannya tetap diterbitkan lebih dulu, bukan dilewati: `grants_seats`
+        // dan `previous_seats` hidup di sana, dan itulah satu-satunya catatan
+        // bahwa seat pernah berpindah dari sekian ke sekian. Yang dilewati
+        // adalah tuntutan membayarnya, bukan jejaknya.
+        if ($this->settlement->settleIfFree($invoice)) {
+            return back()->with('success', 'Pengguna tambahan langsung aktif. Paket Anda tidak menagih biaya per pengguna, jadi tidak ada yang perlu ditransfer.');
+        }
 
         return back()->with('success', 'Tagihan penambahan pengguna diterbitkan. Unggah bukti transfer untuk mengaktifkannya.');
     }

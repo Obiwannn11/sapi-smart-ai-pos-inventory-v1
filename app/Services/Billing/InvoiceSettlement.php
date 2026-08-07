@@ -43,6 +43,9 @@ class InvoiceSettlement
     /** Tombol peragaan; hanya hidup untuk tenant demo di luar produksi. */
     public const SOURCE_SIMULATION = 'simulation';
 
+    /** Nominalnya nol — tidak ada yang perlu ditransfer, apalagi dibuktikan. */
+    public const SOURCE_ZERO_AMOUNT = 'zero_amount';
+
     public function __construct(private readonly SubscriptionService $subscriptions) {}
 
     /**
@@ -98,6 +101,43 @@ class InvoiceSettlement
 
             $invoice->tenant->update(['status' => Tenant::STATUS_ACTIVE]);
         });
+    }
+
+    /**
+     * Lunasi seketika bila tagihannya tidak menagih apa pun.
+     *
+     * Tagihan Rp 0 yang menunggu bukti transfer meminta tenant membuktikan
+     * bahwa ia sudah mentransfer nol rupiah, lalu meminta pemilik SaaS
+     * memeriksa bukti itu. Kodenya bekerja persis seperti dirancang; yang
+     * salah adalah menuntut pembuktian atas sesuatu yang tidak pernah
+     * dibayarkan. Lihat `[BL-049]`.
+     *
+     * **Hanya tagihan upgrade**, dan batas itu disengaja. Tagihan langganan
+     * bernilai nol tidak pernah lahir sendiri — `issueDuePeriodInvoices()`
+     * menolak menerbitkannya selama tarifnya belum ditetapkan. Yang masih bisa
+     * melahirkannya hanyalah pemilik SaaS yang mengetiknya sendiri di panel
+     * (`min:0` di `Platform\InvoiceController::store()`), dan melunasinya di
+     * sini akan menulis `price_locked = 0` lalu memperpanjang periodenya —
+     * diam-diam mewariskan tarif nol yang belum pernah diputuskan siapa pun
+     * (`[BL-041]`). Keputusan sebesar itu milik orang, bukan efek samping.
+     *
+     * **`provisional_blocked` sengaja tidak diperiksa.** Penjaga itu ada untuk
+     * menahan seat yang naik tanpa dibayar; ketika tak ada yang harus dibayar,
+     * ia tidak menjaga apa pun — dan menegakkannya justru mengunci tenant di
+     * jalan buntu, karena bukti transfer nol rupiah tidak akan pernah ada yang
+     * bisa mengunggahnya.
+     *
+     * @return bool apakah tagihannya benar-benar dilunasi di sini
+     */
+    public function settleIfFree(Invoice $invoice): bool
+    {
+        if (! $invoice->isUpgrade() || $invoice->isPaid() || (float) $invoice->amount > 0.0) {
+            return false;
+        }
+
+        $this->settle($invoice, self::SOURCE_ZERO_AMOUNT);
+
+        return true;
     }
 
     /**
