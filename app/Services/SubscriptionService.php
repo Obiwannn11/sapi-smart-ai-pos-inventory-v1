@@ -15,19 +15,35 @@ class SubscriptionService
     public function __construct(private readonly PricingService $pricing) {}
 
     /**
-     * Panjang masa coba untuk tenant baru, dalam hari.
+     * Panjang masa gratis untuk tenant baru, dalam bulan.
      */
-    public static function trialDays(): int
+    public static function trialMonths(): int
     {
-        return (int) config('subscription.trial_days');
+        return (int) config('subscription.trial_months');
     }
 
     /**
-     * Panjang masa tenggang hanya-baca sebelum penangguhan, dalam hari.
+     * Panjang masa tenggang sebelum penangguhan, dalam hari.
      */
     public static function graceDays(): int
     {
         return (int) config('subscription.grace_days');
+    }
+
+    /**
+     * Hari tenggat ke berapa peringatan berubah jadi mengganggu.
+     */
+    public static function graceIntensiveFromDay(): int
+    {
+        return (int) config('subscription.grace_intensive_from_day');
+    }
+
+    /**
+     * Hari tenggat ke berapa kemampuan menulis dicabut.
+     */
+    public static function graceLockFromDay(): int
+    {
+        return (int) config('subscription.grace_lock_from_day');
     }
 
     /**
@@ -101,16 +117,22 @@ class SubscriptionService
     }
 
     /**
-     * Buka masa coba 1 bulan di paket dasar, jalur harga normal.
+     * Buka masa gratis di paket `free`, jalur harga normal.
      *
      * Jalur normal adalah default yang disengaja: tenant belum menyetujui apa
-     * pun soal pembukaan data omset, jadi jalur subsidi tidak boleh menjadi
+     * pun soal pembukaan data omset, jadi jalur adaptif tidak boleh menjadi
      * keadaan awal siapa pun.
+     *
+     * **Panjangnya dihitung dalam bulan, bukan hari** (keputusan pemilik
+     * 2026-08-07). `addMonthsNoOverflow()` dan bukan `addMonths()`: dua bulan
+     * dari 31 Desember tanpa penjaga luberan mendarat di 3 Maret dan melewatkan
+     * Februari sama sekali.
      */
     public function startTrial(Tenant $tenant): Subscription
     {
         $plan = Plan::default();
-        $trialEndsAt = now()->addDays(self::trialDays());
+        $mulai = now();
+        $trialEndsAt = $mulai->copy()->addMonthsNoOverflow(self::trialMonths());
 
         return $tenant->subscription()->create([
             'plan_id' => $plan->id,
@@ -119,13 +141,19 @@ class SubscriptionService
             'seat_high_water' => 1,
             'price_locked' => null,
             'trial_ends_at' => $trialEndsAt,
-            'current_period_start' => now()->toDateString(),
+            'current_period_start' => $mulai->toDateString(),
             'current_period_end' => $trialEndsAt->toDateString(),
             // Jangkar tanggal tagih lahir di sini dan tidak pernah berubah lagi.
             // Ia harus ditulis sekarang, bukan disimpulkan belakangan: begitu
             // sebuah periode berakhir di bulan pendek, tanggalnya sudah terjepit
             // dan hari aslinya tak bisa dipulihkan dari data mana pun.
-            'billing_anchor_day' => $trialEndsAt->day,
+            //
+            // Diambil dari tanggal DAFTAR, bukan tanggal masa gratis berakhir:
+            // keduanya hampir selalu sama, kecuali ketika akhir masa gratis
+            // terjepit bulan pendek. Yang daftar 31 Desember berakhir 28
+            // Februari — mengambil jangkar dari situ mengunci tanggal tagihnya
+            // di 28 selamanya, padahal yang ia minta tanggal 31.
+            'billing_anchor_day' => $mulai->day,
         ]);
     }
 

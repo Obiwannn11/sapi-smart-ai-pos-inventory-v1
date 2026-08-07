@@ -56,7 +56,7 @@ test('dashboard membawa ringkasan langganan tenant', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->where('subscription.status', Tenant::STATUS_TRIAL)
             ->where('subscription.track', Subscription::TRACK_NORMAL)
-            ->where('subscription.trial_ends_at', now()->addDays(SubscriptionService::trialDays())->toDateString())
+            ->where('subscription.trial_ends_at', now()->addMonthsNoOverflow(SubscriptionService::trialMonths())->toDateString())
             // Tenant baru belum ditagih apa pun. Null, bukan nominal nol —
             // yang ditampilkan berbeda: diam, bukan "Rp 0".
             ->where('subscription.outstanding', null)

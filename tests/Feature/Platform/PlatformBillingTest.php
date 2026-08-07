@@ -351,7 +351,7 @@ test('tenant bisa dipindahkan ke paket lain, dan perpindahannya berjejak', funct
     $log = PlatformAuditLog::where('action', 'subscriptions.plan.update')->firstOrFail();
 
     expect($log->severity)->toBe(PlatformAuditLog::SEVERITY_SENSITIVE)
-        ->and($log->meta['before']['plan'])->toBe('Dasar')
+        ->and($log->meta['before']['plan'])->toBe('Free')
         ->and($log->meta['after']['plan'])->toBe('Premium 1')
         // Batas AI ikut dicatat: "dipindah ke Premium" tidak menjawab kenapa
         // analisis AI tenant tiba-tiba ditolak atau tiba-tiba diperbolehkan.
@@ -363,7 +363,7 @@ test('tenant bisa dipindahkan ke paket lain, dan perpindahannya berjejak', funct
 test('seat tambahan yang sudah dibayar ikut pindah bersama paketnya', function () {
     ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
 
-    // Paket Dasar menjatah 1; batas 3 berarti 2 seat sudah dibeli lewat tagihan
+    // Paket Free menjatah 2; batas 3 berarti 1 seat sudah dibeli lewat tagihan
     // penambahan pengguna.
     $premium = Plan::factory()->create(['name' => 'Premium', 'included_seats' => 5]);
 
@@ -375,7 +375,7 @@ test('seat tambahan yang sudah dibayar ikut pindah bersama paketnya', function (
 
     // Bukan 5 (jatah paket baru saja — mencabut seat yang sudah dibayar) dan
     // bukan 3 (batas lama disalin apa adanya — menelan jatah paket barunya).
-    expect($subscription->fresh()->seats)->toBe(7);
+    expect($subscription->fresh()->seats)->toBe(6);
 });
 
 test('memindahkan ke paket yang sedang dihuni ditolak tanpa menulis jejak', function () {

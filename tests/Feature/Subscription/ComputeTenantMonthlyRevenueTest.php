@@ -145,7 +145,19 @@ test('bracket dipilih dari angka omset', function () {
     expect($pricing->bracketFor(1_500_000)['label'])->toBe('A')
         ->and($pricing->bracketFor(3_000_000)['label'])->toBe('B')
         ->and($pricing->bracketFor(9_000_000)['label'])->toBe('C')
-        ->and($pricing->bracketFor(50_000_000)['label'])->toBe('D');
+        ->and($pricing->bracketFor(20_000_000)['label'])->toBe('D');
+});
+
+test('tangga adaptif berhenti di ambang teratas, tidak menelan omset besar', function () {
+    $pricing = app(PricingService::class);
+
+    // Bracket D dulu tak berbatas atas, sehingga tenant beromset berapa pun
+    // tertahan di sana selamanya. Sejak keputusan pemilik 2026-08-07 tangganya
+    // ditutup: di atas Rp 50 juta tidak ada keringanan lagi, dan tenant
+    // membayar `paid-1` harga penuh.
+    expect($pricing->bracketFor(49_999_999)['label'])->toBe('D')
+        ->and($pricing->bracketFor(50_000_000))->toBeNull()
+        ->and($pricing->bracketFor(200_000_000))->toBeNull();
 });
 
 test('batas bracket tidak tumpang tindih di titik sambungnya', function () {

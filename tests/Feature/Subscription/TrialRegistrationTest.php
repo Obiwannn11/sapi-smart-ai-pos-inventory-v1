@@ -20,7 +20,7 @@ function registerTenant(string $email = 'budi@example.com'): Tenant
     return Tenant::where('name', 'Warung Sapi')->latest('id')->firstOrFail();
 }
 
-test('registrasi membuka masa coba sebulan di paket dasar jalur normal', function () {
+test('registrasi membuka masa gratis di paket free jalur normal', function () {
     $tenant = registerTenant();
     $subscription = $tenant->subscription;
 
@@ -28,7 +28,7 @@ test('registrasi membuka masa coba sebulan di paket dasar jalur normal', functio
         ->and($subscription->plan->slug)->toBe(Plan::SLUG_DEFAULT)
         ->and($subscription->pricing_track)->toBe(Subscription::TRACK_NORMAL)
         ->and($subscription->trial_ends_at->toDateString())
-        ->toBe(now()->addDays(SubscriptionService::trialDays())->toDateString());
+        ->toBe(now()->addMonthsNoOverflow(SubscriptionService::trialMonths())->toDateString());
 });
 
 test('tenant hasil registrasi berstatus trial', function () {

@@ -6,11 +6,13 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\SubscriptionService;
 
-test('paket dasar tersedia langsung dari migrasi', function () {
+test('paket free tersedia langsung dari migrasi, dengan jatah dua seat', function () {
     $plan = Plan::default();
 
+    // Dua, bukan satu: satu seat berarti tidak ada kasir yang bisa masuk, dan
+    // paket inilah wajah produk selama masa gratis.
     expect($plan->slug)->toBe(Plan::SLUG_DEFAULT)
-        ->and($plan->included_seats)->toBe(1)
+        ->and($plan->included_seats)->toBe(2)
         ->and($plan->is_active)->toBeTrue();
 });
 
@@ -28,7 +30,7 @@ test('tenant trial dan aktif boleh menulis, tenggang dan suspend tidak', functio
         ->and(Tenant::factory()->suspended()->create()->canWrite())->toBeFalse();
 });
 
-test('ensureFor membuka trial sebulan dan tidak membuat langganan kedua', function () {
+test('ensureFor membuka masa gratis dan tidak membuat langganan kedua', function () {
     $tenant = Tenant::factory()->create();
     $service = app(SubscriptionService::class);
 
@@ -39,7 +41,7 @@ test('ensureFor membuka trial sebulan dan tidak membuat langganan kedua', functi
         ->and(Subscription::where('tenant_id', $tenant->id)->count())->toBe(1)
         ->and($first->pricing_track)->toBe(Subscription::TRACK_NORMAL)
         ->and($first->trial_ends_at->toDateString())
-        ->toBe(now()->addDays(SubscriptionService::trialDays())->toDateString());
+        ->toBe(now()->addMonthsNoOverflow(SubscriptionService::trialMonths())->toDateString());
 });
 
 test('jalur subsidi tidak pernah jadi keadaan awal', function () {

@@ -127,16 +127,21 @@ test('arrears are not stacked — a long-suspended tenant lands in a live period
 
 // ── Jangkar dibawa dari awal & tidak hilang ──────────────────────────────────
 
-test('a new trial records its billing anchor', function () {
-    Carbon::setTestNow('2026-01-01');
+test('a new trial anchors on its signup date, not on when the free period ends', function () {
+    Carbon::setTestNow('2026-12-31');
 
     $tenant = Tenant::factory()->create();
     $subscription = app(SubscriptionService::class)->startTrial($tenant);
 
-    // Masa coba 30 hari dari 1 Januari berakhir 31 Januari — persis tanggal yang
-    // paling rentan meluber, dan justru itu yang perlu tersimpan.
-    expect($subscription->current_period_end->toDateString())->toBe('2026-01-31')
-        ->and($subscription->billing_anchor_day)->toBe(31);
+    // Dua bulan dari 31 Desember terjepit ke 28 Februari — Februari memang tidak
+    // punya tanggal 31. Jangkar yang diambil dari akhir masa gratis akan
+    // mengunci tanggal tagih di 28 SELAMANYA, padahal yang didaftarkan tanggal
+    // 31. Diambil dari tanggal daftar, penjepitan itu tinggal di Februari saja
+    // dan Maret kembali ke 31.
+    expect($subscription->current_period_end->toDateString())->toBe('2027-02-28')
+        ->and($subscription->billing_anchor_day)->toBe(31)
+        ->and($subscription->nextAnchoredDateAfter($subscription->current_period_end)->toDateString())
+        ->toBe('2027-03-31');
 });
 
 test('an older subscription without an anchor gets one on its first renewal', function () {

@@ -13,11 +13,17 @@ class Plan extends Model
     use HasFactory;
 
     /**
-     * Slug paket dasar yang selalu ada — ditulis oleh migrasi `plans`, dipakai
-     * saat registrasi memberi trial. Merujuk slug, bukan id, supaya tidak
+     * Slug paket bawaan yang selalu ada — ditulis oleh migrasi `plans`, dipakai
+     * saat registrasi membuka masa gratis. Merujuk slug, bukan id, supaya tidak
      * terikat auto-increment yang bisa berbeda antar pemasangan.
+     *
+     * Berganti dari `dasar` menjadi `free` oleh migrasi
+     * `rename_default_plan_to_free` (2026-08-07). Keduanya harus berpindah
+     * bersama: `default()` memakai `firstOrFail()`, jadi konstanta yang
+     * mendahului migrasinya akan menggagalkan pendaftaran, bukan diam-diam
+     * memilih paket yang salah.
      */
-    public const SLUG_DEFAULT = 'dasar';
+    public const SLUG_DEFAULT = 'free';
 
     /**
      * Batas AI harian, dalam `limits`. Kunci yang tidak ada berarti "ikut
