@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-07 | HOTFIX | Langganan | Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c) |
 | 2026-08-06 | ADDITION | Platform | Paket Kedua Akhirnya Bisa Dihuni: Tenant Bisa Dipindahkan, Seat Bayarnya Ikut (BL-046) |
 | 2026-08-06 | ADDITION | Langganan | Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045) |
 | 2026-08-06 | DECISION | Produk | Gambar Produk Pindah ke Disk Privat, Diseragamkan Ukurannya, dan Punya Cadangan Inisial |
@@ -151,6 +152,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c)
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — menutup butir (b) dan (c) `[BL-049]`; butir (a) tetap menunggu `[BL-041]`(a)
+- **Dampak:** Service | Controller | Command | Frontend | Test
+- **Breaking Change:** Tidak. Tagihan upgrade bernilai lebih dari nol menempuh alur bukti transfer persis seperti sebelumnya.
+- **Deskripsi:** Paket `dasar` mematok `extra_seat_price = 0`, jadi panel "Tambah pengguna" menerbitkan tagihan **Rp 0** — lalu menahan seat barunya sampai tenant mengunggah bukti bahwa ia sudah mentransfer nol rupiah, dan meminta pemilik SaaS memeriksa bukti itu. Kodenya bekerja persis seperti dirancang; yang keliru adalah menuntut pembuktian atas sesuatu yang tidak pernah dibayarkan. Kini tagihan upgrade Rp 0 **lunas seketika** lewat `InvoiceSettlement::settleIfFree()`, seat-nya langsung berlaku, dan panelnya berkata apa adanya: "Tambah pengguna · gratis", tanpa menjanjikan tagihan maupun unggahan.
+- **Alasan:** Tagihan yang menggantung ini bukan hipotesis. Per 2026-08-07 ada satu di basis data pengembangan — `Kopi Story`, seat 2 → 5, Rp 0, jatuh tempo **2026-08-08** — yang tidak akan pernah bisa diselesaikan siapa pun lewat jalur yang tersedia.
+- **File Terdampak:**
+  - `app/Services/Billing/InvoiceSettlement.php` — `settleIfFree()` + `SOURCE_ZERO_AMOUNT`
+  - `app/Http/Controllers/Billing/UpgradeController.php` — pelunasan seketika & penjaga periode
+  - `app/Services/SubscriptionService.php` — `hasUpgradeInvoiceThisPeriod()`
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `upgrade.closed_for_period`
+  - `app/Console/Commands/SettleFreeSeatUpgrades.php` — `subscriptions:settle-free-upgrades`
+  - `resources/js/Pages/Billing/Show.vue` — `seatsAreFree`, label & keterangan panel
+  - `tests/Feature/Subscription/ProvisionalUpgradeTest.php` — 6 test baru
+- **Keputusan yang perlu diingat:**
+  - **Tagihannya tetap terbit, yang dilewati adalah tuntutan membayarnya.** `grants_seats` dan `previous_seats` hidup di baris tagihan itu, dan itulah satu-satunya catatan bahwa seat pernah berpindah dari sekian ke sekian — `revertUpgrade()` pun bersandar padanya. Melompati penerbitannya akan menghemat satu baris dan menghapus jejaknya.
+  - **Hanya tagihan `KIND_UPGRADE`, dan batas itu disengaja.** Tagihan langganan Rp 0 tidak pernah lahir sendiri: `issueDuePeriodInvoices()` menolak menerbitkannya selama tarifnya belum ditetapkan. Yang masih bisa melahirkannya hanya pemilik SaaS yang mengetiknya di panel (`min:0`), dan melunasinya otomatis akan menulis `price_locked = 0` lalu memperpanjang periodenya — diam-diam mewariskan tarif nol yang belum pernah diputuskan siapa pun (`[BL-041]`). Ada test yang menjaga batas ini.
+  - **`provisional_blocked` sengaja tidak diperiksa di jalur gratis.** Penjaga itu menahan seat yang naik tanpa dibayar; ketika tak ada yang harus dibayar ia tidak menjaga apa pun, dan menegakkannya justru mengunci tenant di jalan buntu — bukti transfer nol rupiah tidak akan pernah ada yang bisa mengunggahnya.
+  - **`settled_via = 'zero_amount'`, `verified_by` tetap null.** Sejalan dengan jalur simulasi: kolom itu menjawab "siapa yang memeriksa", dan tidak ada yang memeriksa apa pun di sini.
+  - **Panelnya turunan dari harga, bukan saklar tersendiri.** Begitu `extra_seat_price` ditetapkan bukan nol, panel dan alurnya kembali sendiri ke tagihan + bukti transfer, tanpa satu baris kode pun berubah — pola yang sama dengan `issueDuePeriodInvoices()`.
+- **Ditemukan saat mengerjakannya (sudah diperbaiki):** indeks unik `invoices (tenant_id, period, kind)` membatasi satu tagihan upgrade per tenant per bulan kalender. Selama tagihan upgrade tidak pernah selesai, batas itu tak pernah tersentuh — penjaga `openUpgradeInvoice()` menolak permintaan kedua lebih dulu. Begitu upgrade bisa rampung, permintaan kedua di bulan yang sama lolos penjaga itu lalu **menabrak indeksnya sebagai galat 500**. Cacat ini sudah ada sebelum perubahan ini (jalur bukti transfer + verifikasi juga merampungkan upgrade), hanya saja tarif Rp 0 membuatnya jauh lebih mudah dicapai. Ditutup dengan `hasUpgradeInvoiceThisPeriod()` yang menolaknya sebagai kalimat, bukan halaman galat. **Melonggarkan batasnya sendiri menuntut perubahan skema dan dicatat sebagai `[BL-050]`.**
+- **Catatan Migrasi:** tidak ada migrasi. Tagihan Rp 0 yang terlanjur menggantung dibereskan sekali jalan dengan `php artisan subscriptions:settle-free-upgrades` (punya `--dry-run`). Sengaja perintah, bukan migrasi: ia mengubah seat tenant, dan perubahan semacam itu pantas dijalankan sadar-sadar alih-alih ikut terbawa `migrate` saat rilis. Tagihan berstatus `rejected` tidak disentuh — ada orang yang pernah memutuskannya.
 
 ---
 

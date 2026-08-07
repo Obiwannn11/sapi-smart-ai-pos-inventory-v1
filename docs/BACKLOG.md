@@ -172,8 +172,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-049] "Tambah Pengguna" Menerbitkan Tagihan Rp 0 dan Meminta Bukti Transfernya — Harganya Belum Ada, dan Kursi Tidak Pernah Bisa Turun
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Permintaan pemilik saat merapikan halaman Langganan — "tambah pengguna masih under development pricing-nya"
-- **Status:** Open — **terhalang `[BL-041]`(a) saja** sejak 2026-08-06; mekanismenya sudah jadi, angkanya yang belum
-- **Prioritas:** Medium
+- **Status:** Open — **butir (b) & (c) SELESAI 2026-08-07**; sisa butir (a) yang terhalang `[BL-041]`(a), dan butir (d) yang sebagian besar ternyata sudah terjawab
+- **Prioritas:** Low (turun dari Medium: alur menggelikannya sudah tidak ada; yang tersisa keputusan angka)
 - **Area Terdampak:**
   - `app/Services/SubscriptionService.php:215-231` — `requestSeatUpgrade()`: `amount = plan->extra_seat_price × additional_seats`
   - `app/Services/SubscriptionService.php:75-90` — `startTrial()`: **setiap** tenant lahir di paket `dasar`
@@ -190,6 +190,32 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(c) Sembunyikan atau tandai panelnya sampai (a) terjawab.** Pilihan paling jujur untuk sekarang: tampilkan panel dengan keterangan bahwa penambahan pengguna sedang disiapkan, alih-alih tombol yang bekerja tapi menghasilkan tagihan tak bermakna.
   **(d) Putuskan cara kursi bisa turun.** Bukan dengan membuang `seat_high_water`, melainkan memberinya batas waktu: mis. nilai tertinggi **dalam periode berjalan**, yang direset tiap penerbitan tagihan. Itu tetap menutup celah "pangkas seat sesaat sebelum ditagih" — celah yang jadi alasan keberadaannya — sambil membiarkan tenant yang benar-benar mengecil ikut mengecil tagihannya. Berkaitan dengan `[BL-044]` karena reset-nya menempel di momen penerbitan tagihan.
   ~~**Bergantung pada `[BL-046]`** (paket kedua harus bisa dihuni)~~ — **terjawab 2026-08-06:** tenant sudah bisa dipindahkan ke Premium dari panel platform, jadi `extra_seat_price` yang bukan nol kini bisa benar-benar berlaku bagi seseorang. **Tinggal `[BL-041]`(a)** (angka paket `dasar`-nya). Perhatikan urutannya saat butir (a) dikerjakan: begitu ada tenant di Premium, panel "Tambah pengguna" untuknya **berhenti** menerbitkan tagihan Rp 0 dan mulai menagih 15.000/12.500/10.000 per seat — jadi butir (b) dan (c) berlaku untuk tenant `dasar` saja, bukan untuk semua.
+- **Pemutakhiran 2026-08-07 — butir (b) & (c) SELESAI.** Lihat entri CHANGELOG *"Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c)"*. Yang sekarang berjalan:
+  - `InvoiceSettlement::settleIfFree()` melunasi tagihan upgrade Rp 0 seketika (`settled_via = 'zero_amount'`, `verified_by` null), jadi seat-nya langsung berlaku tanpa unggahan dan tanpa antrean pemeriksaan yang tidak memeriksa apa pun. **Hanya `KIND_UPGRADE`** — tagihan langganan Rp 0 sengaja tidak ikut, karena melunasinya akan menulis `price_locked = 0` lalu memperpanjang periodenya, mewariskan tarif nol yang belum pernah diputuskan (`[BL-041]`).
+  - Panel "Tambah pengguna" membaca harganya: selama Rp 0 ia berbunyi "Tambah pengguna · gratis" dan menyatakan terus terang tidak ada tagihan maupun bukti transfer. Turunan dari harga, bukan saklar — begitu `[BL-041]`(a) menetapkan angkanya, panelnya kembali sendiri ke alur tagihan.
+  - Tagihan yang terlanjur menggantung dibereskan `php artisan subscriptions:settle-free-upgrades`. Dijalankan 2026-08-07: satu tagihan (`Kopi Story`, seat 2 → 5, jatuh tempo 2026-08-08) lunas, seat-nya berlaku.
+- **Koreksi terhadap butir (d) di atas — sebagian besar sudah terjawab, dan catatannya sudah usang saat ditulis ulang.** Entri ini menyebut "`seat_high_water` hanya naik" dan mengusulkan memberinya batas periode. Usul itu **sudah terpasang sejak 2026-08-06** (commit `50428e1`, entri `[BL-045]`): `InvoiceSettlement::settle()` menulis `'seat_high_water' => $subscription->activeSeatsUsed()` tiap kali tagihan **langganan** dilunasi, jadi puncaknya memang direset tiap periode, persis seperti yang diminta. `recordSeatUsage()` yang hanya menaikkan tetap benar — ia mengukur puncak *dalam* periode berjalan.
+  **Yang masih terbuka dari (d), dan lebih sempit dari yang tertulis semula:** reset itu menempel pada **pelunasan** tagihan langganan. Tenant yang tarifnya Rp 0 tidak pernah ditagih (`issueDuePeriodInvoices()` menolak menerbitkannya), jadi tidak pernah ada pelunasan, jadi puncak seat-nya **tidak pernah direset** — kembali menjadi "hanya naik" persis seperti keluhan asalnya. Ini hilang sendiri begitu `[BL-041]`(a) menetapkan tarifnya. Sampai saat itu, jangan bangun mekanisme reset kedua; yang perlu diperiksa hanyalah apakah tarif sudah ditetapkan.
+
+### [BL-050] Satu Tenant Hanya Bisa Menambah Pengguna Sekali per Bulan Kalender
+- **Ditemukan:** 2026-08-07 (saat mengerjakan `[BL-049]`)
+- **Sumber:** Test yang gagal dengan galat SQL, bukan telaah — permintaan upgrade kedua di bulan yang sama menabrak indeks unik
+- **Status:** Open — sudah tidak berbahaya (ditolak dengan kalimat), tapi batasnya sendiri belum dicabut
+- **Prioritas:** Low sekarang; naik jadi Medium begitu `extra_seat_price` bukan nol lagi dan penambahan pengguna jadi jalur berbayar yang sungguhan
+- **Area Terdampak:**
+  - `database/migrations/2026_07_24_190001_add_upgrade_columns_to_invoices_table.php:34` — `unique(['tenant_id', 'period', 'kind'])`
+  - `app/Services/SubscriptionService.php` — `hasUpgradeInvoiceThisPeriod()`, penjaga yang menahannya sekarang
+  - `app/Http/Controllers/Billing/UpgradeController.php` — tempat penjaga itu dipanggil
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `upgrade.closed_for_period`
+  - `resources/js/Pages/Billing/Show.vue` — kalimat penggantinya di panel
+- **Deskripsi:**
+  Indeks unik `(tenant_id, period, kind)` lahir sebagai penjaga tagihan-langganan-ganda: satu tenant tidak boleh ditagih dua kali untuk bulan yang sama. Efek sampingnya tidak pernah dimaksudkan — karena tagihan upgrade juga memakai kolom `period` berformat `Y-m`, tenant hanya bisa punya **satu tagihan penambahan pengguna per bulan kalender**.
+  Selama tagihan upgrade tidak pernah selesai, batas itu tidak pernah tersentuh: `openUpgradeInvoice()` sudah menolak permintaan kedua lebih dulu, dengan kalimat yang masuk akal. Begitu upgrade bisa rampung — gratis seketika (`[BL-049]`) atau lewat verifikasi bukti — permintaan kedua di bulan yang sama lolos penjaga itu dan menabrak indeksnya sebagai **galat 500**. Sudah ditutup 2026-08-07 dengan penjaga yang menolaknya sebagai kalimat, jadi yang tersisa bukan cacat melainkan batasnya sendiri.
+  Kenapa batas itu tetap layak dicabut: warung yang mempekerjakan dua orang di bulan yang sama adalah kejadian biasa, bukan kasus tepi. Jalan memutarnya ada — ajukan sekaligus dalam satu permintaan, `max:20` — tapi itu menuntut tenant tahu lebih dulu berapa orang yang akan ia rekrut sebulan ke depan.
+- **Usulan Perbaikan:**
+  Uniknya sebenarnya hanya dibutuhkan untuk `KIND_SUBSCRIPTION`; tagihan upgrade tidak butuh keunikan apa pun. MySQL tidak punya indeks unik parsial, jadi pola yang portabel adalah **kolom kunci turunan yang null untuk upgrade** — mis. `period_key` berisi `period` untuk tagihan langganan dan `NULL` untuk upgrade, dengan `unique(['tenant_id', 'period_key'])`. MySQL maupun SQLite sama-sama mengabaikan baris ber-NULL pada indeks unik, jadi penjaga tagihan-ganda tetap utuh sementara upgrade bebas berulang.
+  **Yang wajib ikut diperiksa saat mengerjakannya:** `issueDuePeriodInvoices()` dan `Platform\InvoiceController::store()` sama-sama memakai `where('period', ...)->exists()` sebagai penjaga periode-ganda, bukan indeksnya. Keduanya harus ikut berpindah ke kunci yang baru, kalau tidak penjaga aplikasinya dan penjaga basis datanya akan menjaga dua hal yang berbeda.
+  Setelah itu, `hasUpgradeInvoiceThisPeriod()` beserta prop `closed_for_period` dan kalimatnya di `Show.vue` dibuang — ketiganya ada semata-mata untuk membungkus batas ini dengan sopan.
 
 ---
 
