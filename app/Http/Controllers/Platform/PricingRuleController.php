@@ -62,6 +62,7 @@ class PricingRuleController extends Controller
                 // "10/hari karena kebetulan itu bawaannya hari ini".
                 'ai_daily_limit' => $plan->limit(Plan::LIMIT_AI_DAILY),
                 'is_adaptive_fallback' => $plan->is_adaptive_fallback,
+                'is_post_trial_target' => $plan->is_post_trial_target,
             ]),
             // Bawaan platform, untuk ditampilkan sebagai angka yang berlaku bila
             // paket tidak menyetel batasnya sendiri.
@@ -210,11 +211,12 @@ class PricingRuleController extends Controller
 
         $sebelum = $this->planSnapshot($plan);
 
-        $plan->fill(Arr::except($validated, ['ai_daily_limit', 'is_adaptive_fallback']));
+        $plan->fill(Arr::except($validated, ['ai_daily_limit', 'is_adaptive_fallback', 'is_post_trial_target']));
         $plan->setLimit(Plan::LIMIT_AI_DAILY, $validated['ai_daily_limit']);
         $plan->save();
 
         $plan->setAdaptiveFallback($validated['is_adaptive_fallback']);
+        $plan->setPostTrialTarget($validated['is_post_trial_target']);
 
         // Nilai lama DAN baru sama-sama dicatat. Mencatat hanya nilai barunya
         // membuat pertanyaan "naik dari berapa?" tak terjawab justru saat
@@ -234,11 +236,12 @@ class PricingRuleController extends Controller
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', Rule::unique('plans', 'slug')],
         ]);
 
-        $plan = Plan::create(Arr::except($validated, ['ai_daily_limit', 'is_adaptive_fallback']) + ['is_active' => true]);
+        $plan = Plan::create(Arr::except($validated, ['ai_daily_limit', 'is_adaptive_fallback', 'is_post_trial_target']) + ['is_active' => true]);
         $plan->setLimit(Plan::LIMIT_AI_DAILY, $validated['ai_daily_limit']);
         $plan->save();
 
         $plan->setAdaptiveFallback($validated['is_adaptive_fallback']);
+        $plan->setPostTrialTarget($validated['is_post_trial_target']);
 
         PlatformAuditLog::record('plans.create', $plan, $this->planSnapshot($plan->fresh()) + [
             'name' => $plan->name,
@@ -264,16 +267,19 @@ class PricingRuleController extends Controller
             // menyertakan AI sama sekali.
             'ai_daily_limit' => ['present', 'nullable', 'integer', 'min:0', 'max:1000'],
             'is_adaptive_fallback' => ['required', 'boolean'],
+            'is_post_trial_target' => ['required', 'boolean'],
         ];
     }
 
     /**
      * Nilai paket yang layak muncul di jejak audit.
      *
-     * Batas dan peran penampung ikut, bukan cuma angka rupiahnya: menaikkan
-     * kuota AI sebuah paket menaikkan tagihan kunci bersama, dan menunjuk
-     * penampung baru memindahkan tarif setiap tenant adaptif yang tak cocok
-     * aturan mana pun. Keduanya keputusan berbiaya, jadi keduanya berjejak.
+     * Batas dan kedua peran ikut, bukan cuma angka rupiahnya: menaikkan kuota
+     * AI sebuah paket menaikkan tagihan kunci bersama, menunjuk penampung baru
+     * memindahkan tarif setiap tenant adaptif yang tak cocok aturan mana pun,
+     * dan menunjuk tujuan pasca-gratis baru menentukan paket yang dihuni setiap
+     * tenant yang masa gratisnya habis sesudahnya. Ketiganya keputusan berbiaya,
+     * jadi ketiganya berjejak.
      *
      * @return array<string, mixed>
      */
@@ -285,6 +291,7 @@ class PricingRuleController extends Controller
             'extra_seat_price' => (float) $plan->extra_seat_price,
             'ai_daily_limit' => $plan->limit(Plan::LIMIT_AI_DAILY),
             'is_adaptive_fallback' => $plan->is_adaptive_fallback,
+            'is_post_trial_target' => $plan->is_post_trial_target,
         ];
     }
 

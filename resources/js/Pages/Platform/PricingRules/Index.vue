@@ -87,6 +87,11 @@ const aiLimitLabel = (plan) => {
 
 const fallbackPlan = computed(() => props.plans.find((plan) => plan.is_adaptive_fallback) ?? null);
 
+// Tanpa penunjukan ini, tenant yang masa gratisnya habis tidak berpindah ke mana
+// pun — ia tetap di paket Rp 0, tidak tertagih, lalu jatuh ke masa tenggang
+// (`[BL-052]`). Kegagalannya sunyi di sisi tenant, jadi ia harus berisik di sini.
+const postTrialPlan = computed(() => props.plans.find((plan) => plan.is_post_trial_target) ?? null);
+
 const planColumns = [
     { key: 'name', label: 'Paket' },
     { key: 'tier', label: 'Golongan' },
@@ -114,6 +119,7 @@ const planForm = useForm({
     extra_seat_price: 0,
     ai_daily_limit: '',
     is_adaptive_fallback: false,
+    is_post_trial_target: false,
 });
 
 // Kolom kosong berarti "ikut bawaan platform" dan harus sampai ke server
@@ -133,6 +139,7 @@ const openPlan = (plan) => {
     planForm.extra_seat_price = plan.extra_seat_price;
     planForm.ai_daily_limit = plan.ai_daily_limit === null ? '' : plan.ai_daily_limit;
     planForm.is_adaptive_fallback = plan.is_adaptive_fallback;
+    planForm.is_post_trial_target = plan.is_post_trial_target;
     planForm.clearErrors();
     editingPlan.value = plan;
 };
@@ -157,6 +164,7 @@ const newPlanForm = useForm({
     extra_seat_price: 0,
     ai_daily_limit: '',
     is_adaptive_fallback: false,
+    is_post_trial_target: false,
 });
 
 const openPlanCreate = () => {
@@ -381,6 +389,13 @@ const confirmDelete = () => {
                         tone="info"
                         title="Tenant jalur Harga Adaptif yang tidak cocok aturan mana pun ditagih dengan tarif paket ini"
                     />
+                    <StatusBadge
+                        v-if="plan.is_post_trial_target"
+                        class="mt-1.5"
+                        label="Tujuan setelah masa gratis"
+                        tone="info"
+                        title="Tenant yang masa gratisnya habis dipindahkan ke paket ini"
+                    />
                 </td>
                 <td :class="cellClass">
                     <StatusBadge :label="planTier(plan).label" :tone="planTier(plan).tone" />
@@ -537,6 +552,18 @@ const confirmDelete = () => {
                         aturan mana pun tidak punya tarif sama sekali, dan tagihannya harus diketik manual. Tunjuk satu
                         paket lewat <span class="font-medium">Ubah paket → “Paket penampung jalur Adaptif”</span>.
                     </p>
+                    <p v-if="postTrialPlan">
+                        Tenant yang masa gratisnya habis dipindahkan ke paket
+                        <span class="font-medium text-foreground">{{ postTrialPlan.name }}</span>
+                        ({{ formatRupiah(postTrialPlan.base_price) }}/bulan), tujuh hari sebelum hari-H — bersamaan
+                        dengan terbitnya tagihan berbayar pertamanya, supaya angkanya tiba sebagai pemberitahuan.
+                    </p>
+                    <p v-else class="text-amber-700">
+                        Belum ada paket tujuan setelah masa gratis. Selama begitu, tenant yang masa gratisnya habis
+                        tetap duduk di paket Rp 0: ia tidak ditagih apa pun, lalu jatuh ke masa tenggang dan
+                        tertangguh tanpa pernah melihat satu tagihan. Tunjuk satu paket lewat
+                        <span class="font-medium">Ubah paket → “Paket tujuan setelah masa gratis”</span>.
+                    </p>
                     <p>
                         Aturan yang sudah berlaku tidak disunting di tempat — ia dasar harga periode yang sudah lewat.
                         Tombol <span class="font-medium text-foreground">Revisi</span> menerbitkan versi baru berlabel
@@ -615,6 +642,23 @@ const confirmDelete = () => {
                         </span>
                     </span>
                 </label>
+
+                <label class="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                        v-model="planForm.is_post_trial_target"
+                        type="checkbox"
+                        class="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring"
+                    />
+                    <span>
+                        Paket tujuan setelah masa gratis
+                        <span class="block text-xs text-muted-foreground">
+                            Tenant yang masa gratisnya habis dipindahkan ke paket ini, tujuh hari sebelum hari-H,
+                            bersamaan dengan terbitnya tagihan berbayar pertamanya. Hanya satu paket yang bisa
+                            memegang peran ini. Jangan tunjuk paket Rp 0 — itu mengembalikan tenant ke tempat yang
+                            sama dan perpindahannya berhenti tanpa terlihat.
+                        </span>
+                    </span>
+                </label>
             </form>
 
             <template #footer>
@@ -690,6 +734,20 @@ const confirmDelete = () => {
                         Paket penampung jalur Adaptif
                         <span class="block text-xs text-muted-foreground">
                             Menampung tenant jalur Adaptif yang tidak cocok aturan tarif mana pun.
+                        </span>
+                    </span>
+                </label>
+
+                <label class="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                        v-model="newPlanForm.is_post_trial_target"
+                        type="checkbox"
+                        class="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-ring"
+                    />
+                    <span>
+                        Paket tujuan setelah masa gratis
+                        <span class="block text-xs text-muted-foreground">
+                            Menampung tenant yang masa gratisnya habis. Jangan tunjuk paket Rp 0.
                         </span>
                     </span>
                 </label>

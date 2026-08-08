@@ -107,6 +107,7 @@ test('mengubah tarif paket tidak menyentuh harga tenant yang sedang berjalan', f
         'extra_seat_price' => 20_000,
         'ai_daily_limit' => null,
         'is_adaptive_fallback' => false,
+        'is_post_trial_target' => false,
     ])->assertSessionHas('success');
 
     // Satu kali edit angka tidak boleh mengubah tagihan semua orang seketika.
@@ -166,6 +167,7 @@ test('perubahan paket mencatat nilai lama dan barunya', function () {
         'extra_seat_price' => (float) $plan->extra_seat_price,
         'ai_daily_limit' => 10,
         'is_adaptive_fallback' => false,
+        'is_post_trial_target' => false,
     ]);
 
     $log = PlatformAuditLog::where('action', 'plans.update')->firstOrFail();
@@ -301,4 +303,36 @@ test('hanya satu paket yang bisa jadi penampung', function () {
 
     expect($pertama->fresh()->is_adaptive_fallback)->toBeFalse()
         ->and(Plan::adaptiveFallback()->id)->toBe($kedua->id);
+});
+
+test('panel bisa menunjuk paket tujuan setelah masa gratis', function () {
+    $platformUser = PlatformUser::factory()->withAllModules()->create();
+    $plan = Plan::factory()->create(['base_price' => 100_000]);
+
+    // Tanpa jalur panel ini, penanda `[BL-052]` hanya bisa disetel lewat
+    // migrasi — dan mengganti paket masuk kembali menuntut deploy, persis yang
+    // hendak dihindari `[BL-052]`(b).
+    actingAs($platformUser, 'platform')->put("/platform/plans/{$plan->id}", [
+        'name' => $plan->name,
+        'base_price' => (float) $plan->base_price,
+        'included_seats' => $plan->included_seats,
+        'extra_seat_price' => (float) $plan->extra_seat_price,
+        'ai_daily_limit' => null,
+        'is_adaptive_fallback' => false,
+        'is_post_trial_target' => true,
+    ])->assertSessionHas('success');
+
+    expect(Plan::postTrialTarget()->id)->toBe($plan->id);
+
+    // Perannya ikut berjejak: ia menentukan paket yang dihuni setiap tenant
+    // yang masa gratisnya habis sesudahnya.
+    $log = PlatformAuditLog::where('action', 'plans.update')->firstOrFail();
+    expect($log->meta['after']['is_post_trial_target'])->toBeTrue();
+
+    // Panelnya harus bisa MENAMPILKAN perannya juga, bukan cuma menyimpannya:
+    // tanpa itu pemilik SaaS tidak punya cara melihat paket mana yang sedang
+    // memegangnya, dan peringatan "belum ada paket tujuan" tak punya dasar.
+    get('/platform/pricing-rules')->assertInertia(fn (Assert $page) => $page
+        ->where('plans', fn ($plans) => collect($plans)
+            ->firstWhere('id', $plan->id)['is_post_trial_target'] === true));
 });
