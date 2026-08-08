@@ -151,4 +151,66 @@ return [
 
     'track_switch_minimum_months' => 3,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Payment Gateway
+    |--------------------------------------------------------------------------
+    |
+    | Menumpang di sini, bukan di berkas config sendiri, karena isinya kebijakan
+    | penagihan yang sama: berapa lama sebuah instruksi bayar berlaku, dan lewat
+    | siapa uangnya masuk.
+    |
+    | `driver` — penyedia yang aktif. Hari ini hanya ada `fake`, gateway tiruan
+    | untuk development dan peragaan. Ia GAGAL DI-RESOLVE di lingkungan produksi
+    | (lihat PaymentGatewayManager); menyetel nilai ini ke `fake` di sana bukan
+    | konfigurasi yang salah, melainkan jalur yang melunasi tagihan tanpa uang.
+    | Sumopod menyusul sebagai driver kedua — lihat `[BL-060]`.
+    |
+    */
+
+    'payment' => [
+
+        'driver' => env('PAYMENT_DRIVER', 'fake'),
+
+        /**
+         * Umur satu instruksi bayar, dalam menit.
+         *
+         * Ada tenggatnya supaya nomor VA yang terbit hari ini tidak dianggap
+         * masih berlaku bulan depan, dan supaya tenant bisa menerbitkan
+         * instruksi baru tanpa menunggu yang lama dibereskan seseorang.
+         */
+        'attempt_ttl_minutes' => 60,
+
+        'fake' => [
+            /**
+             * Kunci tanda tangan notifikasi gateway tiruan.
+             *
+             * Punya nilai bawaan, dan itu tidak apa-apa: yang dijaganya bukan
+             * uang, melainkan bentuk alurnya. Yang penting adalah jalur
+             * verifikasinya benar-benar dilewati saat peragaan, sehingga
+             * penyedia sungguhan nanti tidak menemukan jalur yang belum pernah
+             * dipakai.
+             */
+            'secret' => env('PAYMENT_FAKE_SECRET', 'sapi-fake-gateway'),
+
+            /**
+             * Detik sejak instruksi terbit sampai "pembayaran" datang sendiri.
+             *
+             * Inilah yang membuat alurnya bisa diperagakan: penonton melihat
+             * nomor VA atau QR, penantian sebentar, lalu layarnya berubah jadi
+             * lunas — tanpa siapa pun menekan tombol bernama "Bayar penuh" di
+             * depan calon klien.
+             *
+             * Delapan detik, bukan dua: yang sedang diperagakan adalah orang
+             * membayar dari aplikasi lain, dan pembayaran yang masuk seketika
+             * justru terbaca sebagai tombol, bukan sebagai pembayaran.
+             *
+             * `0` mematikannya — pakai saat yang sedang diuji adalah keadaan
+             * yang TIDAK berakhir berhasil.
+             */
+            'auto_settle_seconds' => (int) env('PAYMENT_FAKE_AUTO_SETTLE_SECONDS', 8),
+        ],
+
+    ],
+
 ];

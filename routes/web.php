@@ -96,8 +96,31 @@ Route::middleware(['auth', 'tenant'])
             // hanya bisa membaca lingkungan akan memberi rasa aman yang keliru.
             Route::post('/langganan/tagihan/{invoice}/simulasi-bayar', [\App\Http\Controllers\Billing\SimulatedPaymentController::class, 'store'])
                 ->name('simulate.store');
+
+            // Alur bayar lewat payment gateway (`[BL-059]`). Namanya diawali
+            // `billing.` sehingga ikut tercakup ALWAYS_ALLOWED di
+            // EnsureSubscriptionActive — tenant yang ditangguhkan justru
+            // paling butuh halaman ini.
+            Route::get('/langganan/tagihan/{invoice}/bayar', [\App\Http\Controllers\Billing\PaymentController::class, 'create'])
+                ->name('payment.create');
+            Route::post('/langganan/tagihan/{invoice}/bayar', [\App\Http\Controllers\Billing\PaymentController::class, 'store'])
+                ->name('payment.store');
+            Route::get('/langganan/pembayaran/{attempt}', [\App\Http\Controllers\Billing\PaymentController::class, 'show'])
+                ->name('payment.show');
+
+            // Panel peragaan pada halaman instruksi. Ia TIDAK melunasi apa pun
+            // sendiri — lihat docblock PaymentController::simulate().
+            Route::post('/langganan/pembayaran/{attempt}/peragakan', [\App\Http\Controllers\Billing\PaymentController::class, 'simulate'])
+                ->name('payment.simulate');
         });
     });
+
+// Notifikasi penyedia pembayaran. Di luar seluruh grup: yang memanggilnya mesin
+// tanpa sesi, tanpa tenant, dan tanpa token CSRF (dikecualikan di
+// bootstrap/app.php). Yang menggantikan ketiganya adalah tanda tangan pada
+// badan permintaan — lihat PaymentWebhookController.
+Route::post('/webhook/pembayaran/{gateway}', [\App\Http\Controllers\Billing\PaymentWebhookController::class, 'handle'])
+    ->name('payment.webhook');
 
 // --- Owner Routes: modul grantable (digerbang per-permission; owner auto-lolos
 //     via Gate::before). Staf non-owner butuh permission modul yang sesuai. ---

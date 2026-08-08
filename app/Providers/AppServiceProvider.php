@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\Billing\Gateways\PaymentGateway;
+use App\Services\Billing\Gateways\PaymentGatewayManager;
 use App\Services\Queue\DailySequenceAllocator;
 use App\Services\Queue\QueueNumberAllocator;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -23,6 +25,11 @@ class AppServiceProvider extends ServiceProvider
         // Seam pengalokasi nomor antrian. Fase offline akan menukar strateginya
         // dengan mengganti binding ini saja — checkout tidak perlu disentuh.
         $this->app->bind(QueueNumberAllocator::class, DailySequenceAllocator::class);
+
+        // Penyedia pembayaran yang sedang aktif. `bind`, bukan `singleton`:
+        // gerbang produksi di manager dinilai ulang tiap kali driver diminta,
+        // dan instance yang tersimpan sejak boot akan melewatinya.
+        $this->app->bind(PaymentGateway::class, fn () => $this->app->make(PaymentGatewayManager::class)->default());
     }
 
     /**

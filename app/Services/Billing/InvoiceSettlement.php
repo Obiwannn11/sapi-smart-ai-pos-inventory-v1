@@ -17,23 +17,29 @@ use Illuminate\Support\Facades\DB;
  * dan reset puncak seat. Salinan yang bercabang di jalur uang adalah jenis
  * kesalahan yang paling lama tidak terlihat.
  *
- * **Kerangka untuk payment gateway.** Ketika gateway dipasang, yang perlu
- * ditambahkan hanyalah satu `SOURCE_*` baru dan satu controller webhook yang
- * memanggil `settle()`. Yang TIDAK boleh dilakukan adalah menulis
- * `Tenant::STATUS_ACTIVE` di tempat lain. Tiga hal yang masih harus dipikirkan
- * di titik itu, dan sengaja belum dijawab di sini karena jawabannya bergantung
- * pada gateway yang dipilih:
+ * **Payment gateway sudah terpasang** lewat jalur itu juga (`[BL-059]`):
+ * `PaymentWebhookController` memanggil `settle()` dengan `SOURCE_GATEWAY` /
+ * `SOURCE_GATEWAY_FAKE`, dan tidak menulis `Tenant::STATUS_ACTIVE` di mana pun.
+ * Penyedia berikutnya cukup mengisi kontrak `PaymentGateway`; tak ada logika
+ * pelunasan yang perlu ikut ditulis ulang.
  *
- *   1. **Idempotensi webhook.** Gateway lazim mengirim notifikasi yang sama
- *      berkali-kali. Penjaga `isPaid()` di bawah sudah menolak pelunasan ganda,
- *      tapi pemanggilnya tetap harus menjawab dengan 200 supaya gateway
- *      berhenti mengulang.
- *   2. **Nominal yang benar-benar diterima.** `settle()` mengunci
- *      `price_locked` dari `invoice->amount`, yaitu yang DITAGIH. Bila gateway
- *      mengirim nominal yang berbeda (potongan biaya admin, kurang bayar),
- *      selisihnya harus diputuskan sebelum dilunasi, bukan sesudah.
- *   3. **Keaslian panggilan.** Verifikasi tanda tangan webhook adalah syarat
- *      masuk, bukan pelengkap — `settle()` mempercayai pemanggilnya sepenuhnya.
+ * Tiga hal yang dulu dicatat di sini sebagai "belum dijawab", dan di mana
+ * jawabannya sekarang tinggal:
+ *
+ *   1. **Idempotensi webhook.** Unik `(gateway, external_id)` pada
+ *      `payment_attempts` + penguncian baris + penjaga `isPaid()` di bawah.
+ *      Notifikasi kedua tidak melunasi apa pun dan tetap dijawab 200 supaya
+ *      penyedia berhenti mengulang — lihat `PaymentWebhookController`.
+ *   2. **Nominal yang benar-benar diterima.** Dibandingkan dengan
+ *      `invoice->amount` SEBELUM `settle()` dipanggil; selisih berapa pun
+ *      menghentikan pelunasan dan meninggalkan percobaan berstatus `mismatch`
+ *      untuk diputuskan orang. `settle()` sendiri tetap mengunci `price_locked`
+ *      dari yang DITAGIH, dan itu hanya benar bila keduanya sudah dipastikan
+ *      sama.
+ *   3. **Keaslian panggilan.** `PaymentGateway::verifyCallback()` melempar
+ *      `InvalidCallbackSignature` sebelum apa pun dibaca. `settle()` tetap
+ *      mempercayai pemanggilnya sepenuhnya — karena itu pemeriksaannya harus
+ *      selesai sebelum sampai ke sini.
  */
 class InvoiceSettlement
 {
@@ -45,6 +51,20 @@ class InvoiceSettlement
 
     /** Nominalnya nol — tidak ada yang perlu ditransfer, apalagi dibuktikan. */
     public const SOURCE_ZERO_AMOUNT = 'zero_amount';
+
+    /** Payment gateway sungguhan mengabarkan uangnya masuk. */
+    public const SOURCE_GATEWAY = 'gateway';
+
+    /**
+     * Gateway TIRUAN mengabarkan uangnya masuk — tidak ada uang yang berpindah.
+     *
+     * Dipisah dari `SOURCE_GATEWAY`, bukan dibedakan lewat kolom lain: laporan
+     * pendapatan mana pun yang menjumlahkan tagihan lunas harus bisa
+     * mengeluarkan yang ini tanpa perlu tahu driver mana yang sedang aktif saat
+     * itu. Satu nilai `gateway` untuk keduanya membuat uang peragaan tak
+     * terbedakan dari uang sungguhan begitu drivernya diganti.
+     */
+    public const SOURCE_GATEWAY_FAKE = 'gateway_fake';
 
     public function __construct(private readonly SubscriptionService $subscriptions) {}
 

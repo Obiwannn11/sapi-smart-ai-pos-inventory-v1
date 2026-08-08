@@ -73,6 +73,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'feature.api' => \App\Http\Middleware\EnsureTenantFeatureApi::class,
         ]);
 
+        // Webhook penyedia pembayaran datang dari mesin di luar sana: tidak ada
+        // sesi, jadi tidak ada token CSRF yang bisa dikirim. Penggantinya bukan
+        // "tidak ada pemeriksaan" melainkan tanda tangan pada badan permintaan,
+        // yang diverifikasi sebelum satu medan pun dibaca — lihat
+        // PaymentWebhookController.
+        $middleware->validateCsrfTokens(except: [
+            'webhook/pembayaran/*',
+        ]);
+
         // Tamu di area platform diarahkan ke login platform, bukan login tenant.
         // Tanpa ini keduanya jatuh ke route('login') — pemilik SaaS yang sesinya
         // habis akan mendarat di halaman masuk pemilik usaha, dan (karena akunnya

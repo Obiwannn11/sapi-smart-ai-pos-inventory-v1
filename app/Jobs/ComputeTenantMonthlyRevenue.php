@@ -29,16 +29,7 @@ class ComputeTenantMonthlyRevenue implements ShouldQueue
 
     public function handle(): void
     {
-        $period = $this->period !== null
-            ? Carbon::createFromFormat('Y-m', $this->period)->startOfMonth()
-            // Bulan yang sudah TUTUP. Menghitung bulan berjalan menghasilkan
-            // angka yang berubah tiap hari dan bracket yang ikut goyang.
-            //
-            // startOfMonth() DULU, baru subMonth(). Urutan sebaliknya meluber:
-            // 31 Juli − 1 bulan = 31 Juni yang tidak ada, dinormalkan Carbon
-            // jadi 1 Juli — dan job ini akan menghitung bulan BERJALAN, persis
-            // yang dilarang komentar di atas. Lihat [BL-029].
-            : now()->startOfMonth()->subMonth();
+        $period = self::periodOrLastClosedMonth($this->period);
 
         Tenant::query()
             // GERBANG PRIVASI, dua lapis. Tenant jalur normal tidak pernah
@@ -55,6 +46,55 @@ class ComputeTenantMonthlyRevenue implements ShouldQueue
             ->each(function (Tenant $tenant) use ($period) {
                 $this->computeFor($tenant, $period);
             });
+    }
+
+    /**
+     * Hitung SATU tenant, sekarang juga.
+     *
+     * Ada karena penilaian pengajuan Adaptif tidak boleh menunggu jadwal
+     * bulanan (`[BL-055]`(b)): tenant yang baru menyetujui pembukaan omzetnya
+     * dan disuruh menunggu sampai tanggal 1 akan menyimpulkan pengajuannya
+     * mengambang. Jalannya persis sama dengan yang ditempuh jadwal — periode
+     * yang sama, aturan hitung yang sama, tabel yang sama.
+     *
+     * **Gerbang privasinya diperiksa ulang di sini, bukan dipercayakan kepada
+     * pemanggil.** Kalau syaratnya hanya hidup di query `handle()`, pemanggil
+     * kedua yang lupa memeriksanya akan menulis omzet tenant yang tak pernah
+     * menyetujui apa pun — dan barisnya seketika bisa dibaca halaman platform.
+     * Mengembalikan `false` bila gerbangnya menutup, supaya pemanggil bisa
+     * membedakan "tidak boleh" dari "tidak ada penjualan".
+     */
+    public function recordFor(Tenant $tenant, ?string $period = null): bool
+    {
+        $bolehDihitung = $tenant->pricing_track === TenantConsent::TYPE_SUBSIDIZED
+            && $tenant->consents()
+                ->whereNull('revoked_at')
+                ->where('type', TenantConsent::TYPE_SUBSIDIZED)
+                ->exists();
+
+        if (! $bolehDihitung) {
+            return false;
+        }
+
+        $this->computeFor($tenant, self::periodOrLastClosedMonth($period));
+
+        return true;
+    }
+
+    /**
+     * Bulan yang sudah TUTUP. Menghitung bulan berjalan menghasilkan angka yang
+     * berubah tiap hari dan bracket yang ikut goyang.
+     *
+     * startOfMonth() DULU, baru subMonth(). Urutan sebaliknya meluber: 31 Juli
+     * − 1 bulan = 31 Juni yang tidak ada, dinormalkan Carbon jadi 1 Juli — dan
+     * job ini akan menghitung bulan BERJALAN, persis yang dilarang kalimat di
+     * atas. Lihat [BL-029].
+     */
+    private static function periodOrLastClosedMonth(?string $period): Carbon
+    {
+        return $period !== null
+            ? Carbon::createFromFormat('Y-m', $period)->startOfMonth()
+            : now()->startOfMonth()->subMonth();
     }
 
     private function computeFor(Tenant $tenant, Carbon $period): void

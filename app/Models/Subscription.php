@@ -26,8 +26,18 @@ class Subscription extends Model
 
     public const TRACK_SUBSIDIZED = 'subsidized';
 
+    /**
+     * Sebab dijadwalkannya kembali ke jalur harga tetap. Tenant menarik
+     * persetujuannya sendiri, versus omzetnya melewati ujung tangga Adaptif —
+     * hanya yang kedua ikut memindahkan paket ke penampung Adaptif.
+     */
+    public const REVERT_REVOKED = 'revoked';
+
+    public const REVERT_ABOVE_CEILING = 'above_ceiling';
+
     protected $fillable = [
         'tenant_id', 'plan_id', 'pricing_track', 'track_changed_at', 'track_reverts_at',
+        'track_revert_reason',
         'seats', 'seat_high_water', 'provisional_blocked', 'price_locked',
         'trial_ends_at', 'current_period_start', 'current_period_end', 'billing_anchor_day',
     ];

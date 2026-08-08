@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Models\Plan;
 use App\Models\PricingRule;
+use App\Models\PricingRuleCondition;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
 use App\Services\Pricing\DimensionRegistry;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -30,6 +32,16 @@ class PricingService
 
     /** Tak ada aturan DAN tak ada paket penampung — tarifnya belum ada. */
     public const SOURCE_NONE = 'none';
+
+    /**
+     * Dimensi yang membentuk tangga Harga Adaptif.
+     *
+     * Disebut namanya di sini karena tiga hal bersandar padanya sekaligus —
+     * tangga yang dipajang, ambang keluar, dan perkiraan tarif — dan tiga
+     * salinan string yang sama akan bercabang begitu satu di antaranya diketik
+     * ulang.
+     */
+    public const DIMENSION_REVENUE = 'monthly_revenue';
 
     public function __construct(private readonly DimensionRegistry $dimensions) {}
 
@@ -113,6 +125,24 @@ class PricingService
      */
     public function matchContext(array $context, ?Carbon $asOf = null): ?PricingRule
     {
+        return $this->effectiveRules($asOf)
+            ->first(fn (PricingRule $rule) => $rule->matches($context));
+    }
+
+    /**
+     * Aturan yang berlaku pada `$asOf`, sudah disaring per label dan diurutkan
+     * menurut siapa yang menang.
+     *
+     * Dipisah dari `matchContext()` supaya tangga Adaptif dibaca dari kumpulan
+     * yang PERSIS SAMA dengan yang dipakai menetapkan harga. Tangga yang
+     * dipajang dari query sendiri akan menampilkan revisi lama sebuah bracket
+     * sementara tagihannya memakai revisi baru — dan tenant yang membandingkan
+     * keduanya berhak menyimpulkan salah satunya bohong.
+     *
+     * @return \Illuminate\Support\Collection<int, PricingRule>
+     */
+    protected function effectiveRules(?Carbon $asOf = null): Collection
+    {
         return PricingRule::query()
             ->with('conditions')
             ->effectiveOn($asOf)
@@ -122,7 +152,7 @@ class PricingService
             ->unique(fn (PricingRule $rule) => $rule->label)
             ->sort(fn (PricingRule $a, PricingRule $b) => [$b->priority, $b->effective_from->getTimestamp(), $b->id]
                 <=> [$a->priority, $a->effective_from->getTimestamp(), $a->id])
-            ->first(fn (PricingRule $rule) => $rule->matches($context));
+            ->values();
     }
 
     /**
@@ -231,6 +261,82 @@ class PricingService
             'label' => $rule->label,
             'price' => (float) $rule->price,
         ];
+    }
+
+    /**
+     * Tangga Harga Adaptif sebagaimana adanya di `pricing_rules`.
+     *
+     * Yang ikut hanyalah aturan yang SELURUH syaratnya tentang omzet. Aturan
+     * yang menyebut dimensi lain — "omzet kecil DAN kuliner" — memang bracket
+     * yang sah, tapi ia tidak bisa dipajang sebagai satu baris tangga tanpa
+     * berbohong kepada tenant yang tidak memenuhi syarat lainnya. Ia tetap
+     * berlaku saat harganya ditetapkan; yang tidak dilakukan hanya
+     * memajangnya sebagai anak tangga umum.
+     *
+     * @return list<array{label: string, price: float, min: float|null, max: float|null}>
+     */
+    public function adaptiveLadder(?Carbon $asOf = null): array
+    {
+        return $this->effectiveRules($asOf)
+            ->filter(fn (PricingRule $rule) => $rule->conditions->isNotEmpty()
+                && $rule->conditions->every(fn (PricingRuleCondition $condition) => $condition->dimension === self::DIMENSION_REVENUE))
+            ->map(fn (PricingRule $rule) => [
+                'label' => $rule->label,
+                'price' => (float) $rule->price,
+                'min' => $this->revenueBound($rule, [PricingRuleCondition::OP_GTE, PricingRuleCondition::OP_GT], 'max'),
+                'max' => $this->revenueBound($rule, [PricingRuleCondition::OP_LT, PricingRuleCondition::OP_LTE], 'min'),
+            ])
+            ->sortBy(fn (array $bracket) => $bracket['min'] ?? -1.0)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Omzet paling tinggi yang masih berhak atas Harga Adaptif, atau `null`
+     * bila tangganya tidak berujung.
+     *
+     * `null` berarti "tak ada ambang", BUKAN "ambangnya nol", dan bedanya
+     * menentukan: satu bracket yang lupa diberi batas atas membuat ambangnya
+     * hilang, dan yang benar saat itu adalah tidak menolak siapa pun — bukan
+     * menolak semua orang. Inilah arah gagal yang diperingatkan `[BL-048]`:
+     * memperlakukan "tak ada aturan yang cocok" sebagai "omzetnya terlalu
+     * tinggi" akan mendorong SELURUH tenant ke paket berbayar penuh hanya
+     * karena satu baris syarat salah ketik.
+     */
+    public function adaptiveCeiling(?Carbon $asOf = null): ?float
+    {
+        $ceiling = null;
+
+        foreach ($this->adaptiveLadder($asOf) as $bracket) {
+            if ($bracket['max'] === null) {
+                return null;
+            }
+
+            $ceiling = max($ceiling ?? 0.0, $bracket['max']);
+        }
+
+        return $ceiling;
+    }
+
+    /**
+     * Batas omzet sebuah aturan pada satu sisi, atau `null` bila sisi itu
+     * terbuka.
+     *
+     * `$pick` menentukan syarat mana yang menang saat sebuah sisi disebut lebih
+     * dari sekali: batas bawah diambil yang paling besar dan batas atas yang
+     * paling kecil — dua syarat pada sisi yang sama saling mempersempit, karena
+     * sebuah aturan cocok hanya bila SELURUH syaratnya terpenuhi.
+     *
+     * @param  list<string>  $operators
+     */
+    private function revenueBound(PricingRule $rule, array $operators, string $pick): ?float
+    {
+        $values = $rule->conditions
+            ->filter(fn (PricingRuleCondition $condition) => in_array($condition->operator, $operators, true)
+                && is_numeric($condition->value))
+            ->map(fn (PricingRuleCondition $condition) => (float) $condition->value);
+
+        return $values->isEmpty() ? null : (float) $values->{$pick}();
     }
 
     /**
