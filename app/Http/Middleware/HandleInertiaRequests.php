@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\PaymentAttempt;
 use App\Models\PaymentMethod;
 use App\Models\PlatformUser;
 use App\Models\Tenant;
@@ -123,6 +124,11 @@ class HandleInertiaRequests extends Middleware
     /**
      * Keadaan langganan yang membatasi tenant ini, atau null bila tidak ada.
      *
+     * Sejak `[BL-054]` isinya membawa TAHAP tenggatnya, bukan cuma status:
+     * hari 1–14 halus, 15–19 mengganggu, 20+ menulis dicabut. Tanpa tahap,
+     * layar hanya punya dua pilihan — diam atau berteriak — dan tangga tekanan
+     * yang diputuskan pemilik tidak akan pernah terlihat oleh pengguna.
+     *
      * Hanya `grace` dan `suspended` yang menghasilkan isi. Peringatan sebelum
      * periodenya lewat — tagihan yang sudah terbit tapi belum jatuh tempo —
      * sengaja TIDAK ikut di sini dan tetap tinggal di kartu langganan Dashboard
@@ -131,11 +137,11 @@ class HandleInertiaRequests extends Middleware
      * untuk keterangan yang belum mendesak. Yang mendesak — akses sudah
      * menyempit — justru tidak butuh query apa pun untuk diketahui.
      *
-     * @return array{status: string, suspends_at: string|null, period_ends_at: string|null}|null
+     * @return array{status: string, stage: string|null, grace_day: int|null, grace_days: int, can_write: bool, payment_pending: bool, suspends_at: string|null, period_ends_at: string|null}|null
      */
     private function restrictionFor(Tenant $tenant): ?array
     {
-        if (! $tenant->isReadOnly() && ! $tenant->isSuspended()) {
+        if (! $tenant->isInGrace() && ! $tenant->isSuspended()) {
             return null;
         }
 
@@ -143,12 +149,44 @@ class HandleInertiaRequests extends Middleware
 
         return [
             'status' => $tenant->status,
+            'stage' => $tenant->graceStage(),
+            'grace_day' => $tenant->graceDay(),
+            'grace_days' => SubscriptionService::graceDays(),
+            // Layar menghitung "tinggal berapa hari lagi" dari sini, bukan dari
+            // angka yang diketik ulang di JavaScript — kebijakan tenggat yang
+            // diubah di config harus ikut mengubah kalimat di layar.
+            'lock_from_day' => SubscriptionService::graceLockFromDay(),
+            // Dikirim apa adanya supaya layar tidak perlu menyusun ulang tangga
+            // tenggat dari tiga angka — satu-satunya sumber "boleh menulis?"
+            // tetap `Tenant::canWrite()`.
+            'can_write' => $tenant->canWrite(),
+            // Modal penagihan padam selagi pembayaran berjalan. Menagih orang
+            // yang sudah membayar adalah cara tercepat kehilangan mereka
+            // (`[BL-054]`(c)). Yang padam HANYA notifikasinya — jam tenggatnya
+            // jalan terus, karena kalau tidak, menerbitkan instruksi bayar lalu
+            // mendiamkannya akan jadi cara membeli waktu tanpa membayar
+            // (`[BL-054]`(d)).
+            'payment_pending' => $this->hasPaymentInFlight($tenant),
             // Dihitung, bukan disimpan — satu-satunya sumbernya sama dengan
             // yang dipakai kartu Dashboard, supaya tanggal di pita dan tanggal
             // di kartu tidak pernah berselisih.
             'suspends_at' => $subscriptions->suspensionDateFor($tenant)?->toDateString(),
             'period_ends_at' => $subscriptions->ensureFor($tenant)->current_period_end?->toDateString(),
         ];
+    }
+
+    /**
+     * Apakah tenant ini punya instruksi bayar yang masih berlaku.
+     *
+     * Satu query, dan hanya untuk tenant yang memang sedang dibatasi — jalur
+     * panas (tenant `active`) tidak pernah sampai ke sini.
+     */
+    private function hasPaymentInFlight(Tenant $tenant): bool
+    {
+        return PaymentAttempt::where('tenant_id', $tenant->id)
+            ->where('status', PaymentAttempt::STATUS_PENDING)
+            ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->exists();
     }
 
     /**

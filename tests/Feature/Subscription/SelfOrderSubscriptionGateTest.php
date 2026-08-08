@@ -6,6 +6,7 @@ use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Laravel\Sanctum\Sanctum;
 
 /**
@@ -27,7 +28,7 @@ use Laravel\Sanctum\Sanctum;
 /**
  * @return array{tenant: Tenant, machine: User}
  */
-function makeSelfOrderContext(string $status): array
+function makeSelfOrderContext(string $status, int $graceDay = 1): array
 {
     // Gerbang fitur sengaja dibuka: yang diuji berkas ini adalah gerbang
     // LANGGANAN. Membiarkan `self_order_enabled` pada default `false` akan
@@ -38,10 +39,12 @@ function makeSelfOrderContext(string $status): array
         'self_order_enabled' => true,
     ]);
 
+    // Umur tenggatnya ikut disetel: sejak `[BL-054]` yang menentukan tertutup
+    // atau tidak bukan lagi status `grace`, melainkan hari keberapa tenggatnya.
     Subscription::factory()->create([
         'tenant_id' => $tenant->id,
-        'current_period_end' => now()->subDay()->toDateString(),
-        'trial_ends_at' => now()->subDay(),
+        'current_period_end' => now()->subDays($graceDay)->toDateString(),
+        'trial_ends_at' => now()->subDays($graceDay),
     ]);
 
     // Pemilik token self-order: akun tenant yang tokennya dipegang n8n.
@@ -64,13 +67,28 @@ test('pesanan self-order ditolak saat tenant ditangguhkan', function () {
     $this->postJson('/api/v1/orders', [])->assertStatus(403);
 });
 
-test('pesanan self-order ditolak saat masa tenggang', function () {
-    ['machine' => $machine] = makeSelfOrderContext(Tenant::STATUS_GRACE);
+test('pesanan self-order ditolak begitu tenggat mengunci', function () {
+    ['machine' => $machine] = makeSelfOrderContext(
+        Tenant::STATUS_GRACE,
+        graceDay: SubscriptionService::graceLockFromDay(),
+    );
 
     Sanctum::actingAs($machine);
 
-    // `grace` berarti hanya-baca: data lama tetap terbuka, transaksi baru tidak.
+    // Tahap `locked` berarti hanya-baca: data lama tetap terbuka, transaksi
+    // baru tidak.
     $this->postJson('/api/v1/orders', [])->assertStatus(403);
+});
+
+test('pesanan self-order masih diterima di hari-hari awal tenggat', function () {
+    ['machine' => $machine] = makeSelfOrderContext(Tenant::STATUS_GRACE, graceDay: 1);
+
+    Sanctum::actingAs($machine);
+
+    // 422 dari validasi, bukan 403 — pintunya terbuka. Inilah inti `[BL-054]`
+    // pada permukaan self-order: warung yang tidak bisa menerima pesanan tidak
+    // punya uang untuk membayar tagihan yang sedang ditagihkan kepadanya.
+    $this->postJson('/api/v1/orders', [])->assertStatus(422);
 });
 
 test('katalog self-order tertutup saat tenant ditangguhkan', function () {

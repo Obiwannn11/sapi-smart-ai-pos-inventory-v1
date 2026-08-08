@@ -2,6 +2,7 @@
 import { usePage, router, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
+import GraceModal from '@/Components/GraceModal.vue';
 import { ref, computed, h, defineComponent } from 'vue';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
 
@@ -432,6 +433,7 @@ const logout = async () => {
                 yang tidak dibaca siapa pun ([BL-045]).
             -->
             <SubscriptionBanner />
+            <GraceModal />
 
             <FlashMessage />
 

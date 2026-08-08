@@ -120,7 +120,7 @@ test('tagihan tenant lain tidak bocor ke ringkasan', function () {
 });
 
 test('tenant di masa tenggang mendapat tanggal penangguhannya', function () {
-    $tenant = Tenant::factory()->readOnly()->create();
+    $tenant = Tenant::factory()->inGrace()->create();
     $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
     $subscription = app(SubscriptionService::class)->ensureFor($tenant);
 

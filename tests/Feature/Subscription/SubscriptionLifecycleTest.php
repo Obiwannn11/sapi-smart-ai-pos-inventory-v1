@@ -44,8 +44,11 @@ test('tenant aktif tetap bisa menulis', function () {
     expect(App\Models\Category::where('name', 'Kopi')->exists())->toBeTrue();
 });
 
-test('masa tenggang menolak tulis tapi membiarkan baca', function () {
-    ['owner' => $owner] = makeBillingContext(Tenant::STATUS_GRACE, -1);
+test('tenggat yang sudah mengunci menolak tulis tapi membiarkan baca', function () {
+    ['owner' => $owner] = makeBillingContext(
+        Tenant::STATUS_GRACE,
+        -SubscriptionService::graceLockFromDay(),
+    );
 
     actingAs($owner);
 
@@ -53,6 +56,18 @@ test('masa tenggang menolak tulis tapi membiarkan baca', function () {
     post('/owner/categories', ['name' => 'Kopi'])->assertSessionHas('error');
 
     expect(App\Models\Category::where('name', 'Kopi')->exists())->toBeFalse();
+});
+
+test('hari-hari awal tenggat tidak menolak apa pun', function () {
+    ['owner' => $owner] = makeBillingContext(Tenant::STATUS_GRACE, -1);
+
+    actingAs($owner);
+
+    // `[BL-054]`: sampai `grace_lock_from_day`, masa tenggang murni berupa
+    // notifikasi. Tidak ada satu pun pintu yang tertutup di sini.
+    post('/owner/categories', ['name' => 'Kopi'])->assertSessionHasNoErrors();
+
+    expect(App\Models\Category::where('name', 'Kopi')->exists())->toBeTrue();
 });
 
 test('penangguhan mengarahkan seluruh halaman ke halaman langganan', function () {
@@ -103,8 +118,11 @@ test('kasir juga boleh membuka halaman langganan, bukan hanya owner', function (
     get('/langganan')->assertStatus(200);
 });
 
-test('api mengembalikan 403 json saat masa tenggang, bukan pengalihan', function () {
-    ['owner' => $owner] = makeBillingContext(Tenant::STATUS_GRACE, -1);
+test('api mengembalikan 403 json saat tenggat mengunci, bukan pengalihan', function () {
+    ['owner' => $owner] = makeBillingContext(
+        Tenant::STATUS_GRACE,
+        -SubscriptionService::graceLockFromDay(),
+    );
 
     Sanctum::actingAs($owner);
 

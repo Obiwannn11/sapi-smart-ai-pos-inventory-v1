@@ -23,10 +23,11 @@ test('tenant baru mulai sebagai trial di jalur harga normal', function () {
         ->and($tenant->pricing_track)->toBe(Subscription::TRACK_NORMAL);
 });
 
-test('tenant trial dan aktif boleh menulis, tenggang dan suspend tidak', function () {
+test('tenant trial dan aktif boleh menulis, suspend tidak — tenggang tergantung tahapnya', function () {
+    // Masa tenggang sengaja TIDAK di sini: sejak `[BL-054]` jawabannya berbeda
+    // per tahap, dan tangganya diuji utuh di `GraceStagesTest`.
     expect(Tenant::factory()->create()->canWrite())->toBeTrue()
         ->and(Tenant::factory()->active()->create()->canWrite())->toBeTrue()
-        ->and(Tenant::factory()->readOnly()->create()->canWrite())->toBeFalse()
         ->and(Tenant::factory()->suspended()->create()->canWrite())->toBeFalse();
 });
 

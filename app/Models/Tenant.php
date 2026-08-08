@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SubscriptionService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,12 +19,27 @@ class Tenant extends Model
     public const STATUS_ACTIVE = 'active';
 
     /**
-     * Tenggang setelah trial habis atau tagihan lewat jatuh tempo: aplikasi
-     * jadi HANYA-BACA. Data lama tetap terbuka dan bisa diekspor, tapi
-     * transaksi baru ditolak. Menyandera data pelanggan bukan alat penagihan
-     * yang sah; menahan layanan baru adalah.
+     * Tenggang setelah trial habis atau tagihan lewat jatuh tempo.
+     *
+     * BERTINGKAT sejak keputusan pemilik 2026-08-07 (`[BL-054]`): kasir tetap
+     * hidup sampai dua pertiga tenggat lewat, lalu barulah kemampuan menulis
+     * dicabut. Sebelumnya satu status ini berarti hanya-baca sejak hari
+     * pertama — dan warung yang tidak bisa berjualan tidak punya uang untuk
+     * membayar. Yang tidak pernah dicabut di tahap mana pun: membaca data yang
+     * sudah ada. Tangganya di `graceStage()`.
      */
     public const STATUS_GRACE = 'grace';
+
+    // --- Tahap masa tenggang ([BL-054]) ---
+
+    /** Hari 1 sampai sebelum `grace_intensive_from_day` — notifikasi halus, semua jalan. */
+    public const GRACE_STAGE_SOFT = 'soft';
+
+    /** Sejak `grace_intensive_from_day` — peringatan mengganggu, tapi masih boleh menulis. */
+    public const GRACE_STAGE_INTENSIVE = 'intensive';
+
+    /** Sejak `grace_lock_from_day` — kemampuan menulis dicabut, membaca tetap utuh. */
+    public const GRACE_STAGE_LOCKED = 'locked';
 
     /** Tenggang habis tanpa penyelesaian — akses ditutup. */
     public const STATUS_SUSPENDED = 'suspended';
@@ -153,15 +169,92 @@ class Tenant extends Model
     }
 
     /**
-     * Boleh membuat data baru (transaksi, produk, staf). Hanya `trial` dan
-     * `active`; `grace` sengaja tidak termasuk.
+     * Umur masa tenggang dalam hari, dihitung sejak akhir periode berjalan.
+     *
+     * Hari 1 adalah hari SETELAH periode habis — hari periodenya berakhir masih
+     * hari terakhir yang dibayar, bukan hari pertama tunggakan. Dengan begitu
+     * hari terakhir tenggang sama persis dengan `grace_days`, dan tanggal
+     * penangguhannya sama dengan yang dihitung `suspensionDateFor()`.
+     *
+     * Dihitung, bukan disimpan: kolom "hari tenggat" harus dimutakhirkan setiap
+     * tengah malam oleh sesuatu, dan sesuatu itu pasti akan gagal pada hari
+     * penjadwalnya tidak jalan.
+     *
+     * `null` di luar masa tenggang, dan juga bila periodenya tidak diketahui —
+     * lihat `graceStage()` untuk apa artinya bagi tenant.
+     */
+    public function graceDay(): ?int
+    {
+        if ($this->status !== self::STATUS_GRACE) {
+            return null;
+        }
+
+        $periodEnd = $this->subscription?->current_period_end;
+
+        if ($periodEnd === null) {
+            return null;
+        }
+
+        return max(1, (int) $periodEnd->copy()->startOfDay()->diffInDays(now()->startOfDay(), false));
+    }
+
+    /**
+     * Tahap tenggat tenant ini: `soft`, `intensive`, atau `locked`.
+     *
+     * Ambang keduanya dibaca dari config lewat `SubscriptionService` — angkanya
+     * kebijakan komersial, dan kebijakan komersial tidak boleh menuntut
+     * membaca kelas mana pun untuk diubah.
+     *
+     * Periode yang tidak diketahui menghasilkan `soft`, BUKAN `locked`: data
+     * langganan yang bolong adalah masalah kami, dan menutup kasir orang karena
+     * masalah kami adalah cara terburuk menemukannya.
+     */
+    public function graceStage(): ?string
+    {
+        if ($this->status !== self::STATUS_GRACE) {
+            return null;
+        }
+
+        $day = $this->graceDay();
+
+        return match (true) {
+            $day === null => self::GRACE_STAGE_SOFT,
+            $day >= SubscriptionService::graceLockFromDay() => self::GRACE_STAGE_LOCKED,
+            $day >= SubscriptionService::graceIntensiveFromDay() => self::GRACE_STAGE_INTENSIVE,
+            default => self::GRACE_STAGE_SOFT,
+        };
+    }
+
+    /**
+     * Boleh membuat data baru (transaksi, produk, staf).
+     *
+     * `grace` ikut termasuk sampai tahap `locked` — itu inti `[BL-054]`.
      */
     public function canWrite(): bool
     {
-        return in_array($this->status, [self::STATUS_TRIAL, self::STATUS_ACTIVE], true);
+        if (in_array($this->status, [self::STATUS_TRIAL, self::STATUS_ACTIVE], true)) {
+            return true;
+        }
+
+        return $this->status === self::STATUS_GRACE
+            && $this->graceStage() !== self::GRACE_STAGE_LOCKED;
     }
 
+    /**
+     * Tenant yang kehilangan kemampuan menulis tapi masih boleh membaca.
+     *
+     * Sejak `[BL-054]` ini BUKAN lagi sinonim "sedang di masa tenggang":
+     * tenggat hari 1–19 tetap bisa menulis. Yang bertanya "apakah tenant ini
+     * sedang dibatasi?" harus memeriksa statusnya, bukan memanggil ini.
+     */
     public function isReadOnly(): bool
+    {
+        return $this->status === self::STATUS_GRACE
+            && $this->graceStage() === self::GRACE_STAGE_LOCKED;
+    }
+
+    /** Sedang di masa tenggang, tahap mana pun. */
+    public function isInGrace(): bool
     {
         return $this->status === self::STATUS_GRACE;
     }

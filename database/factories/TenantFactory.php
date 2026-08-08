@@ -34,7 +34,16 @@ class TenantFactory extends Factory
         ]);
     }
 
-    public function readOnly(): static
+    /**
+     * Tenant di masa tenggang — tahap `soft`, karena tanpa langganan tidak ada
+     * akhir periode yang bisa dihitung umurnya.
+     *
+     * Dulu bernama `readOnly()`, dan namanya sudah tidak benar sejak
+     * `[BL-054]`: tenggat hari 1–19 masih boleh menulis. Yang butuh tenant yang
+     * benar-benar terkunci harus memundurkan `current_period_end` langganannya
+     * melewati `grace_lock_from_day` — itu satu-satunya yang menentukannya.
+     */
+    public function inGrace(): static
     {
         return $this->state(fn (array $attributes) => [
             'status' => Tenant::STATUS_GRACE,

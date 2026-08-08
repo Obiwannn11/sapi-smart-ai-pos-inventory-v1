@@ -4,9 +4,11 @@ use App\Models\CashDrawer;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use App\Services\TransactionService;
 use Illuminate\Support\Str;
 
@@ -457,8 +459,16 @@ test('papan tetap bisa dimajukan saat masa tenggang', function () {
     expect($card->fresh()->fulfillment_status)->toBe(Transaction::FULFILLMENT_PREPARING);
 });
 
-test('masa tenggang tetap menolak penjualan baru meski papan terbuka', function () {
+test('tenggat yang sudah mengunci tetap menolak penjualan baru meski papan terbuka', function () {
     $this->tenant->update(['status' => Tenant::STATUS_GRACE]);
+
+    // Sejak `[BL-054]` yang menutup kasir adalah UMUR tenggatnya, bukan
+    // statusnya. Tanpa langganan yang periodenya lewat sejauh ini, tenant di
+    // atas masih di tahap halus dan penjualannya justru harus lolos.
+    Subscription::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'current_period_end' => now()->subDays(SubscriptionService::graceLockFromDay())->toDateString(),
+    ]);
 
     actingAs($this->cashier);
 
@@ -467,4 +477,22 @@ test('masa tenggang tetap menolak penjualan baru meski papan terbuka', function 
     post('/cashier/transactions', queueCheckoutPayload())->assertSessionHas('error');
 
     expect(Transaction::count())->toBe(0);
+});
+
+test('hari-hari awal tenggat tidak menghentikan penjualan sama sekali', function () {
+    $this->tenant->update(['status' => Tenant::STATUS_GRACE]);
+
+    Subscription::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'current_period_end' => now()->subDay()->toDateString(),
+    ]);
+
+    actingAs($this->cashier);
+
+    // Inti `[BL-054]`: warung yang tidak bisa berjualan tidak punya uang untuk
+    // membayar. Sampai 2026-08-07 baris ini mustahil — kasir mati sejak hari
+    // pertama tenggat.
+    post('/cashier/transactions', queueCheckoutPayload())->assertSessionHasNoErrors();
+
+    expect(Transaction::count())->toBe(1);
 });

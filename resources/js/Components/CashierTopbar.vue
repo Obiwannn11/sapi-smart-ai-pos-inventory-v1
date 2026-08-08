@@ -6,6 +6,7 @@ import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
+import GraceModal from '@/Components/GraceModal.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useFlash } from '@/composables/useFlash';
@@ -214,6 +215,7 @@ const logout = async () => {
     -->
     <div class="shrink-0">
     <SubscriptionBanner />
+    <GraceModal />
 
     <header class="bg-card border-b border-border shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] px-4 py-2.5 flex items-center justify-between shrink-0 z-10">
         <!-- Left: back-to-POS + brand -->
