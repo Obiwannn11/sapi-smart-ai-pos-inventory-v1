@@ -33,7 +33,7 @@ class Plan extends Model
 
     protected $fillable = [
         'name', 'slug', 'base_price', 'included_seats', 'extra_seat_price', 'limits',
-        'is_active', 'is_adaptive_fallback',
+        'is_active', 'is_adaptive_fallback', 'is_post_trial_target',
     ];
 
     protected function casts(): array
@@ -44,6 +44,7 @@ class Plan extends Model
             'limits' => 'array',
             'is_active' => 'boolean',
             'is_adaptive_fallback' => 'boolean',
+            'is_post_trial_target' => 'boolean',
         ];
     }
 
@@ -74,6 +75,21 @@ class Plan extends Model
     public static function adaptiveFallback(): ?self
     {
         return static::where('is_adaptive_fallback', true)->first();
+    }
+
+    /**
+     * Paket tujuan tenant setelah masa gratisnya habis. `null` bila pemilik SaaS
+     * belum menunjuk satu pun.
+     *
+     * Alasan ketiadaan penebakannya sama dengan `adaptiveFallback()`, dan di
+     * sini akibatnya lebih tajam: menebak berarti memindahkan tenant ke paket
+     * berbayar yang tak seorang pun pilih, lalu menagihkannya. Yang benar adalah
+     * pemindahannya berhenti dan pemilik SaaS mendengar tentangnya — lihat
+     * `SubscriptionService::graduateExpiredTrials()`.
+     */
+    public static function postTrialTarget(): ?self
+    {
+        return static::where('is_post_trial_target', true)->first();
     }
 
     /**
@@ -126,12 +142,44 @@ class Plan extends Model
      */
     public function setAdaptiveFallback(bool $value): void
     {
-        DB::transaction(function () use ($value) {
+        $this->setExclusiveRole('is_adaptive_fallback', $value);
+    }
+
+    /**
+     * Jadikan paket ini tujuan setelah masa gratis — atau lepaskan perannya.
+     *
+     * Tunggal karena alasan yang sama dengan penampung Adaptif: dua paket
+     * bertanda akan membuat nasib tenant bergantung pada urutan baris di
+     * database. Bedanya, yang bergantung di sini bukan tarifnya melainkan paket
+     * yang ia huni — dan paket menentukan jatah pengguna serta kuota AI-nya
+     * sekaligus.
+     */
+    public function setPostTrialTarget(bool $value): void
+    {
+        $this->setExclusiveRole('is_post_trial_target', $value);
+    }
+
+    /**
+     * Pindahkan peran yang hanya boleh dipegang satu paket.
+     *
+     * Satu tempat untuk kedua peran, bukan dua metode yang isinya sama:
+     * ketunggalan yang disalin akan bercabang begitu salah satunya diperbaiki,
+     * dan cabang yang lebih longgar di antaranya menjadi perilaku sebenarnya.
+     *
+     * Dalam transaksi karena perpindahannya dua tulisan: melepas yang lama dan
+     * memasang yang baru. Gagal di antaranya meninggalkan keadaan TANPA
+     * pemegang peran sama sekali — untuk penampung Adaptif itu berarti tenant
+     * kehilangan tarifnya, untuk tujuan pasca-gratis berarti perpindahannya
+     * berhenti diam-diam.
+     */
+    private function setExclusiveRole(string $column, bool $value): void
+    {
+        DB::transaction(function () use ($column, $value) {
             if ($value) {
-                static::where('id', '!=', $this->id)->update(['is_adaptive_fallback' => false]);
+                static::where('id', '!=', $this->id)->update([$column => false]);
             }
 
-            $this->forceFill(['is_adaptive_fallback' => $value])->save();
+            $this->forceFill([$column => $value])->save();
         });
     }
 }

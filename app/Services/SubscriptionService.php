@@ -8,11 +8,15 @@ use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
+use App\Services\Pricing\AdaptiveEligibility;
 use Illuminate\Support\Carbon;
 
 class SubscriptionService
 {
-    public function __construct(private readonly PricingService $pricing) {}
+    public function __construct(
+        private readonly PricingService $pricing,
+        private readonly AdaptiveEligibility $eligibility,
+    ) {}
 
     /**
      * Panjang masa gratis untuk tenant baru, dalam bulan.
@@ -222,6 +226,148 @@ class SubscriptionService
     }
 
     /**
+     * Pindahkan tenant yang masa gratisnya hampir habis ke paket berbayar
+     * tujuannya — `[BL-052]`.
+     *
+     * Sampai sekarang `trial_ends_at` ditulis di `startTrial()` dan tidak pernah
+     * dibaca lagi. Akibatnya paket `free` tidak bisa hidup: tarifnya Rp 0,
+     * penerbit tagihan melewatinya tanpa memperpanjang periode, lalu periodenya
+     * lewat dan tenant turun ke masa tenggang — tiap periode, selamanya. Yang
+     * hilang bukan penyempurnaan melainkan penggeraknya; `changePlan()` sudah
+     * ada sejak lama, tak ada yang memanggilnya.
+     *
+     * **Dipindahkan pada jendela yang sama dengan penerbitan tagihan**
+     * (`invoice_lead_days`), bukan sehari setelah masa gratisnya habis. Dua
+     * sebabnya:
+     *
+     *   - Tagihan periode berbayar pertama terbit H-7. Menunggu sampai
+     *     `trial_ends_at` benar-benar lewat berarti penerbit sudah melihat
+     *     tenant ini seharga Rp 0 dan melewatinya — tepat kegagalan yang
+     *     hendak ditutup. Pemindahan HARUS mendahului penerbitan, dan urutan itu
+     *     dijaga di `advanceLifecycle()`, bukan di jadwal.
+     *   - `[BL-052]`(c) meminta tenant tahu sebelum hari-H. Tagihan yang tiba
+     *     tujuh hari lebih awal, dengan nama paket barunya tertulis di halaman
+     *     langganan, adalah pemberitahuan itu.
+     *
+     * **Sisa hari gratisnya tidak berkurang, dan batasnya tidak menyempit.**
+     * Periode berjalan tidak disentuh — tenant tetap tidak ditagih sampai
+     * `current_period_end`. Yang berubah hanya paketnya, dan paket tujuannya
+     * selalu lebih longgar daripada `free` (jatah pengguna dan kuota AI naik).
+     * Bila kelak ada paket tujuan yang lebih sempit dari paket gratis, jendela
+     * ini harus dipikirkan ulang — bukan angkanya, melainkan arahnya.
+     *
+     * **Tanpa paket tujuan, pemindahannya berhenti dan bersuara.** Tidak jatuh
+     * diam-diam ke paket termurah: menebak berarti memindahkan tenant ke tarif
+     * yang tak seorang pun putuskan, lalu menagihkannya. Tenantnya dihitung
+     * sebagai `stranded` dan dicatat sebagai kejadian sensitif — ini salah
+     * setel, bukan kebijakan.
+     *
+     * `suspended` di luar jangkauan, mengikuti penerbit tagihan: aksesnya sudah
+     * tertutup, dan memindahkan paket tenant yang tak bisa memakainya hanya
+     * mengubah angka tanpa ada yang melihatnya.
+     *
+     * @return array{graduated: int, stranded: int}
+     */
+    public function graduateExpiredTrials(bool $dryRun = false): array
+    {
+        $horizon = now()->startOfDay()->addDays(self::invoiceLeadDays());
+        $freePlan = Plan::default();
+
+        $due = Tenant::query()
+            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE, Tenant::STATUS_GRACE])
+            ->whereHas('subscription', fn ($query) => $query
+                // Paketnya, bukan tarifnya. Tenant berbayar yang tarifnya
+                // kebetulan Rp 0 hari ini — keringanan, atau paket yang
+                // angkanya belum ditetapkan — bukan tenant yang masa gratisnya
+                // habis, dan memindahkannya berarti mencabut kesepakatan.
+                ->where('plan_id', $freePlan->id)
+                // Baris tanpa tenggat masa gratis (seeder, impor, pembuatan
+                // manual) sengaja dibiarkan. Memindahkan tenant yang tak pernah
+                // dijanjikan tanggal berakhir berarti menagihnya karena datanya
+                // tidak lengkap.
+                ->whereNotNull('trial_ends_at')
+                ->whereDate('trial_ends_at', '<=', $horizon))
+            ->with('subscription')
+            ->get();
+
+        if ($due->isEmpty()) {
+            return ['graduated' => 0, 'stranded' => 0];
+        }
+
+        $target = Plan::postTrialTarget();
+
+        // Paket tujuan yang menunjuk paket gratis itu sendiri ditolak seperti
+        // ketiadaan penunjukan. Ia akan "memindahkan" tenant ke tempat yang
+        // sama, tiap hari, dan lingkaran yang berjalan mulus jauh lebih sulit
+        // dikenali daripada perpindahan yang berhenti dan mengeluh.
+        if ($target === null || $target->is($freePlan)) {
+            if (! $dryRun) {
+                PlatformAuditLog::record('subscriptions.post-trial-target-missing', null, [
+                    'tenant_ids' => $due->pluck('id')->all(),
+                    'target_plan_id' => $target?->id,
+                ]);
+            }
+
+            return ['graduated' => 0, 'stranded' => $due->count()];
+        }
+
+        if (! $dryRun) {
+            foreach ($due as $tenant) {
+                $subscription = $tenant->subscription;
+                $sebelum = $subscription->plan_id;
+
+                $this->changePlan($subscription, $target);
+
+                PlatformAuditLog::record('subscriptions.trial-graduated', $tenant, [
+                    'tenant_id' => $tenant->id,
+                    'trial_ends_at' => $subscription->trial_ends_at?->toDateString(),
+                    'from_plan_id' => $sebelum,
+                    'to_plan' => $target->slug,
+                    'seats' => $subscription->seats,
+                ]);
+            }
+        }
+
+        return ['graduated' => $due->count(), 'stranded' => 0];
+    }
+
+    /**
+     * Komponen seat pada tagihan langganan periode berjalan.
+     *
+     * Seat tambahan adalah biaya BULANAN, bukan sekali bayar (keputusan pemilik
+     * 2026-08-07, `[BL-053]`). Sampai 2026-08-07 ia ditagih sekali lewat
+     * `KIND_UPGRADE` lalu melekat permanen — artinya Rp 20.000 berbunyi "sekali,
+     * seat itu milik Anda selamanya". Angkanya benar, satuannya salah.
+     *
+     * Jumlahnya dari `billableExtraSeats()`, yaitu PUNCAK pemakaian periode
+     * berjalan dikurangi jatah paket. Puncak itu direset ke pemakaian nyata tiap
+     * kali tagihan langganan dilunasi (`InvoiceSettlement::settle()`), jadi ia
+     * mengukur satu periode, bukan sepanjang masa.
+     *
+     * **Tarif per seat selalu dari PAKET, termasuk untuk tenant Adaptif**
+     * (keputusan pemilik 2026-08-07). Yang didiskon jalur Adaptif adalah harga
+     * langganannya, bukan harga penggunanya: tenant Adaptif di `paid-1` membayar
+     * Rp 15.000 per seat meski langganannya turun ke Rp 10.000 oleh bracket. Itu
+     * konsisten dengan "Adaptif = `paid-1` yang didiskon", dan ia disengaja —
+     * bukan efek samping dari `resolveFor()` yang kebetulan tidak menyentuh seat.
+     *
+     * @return array{seats: int, unit_price: float, amount: float}
+     */
+    public function seatChargeFor(Subscription $subscription): array
+    {
+        $subscription->loadMissing('plan');
+
+        $seats = $subscription->billableExtraSeats();
+        $unitPrice = (float) ($subscription->plan?->extra_seat_price ?? 0);
+
+        return [
+            'seats' => $seats,
+            'unit_price' => $unitPrice,
+            'amount' => $seats * $unitPrice,
+        ];
+    }
+
+    /**
      * Terbitkan tagihan periode berikutnya untuk tenant yang periodenya hampir
      * habis.
      *
@@ -268,7 +414,7 @@ class SubscriptionService
      * tak pernah diminta siapa pun. Melonggarkannya adalah keputusan pemilik,
      * bukan pembersihan kode — dicatat di `[BL-051]`.
      *
-     * @return array{issued: int, free: int, unpriced: int}
+     * @return array{issued: int, free: int, unpriced: int, skipped: int}
      */
     public function issueDuePeriodInvoices(bool $dryRun = false): array
     {
@@ -278,6 +424,7 @@ class SubscriptionService
         $issued = 0;
         $free = 0;
         $unpriced = 0;
+        $skipped = 0;
 
         $due = Tenant::query()
             ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE, Tenant::STATUS_GRACE])
@@ -302,7 +449,26 @@ class SubscriptionService
             // membuka tepat satu periode per bulan kalender, jadi kunci `Y-m`
             // tidak pernah bertabrakan dengan dirinya sendiri — yang ditolaknya
             // adalah tagihan yang sudah diketik pemilik SaaS untuk periode itu.
-            if (Invoice::where('tenant_id', $tenant->id)->where('period', $period)->exists()) {
+            //
+            // **`kind` wajib ikut disaring** (`[BL-058]`). Tanpa itu, satu
+            // tagihan penambahan seat di bulan X — yang memakai `period` yang
+            // sama — membatalkan tagihan LANGGANAN bulan X, dan tenantnya lolos
+            // sebulan penuh. Saringan ini menyelaraskan penjaga aplikasi dengan
+            // indeks uniknya, yang sejak awal sudah `(tenant_id, period, kind)`;
+            // sebelumnya keduanya menjaga dua hal yang berbeda.
+            $sudahAda = Invoice::where('tenant_id', $tenant->id)
+                ->where('period', $period)
+                ->where('kind', Invoice::KIND_SUBSCRIPTION)
+                ->exists();
+
+            if ($sudahAda) {
+                // Dihitung, bukan sekadar dilewati. Tiga penghitung lainnya
+                // menjelaskan KENAPA sebuah tagihan tidak terbit; yang ini dulu
+                // satu-satunya yang tidak, dan justru itu yang membuat
+                // `[BL-058]` tak terlihat selama ada: keluaran perintahnya
+                // terbaca normal sementara satu tenant hilang dari hitungan.
+                $skipped++;
+
                 continue;
             }
 
@@ -374,6 +540,7 @@ class SubscriptionService
             'issued' => $issued,
             'free' => $free,
             'unpriced' => $unpriced,
+            'skipped' => $skipped,
         ];
     }
 
@@ -695,13 +862,21 @@ class SubscriptionService
      * biasa — keputusan pemilik 2026-08-05, supaya tidak ada jaminan lama yang
      * diam-diam tercabut oleh tarif yang kebetulan belum ditetapkan.
      *
-     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int}
+     * Perpindahan paket akhir masa gratis (`[BL-052]`) menumpang di sini dengan
+     * alasan yang sama sekali lagi, dan lebih keras: ia harus berjalan SEBELUM
+     * penerbitan tagihan. Terbalik, tagihan periode berbayar pertama dihitung
+     * dari paket gratis seharga Rp 0, dilewati sebagai "tidak ada yang perlu
+     * ditagih", dan tenantnya turun ke masa tenggang tanpa pernah melihat
+     * angka — persis keadaan yang perpindahan ini tutup.
+     *
+     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int, skipped: int, graduated: int, stranded: int}
      */
     public function advanceLifecycle(bool $dryRun = false): array
     {
         $today = now()->startOfDay();
         $graceCutoff = $today->copy()->subDays(self::graceDays());
 
+        $graduation = $this->graduateExpiredTrials($dryRun);
         $billing = $this->issueDuePeriodInvoices($dryRun);
 
         $expiring = fn () => Tenant::query()
@@ -752,6 +927,9 @@ class SubscriptionService
             'invoiced' => $billing['issued'],
             'free' => $billing['free'],
             'unpriced' => $billing['unpriced'],
+            'skipped' => $billing['skipped'],
+            'graduated' => $graduation['graduated'],
+            'stranded' => $graduation['stranded'],
         ];
     }
 }

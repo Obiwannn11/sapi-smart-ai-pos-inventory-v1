@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Models\Plan;
+use App\Models\Subscription;
 use App\Models\TenantConsent;
+use App\Services\Billing\Gateways\PaymentGatewayManager;
 use App\Services\Billing\InvoiceSettlement;
 use App\Services\ConsentService;
 use App\Services\Pricing\SubsidyEstimator;
@@ -30,6 +33,7 @@ class SubscriptionController extends Controller
         PricingService $pricing,
         SubsidyEstimator $estimator,
         InvoiceSettlement $settlement,
+        PaymentGatewayManager $gateways,
     ): Response {
         $tenant = $request->user()->tenant;
         $subscription = $subscriptions->ensureFor($tenant);
@@ -54,6 +58,17 @@ class SubscriptionController extends Controller
                 'seats' => $subscription->seats,
                 'seats_used' => $subscription->activeSeatsUsed(),
                 'trial_ends_at' => $subscription->trial_ends_at?->toDateString(),
+                // Paket yang akan dihuni tenant begitu masa gratisnya habis —
+                // `[BL-052]`(c). Diberitahukan SEBELUM hari-H, bukan lewat
+                // tagihan yang tiba-tiba muncul: masa gratis yang berakhir
+                // dengan tagihan pertama tanpa satu pun peringatan terbaca
+                // sebagai jebakan, bukan sebagai kesepakatan.
+                //
+                // `null` begitu perpindahannya terjadi — paket di baris atas
+                // sudah menyebut namanya sendiri, dan kalimat "akan pindah ke
+                // Paid 1" di halaman tenant yang SUDAH di Paid 1 hanya
+                // membingungkan.
+                'post_trial_plan' => $this->postTrialPlanFor($subscription),
                 'current_period_end' => $subscription->current_period_end?->toDateString(),
                 // Tanggal penangguhan dihitung dan DITAMPILKAN, bukan disimpan
                 // diam-diam. Tenant di masa tenggang berhak tahu persis kapan
@@ -130,6 +145,47 @@ class SubscriptionController extends Controller
             'simulation' => [
                 'enabled' => $settlement->canSimulate($tenant),
             ],
+            // Payment gateway (`[BL-059]`). Ditanyakan lewat manager, BUKAN
+            // dengan me-resolve drivernya: driver tiruan melempar exception di
+            // produksi, dan halaman langganan adalah tempat terakhir yang boleh
+            // mati gara-gara satu variabel `.env` salah setel — di sanalah
+            // tenant yang ditangguhkan mencari jalan keluarnya.
+            'payment' => [
+                'enabled' => $gateways->has($configuredDriver = (string) config('subscription.payment.driver')),
+                'is_simulated' => $gateways->isSimulated($configuredDriver),
+            ],
         ]);
+    }
+
+    /**
+     * Nama dan tarif paket tujuan setelah masa gratis, bila memang akan ada
+     * perpindahan.
+     *
+     * `null` untuk tiga keadaan yang sama-sama berarti "tak ada yang perlu
+     * diumumkan": tenant tidak sedang di paket gratis, langganannya tak punya
+     * tanggal akhir masa gratis, atau pemilik SaaS belum menunjuk paket tujuan
+     * mana pun. Yang terakhir sengaja tidak berbunyi apa-apa di sisi tenant —
+     * salah setel platform bukan kabar yang berguna baginya; yang menagihnya
+     * adalah peringatan di `/platform/pricing-rules` dan keluaran
+     * `subscriptions:advance-lifecycle`.
+     *
+     * @return array{name: string, base_price: float}|null
+     */
+    protected function postTrialPlanFor(Subscription $subscription): ?array
+    {
+        if ($subscription->trial_ends_at === null || $subscription->plan->slug !== Plan::SLUG_DEFAULT) {
+            return null;
+        }
+
+        $target = Plan::postTrialTarget();
+
+        if ($target === null || $target->slug === Plan::SLUG_DEFAULT) {
+            return null;
+        }
+
+        return [
+            'name' => $target->name,
+            'base_price' => (float) $target->base_price,
+        ];
     }
 }

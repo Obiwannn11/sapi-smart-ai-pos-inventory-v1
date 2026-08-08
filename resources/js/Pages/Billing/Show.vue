@@ -20,6 +20,11 @@ const props = defineProps({
     // Peragaan ([BL-045]). Server mengirim `enabled: false` untuk tenant biasa
     // dan di produksi, jadi panelnya tidak pernah ada di sana.
     simulation: { type: Object, default: () => ({ enabled: false }) },
+    // Payment gateway ([BL-059]). `is_simulated` menandai driver tiruan, dan
+    // halaman ini menyebutnya terus terang — tombol bayar yang terlihat
+    // sungguhan padahal tiruan adalah cara termudah membuat orang mengira
+    // uangnya sudah berpindah.
+    payment: { type: Object, default: () => ({ enabled: false, is_simulated: false }) },
 });
 
 /**
@@ -60,6 +65,8 @@ const daysUntil = (value) => {
  * template supaya kalimatnya bisa dibaca berdampingan — nada yang melompat
  * antar keadaan justru terlihat di sini, bukan saat tersebar di markup.
  */
+const postTrial = computed(() => props.subscription.post_trial_plan ?? null);
+
 const state = computed(() => {
     const trialEnds = formatDate(props.subscription.trial_ends_at);
     const periodEnds = formatDate(props.subscription.current_period_end);
@@ -71,7 +78,17 @@ const state = computed(() => {
                 tone: 'neutral',
                 label: 'Masa coba',
                 heading: 'Anda sedang dalam masa coba',
-                body: `Semua fitur terbuka sampai ${trialEnds}. Menjelang tanggal itu Anda bisa memilih untuk berlangganan.`,
+                // Perpindahan paketnya disebut di sini, bukan disimpan sampai
+                // tagihan pertamanya terbit (`[BL-052]`(c)). "Anda bisa memilih
+                // untuk berlangganan" adalah kalimat yang sudah tidak benar
+                // sejak masa gratis berakhir dengan perpindahan otomatis —
+                // menyisakannya berarti tenant membaca janji, lalu menerima
+                // tagihan yang membantahnya.
+                body: postTrial.value
+                    ? `Semua fitur terbuka sampai ${trialEnds}. Setelah itu langganan Anda berlanjut di paket `
+                        + `${postTrial.value.name} (${formatRupiah(postTrial.value.base_price)}/bulan), dan tagihan `
+                        + 'pertamanya terbit sekitar sepekan sebelum tanggal tersebut.'
+                    : `Semua fitur terbuka sampai ${trialEnds}.`,
             };
         case 'active':
             return {
@@ -390,6 +407,17 @@ const invoiceStatusLabels = {
                         </dd>
                     </div>
 
+                    <!-- Tarif setelah masa gratis mendapat barisnya sendiri di
+                         ringkasan, bukan hanya kalimat di kartu keadaan: inilah
+                         angka yang akan ditagihkan, dan angka yang menentukan
+                         keputusan tidak boleh hanya lewat sebagai narasi. -->
+                    <div v-if="postTrial" class="flex items-baseline justify-between px-5 py-3.5">
+                        <dt class="text-sm text-muted-foreground">Setelah masa coba</dt>
+                        <dd class="text-sm font-medium text-foreground">
+                            {{ postTrial.name }} — {{ formatRupiah(postTrial.base_price) }}/bulan
+                        </dd>
+                    </div>
+
                     <!-- Kursi dapat barisnya sendiri: angka "3 dari 4" tidak
                          memberi tahu seberapa dekat batasnya sampai dihitung. -->
                     <div class="px-5 py-3.5">
@@ -667,6 +695,24 @@ const invoiceStatusLabels = {
                             </div>
                             <div class="text-right shrink-0">
                                 <p class="text-sm font-medium text-foreground tabular-nums">{{ formatRupiah(invoice.amount) }}</p>
+
+                                <!--
+                                    Tindakan utama, karena inilah yang selesai
+                                    sendiri: bayar lalu akses pulih tanpa
+                                    menunggu siapa pun memeriksa apa pun.
+                                    Unggah bukti tetap ada di bawahnya — banyak
+                                    yang memang membayar dengan transfer biasa,
+                                    dan ia satu-satunya jalur yang tetap jalan
+                                    ketika gateway sedang mati.
+                                -->
+                                <Link
+                                    v-if="payment.enabled && tenant.is_owner && invoice.status !== 'paid'"
+                                    :href="`/langganan/tagihan/${invoice.id}/bayar`"
+                                    class="mt-1.5 block rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                                >
+                                    Bayar sekarang
+                                </Link>
+
                                 <button
                                     v-if="tenant.is_owner && invoice.status !== 'paid'"
                                     class="mt-1 text-xs font-medium text-primary hover:text-primary/80"
@@ -701,8 +747,18 @@ const invoiceStatusLabels = {
             </div>
 
             <p class="mt-6 text-xs text-muted-foreground leading-relaxed">
-                Pembayaran masih dicatat manual: transfer, lalu unggah buktinya di sini. Kami periksa dan
-                mengonfirmasi menyusul.
+                <template v-if="payment.enabled">
+                    Bayar lewat QRIS, transfer virtual account, atau e-wallet — akses langganan pulih sendiri
+                    begitu pembayarannya masuk. Transfer manual tetap bisa: unggah buktinya di sini dan kami
+                    periksa menyusul.
+                    <span v-if="payment.is_simulated" class="text-warning-foreground">
+                        Saat ini kanal pembayaran masih berupa peragaan, jadi tidak ada uang yang benar-benar berpindah.
+                    </span>
+                </template>
+                <template v-else>
+                    Pembayaran masih dicatat manual: transfer, lalu unggah buktinya di sini. Kami periksa dan
+                    mengonfirmasi menyusul.
+                </template>
             </p>
 
             <!-- Unggah bukti -->
