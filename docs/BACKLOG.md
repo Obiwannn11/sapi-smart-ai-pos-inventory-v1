@@ -86,6 +86,15 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Yang sudah terpasang 2026-08-07: paket, bracket, `trial_months`, jangkar tanggal daftar, dan tangga tenggat di config. Yang **belum** dan jadi entri baru: `[BL-052]` perpindahan otomatis akhir masa gratis, `[BL-053]` seat & kuota AI jadi komponen bulanan, `[BL-054]` penegak tenggat bertingkat, `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` harga khusus per tenant.
 
+> **Catatan pemilik 2026-08-08 (pasca-peragaan & laporan progres)** — tujuh saran dari sesi peragaan, sudah **diverifikasi terhadap kode** sebelum jadi entri. Yang perlu diketahui sebelum membacanya satu per satu:
+>
+> - **Satu saran ternyata sudah punya entri.** "Perbaiki include seats atau tambahan kuota akun" pada sisi **mekanika tagihannya** adalah `[BL-053]` (seat & kuota jadi komponen bulanan, plus jalan melepas seat) dan `[BL-049]` (tagihan Rp 0 saat menambah pengguna) — keduanya masih terbuka dan **tidak diduplikasi** di sini. Yang benar-benar belum tercatat hanyalah sisi **keterlihatannya**: berapa seat dan berapa kuota AI yang didapat sebuah paket tidak muncul di satu pun permukaan sebelum orang mendaftar. Itu yang jadi `[BL-067]`.
+> - **Satu saran tidak punya kode sama sekali untuk diperbaiki.** PPN/pajak nol kata di seluruh `app/`, `config/`, dan migrasi; `transactions` hanya punya `total_amount`, dan struk hanya menampilkan Subtotal → TOTAL. Jadi `[BL-065]` bukan "perbaiki mode pajak", melainkan "belum ada pajaknya" — dan bentuk yang diminta (include vs dibebankan ke pelanggan) menentukan **kolom mana yang lahir**, bukan sekadar cara menampilkannya. Putuskan bentuknya sebelum ada baris kode.
+> - **"Dynamic pricing" di saran ini berarti mesin harga langganan SaaS**, bukan diskon barang mendekati kedaluwarsa (`[BL-018]`). Keduanya sama-sama pernah disebut "harga dinamis" di proyek ini; `[BL-066]` memakai arti yang pertama, sesuai `docs/SAPI-Pitch-Fitur-Unggulan_v1.0.md` bagian 3.
+> - **Saran cabang sengaja dipatok terakhir** atas permintaan pemilik sendiri ("pastiin yang lain berhasil semua dulu"). `[BL-068]` mencatat kenapa syarat itu tepat: tidak ada satu pun konsep cabang di kode hari ini, dan menambahkannya menyentuh hampir setiap tabel operasional.
+>
+> Urutan yang disarankan, termurah dulu: `[BL-062]` (kuota AI pindah ke tempat ia dipakai) → `[BL-064]` (grafik) → `[BL-063]` (rekap bulanan) → `[BL-067]` (keterlihatan seat/kuota) → `[BL-066]` (penjelasan Dynamic Pricing di landing) → `[BL-065]` (PPN, menunggu keputusan bentuk) → `[BL-068]` (cabang, paling akhir). Tiga yang pertama tidak menyentuh uang sama sekali dan bisa dikerjakan kapan saja.
+
 ### [BL-044] Trial Habis Tanpa Ada yang Menerbitkan Tagihan — Bulan Kedua Tidak Pernah Menagih
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Catatan pemilik — "tambahan status jika akun masih gratis, untuk bulan pertama tetapkan full gratis, tapi jika sudah masuk bulan kedua wajib melakukan ajukan subsidi atau kena tagihan biaya normal yaitu 100 k"
@@ -434,6 +443,161 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(a)** Tambahkan `reason` di `Platform\InvoiceController::store()`, wajib **ketika `follows_rule` bernilai false** — memaksa alasan untuk tagihan yang persis mengikuti aturan hanya melatih orang mengetik "sesuai aturan" tanpa membacanya. Deteksinya sudah ada di controller, tinggal dipakai sebagai syarat validasi.
   **(b)** Alasannya masuk `meta` jejak audit berdampingan dengan `follows_rule`, dan ikut terlihat di layar tagihan tenant — nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang.
   **(c)** Jangan menambahkan kolom "harga khusus permanen" per tenant. Pemilik sudah memutuskan harga tetap datang dari paket; harga khusus yang berdiri sendiri berarti membuat paket bayangan yang tidak muncul di daftar mana pun. Bila suatu tenant memang perlu harga tetap yang lain, yang benar adalah **membuat paket baru** — ia auditable dan muncul di panel.
+
+---
+
+### [BL-062] Sisa Kuota AI Hanya Terlihat di Pengaturan — Bukan di Halaman yang Menghabiskannya
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "tambahan menu ai di analysis, coba pindahkan kuotanya ke AI Analysis (bukan di profil saja)"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/SettingsController.php:26,80-81` — satu-satunya pembaca `AiQuota` untuk layar: `daily_limit` + `remaining`
+  - `resources/js/Pages/Owner/Settings/Index.vue:282-290` — "Sisa kuota gratis hari ini: N dari M", dan hanya tampil bila kunci BYOK belum diisi
+  - `app/Http/Controllers/Owner/AiAnalysisController.php:15-20` — `index()` hanya mengirim `analyses`; **tidak menyentuh `AiQuota` sama sekali**
+  - `app/Jobs/RunAiAnalysisJob.php:92-99` — penolakan karena kuota habis terjadi **di antrean**, setelah tombol ditekan
+  - `app/Services/Ai/AiQuota.php` — sudah jadi satu-satunya pembaca kuota, lengkap dengan alasan tertulisnya
+- **Deskripsi:**
+  Kuota dibelanjakan di `/ai-analysis` tapi hanya bisa dilihat di `/pengaturan`. Akibatnya bukan sekadar tidak nyaman: karena penolakan kuota terjadi di dalam job, owner menekan "Analisis", melihat statusnya `pending`, lalu beberapa detik kemudian menemukan analisisnya gagal — tanpa pernah diberi tahu di layar itu bahwa jatahnya memang sudah nol sejak awal. Angka yang bisa mencegah itu sudah dihitung dan sudah punya kelas sendiri; ia hanya tidak pernah dikirim ke halaman yang membutuhkannya.
+  Yang perlu dicatat sebagai batasan: `AiQuota` menjawab "berapa jatahnya", bukan "apakah ia perlu dijatah" — pemeriksaan BYOK tinggal di pemanggil. Jadi memindahkan tampilannya tanpa ikut memindahkan syarat itu akan memasang "sisa 0 dari 5" di layar tenant yang justru sedang memakai kunci sendiri dan tak berbatas.
+- **Usulan Perbaikan:**
+  **(a)** Kirim blok kuota yang sama dari `AiAnalysisController::index()` **dan** `show()` — keduanya me-render komponen yang sama, jadi melewatkan salah satunya membuat angkanya hilang begitu satu analisis dibuka.
+  **(b)** Tampilkan di dekat tombol kirim, dan **matikan tombolnya saat sisa nol** dengan alasan yang terbaca. Menolak di layar jauh lebih murah daripada menolak di antrean.
+  **(c)** Tenant ber-BYOK melihat keterangan lain ("memakai kunci sendiri — tanpa batas harian"), bukan angka kuota. Pakai syarat yang sama dengan `Settings/Index.vue:282`.
+  **(d)** **Jangan** mencabutnya dari Pengaturan. Di sana ia konteks untuk keputusan BYOK; di AI Analysis ia peringatan sebelum bertindak. Dua pembaca, dua maksud — dan `AiQuota` memang dibuat supaya keduanya tidak bisa berselisih.
+  **(e)** Saran ini menyinggung "menu AI di analysis". Menu `/ai-analysis` sudah ada di `OwnerLayout`; kalau yang dimaksud adalah menu **turunan** (mis. riwayat vs buat baru), itu permintaan terpisah yang perlu diperjelas lebih dulu.
+
+### [BL-063] Laporan Hanya Ada Per Satu Tanggal — Belum Ada Rekap Bulanan
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "grafik laporan dalam bulanan"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/ReportController.php:22-83` — `daily()`: seluruh isinya disaring `whereEffectiveDate($date)`, satu hari saja
+  - `routes/web.php:168-172` — hanya `reports.daily` dan `reports.upsell`; tidak ada rute rekap periode
+  - `app/Http/Controllers/Owner/DashboardController.php:59-66` — satu-satunya agregasi lintas hari yang ada, dan dipatok 7 hari terakhir
+  - `app/Models/Transaction.php` — `effectiveDateSql()` + `whereEffectiveFrom()`: **bahan yang dibutuhkan sudah ada**
+- **Deskripsi:**
+  Semua laporan di aplikasi ini menjawab pertanyaan "hari ini bagaimana". Tidak ada satu pun permukaan yang menjawab "bulan ini bagaimana", padahal itu satuan yang dipakai pemilik toko saat menghitung sewa, gaji, dan setoran. Yang paling dekat adalah tren 7 hari di dashboard — terlalu pendek untuk melihat pola akhir pekan, apalagi tanggal muda vs tanggal tua.
+  Kabar baiknya, bagian yang biasanya paling sulit sudah beres: laporan sudah memakai **tanggal efektif**, bukan `created_at`, jadi penjualan offline yang baru tersinkron esok hari tetap masuk ke bulan yang benar. Rekap bulanan yang dibangun di atas `effectiveDateSql()` tidak akan mewarisi cacat itu.
+- **Usulan Perbaikan:**
+  **(a)** Satu rute `reports.monthly` dengan parameter `month` (`Y-m`), isinya sejajar dengan harian: omzet, jumlah transaksi, void, rekap metode bayar, produk terlaris — plus satu deret harian untuk grafiknya (`[BL-064]`).
+  **(b)** Agregasi di database, jangan menarik seluruh transaksi sebulan ke memori lalu menjumlahkannya di PHP. `daily()` boleh melakukan itu karena sehari muat; sebulan di tenant yang ramai tidak.
+  **(c)** **Putuskan dulu: bulan kalender atau periode langganan?** Keduanya masuk akal dan hasilnya berbeda — periode langganan tenant berjangkar di tanggal daftar (keputusan 2026-08-07), jadi "bulan ini" versi tagihan bukan 1–31. Saran saya bulan kalender untuk laporan operasional, karena itu yang dipakai pemilik toko menghitung sewa dan gaji; jangan campur keduanya di satu layar.
+  **(d)** Sekalian sediakan unduhan CSV-nya. Rekap bulanan yang tidak bisa dibawa ke spreadsheet akan tetap disalin manual.
+
+### [BL-064] Satu-satunya Grafik di Aplikasi Ini Ada di Dashboard — Batang, Tujuh Hari, dan Laporan Tidak Punya Grafik Sama Sekali
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "grafik dan line chart"
+- **Status:** Open
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Components/DailyChart.vue` — satu-satunya komponen grafik; `import { Bar } from 'vue-chartjs'`, dan hanya `BarElement` yang diregistrasi
+  - `resources/js/Pages/Owner/Dashboard.vue:262` — **satu-satunya** pemakainya di seluruh `resources/js`
+  - `resources/js/Pages/Owner/Reports/Daily.vue`, `Reports/Upsell.vue` — nol grafik; semuanya tabel dan kartu angka
+  - `package.json:20,23` — `chart.js` ^4.5.1 dan `vue-chartjs` ^5.3.3 **sudah terpasang**
+- **Deskripsi:**
+  Pustaka grafiknya sudah ada di proyek dan sudah dipakai sekali. Yang belum ada adalah jenis grafik kedua dan pemakai kedua. Halaman Laporan — tempat orang justru datang untuk melihat pola — seluruhnya berupa tabel; sementara dashboard, tempat orang hanya melirik, adalah satu-satunya yang punya grafik.
+  Batang cocok untuk membandingkan hari yang berdiri sendiri, dan itu sebabnya `DailyChart` memilihnya. Untuk deret panjang seperti rekap bulanan (`[BL-063]`), batang jadi ramai dan garis tren jauh lebih terbaca — jadi ini bukan mengganti yang sudah ada, melainkan menambah bentuk kedua untuk data yang bentuknya memang lain.
+- **Usulan Perbaikan:**
+  **(a)** Komponen `TrendChart.vue` berbasis `Line`, dengan `PointElement` + `LineElement` diregistrasi. **Jangan mengubah `DailyChart` jadi serba-bisa** lewat prop `type` — dua grafik dengan sumbu dan tujuan berbeda yang dipaksa satu komponen akan penuh percabangan sebelum pemakai ketiga muncul.
+  **(b)** Ikuti pola warna `DailyChart`: baca `--color-primary`/`--color-brand` dari CSS variable, jangan mematok heksadesimal. Itu yang membuat grafiknya ikut tema, dan grafik kedua yang mematok warna sendiri akan langsung terlihat asing.
+  **(c)** Pasang di rekap bulanan `[BL-063]` lebih dulu — itu data yang paling butuh garis. Baru sesudahnya pertimbangkan tren di halaman harian (mis. per jam).
+  **(d)** Beri keadaan kosong yang jelas. Tenant baru yang membuka laporan dan melihat kanvas kosong tanpa keterangan akan menganggapnya rusak.
+
+### [BL-065] Pajak/PPN Belum Ada Sama Sekali — dan Bentuk yang Diminta Menentukan Kolomnya, Bukan Tampilannya
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"
+- **Status:** Open — **butuh keputusan pemilik sebelum ada kode**
+- **Prioritas:** Medium (naik ke High bila ada calon klien yang wajib memungut PPN)
+- **Area Terdampak:**
+  - `database/migrations/2026_03_06_000011_create_transactions_table.php:17` — `total_amount` saja; **tidak ada** `subtotal`, `tax_amount`, atau `service_charge`
+  - `database/migrations/2026_03_06_000013_create_transaction_items_table.php` — `unit_price` + `subtotal`, tanpa penanda pajak
+  - `resources/js/Components/ReceiptModal.vue:38-41,170-178` — struk menghitung "Subtotal" dengan menjumlahkan item di sisi klien, lalu langsung ke "TOTAL"; tidak ada baris di antaranya
+  - Pencarian `tax|ppn|pajak` di seluruh `app/`, `config/`, dan `database/migrations`: **nol hasil**
+- **Deskripsi:**
+  Ini bukan fitur yang perlu diperbaiki, melainkan yang belum pernah ada. Tidak ada tarif pajak, tidak ada kolom, tidak ada baris di struk. Aplikasi hari ini mengasumsikan harga jual adalah angka final dan tidak punya cara menyatakan berapa bagian dari angka itu yang sebetulnya pajak.
+  Yang membuatnya bukan sekadar pekerjaan tampilan adalah dua mode yang disebut di saran. **Include** berarti tarif katalog sudah mengandung pajak dan pajaknya *diurai ke belakang* dari total (`pajak = total × t/(1+t)`) — omzet tenant tidak naik, dan angka penjualan historis tetap sebanding. **Exclude/ditanggung pelanggan** berarti pajak *ditambahkan di depan* total — yang dibayar pelanggan naik, dan semua total transaksi setelah mode ini menyala tidak lagi sebanding dengan sebelumnya. Keduanya menyentuh angka uang yang sudah tercatat, jadi pilihan modenya bukan preferensi tampilan.
+  Dan itu menjalar. Omzet tenant adalah dasar bracket Harga Adaptif (`ComputeTenantMonthlyRevenue`); kalau `total_amount` mulai memuat PPN yang dipungut untuk negara, tenant naik bracket karena uang yang bukan miliknya.
+- **Yang harus diputuskan pemilik sebelum kode ditulis:**
+  1. **Satu tarif per tenant, atau per produk/kategori?** Kafe umumnya satu (PJ/PB1 atau PPN); ritel bisa campur barang kena dan tidak kena. Yang kedua jauh lebih mahal — jangan dipilih tanpa alasan nyata.
+  2. **Mode include atau exclude — bisa diubah kapan saja, atau terkunci setelah ada transaksi?** Saran saya: boleh diubah, tapi perubahannya berlaku ke depan dan tercatat, karena transaksi lama tidak boleh dihitung ulang.
+  3. **Yang dimaksud PPN 11%/12% (negara) atau pajak restoran daerah 10% (PB1)?** Keduanya sering disebut "pajak" oleh pemilik toko, tapi dasar hukum dan pelaporannya berbeda.
+  4. **Service charge ikut sekarang atau tidak?** Bila ya, urutannya harus ditetapkan — pajak dihitung sebelum atau sesudah service charge — karena hasilnya berbeda.
+- **Usulan Perbaikan (setelah keputusan di atas):**
+  **(a)** `transactions` mendapat `subtotal_amount` dan `tax_amount` (dan `service_charge_amount` bila dipakai), dengan `total_amount` tetap sebagai yang dibayar pelanggan — kolom yang sudah dibaca banyak tempat jangan berubah maknanya. Migrasi mengisi transaksi lama dengan `subtotal = total`, `tax = 0`, yang memang benar untuk masa sebelum pajak ada.
+  **(b)** Tarif dan modenya tinggal di `tenants` (sejajar dengan `*_enabled` lain) dan **dibekukan per transaksi**, sama seperti `invoices.pricing_context` membekukan konteks tagihan. Struk lama harus tetap bisa dicetak ulang dengan angka yang sama walau tarifnya sudah berubah.
+  **(c)** Struk menampilkan Subtotal → PPN (tarif%) → TOTAL untuk mode exclude, dan Subtotal → TOTAL dengan catatan "termasuk PPN Rp X" untuk mode include. Ini yang diminta saran itu, dan tanpa (a) tidak bisa ditulis dengan jujur.
+  **(d)** **Putuskan omzet mana yang dipakai bracket Adaptif** — saran saya `subtotal_amount` (tanpa pajak), karena pajak bukan pendapatan tenant. Kalau tidak diputuskan sekarang, ia akan diputuskan diam-diam oleh baris `SUM(total_amount)` yang sudah ada.
+  **(e)** Laporan harian/bulanan (`[BL-063]`) menampilkan omzet dan pajak terpungut sebagai dua angka. Pemilik toko yang memungut pajak butuh angka kedua itu untuk menyetorkannya.
+
+### [BL-066] Cara Kerja Dynamic Pricing Tidak Terjelaskan di Satu Pun Permukaan Publik
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "perbaiki penjelasan dari sistem dynamic pricing lagi, masukkan dalam landing page cara kerjanya"
+- **Status:** Open
+- **Prioritas:** Medium — naik ke High bersamaan dengan `[BL-055]`, karena pengajuan Adaptif yang bisa dilakukan sendiri tanpa penjelasan akan jadi tiket dukungan
+- **Bergantung pada:** `[BL-032]` (landing sudah harus ditulis ulang) dan angka final `[BL-041]` — keduanya menyentuh bagian halaman yang sama
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php` — pencarian `dynamic|dinamis|adaptif|subsidi`: **nol hasil**. Bagian harga masih memajang dua paket karangan (lihat `[BL-032]`)
+  - `docs/SAPI-Pitch-Fitur-Unggulan_v1.0.md:90-127` — penjelasan yang benar dan lengkap **sudah ditulis**, tapi dokumen internal
+  - `config/docs.php:52-55` — halaman panduan `langganan` sudah terdaftar dengan ringkasan yang menyebut jalur Harga Adaptif
+  - `resources/docs/panduan/langganan.md` — isinya perlu diperiksa ulang terhadap keputusan 2026-08-07 (dua bulan gratis, tangga 90/75/50/25, ambang Rp 50 jt)
+  - `config/subscription.php` — bracket A–D beserta angkanya, sumber kebenaran yang harus dirujuk penjelasannya
+- **Deskripsi:**
+  Calon klien yang membuka landing page tidak menemukan satu kata pun tentang mekanisme yang justru jadi pembeda produk ini: tarif langganan yang mengikuti omzet, dihitung otomatis dari transaksi dan **bukan dilaporkan sendiri**, sebagai imbalan atas consent yang eksplisit. Penjelasannya sudah ada dan sudah bagus — tapi hidup di dokumen pitching internal, bukan di halaman yang dibaca orang.
+  Yang membuat ini lebih dari sekadar salinan-tempel: begitu `[BL-055]` mendarat, tenant mengajukan Adaptif **sendiri** sambil menyerahkan consent atas data penjualannya. Meminta orang menyetujui itu tanpa halaman publik yang menjelaskan apa yang dilihat, untuk apa, dan apa yang tidak dilihat — adalah cara tercepat membuat pengajuan itu ditolak atau, lebih buruk, disetujui tanpa dipahami.
+- **Usulan Perbaikan:**
+  **(a)** Satu bagian "Bagaimana harga Anda dihitung" di landing, tiga langkah dan bukan paragraf: omzet bulan lalu dihitung otomatis → jatuh ke salah satu bracket → tarif bulan itu. Sebutkan angkanya apa adanya (10k/25k/50k/75k, dan ≥ Rp 50 jt tidak layak) — tangga bracket itu **memang daftar harga sesungguhnya**, sesuai catatan 2026-08-07, jadi menyembunyikannya tidak ada gunanya.
+  **(b)** Tulis eksplisit apa yang **tidak** terjadi: platform tidak mengintip transaksi per item, tidak ada laporan mandiri yang bisa dicurangi, dan tarif yang sudah dibayar terkunci (`price_locked`). Tiga kalimat itu menjawab keberatan yang pasti muncul lebih baik daripada satu halaman fitur.
+  **(c)** **Angkanya ditarik dari `pricing_rules`, jangan diketik di HTML** — ini syarat yang sama dengan `[BL-032]`(2), dan alasannya sama: halaman harga yang berbeda dari tagihan sungguhan adalah cacat terburuk yang bisa dimiliki halaman harga.
+  **(d)** Perdalam `resources/docs/panduan/langganan.md` sebagai versi panjangnya, dan tautkan dari landing. Landing menjawab "kira-kira saya bayar berapa"; panduan menjawab "kalau omzet saya turun bulan depan, bagaimana".
+  **(e)** Periksa istilahnya konsisten. Dokumen internal memakai "Dynamic Pricing" (nama mesinnya), UI memakai "Harga Adaptif" vs "Harga Tetap" (nama jalurnya), dan `[BL-018]` memakai "harga dinamis" untuk hal yang sama sekali berbeda — diskon barang mendekati kedaluwarsa. **Jangan pakai "dynamic pricing" di permukaan tenant** sebelum tabrakan istilah itu diselesaikan.
+
+### [BL-067] Isi Paket — Berapa Seat, Berapa Kuota AI — Tidak Terlihat Sebelum Orang Mendaftar
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "perbaiki juga include seats atau tambahan kuota akun"
+- **Status:** Open — **sisi tagihannya sudah punya entri sendiri**, lihat di bawah
+- **Prioritas:** Medium
+- **Yang TIDAK termasuk entri ini:** seat & kuota jadi komponen bulanan dan jalan melepas seat = `[BL-053]`; tagihan Rp 0 saat menambah pengguna = `[BL-049]`; batas sekali per bulan kalender = `[BL-050]`. Entri ini murni tentang **keterlihatannya**, jangan dikerjakan sebagai duplikat ketiganya.
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php` — bagian harga tidak menyebut seat maupun kuota AI sama sekali (dan paketnya sendiri karangan, `[BL-032]`)
+  - `app/Http/Controllers/Auth/AuthController.php:35-47` — pendaftaran tidak menampilkan isi paket apa pun
+  - `resources/js/Pages/Billing/Show.vue:395-435` — **satu-satunya** tempat yang menjelaskannya dengan benar: harga per pengguna tambahan /bulan, "N dari M" pengguna aktif, plus bar pemakaian
+  - `resources/js/Pages/Owner/Settings/Index.vue:282-290` — kuota AI, terpisah dari halaman langganan dan dari halaman yang memakainya (`[BL-062]`)
+  - `app/Models/Plan.php:35` — `included_seats` + `extra_seat_price` sudah jadi kolom paket; `limits.ai_daily` sudah jadi batas kuota per paket
+- **Deskripsi:**
+  Datanya lengkap dan sudah rapi di model: tiap paket tahu berapa seat bawaannya, berapa harga seat tambahannya, dan berapa jatah AI hariannya (keputusan 2026-08-07: 2/5, 3/15, 5/30, 10/60). Yang tidak ada adalah satu pun permukaan yang memperlihatkan itu **sebelum** orang jadi tenant. Calon klien memilih paket tanpa tahu berapa kasir yang boleh dipakainya; pendaftar baru menemukan batasnya saat menambah staf ketiga dan ditolak.
+  Di dalam aplikasi pun keterangannya tersebar: seat di `/langganan`, kuota AI di `/pengaturan`, dan tidak ada satu tempat yang menjawab "paket saya dapat apa saja".
+- **Usulan Perbaikan:**
+  **(a)** Tabel perbandingan paket di landing yang barisnya diambil dari `plans` — nama, harga, seat bawaan, kuota AI/hari, harga seat tambahan. Satu sumber dengan `[BL-032]`(2) dan `[BL-066]`(c); jangan dibuat sebagai tabel HTML ketiga yang bisa basi sendiri.
+  **(b)** Ringkasan isi paket di halaman `/langganan`, satu blok, mencakup **keduanya** — bukan seat saja seperti hari ini.
+  **(c)** Pakai istilah yang sudah diputuskan 2026-08-07: **"seat bawaan paket"** vs **"seat tambahan"**. Jangan memperkenalkan kata ketiga di permukaan publik.
+  **(d)** Untuk kuota AI, sebutkan juga **apa yang terjadi saat habis** (analisis ditolak sampai besok) dan bahwa BYOK melepas batas itu. Batas yang tidak dijelaskan konsekuensinya akan dibaca sebagai batas keras yang memutus fitur.
+  **(e)** **Jangan menjanjikan "tambah kuota AI" di landing sebelum `[BL-053]`(c) ada.** Alur belinya belum berbentuk sama sekali — tidak ada kolom, tidak ada tagihan, tidak ada layar.
+
+### [BL-068] Multi-Cabang Belum Punya Wujud Apa Pun — Satu Tenant = Satu Outlet di Seluruh Basis Kode
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "saran fitur cabang (pastiin yang lain berhasil semua dulu)"
+- **Status:** Open — **sengaja ditahan atas syarat pemilik sendiri**
+- **Prioritas:** Low sekarang; ini pekerjaan sebesar satu fase, bukan satu entri backlog
+- **Area Terdampak (seluruhnya karena ketiadaan, bukan cacat):**
+  - Pencarian `cabang|branch|outlet` di `app/Models`, `app/Http/Controllers`, `config/`, dan migrasi: **nol konsep**. Kata "outlet" hanya muncul di komentar yang berarti "tenant ini"
+  - `app/Models/Tenant.php` — tenant memegang langsung identitas toko, jenis usaha, mode identitas pesanan, dan sakelar fitur; tidak ada lapisan di bawahnya
+  - `transactions`, `cash_drawers`, `stocks`, `products`, `payment_methods`, `users` — semuanya bertumpu pada `tenant_id` sebagai satu-satunya sumbu pemisah
+  - `app/Models/Scopes/TenantScope.php` — pemisahan data berhenti di tenant
+  - `plans.included_seats` + penetapan harga — seluruh model bisnis dihargai per tenant, bukan per outlet
+- **Deskripsi:**
+  Tidak ada yang perlu "ditambahkan cabang"-nya; yang ada adalah asumsi satu-toko-satu-tenant yang tertanam di setiap tabel operasional. Menambahkan cabang berarti menyisipkan sumbu kedua (`branch_id`) di bawah `tenant_id` dan menjawabnya ulang di tiap tempat: stok per cabang atau bersama, katalog dan harga per cabang atau seragam, sesi kas jelas per cabang, staf terikat satu cabang atau bisa lintas, dan laporan default ke cabang mana.
+  Hari ini seorang pemilik dua cabang bisa membuat dua tenant terpisah — dan itu **berhasil**, hanya tanpa laporan gabungan dan dengan dua tagihan. Untuk sebagian calon klien, itu sudah memadai; itu sebabnya menunda entri ini tidak menutup pintu penjualan.
+- **Kenapa syarat pemilik ("pastikan yang lain berhasil dulu") memang tepat:** cabang menyentuh penetapan harga (`[BL-053]`, `[BL-041]`), gerbang langganan (`[BL-054]`), dan laporan (`[BL-063]`) sekaligus. Mengerjakannya sekarang berarti tiga entri yang belum selesai itu harus ditulis dua kali — sekali untuk satu outlet, sekali untuk banyak.
+- **Yang harus dijawab sebelum satu baris kode pun ditulis:**
+  1. **Cabang menaikkan tagihan atau tidak?** Ini pertanyaan pertama, bukan terakhir — jawabannya menentukan apakah `branch_id` cukup jadi kolom, atau harus jadi entitas yang ikut dihitung penetapan harga. Kalau tiap cabang dibayar terpisah, dua tenant terpisah nyaris sama saja dan fitur ini kehilangan alasan komersialnya.
+  2. **Stok per cabang atau satu kolam?** Ini yang paling menentukan besarnya pekerjaan. Stok per cabang berarti seluruh pergerakan stok, transfer antar cabang, dan opname harus tahu cabang.
+  3. **Katalog & harga seragam atau per cabang?** Seragam jauh lebih murah dan cukup untuk sebagian besar kasus.
+  4. **Staf terikat satu cabang, dan bagaimana hubungannya dengan RBAC yang sudah ada?** Peran hari ini berlaku se-tenant; "kasir di cabang A saja" adalah dimensi baru pada model izin, bukan peran baru.
+  5. **Apa yang terjadi pada tenant yang sudah berjalan?** Jawaban yang paling murah dan paling aman: setiap tenant lahir dengan satu cabang bawaan, dan yang tidak pernah membuat cabang kedua tidak pernah melihat kata "cabang" di mana pun.
+- **Catatan pengerjaan:** kalau nanti dikerjakan, buka sebagai **fase tersendiri** dengan dokumennya sendiri di `docs/phases-*`, bukan sebagai entri backlog. Ukurannya sekelas fase SAAS, dan menyelundupkannya sebagai "satu perbaikan" akan menghasilkan migrasi setengah jadi di tabel yang paling tidak boleh setengah jadi.
+
 
 ---
 
