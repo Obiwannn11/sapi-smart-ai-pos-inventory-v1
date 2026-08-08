@@ -298,5 +298,210 @@ test('the reported counts separate issued, free, and unpriced', function () {
 
     expect($result['invoiced'])->toBe(1)
         ->and($result['free'])->toBe(1)
-        ->and($result['unpriced'])->toBe(0);
+        ->and($result['unpriced'])->toBe(0)
+        ->and($result['skipped'])->toBe(0);
+});
+
+// ── Komponen seat pada tagihan langganan (`[BL-053]`) ───────────────────────
+
+test('an invoice carries the purchased seats as a monthly component', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    // Dua seat DIBELI di atas jatah paket. Paket factory: 1 seat bawaan,
+    // Rp 5.000 per seat tambahan.
+    $subscription->update(['seats' => 3, 'purchased_extra_seats' => 2]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
+
+    expect((float) $invoice->amount)->toBe(110000.0);
+});
+
+test('seats are billed because they were bought, not because they were used', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    // Contoh yang diberikan pemilik: seat dibeli tapi menganggur. Puncak
+    // pemakaian nol sekalipun tidak menurunkan tagihannya — itulah seluruh isi
+    // keputusan kedua 2026-08-07.
+    $subscription->update([
+        'seats' => 3,
+        'purchased_extra_seats' => 2,
+        'seat_high_water' => 0,
+    ]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(110000.0);
+});
+
+test('the invoice freezes how its total was reached', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+    $subscription->update(['seats' => 3, 'purchased_extra_seats' => 2]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $breakdown = Invoice::where('tenant_id', $tenant->id)->firstOrFail()
+        ->pricing_context['billing_breakdown'];
+
+    // Tagihan yang tidak bisa dijelaskan pecahannya akan jadi tiket dukungan
+    // pertama — dan menghitungnya ulang belakangan hanya mengembalikan angka
+    // hari ini, bukan angka yang benar-benar ditagihkan.
+    expect($breakdown['base_price'])->toEqual(100000)
+        ->and($breakdown['extra_seats'])->toBe(2)
+        ->and($breakdown['extra_seat_price'])->toEqual(5000)
+        ->and($breakdown['extra_seats_amount'])->toEqual(10000)
+        ->and($breakdown['total'])->toEqual(110000);
+});
+
+test('a tenant on a free plan is still billed for the seats it bought', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3, basePrice: 0);
+    $subscription->update(['seats' => 3, 'purchased_extra_seats' => 2]);
+
+    $result = app(SubscriptionService::class)->advanceLifecycle();
+
+    // Yang diperiksa penjaga "tidak ada yang perlu ditagih" adalah TOTALNYA,
+    // bukan tarif paketnya. Memeriksa tarifnya saja akan memberikan seat
+    // berbayar itu cuma-cuma, tiap bulan.
+    expect($result['invoiced'])->toBe(1)
+        ->and($result['free'])->toBe(0)
+        ->and((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(10000.0);
+});
+
+test('a scheduled seat release is still billed once before it takes effect', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+    $subscription->update(['seats' => 3, 'purchased_extra_seats' => 2]);
+
+    app(SubscriptionService::class)->releaseSeats($tenant, 2);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Inilah yang menutup celah "beli tanggal 1, lepas tanggal 2": tiap seat
+    // yang dibeli pasti tertagih sekali, tidak pernah nol kali. Tanggal
+    // lepasnya satu periode penuh ke depan, jadi periode yang ditagih di sini
+    // masih periode yang seat-nya sah dipakai.
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(110000.0);
+});
+
+test('a release that is already effective when the period opens is not billed', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    // Pelepasan yang tanggalnya jatuh tepat di pembukaan periode yang ditagih.
+    $subscription->update([
+        'seats' => 3,
+        'purchased_extra_seats' => 2,
+        'scheduled_extra_seats' => 0,
+        'seat_release_at' => $subscription->current_period_end->toDateString(),
+    ]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Hak dihitung untuk periode yang DITAGIH, bukan untuk hari ini. Menanyakan
+    // keadaan hari ini akan menagih seat yang sudah dilepas sebelum periode itu
+    // dibuka.
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(100000.0);
+});
+
+test('an adaptive tenant pays the plan seat price, undiscounted', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    $subscription->update([
+        'seats' => 3,
+        'purchased_extra_seats' => 2,
+        'pricing_track' => Subscription::TRACK_SUBSIDIZED,
+    ]);
+    $tenant->update(['pricing_track' => Subscription::TRACK_SUBSIDIZED]);
+
+    // Paket penampung jalur Adaptif — tarif langganannya Rp 20.000, tapi harga
+    // seat-nya tetap dari paket yang dihuni tenant.
+    Plan::factory()->create(['base_price' => 20000, 'is_adaptive_fallback' => true]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Yang didiskon jalur Adaptif adalah harga LANGGANANNYA, bukan harga
+    // penggunanya (keputusan pemilik 2026-08-07). 20.000 + 2 × 5.000.
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(30000.0);
+});
+
+// ── Tagihan upgrade tidak menelan tagihan langganan (`[BL-058]`) ─────────────
+
+test('a seat upgrade invoice does not cancel the subscription invoice of the same month', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    // Penambahan seat memakai `period` yang sama dengan tagihan langganan.
+    // Sebelum `[BL-058]` ditutup, keberadaannya saja membatalkan penagihan
+    // bulan itu — diam-diam, dan tanpa masuk hitungan mana pun.
+    Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'period' => now()->addDays(3)->format('Y-m'),
+        'kind' => Invoice::KIND_UPGRADE,
+        'grants_seats' => 4,
+        'previous_seats' => 3,
+        'amount' => 15000,
+    ]);
+
+    $result = app(SubscriptionService::class)->advanceLifecycle();
+
+    $subscriptionInvoice = Invoice::where('tenant_id', $tenant->id)
+        ->where('kind', Invoice::KIND_SUBSCRIPTION)
+        ->first();
+
+    expect($result['invoiced'])->toBe(1)
+        ->and($result['skipped'])->toBe(0)
+        ->and($subscriptionInvoice)->not->toBeNull()
+        ->and((float) $subscriptionInvoice->amount)->toBe(100000.0)
+        // Keduanya hidup berdampingan — persis yang sudah diizinkan indeks unik
+        // `(tenant_id, period, kind)` sejak awal.
+        ->and(Invoice::where('tenant_id', $tenant->id)->count())->toBe(2);
+});
+
+test('a tenant already billed for the period is counted as skipped, not lost', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'period' => now()->addDays(3)->format('Y-m'),
+        'kind' => Invoice::KIND_SUBSCRIPTION,
+    ]);
+
+    $result = app(SubscriptionService::class)->advanceLifecycle();
+
+    // Inilah yang membuat `[BL-058]` tak terlihat selama ada: tenant yang
+    // dilewati tidak masuk penghitung mana pun, jadi keluaran perintahnya
+    // terbaca normal sementara satu tenant hilang dari hitungan.
+    expect($result['invoiced'])->toBe(0)
+        ->and($result['skipped'])->toBe(1)
+        ->and(Invoice::where('tenant_id', $tenant->id)->count())->toBe(1);
+});
+
+test('the platform can still type a subscription invoice for a month that has an upgrade', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+    $period = now()->format('Y-m');
+
+    Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'period' => $period,
+        'kind' => Invoice::KIND_UPGRADE,
+        'grants_seats' => 4,
+        'previous_seats' => 3,
+    ]);
+
+    $platformUser = App\Models\PlatformUser::factory()->withAllModules()->create();
+
+    Pest\Laravel\actingAs($platformUser, 'platform')
+        ->post('/platform/invoices', [
+            'tenant_id' => $tenant->id,
+            'period' => $period,
+            'amount' => 100000,
+            'due_date' => now()->addWeek()->toDateString(),
+        ])
+        ->assertSessionHas('success');
+
+    // Sebelum perbaikannya, pemilik SaaS hanya melihat "tagihan sudah ada" —
+    // padahal yang ada bukan tagihan yang ia maksud, dan tidak ada satu pun
+    // jalan untuk menagih langganan bulan itu.
+    expect(Invoice::where('tenant_id', $tenant->id)->where('kind', Invoice::KIND_SUBSCRIPTION)->count())->toBe(1);
 });

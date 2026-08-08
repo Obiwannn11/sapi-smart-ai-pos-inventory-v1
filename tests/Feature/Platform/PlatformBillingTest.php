@@ -363,8 +363,12 @@ test('tenant bisa dipindahkan ke paket lain, dan perpindahannya berjejak', funct
 test('seat tambahan yang sudah dibayar ikut pindah bersama paketnya', function () {
     ['platformUser' => $platformUser, 'subscription' => $subscription] = platformBillingContext();
 
-    // Paket Free menjatah 2; batas 3 berarti 1 seat sudah dibeli lewat tagihan
-    // penambahan pengguna.
+    // Paket Free menjatah 2; batas 3 berarti 1 seat sudah dibeli. Sejak
+    // `[BL-053]` jumlah yang dibeli punya kolomnya sendiri dan tidak lagi
+    // disimpulkan dari selisih `seats − included_seats` — angka yang jadi dasar
+    // uang tidak boleh bergantung pada pengurangan yang bisa meleset.
+    $subscription->update(['purchased_extra_seats' => 1]);
+
     $premium = Plan::factory()->create(['name' => 'Premium', 'included_seats' => 5]);
 
     actingAs($platformUser, 'platform')

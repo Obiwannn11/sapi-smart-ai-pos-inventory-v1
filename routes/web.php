@@ -80,11 +80,14 @@ Route::middleware(['auth', 'tenant'])
             ->middleware('role:owner')
             ->name('subsidy.revoke');
 
-        // Penambahan pengguna & bukti bayar — keputusan komersial, jadi owner
-        // saja. Staf tidak menaikkan tagihan usaha tempatnya bekerja.
+        // Penambahan/pelepasan pengguna & bukti bayar — keputusan komersial,
+        // jadi owner saja. Staf tidak menggerakkan tagihan usaha tempatnya
+        // bekerja, ke atas maupun ke bawah.
         Route::middleware('role:owner')->group(function () {
             Route::post('/langganan/tambah-pengguna', [\App\Http\Controllers\Billing\UpgradeController::class, 'store'])
                 ->name('upgrade.store');
+            Route::post('/langganan/lepas-pengguna', [\App\Http\Controllers\Billing\UpgradeController::class, 'destroy'])
+                ->name('upgrade.destroy');
             Route::post('/langganan/tagihan/{invoice}/bukti', [\App\Http\Controllers\Billing\UpgradeController::class, 'storeProof'])
                 ->name('proof.store');
 

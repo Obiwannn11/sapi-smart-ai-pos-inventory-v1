@@ -92,10 +92,17 @@ class InvoiceSettlement
             $subscription = $invoice->subscription;
 
             if ($invoice->isUpgrade()) {
+                // **Peninggalan.** Tak ada lagi tagihan `KIND_UPGRADE` yang
+                // lahir sejak seat jadi komponen bulanan (`[BL-053]`); cabang
+                // ini hanya melayani tagihan yang terbit sebelum 2026-08-07 dan
+                // belum selesai. Ia sengaja TIDAK ikut menulis
+                // `purchased_extra_seats`: angka itu sudah di-backfill migrasi
+                // dari keadaan yang berlaku, dan menambahnya lagi di sini akan
+                // menghitung ganda seat yang sama.
+                //
                 // Upgrade hanya menambah seat. Ia TIDAK memperpanjang periode
-                // dan TIDAK mengubah tarif bulanan — biaya sekali-bayar untuk
-                // kasir tambahan bukan harga langganan, dan menukar keduanya
-                // akan membuat tagihan bulan depan salah.
+                // dan TIDAK mengubah tarif bulanan — menukar keduanya akan
+                // membuat tagihan bulan depan salah.
                 if ($invoice->grants_seats !== null) {
                     $subscription->update(['seats' => $invoice->grants_seats]);
                 }

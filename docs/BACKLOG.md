@@ -84,13 +84,13 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > **Akibat terbesar yang harus disadari:** begitu pengajuan Adaptif otomatis dan bisa dilakukan sendiri, **tangga bracket adalah daftar harga yang sesungguhnya** — Rp 100.000 tinggal harga daftar bagi yang menolak membuka omset. ARPU realistis ada di Rp 25.000–50.000. Setel bracket seolah-olah itu daftar harganya, karena memang akan jadi itu.
 >
-> Yang sudah terpasang 2026-08-07: paket, bracket, `trial_months`, jangkar tanggal daftar, dan tangga tenggat di config. Yang **belum** dan jadi entri baru: ~~`[BL-052]` perpindahan otomatis akhir masa gratis~~ (selesai 2026-08-08), `[BL-053]` seat & kuota AI jadi komponen bulanan, ~~`[BL-054]` penegak tenggat bertingkat~~ (selesai 2026-08-08), `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` harga khusus per tenant.
+> Yang sudah terpasang 2026-08-07: paket, bracket, `trial_months`, jangkar tanggal daftar, dan tangga tenggat di config. Yang **belum** dan jadi entri baru: ~~`[BL-052]` perpindahan otomatis akhir masa gratis~~ (selesai 2026-08-08), ~~`[BL-053]` seat & kuota AI jadi komponen bulanan~~ (bagian seat selesai 2026-08-08; kuota AI jadi `[BL-069]`), ~~`[BL-054]` penegak tenggat bertingkat~~ (selesai 2026-08-08), `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` harga khusus per tenant.
 
 > **Permintaan pemilik 2026-08-07 (pembayaran)** — halaman bayar "ala-ala" untuk development dan peragaan, dengan Sumopod payment gateway menyusul belakangan. Dipecah jadi dua: `[BL-059]` **(selesai hari yang sama)**, dan `[BL-060]` yang menunggu dokumentasi serta kredensial sandbox. Satu hal yang menentukan seluruh bentuk `[BL-059]`: gateway tiruannya **melunasi lewat webhook**, bukan dengan memanggil `settle()` langsung — supaya yang diperagakan besok adalah jalur yang sama dengan yang akan dipakai produksi, dan memasang Sumopod tinggal menukar satu driver. Catatan kecil yang mudah terlewat: nama "Sumopod" sudah dipakai di aplikasi ini untuk **gateway AI**, bukan pembayaran; kredensialnya jangan dipakai ulang.
 
 > **Catatan pemilik 2026-08-08 (pasca-peragaan & laporan progres)** — tujuh saran dari sesi peragaan, sudah **diverifikasi terhadap kode** sebelum jadi entri. Yang perlu diketahui sebelum membacanya satu per satu:
 >
-> - **Satu saran ternyata sudah punya entri.** "Perbaiki include seats atau tambahan kuota akun" pada sisi **mekanika tagihannya** adalah `[BL-053]` (seat & kuota jadi komponen bulanan, plus jalan melepas seat) dan `[BL-049]` (tagihan Rp 0 saat menambah pengguna) — keduanya masih terbuka dan **tidak diduplikasi** di sini. Yang benar-benar belum tercatat hanyalah sisi **keterlihatannya**: berapa seat dan berapa kuota AI yang didapat sebuah paket tidak muncul di satu pun permukaan sebelum orang mendaftar. Itu yang jadi `[BL-067]`.
+> - **Satu saran ternyata sudah punya entri.** "Perbaiki include seats atau tambahan kuota akun" pada sisi **mekanika tagihannya** adalah `[BL-053]` (seat & kuota jadi komponen bulanan, plus jalan melepas seat) dan `[BL-049]` (tagihan Rp 0 saat menambah pengguna) — dan **tidak diduplikasi** di sini. Sisi seat-nya selesai 2026-08-08; sisa kuota AI-nya kini `[BL-069]`. Yang benar-benar belum tercatat hanyalah sisi **keterlihatannya**: berapa seat dan berapa kuota AI yang didapat sebuah paket tidak muncul di satu pun permukaan sebelum orang mendaftar. Itu yang jadi `[BL-067]`.
 > - **Satu saran tidak punya kode sama sekali untuk diperbaiki.** PPN/pajak nol kata di seluruh `app/`, `config/`, dan migrasi; `transactions` hanya punya `total_amount`, dan struk hanya menampilkan Subtotal → TOTAL. Jadi `[BL-065]` bukan "perbaiki mode pajak", melainkan "belum ada pajaknya" — dan bentuk yang diminta (include vs dibebankan ke pelanggan) menentukan **kolom mana yang lahir**, bukan sekadar cara menampilkannya. Putuskan bentuknya sebelum ada baris kode.
 > - **"Dynamic pricing" di saran ini berarti mesin harga langganan SaaS**, bukan diskon barang mendekati kedaluwarsa (`[BL-018]`). Keduanya sama-sama pernah disebut "harga dinamis" di proyek ini; `[BL-066]` memakai arti yang pertama, sesuai `docs/SAPI-Pitch-Fitur-Unggulan_v1.0.md` bagian 3.
 > - **Saran cabang sengaja dipatok terakhir** atas permintaan pemilik sendiri ("pastiin yang lain berhasil semua dulu"). `[BL-068]` mencatat kenapa syarat itu tepat: tidak ada satu pun konsep cabang di kode hari ini, dan menambahkannya menyentuh hampir setiap tabel operasional.
@@ -249,26 +249,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - Tagihan yang terlanjur menggantung dibereskan `php artisan subscriptions:settle-free-upgrades`. Dijalankan 2026-08-07: satu tagihan (`Kopi Story`, seat 2 → 5, jatuh tempo 2026-08-08) lunas, seat-nya berlaku.
 - **Koreksi terhadap butir (d) di atas — sebagian besar sudah terjawab, dan catatannya sudah usang saat ditulis ulang.** Entri ini menyebut "`seat_high_water` hanya naik" dan mengusulkan memberinya batas periode. Usul itu **sudah terpasang sejak 2026-08-06** (commit `50428e1`, entri `[BL-045]`): `InvoiceSettlement::settle()` menulis `'seat_high_water' => $subscription->activeSeatsUsed()` tiap kali tagihan **langganan** dilunasi, jadi puncaknya memang direset tiap periode, persis seperti yang diminta. `recordSeatUsage()` yang hanya menaikkan tetap benar — ia mengukur puncak *dalam* periode berjalan.
   **Yang masih terbuka dari (d), dan lebih sempit dari yang tertulis semula:** reset itu menempel pada **pelunasan** tagihan langganan. Tenant yang tarifnya Rp 0 tidak pernah ditagih (`issueDuePeriodInvoices()` menolak menerbitkannya), jadi tidak pernah ada pelunasan, jadi puncak seat-nya **tidak pernah direset** — kembali menjadi "hanya naik" persis seperti keluhan asalnya. Ini hilang sendiri begitu `[BL-041]`(a) menetapkan tarifnya. Sampai saat itu, jangan bangun mekanisme reset kedua; yang perlu diperiksa hanyalah apakah tarif sudah ditetapkan.
-
-### [BL-050] Satu Tenant Hanya Bisa Menambah Pengguna Sekali per Bulan Kalender
-- **Ditemukan:** 2026-08-07 (saat mengerjakan `[BL-049]`)
-- **Sumber:** Test yang gagal dengan galat SQL, bukan telaah — permintaan upgrade kedua di bulan yang sama menabrak indeks unik
-- **Status:** Open — sudah tidak berbahaya (ditolak dengan kalimat), tapi batasnya sendiri belum dicabut
-- **Prioritas:** Low sekarang; naik jadi Medium begitu `extra_seat_price` bukan nol lagi dan penambahan pengguna jadi jalur berbayar yang sungguhan
-- **Area Terdampak:**
-  - `database/migrations/2026_07_24_190001_add_upgrade_columns_to_invoices_table.php:34` — `unique(['tenant_id', 'period', 'kind'])`
-  - `app/Services/SubscriptionService.php` — `hasUpgradeInvoiceThisPeriod()`, penjaga yang menahannya sekarang
-  - `app/Http/Controllers/Billing/UpgradeController.php` — tempat penjaga itu dipanggil
-  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `upgrade.closed_for_period`
-  - `resources/js/Pages/Billing/Show.vue` — kalimat penggantinya di panel
-- **Deskripsi:**
-  Indeks unik `(tenant_id, period, kind)` lahir sebagai penjaga tagihan-langganan-ganda: satu tenant tidak boleh ditagih dua kali untuk bulan yang sama. Efek sampingnya tidak pernah dimaksudkan — karena tagihan upgrade juga memakai kolom `period` berformat `Y-m`, tenant hanya bisa punya **satu tagihan penambahan pengguna per bulan kalender**.
-  Selama tagihan upgrade tidak pernah selesai, batas itu tidak pernah tersentuh: `openUpgradeInvoice()` sudah menolak permintaan kedua lebih dulu, dengan kalimat yang masuk akal. Begitu upgrade bisa rampung — gratis seketika (`[BL-049]`) atau lewat verifikasi bukti — permintaan kedua di bulan yang sama lolos penjaga itu dan menabrak indeksnya sebagai **galat 500**. Sudah ditutup 2026-08-07 dengan penjaga yang menolaknya sebagai kalimat, jadi yang tersisa bukan cacat melainkan batasnya sendiri.
-  Kenapa batas itu tetap layak dicabut: warung yang mempekerjakan dua orang di bulan yang sama adalah kejadian biasa, bukan kasus tepi. Jalan memutarnya ada — ajukan sekaligus dalam satu permintaan, `max:20` — tapi itu menuntut tenant tahu lebih dulu berapa orang yang akan ia rekrut sebulan ke depan.
-- **Usulan Perbaikan:**
-  Uniknya sebenarnya hanya dibutuhkan untuk `KIND_SUBSCRIPTION`; tagihan upgrade tidak butuh keunikan apa pun. MySQL tidak punya indeks unik parsial, jadi pola yang portabel adalah **kolom kunci turunan yang null untuk upgrade** — mis. `period_key` berisi `period` untuk tagihan langganan dan `NULL` untuk upgrade, dengan `unique(['tenant_id', 'period_key'])`. MySQL maupun SQLite sama-sama mengabaikan baris ber-NULL pada indeks unik, jadi penjaga tagihan-ganda tetap utuh sementara upgrade bebas berulang.
-  **Yang wajib ikut diperiksa saat mengerjakannya:** `issueDuePeriodInvoices()` dan `Platform\InvoiceController::store()` sama-sama memakai `where('period', ...)->exists()` sebagai penjaga periode-ganda, bukan indeksnya. Keduanya harus ikut berpindah ke kunci yang baru, kalau tidak penjaga aplikasinya dan penjaga basis datanya akan menjaga dua hal yang berbeda.
-  Setelah itu, `hasUpgradeInvoiceThisPeriod()` beserta prop `closed_for_period` dan kalimatnya di `Show.vue` dibuang — ketiganya ada semata-mata untuk membungkus batas ini dengan sopan.
+  **Pemutakhiran 2026-08-08 — butir (d) tidak lagi soal uang.** Sejak `[BL-053]`, dasar tagihan seat adalah `purchased_extra_seats`, bukan `seat_high_water`. Puncak yang tidak pernah direset karena tarifnya Rp 0 karena itu **tidak lagi menahan tagihan siapa pun** — dan tenant kini punya jalan turun yang sesungguhnya lewat pelepasan seat, yang persis jawaban atas judul entri ini ("kursi tidak pernah bisa turun"). Yang tersisa dari (d) sekarang menyentuh **penetapan harga Adaptif** saja: `seat_high_water` masih jadi dimensi `active_seats` lewat `ActiveSeatsResolver`, jadi puncak yang tak pernah turun masih bisa menahan tenant musiman di bracket yang lebih mahal. Itu masalah yang lebih sempit, dan tempatnya di `[BL-055]`/`[BL-041]`, bukan di sini.
 
 ---
 
@@ -288,37 +269,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Usulan Perbaikan:**
   **(a)** Putuskan mana yang berlaku: (i) tetap manual — pemulihan memang lewat percakapan, dan itu wajar untuk basis tenant sekecil ini; (ii) tombol "aktifkan kembali" di halaman langganan yang menerbitkan **satu** tagihan pemulihan atas permintaan tenant sendiri; atau (iii) penerbitan otomatis penuh seperti `grace`. Opsi (ii) paling dekat dengan bentuk yang sudah ada — ia meminjam alur `UpgradeController`, dan tagihannya lahir karena tenant memintanya, bukan karena kalender.
   **(b)** Apa pun pilihannya, **jangan** menerbitkan satu tagihan per bulan yang terlewat. Aturan "tunggakan tidak ditumpuk" di `renewPeriod()` memulihkan tepat satu periode ke depan per pembayaran; begitu ada dua tagihan langganan terbuka untuk satu tenant, melompati periode berarti benar-benar melompati uang, dan kedua aturan itu mulai bertabrakan. Ditinjau ulang 2026-08-07 dan dinyatakan aman **justru karena** penerbit tidak pernah melahirkan tagihan kedua — lihat docblock `renewPeriod()`.
-
----
-
-### [BL-053] Seat Tambahan dan Kuota AI Masih Biaya Sekali Bayar — Keputusan Pemilik Menyebutnya Bulanan
-- **Ditemukan:** 2026-08-07
-- **Sumber:** Keputusan pemilik 2026-08-07 — "seat tambahan include dalam bulanan, begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
-- **Status:** Open
-- **Prioritas:** High — angkanya sudah terpasang, jadi satuannya salah **sejak sekarang**, bukan nanti
-- **Area Terdampak:**
-  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `'amount' => $price`, tanpa komponen seat apa pun
-  - `app/Services/SubscriptionService.php` — `requestSeatUpgrade()`: `amount = extra_seat_price × jumlah`, tagihan `KIND_UPGRADE` sekali bayar
-  - `app/Models/Subscription.php` — `seat_high_water` + `recordSeatUsage()`: **sudah ada dan memang untuk ini**
-- **Deskripsi:**
-  Tagihan langganan otomatis hanya memuat harga paket. Seat tambahan ditagih **sekali** lewat invoice `KIND_UPGRADE`, lalu seat-nya melekat permanen. Artinya `extra_seat_price` Rp 20.000 hari ini berbunyi *"Rp 20.000 sekali, seat itu milik Anda selamanya"* — bukan Rp 20.000 per bulan.
-  Angka 20k/15k/12,5k/10k sudah dipasang 2026-08-07 dengan maksud bulanan. Sampai komponen bulanannya ada, **nilainya benar tapi satuannya salah**, dan tiap seat yang dibeli sekarang jadi kesepakatan permanen yang jauh lebih murah daripada yang dimaksud.
-- **Yang membuatnya lebih murah dari perkiraan:** model datanya sudah menunggu. `seat_high_water` ada beserta alasannya yang tertulis — *"Puncak inilah, bukan jumlah aktif saat penagihan, yang menjadi dasar tagihan periode berjalan"* — dengan penjaga akal-akalan yang sudah dipikirkan: menonaktifkan staf sehari sebelum tanggal tagih tidak boleh menghemat sebulan penuh. Yang belum ada hanya komponennya di penerbit.
-- **Usulan Perbaikan:**
-  **(a)** `amount` tagihan langganan jadi `harga + (seat_high_water − included_seats) × extra_seat_price`, dengan rinciannya ikut dibekukan di `pricing_context` — tagihan yang tidak bisa dijelaskan pecahannya akan jadi tiket dukungan pertama.
-  **(b)** **Putuskan tiga hal yang mengikutinya, jangan disimpulkan saat menulis kode:** (1) seat yang terlanjur diberikan seharga Rp 0 — kedua tenant hari ini memegangnya — mulai ditagih atau di-*grandfather*; (2) penambahan di tengah periode: prorata sisa periode lalu masuk tagihan bulanan, atau tunggu periode berikutnya; (3) **tenant Adaptif harganya dari bracket, tapi harga seat-nya dari paket** — dan sejak 2026-08-07 paketnya `paid-1`, jadi seat-nya Rp 15.000 sementara langganannya bisa Rp 10.000. Itu konsisten dengan "Adaptif = `paid-1` yang didiskon", tapi harus disengaja.
-  **(c)** Kuota AI tambahan belum punya bentuk sama sekali — tidak ada kolom, tidak ada alur beli. Kerjakan setelah (a), dan pakai pola yang sama; `Plan::limits` sudah berupa JSON, jadi penambahan kuota per langganan sebaiknya hidup di `subscriptions`, bukan melahirkan paket baru per tenant.
-- **Keputusan pemilik 2026-08-07 (kedua) — dasar tagihan seat bukan pemakaian puncak, melainkan seat yang dibeli.** Ini **mengoreksi butir (a) dan (b)(2) di atas**, jangan dikerjakan menurut bunyi lamanya.
-  Yang diminta: seat tambahan ditagih **karena dibeli**, terpakai atau tidak. Contoh yang diberikan pemilik — paket memberi 3 seat, tenant membeli 2 seat tambahan, tapi yang benar-benar dipakai baru 4 orang (1 seat menganggur): tagihannya tetap 5 seat. Sekali dibeli untuk bulan berjalan, langganannya jalan terus sampai seat itu **dilepas dengan sengaja**.
-  **Akibatnya untuk (a):** rumusnya bukan `seat_high_water − included_seats`, melainkan `purchased_extra_seats` — angka yang dimiliki langganan itu sendiri, bukan angka yang disimpulkan dari pemakaian. `seat_high_water` **tidak lagi jadi dasar harga**; ia paling banter tinggal jadi penjaga *agar tenant tidak memakai lebih banyak seat daripada yang dibelinya*, dan bahkan itu sudah dijaga oleh `seats` biasa. Kalau ternyata tidak ada lagi pembacanya sesudah (a), hapus kolomnya lewat migrasi, jangan tinggalkan sebagai kolom mati yang menyesatkan pembaca berikutnya.
-  **Akibatnya untuk UI:** istilah "puncak"/"pemakaian tertinggi" **dihapus dari halaman langganan**. Yang ditampilkan adalah hak dan asalnya, bukan statistik pemakaian:
-  > Pengguna: **5 seat** — 3 dari paket Premium 1, **2 seat tambahan yang Anda beli** (@ Rp 15.000/bulan = Rp 30.000/bulan). Terpakai 4, tersisa 1.
-  "Terpakai 4" boleh tampil sebagai **informasi**, tapi tidak boleh terbaca seolah memengaruhi tagihan — justru sebaliknya, ia jadi petunjuk kapan tenant sebaiknya melepas seat. Sebutan untuk komponennya: **"seat tambahan"** (dibeli sendiri), lawan dari **"seat bawaan paket"**.
-  **Yang jadi wajib karena keputusan ini, dan belum ada sama sekali: jalan untuk melepas seat.** Selama tagihannya mengikuti pemakaian puncak, tenant yang mengecil ikut mengecil sendiri. Begitu tagihannya mengikuti pembelian, tenant **terkunci membayar selamanya** kecuali ada tombol pengurangan. Ini menggantikan usul `[BL-046]`(d) ("beri batas waktu pada `seat_high_water`") — masalahnya sekarang bukan puncak yang tidak pernah turun, melainkan pembelian yang tidak pernah bisa dibatalkan.
-  **Tiga hal yang masih harus diputuskan sebelum ditulis kodenya:**
-  (1) **Pelepasan berlaku kapan** — seketika (dan tagihan bulan depan turun) atau di akhir periode berjalan? Yang kedua lebih jujur karena bulan berjalan sudah dibayar, dan menutup celah "beli tanggal 1, lepas tanggal 2".
-  (2) **Melepas seat yang masih diduduki staf aktif** — ditolak sampai stafnya dinonaktifkan lebih dulu, atau dibolehkan dan stafnya ikut terkunci? Menolak lebih aman; jangan sampai pelepasan seat diam-diam mematikan akun kasir di tengah jam kerja.
-  (3) **Prorata saat membeli di tengah periode** — masih butir (b)(2) yang lama dan masih terbuka; keputusan ini tidak menjawabnya.
 
 ---
 
@@ -547,7 +497,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Sumber:** Saran pasca-peragaan — "perbaiki juga include seats atau tambahan kuota akun"
 - **Status:** Open — **sisi tagihannya sudah punya entri sendiri**, lihat di bawah
 - **Prioritas:** Medium
-- **Yang TIDAK termasuk entri ini:** seat & kuota jadi komponen bulanan dan jalan melepas seat = `[BL-053]`; tagihan Rp 0 saat menambah pengguna = `[BL-049]`; batas sekali per bulan kalender = `[BL-050]`. Entri ini murni tentang **keterlihatannya**, jangan dikerjakan sebagai duplikat ketiganya.
+- **Yang TIDAK termasuk entri ini:** seat jadi komponen bulanan dan jalan melepas seat = `[BL-053]` (selesai 2026-08-08); kuota AI yang bisa dibeli = `[BL-069]`; tagihan Rp 0 saat menambah pengguna = `[BL-049]`. Entri ini murni tentang **keterlihatannya**, jangan dikerjakan sebagai duplikat ketiganya.
 - **Area Terdampak:**
   - `resources/views/public/landing.blade.php` — bagian harga tidak menyebut seat maupun kuota AI sama sekali (dan paketnya sendiri karangan, `[BL-032]`)
   - `app/Http/Controllers/Auth/AuthController.php:35-47` — pendaftaran tidak menampilkan isi paket apa pun
@@ -562,7 +512,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(b)** Ringkasan isi paket di halaman `/langganan`, satu blok, mencakup **keduanya** — bukan seat saja seperti hari ini.
   **(c)** Pakai istilah yang sudah diputuskan 2026-08-07: **"seat bawaan paket"** vs **"seat tambahan"**. Jangan memperkenalkan kata ketiga di permukaan publik.
   **(d)** Untuk kuota AI, sebutkan juga **apa yang terjadi saat habis** (analisis ditolak sampai besok) dan bahwa BYOK melepas batas itu. Batas yang tidak dijelaskan konsekuensinya akan dibaca sebagai batas keras yang memutus fitur.
-  **(e)** **Jangan menjanjikan "tambah kuota AI" di landing sebelum `[BL-053]`(c) ada.** Alur belinya belum berbentuk sama sekali — tidak ada kolom, tidak ada tagihan, tidak ada layar.
+  **(e)** **Jangan menjanjikan "tambah kuota AI" di landing sebelum `[BL-069]` ada.** Alur belinya belum berbentuk sama sekali — tidak ada kolom, tidak ada tagihan, tidak ada layar.
 
 ### [BL-068] Multi-Cabang Belum Punya Wujud Apa Pun — Satu Tenant = Satu Outlet di Seluruh Basis Kode
 - **Ditemukan:** 2026-08-08
@@ -578,7 +528,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Deskripsi:**
   Tidak ada yang perlu "ditambahkan cabang"-nya; yang ada adalah asumsi satu-toko-satu-tenant yang tertanam di setiap tabel operasional. Menambahkan cabang berarti menyisipkan sumbu kedua (`branch_id`) di bawah `tenant_id` dan menjawabnya ulang di tiap tempat: stok per cabang atau bersama, katalog dan harga per cabang atau seragam, sesi kas jelas per cabang, staf terikat satu cabang atau bisa lintas, dan laporan default ke cabang mana.
   Hari ini seorang pemilik dua cabang bisa membuat dua tenant terpisah — dan itu **berhasil**, hanya tanpa laporan gabungan dan dengan dua tagihan. Untuk sebagian calon klien, itu sudah memadai; itu sebabnya menunda entri ini tidak menutup pintu penjualan.
-- **Kenapa syarat pemilik ("pastikan yang lain berhasil dulu") memang tepat:** cabang menyentuh penetapan harga (`[BL-053]`, `[BL-041]`), gerbang langganan (`[BL-054]`), dan laporan (`[BL-063]`) sekaligus. Mengerjakannya sekarang berarti tiga entri yang belum selesai itu harus ditulis dua kali — sekali untuk satu outlet, sekali untuk banyak.
+- **Kenapa syarat pemilik ("pastikan yang lain berhasil dulu") memang tepat:** cabang menyentuh penetapan harga (`[BL-041]`, `[BL-069]`), gerbang langganan (`[BL-054]`), dan laporan (`[BL-063]`) sekaligus. Mengerjakannya sekarang berarti tiga entri yang belum selesai itu harus ditulis dua kali — sekali untuk satu outlet, sekali untuk banyak.
 - **Yang harus dijawab sebelum satu baris kode pun ditulis:**
   1. **Cabang menaikkan tagihan atau tidak?** Ini pertanyaan pertama, bukan terakhir — jawabannya menentukan apakah `branch_id` cukup jadi kolom, atau harus jadi entitas yang ikut dihitung penetapan harga. Kalau tiap cabang dibayar terpisah, dua tenant terpisah nyaris sama saja dan fitur ini kehilangan alasan komersialnya.
   2. **Stok per cabang atau satu kolam?** Ini yang paling menentukan besarnya pekerjaan. Stok per cabang berarti seluruh pergerakan stok, transfer antar cabang, dan opname harus tahu cabang.
@@ -586,6 +536,130 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   4. **Staf terikat satu cabang, dan bagaimana hubungannya dengan RBAC yang sudah ada?** Peran hari ini berlaku se-tenant; "kasir di cabang A saja" adalah dimensi baru pada model izin, bukan peran baru.
   5. **Apa yang terjadi pada tenant yang sudah berjalan?** Jawaban yang paling murah dan paling aman: setiap tenant lahir dengan satu cabang bawaan, dan yang tidak pernah membuat cabang kedua tidak pernah melihat kata "cabang" di mana pun.
 - **Catatan pengerjaan:** kalau nanti dikerjakan, buka sebagai **fase tersendiri** dengan dokumennya sendiri di `docs/phases-*`, bukan sebagai entri backlog. Ukurannya sekelas fase SAAS, dan menyelundupkannya sebagai "satu perbaikan" akan menghasilkan migrasi setengah jadi di tabel yang paling tidak boleh setengah jadi.
+
+### [BL-069] Kuota AI Tambahan Belum Bisa Dibeli — Tidak Ada Kolom, Tidak Ada Harga, Tidak Ada Layar
+- **Ditemukan:** 2026-08-08 (dipecah dari `[BL-053]` butir (c) saat butir (a)+(b) selesai)
+- **Sumber:** Keputusan pemilik 2026-08-07 — "begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
+- **Status:** Open — **terhalang satu angka yang belum pernah ditetapkan**
+- **Prioritas:** Medium — tidak mendesak seperti seat (satuannya tidak sedang salah, ia memang belum ada sama sekali), tapi sudah dijanjikan pemilik dan sudah disebut di `[BL-067]`(e) sebagai hal yang **tidak boleh** dijanjikan di landing sebelum ada wujudnya
+- **Area Terdampak:**
+  - `app/Models/Plan.php` — `limits.ai_daily` menetapkan jatah harian per paket (2/5, 3/15, 5/30, 10/60); tak ada satu pun kolom untuk tambahan per langganan
+  - `app/Services/Ai/AiQuota.php` — `dailyLimitFor()` membaca paket lalu bawaan platform, dua tingkat, tanpa celah untuk kuota yang dibeli
+  - `app/Services/SubscriptionService.php` — `seatChargeFor()` + `issueDuePeriodInvoices()`: polanya sudah ada dan tinggal ditiru
+  - `resources/js/Pages/Billing/Show.vue` — panel beli/lepas kursi; kuota AI belum punya panel apa pun
+  - `app/Http/Controllers/Platform/PricingRuleController.php` — form paket menyetel `ai_daily_limit`, tapi tak ada harga per satuan kuota
+- **Deskripsi:**
+  Seat tambahan sudah jadi komponen bulanan yang bisa dibeli dan dilepas (`[BL-053]`). Kuota AI diputuskan mengikuti pola yang sama di hari yang sama, tapi **belum punya bentuk apa pun**: tidak ada `extra_ai_price` di `plans`, tidak ada kolom penampung di `subscriptions`, tidak ada alur beli, dan `AiQuota::dailyLimitFor()` tidak punya tempat untuk membacanya.
+  Yang benar-benar menghalangi bukan kodenya — polanya sudah terbukti dan tinggal ditiru — melainkan **harganya**. Berapa rupiah per berapa analisis, dan per hari atau per bulan, belum pernah diputuskan siapa pun. Menuliskan angka tebakan di migrasi berarti menetapkan harga tanpa ada yang memutuskannya, persis yang entri asalnya larang.
+- **Yang harus diputuskan sebelum satu baris kode pun ditulis:**
+  1. **Satuan yang dijual.** "+10 analisis/hari" (menaikkan plafon harian, sejalan dengan `ai_daily`) atau "+100 analisis sekali pakai" (kredit yang habis)? Keduanya menuntut mekanisme berbeda: yang pertama cukup satu angka tambahan yang dibaca `AiQuota`, yang kedua menuntut saldo yang berkurang dan karena itu tabel tersendiri.
+  2. **Harga per satuannya**, dan apakah ia per paket seperti `extra_seat_price` (makin tinggi paketnya makin murah) atau seragam. **Lihat hitungan ongkosnya di bawah** — angkanya sudah ada, yang belum keputusannya.
+  3. **Apa yang terjadi saat dilepas atau saat tenant turun paket** — kuota yang dibeli mengikuti pola seat (berlaku satu periode penuh ke depan), atau berhenti seketika.
+- **Usulan Perbaikan:**
+  **(a)** Ikuti pola seat apa adanya, jangan menemukan pola kedua: kolom hak di `subscriptions` (bukan paket baru per tenant — `Plan::limits` sudah JSON, tapi melahirkan paket per tenant akan meledakkan tabel paket), komponen tambahan di `issueDuePeriodInvoices()` yang ikut masuk `pricing_context.billing_breakdown`, dan panel beli/lepas di halaman langganan.
+  **(b)** `AiQuota::dailyLimitFor()` mendapat satu tingkat baru **di atas** paket: kuota yang dibeli langganan, lalu batas paket, lalu bawaan platform. Urutan pembacaannya sudah tunggal dan tetap (`[BL-047]`(b)) — tambahkan tingkatnya di sana, jangan bikin pembaca kedua.
+  **(c)** Sebutkan konsekuensinya di layar seperti yang diminta `[BL-067]`(d): apa yang terjadi saat kuota habis (analisis ditolak sampai besok), dan bahwa BYOK melepas batasnya sama sekali.
+  **(d) Jangan menjanjikannya di landing sebelum (a) ada** — `[BL-067]`(e).
+
+#### Ongkos sebenarnya — diukur, bukan diperkirakan (2026-08-08)
+
+SumoPod meneruskan harga API resmi tiap provider (perannya perantara, bukan penjual paket), jadi ongkos per analisis bisa dihitung persis dari pemakaian yang sudah tercatat.
+
+**Pengukuran.** `ai_analyses.tokens_used` menyimpan `usage.total_tokens` untuk 8 analisis yang pernah selesai: **1.487–1.932 token, rata-rata ±1.800**. Dari panjang `result` (523–2.315 karakter) pecahannya kira-kira **1.300 masukan / 550 keluaran**.
+
+**Yang paling penting dari pengukuran itu:** token TIDAK tumbuh mengikuti jumlah transaksi. `Kopi Nusantara` (3.367 transaksi, 4 produk) dan `Kopi Story` (4.476 transaksi, 20 produk) sama-sama di kisaran 1.850 token, karena `AiContextService` mengirim data yang **sudah diagregasi** — `top_products` di-`take(10)`, `daily_trend` sepanjang periode, bukan transaksi mentah.
+Yang **tumbuh** adalah `profit_by_item`: satu baris per produk, tanpa batas. Selisih 4 → 20 produk hampir tak terasa karena prompt tetapnya mendominasi, tapi tenant dengan 200 produk akan menambah kira-kira 5.000–8.000 token masukan — **tiga sampai empat kali lipat**. Kalau butir (a) dikerjakan, batasi `profit_by_item` lebih dulu; kalau tidak, harga yang ditetapkan hari ini akan salah untuk tenant terbesar, yaitu justru yang paling mungkin membeli.
+
+**Ongkos per analisis** pada bentuk hari ini (1.300 masuk / 550 keluar), kurs asumsi Rp 16.500/USD:
+
+| Model | $/1M masuk | $/1M keluar | per analisis |
+|---|---|---|---|
+| `qwen3.7-flash` | 0,03 | 0,13 | **± Rp 2** |
+| `gpt-5-nano` | 0,05 | 0,40 | ± Rp 5 |
+| `deepseek-v4-flash` | 0,14 | 0,28 | ± Rp 6 |
+| **`gpt-4o-mini` (dipakai sekarang)** | 0,15 | 0,60 | **± Rp 9** |
+| `gemini-3.1-flash-lite` | 0,25 | 1,50 | ± Rp 19 |
+| `gpt-5-mini` | 0,25 | 2,00 | ± Rp 24 |
+| `claude-haiku-4-5` | 1,00 | 5,00 | ± Rp 67 |
+| `claude-sonnet-5` | 2,00 | 10,00 | ± Rp 134 |
+
+**Temuan yang paling menentukan, dan tidak ada hubungannya dengan harga jual kuota: yang menentukan untung-rugi fitur AI adalah PILIHAN MODEL, bukan harga kuotanya.** Rentangnya 60× dari ujung ke ujung. Paparan maksimum tiap paket bila jatah hariannya dipakai habis 30 hari:
+
+| Paket | Jatah | Maks/bulan | @ `gpt-4o-mini` | @ `claude-sonnet-5` |
+|---|---|---|---|---|
+| `free` (Rp 0) | 5/hari | 150 | Rp 1.350 | Rp 20.100 |
+| `paid-1` (Rp 100.000) | 15/hari | 450 | Rp 4.050 (4%) | Rp 60.300 (60%) |
+| `paid-2` (Rp 150.000) | 30/hari | 900 | Rp 8.100 (5%) | Rp 120.600 (80%) |
+| `paid-3` (Rp 200.000) | 60/hari | 1.800 | Rp 16.200 (8%) | **Rp 241.200 — melebihi langganannya** |
+
+Pada model sekarang jatah yang sudah terpasang aman di semua paket. Pada model kelas Sonnet, `paid-3` merugi meski tak seorang pun membeli kuota tambahan. **Periksa ini sebelum mengganti `AI_SUMOPOD_MODEL`,** bukan sesudahnya.
+
+#### Saran bentuk, kalau butir (a) jadi dikerjakan
+
+**(1) Jual PAKET KREDIT, jangan menaikkan plafon harian.** Menjual "+10/hari" berlangganan bulanan berarti menanggung paparan 30× plafonnya sementara hampir semua tenant memakainya beberapa hari saja — jadi harganya harus dipatok untuk kasus terburuk dan semua orang kemahalan. Paket kredit ("+100 analisis, berlaku sebulan") berbiaya persis sebanyak yang terpakai.
+Alasan kedua lebih kuat: plafon harian **tidak menjawab masalahnya**. Tenant menabrak batas pada SATU hari sibuk — tutup bulan, rapat dengan pemodal — bukan tiap hari. Menaikkan plafon 30 hari untuk menyelamatkan satu hari adalah bentuk yang salah.
+
+**(2) Pertimbangkan serius untuk TIDAK menjualnya sama sekali.** Dengan ongkos ± Rp 9/analisis, paket 100 analisis berongkos ± Rp 900; dijual Rp 10.000 marginnya 90% tapi **pendapatannya nyaris nol** — sepuluh tenant yang membeli tiap bulan menghasilkan Rp 100.000, kurang dari satu langganan. Yang dibayar untuk itu: kolom baru, komponen tagihan, alur beli, jalan melepas, layar, dan tes.
+Jatah AI per paket (5/15/30/60) **sudah** jadi pembeda paket yang bekerja — tenant yang kurang kuota punya alasan naik ke `paid-2`, dan itu Rp 50.000, bukan Rp 10.000. Menjual kuota eceran justru **melemahkan** tangga itu.
+Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mendesak), bukan sebagai lini pendapatan — dan jangan naikkan prioritasnya di atas entri yang menyentuh uang sungguhan.
+
+**(3) Kalau dijual, harga yang masuk akal:** paket 100 analisis Rp 10.000–15.000 sekali beli, berlaku sampai akhir periode berjalan. Seragam antar paket, tidak perlu tangga seperti `extra_seat_price` — ongkosnya tidak berbeda per paket, dan tangga yang tak berdasar hanya menambah angka yang harus dijelaskan.
+
+**Catatan kurs.** Seluruh rupiah di atas memakai asumsi Rp 16.500/USD dan **tidak terkunci**. Harga jual berdenominasi rupiah di atas ongkos berdenominasi dolar berarti marginnya menipis sendiri saat rupiah melemah. Pada margin 90% itu tidak berbahaya; pada model kelas Sonnet, di mana marginnya sudah negatif, kurs memperburuk yang sudah rusak.
+
+---
+
+### [BL-071] Alur Pendaftaran Tidak Pernah Ikut Berubah — Orang Menandatangani Masa Gratis yang Berakhir dengan Tagihan Tanpa Diberi Tahu
+- **Ditemukan:** 2026-08-08 (saat menutup `[BL-052]`)
+- **Sumber:** Permintaan pemilik 2026-08-08 — "saya mau simpan proses pendaftaran dengan alur yang baru juga mengingat banyak yang sudah berubah"
+- **Status:** Open
+- **Prioritas:** High — bukan soal tampilan. Sejak `[BL-052]` masa gratis **berakhir dengan perpindahan ke paket berbayar**, dan orang yang mendaftar hari ini tidak diberi tahu itu di layar mana pun sebelum ia menekan "Daftar"
+- **Area Terdampak:**
+  - `app/Http/Controllers/Auth/AuthController.php` — `register()`: memvalidasi lima field, membuat tenant, memanggil `startTrial()`, selesai. Tidak ada satu pun kalimat soal panjang masa gratis, tarif sesudahnya, atau paket tujuannya
+  - `resources/js/Pages/Auth/Register.vue` — **tidak memuat satu pun kata** "gratis", "coba", "bulan", "paket", "harga", atau "Rp" (dicek 2026-08-08)
+  - `app/Services/SubscriptionService.php` — `startTrial()`: satu-satunya tempat masa gratis dibuka; `trial_months` = 2 hanya hidup di config
+  - `app/Models/Plan.php` — `postTrialTarget()`: paket tujuannya sudah bisa ditanyakan, tinggal tak ada yang menanyakannya di halaman daftar
+  - `app/Http/Controllers/Billing/ConsentController.php` — persetujuan jalur harga hidup TERPISAH dari pendaftaran, di `/langganan/persetujuan`
+- **Deskripsi:**
+  Alur pendaftarannya ditulis ketika paket `free` masih tier termurah yang bisa dihuni selamanya. Sejak keputusan pemilik 2026-08-07 dan penutupan `[BL-052]`, ia bukan itu lagi: masa gratis dua bulan, lalu tenant **dipindahkan otomatis** ke paket berbayar, dan tagihan pertamanya terbit tujuh hari sebelum masa gratisnya habis.
+  Halaman langganan sudah mengatakan itu (`post_trial_plan`) — tapi baru **setelah** orang punya akun. Di titik keputusan yang sebenarnya, yaitu halaman daftar, tidak ada apa pun. Yang mendaftar hari ini menerima "Daftar Gratis" dari landing, mengisi lima kolom, dan baru mengetahui ada tarif menunggunya ketika ia membuka halaman langganan atas kemauannya sendiri. Sebagian tidak akan membukanya sampai tagihan pertamanya datang.
+- **Kenapa ini bukan pekerjaan menyalin kalimat:**
+  1. **Angkanya tidak boleh di-*hardcode*.** `trial_months` ada di config dan paket tujuannya penanda di `plans` yang bisa dipindah pemilik SaaS dari panel — keduanya justru dibuat begitu supaya tidak menuntut deploy. Halaman daftar yang menulis "2 bulan, lalu Rp 100.000" sebagai teks mati akan berbohong pada hari salah satunya diubah. Ia harus membaca `Plan::postTrialTarget()` dan `SubscriptionService::trialMonths()`, sama seperti `SubscriptionController` sudah melakukannya.
+  2. **Keadaan "belum ada paket tujuan" harus punya jawaban.** Panel bisa saja belum menandai paket mana pun. Halaman daftar tidak boleh menampilkan kalimat setengah jadi, dan juga tidak boleh diam-diam menjanjikan gratis selamanya.
+  3. **Hubungannya dengan persetujuan belum diputuskan.** Persetujuan jalur harga hari ini terpisah dan menyusul setelah akun jadi. Apakah pemberitahuan masa gratis cukup sebagai pemberitahuan, atau ia harus jadi kotak centang yang tercatat seperti `TenantConsent` — itu keputusan, bukan detail implementasi.
+- **Yang harus diputuskan pemilik sebelum dikerjakan:**
+  1. **Seberapa keras pemberitahuannya**: kalimat informatif di bawah tombol, atau kotak centang wajib yang tidak bisa dilewati.
+  2. **Apakah calon tenant memilih paket tujuannya saat mendaftar**, atau semua masuk lewat satu paket bawaan dan bisa pindah belakangan. Ini bersinggungan dengan `[BL-067]` (isi paket tidak terlihat sebelum orang mendaftar) — sebaiknya dijawab sekali untuk keduanya.
+  3. **Apakah "Daftar Gratis" di landing masih kalimat yang benar.** Ia tidak salah — dua bulan memang gratis — tapi ia menyembunyikan bagian yang paling menentukan.
+- **Usulan Perbaikan:**
+  **(a)** Kerjakan **setelah** ketiga keputusan di atas dijawab; kalau tidak, yang dihasilkan cuma kalimat yang harus ditulis ulang.
+  **(b)** Apa pun bentuknya, sumber angkanya `SubscriptionService::trialMonths()` + `Plan::postTrialTarget()`, dikirim sebagai prop dari `showRegister()`. Jangan menyalin angka ke Vue.
+  **(c)** Satu test yang mengunci ini: ubah paket tujuan lewat panel, lalu pastikan halaman daftar ikut menyebut paket yang baru. Tanpa itu, penanda yang bisa dipindah dari panel akan kembali jadi teks mati pada penulisan ulang berikutnya.
+  **(d)** Tinjau juga apakah `business_type` masih layak `nullable` sekarang setelah ia jadi dimensi harga sungguhan — di luar lingkup entri ini kalau ternyata besar, tapi ia ada di formulir yang sama.
+
+---
+
+### [BL-070] Membeli Seat di Tengah Periode Gratis Sampai Periode Habis — Prorata Ditunda, Bukan Ditolak
+- **Ditemukan:** 2026-08-08 (sisa `[BL-053]` butir (b)(2), sengaja dipisahkan untuk dipikirkan ulang)
+- **Sumber:** Keputusan pemilik 2026-08-08 — "gratis sisa periode", dipilih sadar sebagai yang paling sederhana, bukan sebagai yang paling adil
+- **Status:** Open — **bukan cacat.** Yang berjalan sekarang adalah pilihan yang diputuskan; entri ini menahan pertanyaannya supaya bisa ditinjau ulang dengan data pemakaian nyata
+- **Prioritas:** Low — kerugiannya berbatas dan bisa dihitung; jangan dikerjakan sebelum ada bukti bahwa polanya benar-benar dipakai
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `grantSeats()`: menaikkan `purchased_extra_seats` tanpa menagih apa pun untuk sisa periode
+  - `app/Services/SubscriptionService.php` — `seatChargeFor()`: menghitung hak untuk periode yang ditagih, tanpa dimensi hari
+  - `app/Services/SubscriptionService.php` — `releaseSeats()`: pasangannya, dan alasan celahnya tetap tertutup
+- **Deskripsi:**
+  Seat yang dibeli tanggal berapa pun dalam sebuah periode **gratis sampai periode itu habis**, lalu muncul utuh di tagihan berikutnya. Tenant yang membeli sehari setelah periodenya dibuka mendapat 29 hari cuma-cuma; yang membeli sehari sebelum periodenya habis mendapat 1 hari. Keduanya membayar sama.
+  Itu diputuskan sadar dan alasannya kuat: menagih prorata berarti menghidupkan kembali tagihan di tengah bulan — persis yang keputusan "seat jadi komponen bulanan" singkirkan — atau menambah satu baris prorata di tagihan berikutnya yang harus dijelaskan tiap kali. Ongkos penjelasannya nyata, sementara kerugiannya paling banyak satu periode per seat, sekali seumur pembelian.
+  **Celah "beli lalu lepas tanpa pernah bayar" TIDAK terbuka** — itu ditutup dari sisi lain: pelepasan berlaku satu periode penuh ke depan, jadi tiap seat yang dibeli pasti tertagih sekali. Yang tersisa murni soal keadilan waktu, bukan soal uang yang lolos.
+- **Kenapa layak dipikir ulang, dan kapan:**
+  Kerugiannya berbanding lurus dengan **seberapa sering seat dibeli di awal periode**. Selama pembelian tersebar merata sepanjang bulan, rata-ratanya setengah periode per seat dan itu ongkos akuisisi yang wajar. Yang membuatnya berubah sifat: kalau tenant belajar bahwa membeli tepat setelah tanggal tagih adalah yang paling menguntungkan, sebarannya berhenti merata dan mendekati "selalu di hari pertama". Itu bisa diukur — bandingkan tanggal `subscriptions.seats-granted` di `platform_audit_logs` terhadap `billing_anchor_day`.
+  **Ambang yang masuk akal untuk meninjau ulang:** kalau lebih dari separuh pembelian jatuh di sepertiga awal periode, polanya bukan kebetulan lagi.
+- **Tiga bentuk yang mungkin, kalau nanti diubah:**
+  **(a) Prorata per hari, masuk tagihan berikutnya sebagai baris terpisah.** Paling adil, dan tidak menghidupkan tagihan tengah bulan. Ongkosnya: satu perhitungan tanggal yang harus benar di bulan pendek, dan satu baris tagihan yang harus dijelaskan. Kalau ini yang dipilih, rincian prorata **wajib** ikut `pricing_context.billing_breakdown` — jangan ulangi pola tagihan yang tidak bisa dijelaskan pecahannya.
+  **(b) Prorata kasar setengah periode.** Seat yang dibeli di paruh pertama ditagih penuh, di paruh kedua gratis. Menutup sebagian besar kerugian dengan satu perbandingan tanggal, tanpa aritmetika hari. Lebih mudah dijelaskan ("dibeli sebelum tanggal 15, ditagih bulan ini juga") daripada prorata sesungguhnya.
+  **(c) Biarkan.** Tetap pilihan yang sah, dan yang paling murah dijelaskan. Kalau angkanya menunjukkan sebaran pembelian memang merata, ini jawabannya.
+- **Yang jangan dilakukan:** menagih seat dengan tagihan tersendiri di tengah periode. Itu mengembalikan `KIND_UPGRADE` beserta bukti transfer dan antrean pemeriksaannya, dan membatalkan alasan seluruh `[BL-053]` dikerjakan.
 
 ---
 
@@ -725,7 +799,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - **Bracket D turun dari Rp 100.000 ke Rp 75.000.** Bukan penyesuaian pasar. Karena Adaptif didefinisikan sebagai `paid-1` yang didiskon, D yang berharga sama dengan `paid-1` berarti **diskon 0%** — tenant menyerahkan data penjualannya dan menerima nol. Itu bukan sekadar sia-sia, itu ongkos privasi tanpa imbalan. Rinciannya di `[BL-048]`.
   - **Jatah seat `free` naik 1 → 2**, lewat migrasi, bukan lewat panel. Satu seat berarti pemilik toko satu-satunya yang bisa masuk — tidak ada kasir. Untuk aplikasi POS itu bukan paket terbatas melainkan paket yang tidak bisa dipakai, dan selama dua bulan pertama paket inilah wajah produknya.
   - **Kuota AI diisi eksplisit di keempat paket (5/15/30/60).** Sebelumnya hanya `Premium 1` yang menyetelnya; `Premium 2` dan `3` bernilai `null` sehingga ikut bawaan platform **5/hari** — artinya Rp 200.000 memberi kuota AI yang sama persis dengan paket gratis, dan **separuh** dari paket Rp 100.000 di bawahnya. Tangga harganya naik sementara nilainya turun. Ini cacat data, bukan keputusan, dan sudah diperbaiki berbarengan.
-  - **Yang TIDAK ikut ditetapkan:** harga seat tambahan sebagai biaya **bulanan**. Angkanya sudah dipasang (20k/15k/12,5k/10k) tapi penerbit tagihan hari ini masih menagihnya **sekali** — lihat `[BL-053]`. Sampai itu beres, keempat angka itu benar nilainya dan salah satuannya.
+  - ~~**Yang TIDAK ikut ditetapkan:** harga seat tambahan sebagai biaya **bulanan**.~~ **Beres 2026-08-08** (`[BL-053]`): keempat angka itu (20k/15k/12,5k/10k) kini benar-benar ditagih per bulan sebagai komponen tagihan langganan. Nilainya dan satuannya sudah sejalan.
   - **Keadaan terpasang per 2026-08-07 (query, bukan dugaan):** `free` Rp 0 / 2 seat / seat+ Rp 20.000 / AI 5 · `paid-1` Rp 100.000 / 3 / Rp 15.000 / AI 15 / **penampung adaptif** · `paid-2` Rp 150.000 / 5 / Rp 12.500 / AI 30 · `paid-3` Rp 200.000 / 10 / Rp 10.000 / AI 60. Bracket A–D 10k/25k/50k/**75k**, D ditutup di `< 50.000.000`. Jejaknya di `platform_audit_logs` (`plans.update` ×4, `pricing-rules.create` ×1). **Basis data lokal pengembangan**, bukan produksi.
 - **Keputusan pemilik 2026-08-01 — struktur tarif:**
   Menjawab pertanyaan yang menggantung di butir (a) dan di `[BL-044]`:
@@ -1022,6 +1096,8 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-053` | Seat tambahan dan kuota AI masih biaya sekali bayar — keputusan pemilik menyebutnya bulanan | 2026-08-08 (butir (a)+(b); butir (c) kuota AI dipecah ke `BL-069`) | `[ADDITION] Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053)` |
+| `BL-050` | Satu tenant hanya bisa menambah pengguna sekali per bulan kalender | 2026-08-08 (tertutup oleh `BL-053`, tanpa perubahan skema) | `[ADDITION] Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053)` |
 | `BL-054` | Masa tenggang belum bertingkat — kasir mati sejak hari pertama, padahal keputusan barunya tiga tahap | 2026-08-08 (butir (c) sebagian; pemadam kedua menunggu `BL-055`) | `[ADDITION] Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054)` |
 | `BL-052` | Masa gratis habis tanpa perpindahan ke `paid-1` — tenant bertarif Rp 0 tidak pernah ditagih, ia jatuh ke tenggang | 2026-08-08 (butir (d) 2026-08-07) | `[ADDITION] Masa Gratis Berakhir dengan Perpindahan, Bukan dengan Jatuh ke Tenggang (BL-052)` |
 | `BL-058` | Tagihan upgrade seat menelan tagihan langganan di bulan yang sama | 2026-08-07 | `[HOTFIX] Penjaga Periode-Ganda Menyaring kind, dan Tenant yang Dilewati Berhenti Menghilang dari Hitungan (BL-058)` |

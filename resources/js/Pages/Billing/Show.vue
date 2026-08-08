@@ -272,18 +272,29 @@ const estimateTones = {
     neutral: 'border-border bg-muted/40',
 };
 
-// --- Tambah pengguna ---
+// --- Tambah & lepas pengguna ---
 const upgradeForm = useForm({ additional_seats: 1 });
+const releaseForm = useForm({ released_seats: 1 });
 
 const submitUpgrade = () => upgradeForm.post('/langganan/tambah-pengguna', { preserveScroll: true });
+const submitRelease = () => releaseForm.post('/langganan/lepas-pengguna', { preserveScroll: true });
 
+// Biaya BULANAN, bukan sekali bayar (`[BL-053]`). Kalimatnya harus menyebut
+// satuannya, kalau tidak angka yang sama persis akan terbaca sebagai harga beli.
 const upgradeCost = computed(() => formatRupiah(props.upgrade.extra_seat_price * upgradeForm.additional_seats));
 
-// Selama paketnya mematok Rp 0 per pengguna tambahan, tidak ada tagihan yang
-// terbit dan tidak ada bukti yang perlu diunggah — jadi panelnya tidak boleh
-// menjanjikan keduanya. Turunan dari harga, bukan saklar tersendiri: begitu
-// tarifnya ditetapkan (`[BL-041]`), panel ini kembali sendiri ke alur tagihan.
+// Selama paketnya mematok Rp 0 per pengguna tambahan, tidak ada yang bertambah
+// di tagihan — jadi panelnya tidak boleh menjanjikan sebaliknya. Turunan dari
+// harga, bukan saklar tersendiri.
 const seatsAreFree = computed(() => props.upgrade.extra_seat_price <= 0);
+
+// Biaya seat tambahan yang berjalan sekarang. Ditampilkan sebagai hak beserta
+// asalnya — bukan sebagai statistik pemakaian: sejak dasarnya pembelian, kata
+// "puncak"/"pemakaian tertinggi" tidak lagi menjelaskan tagihan apa pun dan
+// justru menyesatkan siapa pun yang mencocokkannya dengan angka di layar.
+const extraSeatsCost = computed(() =>
+    formatRupiah(props.upgrade.extra_seat_price * props.subscription.extra_seats),
+);
 
 // --- Unggah bukti bayar ---
 const proofTarget = ref(null);
@@ -418,15 +429,27 @@ const invoiceStatusLabels = {
                         </dd>
                     </div>
 
-                    <!-- Kursi dapat barisnya sendiri: angka "3 dari 4" tidak
-                         memberi tahu seberapa dekat batasnya sampai dihitung. -->
+                    <!-- Kursi dapat barisnya sendiri, dan yang ditampilkan
+                         adalah HAK beserta asalnya — bukan statistik pemakaian
+                         (`[BL-053]`). Sejak seat tambahan ditagih karena dibeli,
+                         "terpakai sekian" tidak lagi menjelaskan tagihan apa
+                         pun; ia tinggal jadi petunjuk kapan kursi sebaiknya
+                         dilepas. -->
                     <div class="px-5 py-3.5">
                         <div class="flex items-baseline justify-between">
-                            <dt class="text-sm text-muted-foreground">Pengguna aktif</dt>
+                            <dt class="text-sm text-muted-foreground">Pengguna</dt>
                             <dd class="text-sm font-medium text-foreground tabular-nums">
-                                {{ subscription.seats_used }} dari {{ subscription.seats }}
+                                {{ subscription.seats }} kursi
                             </dd>
                         </div>
+
+                        <p class="mt-1 text-xs text-muted-foreground leading-relaxed">
+                            {{ subscription.included_seats }} dari paket {{ subscription.plan_name }}<template v-if="subscription.extra_seats > 0">,
+                            <span class="text-foreground font-medium">{{ subscription.extra_seats }} kursi tambahan yang Anda beli</span>
+                            ({{ formatRupiah(upgrade.extra_seat_price) }}/kursi/bulan = {{ extraSeatsCost }}/bulan)</template>.
+                            Terpakai {{ subscription.seats_used }}, tersisa {{ Math.max(0, subscription.seats - subscription.seats_used) }}.
+                        </p>
+
                         <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                             <div
                                 :class="['h-full rounded-full transition-[width] duration-300', seatPercent >= 100 ? 'bg-amber-500' : trackIdentity.accent]"
@@ -435,6 +458,15 @@ const invoiceStatusLabels = {
                         </div>
                         <p v-if="seatPercent >= 100" class="mt-2 text-xs text-amber-600 dark:text-amber-400">
                             Kursi Anda sudah penuh. Tambah pengguna di bawah bila perlu menambah staf.
+                        </p>
+
+                        <!-- Pelepasan yang sudah dijadwalkan. Tanggalnya wajib
+                             disebut: sampai hari itu kursinya masih boleh
+                             dipakai, dan tenant yang hanya melihat "akan
+                             dilepas" akan mengira kursinya hilang hari ini. -->
+                        <p v-if="upgrade.release_at" class="mt-2 text-xs text-muted-foreground">
+                            Pelepasan kursi tercatat: mulai {{ formatDate(upgrade.release_at) }} kursi tambahan Anda
+                            menjadi {{ upgrade.scheduled_seats }}. Sampai tanggal itu semuanya masih bisa dipakai.
                         </p>
                     </div>
                 </dl>
@@ -625,28 +657,22 @@ const invoiceStatusLabels = {
                 </template>
             </div>
 
-            <!-- Tambah pengguna -->
+            <!-- Tambah & lepas pengguna -->
             <div v-if="tenant.is_owner" class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
                 <p class="text-sm font-medium text-foreground">Tambah pengguna</p>
 
                 <p v-if="seatsAreFree" class="mt-1 text-sm text-muted-foreground leading-relaxed">
                     Paket {{ subscription.plan_name }} tidak menagih biaya per pengguna, jadi penambahannya
-                    langsung aktif — tanpa tagihan dan tanpa bukti transfer.
-                </p>
-                <p v-else-if="upgrade.is_provisional_blocked" class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                    Bukti bayar Anda pernah ditolak, jadi penambahan pengguna kini baru berlaku setelah bukti
-                    transfernya kami periksa.
+                    langsung aktif dan tidak menambah tagihan apa pun.
                 </p>
                 <p v-else class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                    Unggah bukti transfernya dan penggunanya langsung aktif — pemeriksaan menyusul.
+                    Kursi baru langsung bisa dipakai dan <span class="text-foreground font-medium">gratis sampai periode ini habis</span>.
+                    Sesudah itu ia masuk tagihan bulanan sebesar {{ formatRupiah(upgrade.extra_seat_price) }} per kursi —
+                    tidak ada tagihan terpisah di tengah bulan.
                 </p>
 
                 <p v-if="upgrade.has_open_request" class="mt-3 text-sm text-foreground">
-                    Ada permintaan penambahan yang belum selesai. Selesaikan tagihannya di bawah dulu.
-                </p>
-
-                <p v-else-if="upgrade.closed_for_period" class="mt-3 text-sm text-foreground">
-                    Penambahan pengguna untuk bulan ini sudah tercatat. Tambahan berikutnya bisa diajukan bulan depan.
+                    Ada tagihan penambahan pengguna lama yang belum selesai. Selesaikan tagihannya di bawah dulu.
                 </p>
 
                 <form v-else class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitUpgrade">
@@ -666,13 +692,64 @@ const invoiceStatusLabels = {
                         :disabled="upgradeForm.processing"
                         class="px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50"
                     >
-                        {{ seatsAreFree ? 'Tambah pengguna · gratis' : `Terbitkan tagihan · ${upgradeCost}` }}
+                        {{ seatsAreFree ? 'Tambah pengguna · gratis' : `Tambah pengguna · ${upgradeCost}/bulan` }}
                     </button>
                 </form>
 
                 <p v-if="upgradeForm.errors.additional_seats" role="alert" class="mt-2 text-xs text-destructive">
                     {{ upgradeForm.errors.additional_seats }}
                 </p>
+
+                <!-- Pelepasan. Wajib ada sejak tagihan mengikuti pembelian:
+                     tanpa jalan turun, tenant yang mengecil terkunci membayar
+                     selamanya (`[BL-053]`). Hanya dirender bila memang ada yang
+                     bisa dilepas — tombol mati tanpa penjelasan lebih buruk
+                     daripada tidak ada tombol. -->
+                <template v-if="!seatsAreFree && subscription.extra_seats > 0">
+                    <hr class="my-4 border-border" />
+
+                    <p class="text-sm font-medium text-foreground">Lepas pengguna tambahan</p>
+
+                    <p v-if="upgrade.release_at" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        Sudah ada pelepasan yang tercatat, berlaku {{ formatDate(upgrade.release_at) }}.
+                        Menambah pengguna lagi akan membatalkannya.
+                    </p>
+                    <p v-else-if="upgrade.releasable_seats < 1" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        Semua kursi Anda sedang dipakai staf aktif. Nonaktifkan salah satu staf dulu, baru kursinya
+                        bisa dilepas — pelepasan tidak akan mematikan akun siapa pun.
+                    </p>
+                    <template v-else>
+                        <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                            Berlaku di akhir periode berikutnya, bukan hari ini: kursinya masih bisa dipakai selama
+                            periode yang sudah ditagihkan. Paling banyak {{ upgrade.releasable_seats }} kursi sekarang.
+                        </p>
+
+                        <form class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitRelease">
+                            <div>
+                                <label for="released-seats" class="block text-xs font-medium text-muted-foreground mb-1">Jumlah</label>
+                                <input
+                                    id="released-seats"
+                                    v-model.number="releaseForm.released_seats"
+                                    type="number"
+                                    min="1"
+                                    :max="upgrade.releasable_seats"
+                                    class="w-24 px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                :disabled="releaseForm.processing"
+                                class="px-4 py-2 border border-border text-foreground text-sm font-semibold rounded-lg hover:bg-muted disabled:opacity-50"
+                            >
+                                Lepas kursi
+                            </button>
+                        </form>
+
+                        <p v-if="releaseForm.errors.released_seats" role="alert" class="mt-2 text-xs text-destructive">
+                            {{ releaseForm.errors.released_seats }}
+                        </p>
+                    </template>
+                </template>
             </div>
 
             <!-- Tagihan -->

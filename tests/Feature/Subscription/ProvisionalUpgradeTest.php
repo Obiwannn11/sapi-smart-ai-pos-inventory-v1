@@ -14,14 +14,28 @@ use function Pest\Laravel\actingAs;
 use function Pest\Laravel\post;
 
 /**
+ * Pembelian & pelepasan seat, dan alur bukti bayar yang tersisa.
+ *
+ * **Alur seat berubah total 2026-08-07** (`[BL-053]`): seat tambahan ditagih
+ * BULANAN karena dibeli, bukan sekali bayar lewat tagihan `KIND_UPGRADE`. Yang
+ * masih diuji di sini karena masih hidup: bukti bayar untuk tagihan langganan,
+ * dan penanganan tagihan `KIND_UPGRADE` PENINGGALAN yang terbit sebelum tanggal
+ * itu dan belum selesai. Tagihan peninggalan dibangun lewat factory — tidak ada
+ * lagi jalur aplikasi yang menerbitkannya.
+ */
+
+/**
  * @return array{tenant: Tenant, owner: User, subscription: Subscription}
  */
-function makeUpgradeContext(int $seats = 1): array
+function makeUpgradeContext(int $seats = 1, int $purchased = 0): array
 {
     Plan::default()->update(['extra_seat_price' => 5000]);
 
     $tenant = Tenant::factory()->active()->create();
-    $subscription = Subscription::factory()->seats($seats)->create(['tenant_id' => $tenant->id]);
+    $subscription = Subscription::factory()->seats($seats)->create([
+        'tenant_id' => $tenant->id,
+        'purchased_extra_seats' => $purchased,
+    ]);
     $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
 
     return ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription];
@@ -30,6 +44,26 @@ function makeUpgradeContext(int $seats = 1): array
 function requestUpgrade(int $seats = 2): Illuminate\Testing\TestResponse
 {
     return post('/langganan/tambah-pengguna', ['additional_seats' => $seats]);
+}
+
+function requestRelease(int $seats = 1): Illuminate\Testing\TestResponse
+{
+    return post('/langganan/lepas-pengguna', ['released_seats' => $seats]);
+}
+
+/**
+ * Tagihan `KIND_UPGRADE` peninggalan — bentuk yang dulu diterbitkan aplikasi.
+ */
+function legacyUpgradeInvoice(Tenant $tenant, Subscription $subscription, int $grants, int $previous, float $amount = 10000): Invoice
+{
+    return Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+        'kind' => Invoice::KIND_UPGRADE,
+        'grants_seats' => $grants,
+        'previous_seats' => $previous,
+        'amount' => $amount,
+    ]);
 }
 
 function uploadProof(Invoice $invoice): Illuminate\Testing\TestResponse
@@ -41,32 +75,67 @@ function uploadProof(Invoice $invoice): Illuminate\Testing\TestResponse
 
 beforeEach(fn () => Storage::fake('local'));
 
-// --- Permintaan upgrade ---
+// --- Membeli seat (`[BL-053]`) ---
 
-test('permintaan tambah pengguna menerbitkan tagihan seharga tarif per seat', function () {
+test('membeli pengguna tambahan berlaku seketika dan tidak menerbitkan tagihan apa pun', function () {
     ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
 
     actingAs($owner);
     requestUpgrade(2)->assertSessionHas('success');
 
-    $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
+    $subscription->refresh();
 
-    expect($invoice->kind)->toBe(Invoice::KIND_UPGRADE)
-        ->and((float) $invoice->amount)->toBe(10000.0)
-        ->and($invoice->grants_seats)->toBe(3)
-        ->and($invoice->previous_seats)->toBe(1)
-        // Seat belum berubah sebelum ada bukti bayar.
-        ->and($subscription->fresh()->seats)->toBe(1);
+    // Tak ada tagihan sekali bayar. Seat tambahan sudah jadi komponen tagihan
+    // bulanan; menerbitkan tagihan di muka berarti menagih dua kali untuk hak
+    // yang sama.
+    expect(Invoice::where('tenant_id', $tenant->id)->count())->toBe(0)
+        ->and($subscription->seats)->toBe(3)
+        // Angka yang jadi dasar tagihan punya kolomnya sendiri — tidak lagi
+        // disimpulkan dari selisih `seats − included_seats`.
+        ->and($subscription->purchased_extra_seats)->toBe(2);
 });
 
-test('hanya satu permintaan upgrade berjalan dalam satu waktu', function () {
-    ['owner' => $owner] = makeUpgradeContext();
+test('pembelian tercatat di jejak audit dengan angka sebelum dan sesudahnya', function () {
+    ['tenant' => $tenant, 'owner' => $owner] = makeUpgradeContext(seats: 1);
 
     actingAs($owner);
-    requestUpgrade();
-    requestUpgrade()->assertSessionHas('error');
+    requestUpgrade(2);
 
-    expect(Invoice::where('kind', Invoice::KIND_UPGRADE)->count())->toBe(1);
+    $logged = App\Models\PlatformAuditLog::where('action', 'subscriptions.seats-granted')->first();
+
+    expect($logged)->not->toBeNull()
+        ->and($logged->severity)->toBe(App\Models\PlatformAuditLog::SEVERITY_SENSITIVE)
+        ->and($logged->meta['tenant_id'])->toBe($tenant->id)
+        ->and($logged->meta['extra_seats_before'])->toBe(0)
+        ->and($logged->meta['extra_seats_after'])->toBe(2);
+});
+
+test('pembelian kedua di bulan yang sama tidak lagi ditolak', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+
+    actingAs($owner);
+    requestUpgrade(1)->assertSessionHas('success');
+
+    // Dulu ditolak: tagihan upgrade memakai `period` berformat `Y-m`, jadi
+    // indeks unik `(tenant_id, period, kind)` hanya mengizinkan satu per bulan
+    // kalender (`[BL-050]`). Tanpa tagihan, batas itu tidak punya objek lagi —
+    // dan warung yang mempekerjakan dua orang dalam sebulan memang biasa.
+    requestUpgrade(1)->assertSessionHas('success');
+
+    expect($subscription->fresh()->purchased_extra_seats)->toBe(2);
+});
+
+test('tagihan upgrade peninggalan yang belum selesai menahan pembelian baru', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+
+    legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
+
+    actingAs($owner);
+    requestUpgrade(1)->assertSessionHas('error');
+
+    // Melunasi tagihan lama menulis `seats = grants_seats` — angka dari dunia
+    // lama yang akan MENURUNKAN jatah tenant yang baru saja membeli di sini.
+    expect($subscription->fresh()->purchased_extra_seats)->toBe(0);
 });
 
 test('staf tidak bisa menaikkan tagihan usaha tempatnya bekerja', function () {
@@ -78,15 +147,163 @@ test('staf tidak bisa menaikkan tagihan usaha tempatnya bekerja', function () {
     requestUpgrade()->assertForbidden();
 });
 
-// --- Bukti bayar & pemberlakuan provisional ---
+test('staf juga tidak bisa menurunkannya', function () {
+    ['tenant' => $tenant] = makeUpgradeContext(seats: 4, purchased: 2);
 
-test('mengunggah bukti langsung memberlakukan seat tambahan', function () {
-    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+    $cashier = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    actingAs($cashier);
+    requestRelease()->assertForbidden();
+});
+
+// --- Melepas seat (`[BL-053]`) ---
+
+test('pelepasan berlaku satu periode penuh ke depan, bukan hari ini', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 4, purchased: 2);
 
     actingAs($owner);
-    requestUpgrade(2);
+    requestRelease(1)->assertSessionHas('success');
 
-    $invoice = Invoice::firstOrFail();
+    $subscription->refresh();
+
+    // Tagihan periode berikutnya terbit SEBELUM periode berjalan habis dan
+    // sudah memuat seat itu. Melepasnya di akhir periode berjalan berarti
+    // menagih seat yang sudah tidak bisa dipakai.
+    $expected = $subscription->nextAnchoredDateAfter($subscription->current_period_end);
+
+    expect($subscription->seat_release_at->toDateString())->toBe($expected->toDateString())
+        ->and($subscription->scheduled_extra_seats)->toBe(1)
+        // Haknya BELUM turun — sampai tanggal itu kursinya masih boleh dipakai.
+        ->and($subscription->purchased_extra_seats)->toBe(2)
+        ->and($subscription->seats)->toBe(4);
+});
+
+test('seat yang masih diduduki staf aktif tidak bisa dilepas', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 3, purchased: 1);
+
+    // Owner + 2 kasir = 3 pengguna aktif, persis sebanyak kursinya.
+    User::factory()->count(2)->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    actingAs($owner);
+    requestRelease(1)->assertSessionHas('error');
+
+    // Menolak, bukan memaksakan. Pelepasan kursi yang diam-diam mematikan akun
+    // kasir di tengah jam kerja jauh lebih merugikan daripada sebulan tagihan.
+    expect($subscription->fresh()->seat_release_at)->toBeNull()
+        ->and($subscription->fresh()->activeSeatsUsed())->toBe(3);
+});
+
+test('melepas lebih banyak daripada yang kosong ditolak dengan angkanya', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 5, purchased: 3);
+
+    // Owner + 3 kasir = 4 aktif dari 5 kursi, jadi hanya 1 yang boleh dilepas.
+    User::factory()->count(3)->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    actingAs($owner);
+    requestRelease(2)->assertSessionHas('error');
+
+    expect($subscription->fresh()->seat_release_at)->toBeNull();
+
+    requestRelease(1)->assertSessionHas('success');
+
+    expect($subscription->fresh()->scheduled_extra_seats)->toBe(2);
+});
+
+test('membeli lagi membatalkan pelepasan yang sedang menunggu', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 4, purchased: 2);
+
+    actingAs($owner);
+    requestRelease(2);
+
+    expect($subscription->fresh()->seat_release_at)->not->toBeNull();
+
+    requestUpgrade(1);
+
+    $subscription->refresh();
+
+    // Tenant yang berubah pikiran jelas tidak sedang meminta keduanya.
+    // Membiarkan keduanya hidup berarti kursi yang baru dibeli ikut lenyap di
+    // tanggal pelepasan, tanpa seorang pun memintanya.
+    expect($subscription->seat_release_at)->toBeNull()
+        ->and($subscription->scheduled_extra_seats)->toBeNull()
+        ->and($subscription->purchased_extra_seats)->toBe(3);
+});
+
+test('pelepasan berlaku sendiri begitu tanggalnya tiba', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 4, purchased: 2);
+
+    actingAs($owner);
+    requestRelease(2);
+
+    $subscription->refresh();
+    $this->travelTo($subscription->seat_release_at->copy()->addDay());
+
+    Pest\Laravel\artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $subscription->refresh();
+
+    expect($subscription->purchased_extra_seats)->toBe(0)
+        ->and($subscription->seats)->toBe(2)
+        ->and($subscription->seat_release_at)->toBeNull()
+        ->and($subscription->scheduled_extra_seats)->toBeNull();
+});
+
+test('pelepasan yang belum jatuh tempo tidak disentuh perintah harian', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 4, purchased: 2);
+
+    actingAs($owner);
+    requestRelease(2);
+
+    Pest\Laravel\artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    expect($subscription->fresh()->purchased_extra_seats)->toBe(2)
+        ->and($subscription->fresh()->seats)->toBe(4);
+});
+
+// --- Apa yang dilihat tenant di halaman langganan ---
+
+test('halaman langganan menyebut asal-usul kursinya, bukan pemakaian puncaknya', function () {
+    ['owner' => $owner] = makeUpgradeContext(seats: 4, purchased: 2);
+
+    actingAs($owner);
+
+    Pest\Laravel\get('/langganan')->assertInertia(fn (Inertia\Testing\AssertableInertia $page) => $page
+        ->where('subscription.seats', 4)
+        // Dipecah supaya layar bisa mengatakan "2 dari paket, 2 yang Anda
+        // beli". Total saja tidak menjawab pertanyaan yang benar-benar
+        // ditanyakan tenant saat melihat tagihannya.
+        ->where('subscription.included_seats', 2)
+        ->where('subscription.extra_seats', 2)
+        ->where('upgrade.releasable_seats', 2)
+        ->where('upgrade.release_at', null)
+    );
+});
+
+test('pelepasan yang sedang menunggu ikut dikirim ke layar beserta tanggalnya', function () {
+    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 4, purchased: 2);
+
+    actingAs($owner);
+    requestRelease(1);
+
+    $expected = $subscription->fresh()->seat_release_at->toDateString();
+
+    Pest\Laravel\get('/langganan')->assertInertia(fn (Inertia\Testing\AssertableInertia $page) => $page
+        ->where('upgrade.scheduled_seats', 1)
+        // Tanggalnya wajib ikut: sampai hari itu kursinya masih boleh dipakai,
+        // dan tenant yang hanya melihat "akan dilepas" akan mengira kursinya
+        // hilang hari ini.
+        ->where('upgrade.release_at', $expected)
+    );
+});
+
+// --- Bukti bayar & pemberlakuan provisional (tagihan peninggalan) ---
+
+test('mengunggah bukti langsung memberlakukan seat tambahan', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
+
+    actingAs($owner);
     uploadProof($invoice)->assertSessionHas('success');
 
     expect($invoice->fresh()->status)->toBe(Invoice::STATUS_AWAITING_VERIFICATION)
@@ -97,11 +314,14 @@ test('mengunggah bukti langsung memberlakukan seat tambahan', function () {
 });
 
 test('bukti bayar disimpan di disk privat, bukan yang bisa diakses publik', function () {
-    ['owner' => $owner] = makeUpgradeContext();
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext();
+
+    $invoice = Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+    ]);
 
     actingAs($owner);
-    requestUpgrade();
-    $invoice = Invoice::firstOrFail();
     uploadProof($invoice);
 
     Storage::disk('local')->assertExists($invoice->fresh()->proof_path);
@@ -120,14 +340,14 @@ test('tenant tidak bisa mengunggah bukti untuk tagihan tenant lain', function ()
     uploadProof($invoiceOrangLain)->assertForbidden();
 });
 
-// --- Penolakan ---
+// --- Penolakan (tagihan peninggalan) ---
 
 test('penolakan mengembalikan seat tanpa menonaktifkan staf yang terlanjur dibuat', function () {
     ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
 
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
+
     actingAs($owner);
-    requestUpgrade(2);
-    $invoice = Invoice::firstOrFail();
     uploadProof($invoice);
 
     // Tenant memakai seat barunya.
@@ -151,11 +371,11 @@ test('penolakan mengembalikan seat tanpa menonaktifkan staf yang terlanjur dibua
 });
 
 test('penolakan memberi tenggang tiga hari untuk memperbaiki', function () {
-    ['owner' => $owner] = makeUpgradeContext();
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext();
+
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
 
     actingAs($owner);
-    requestUpgrade();
-    $invoice = Invoice::firstOrFail();
     uploadProof($invoice);
 
     actingAs(PlatformUser::factory()->withAllModules()->create(), 'platform');
@@ -165,12 +385,12 @@ test('penolakan memberi tenggang tiga hari untuk memperbaiki', function () {
 });
 
 test('tenant yang pernah ditolak tidak lagi dapat pemberlakuan langsung', function () {
-    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
     $subscription->update(['provisional_blocked' => true]);
 
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
+
     actingAs($owner);
-    requestUpgrade(2);
-    $invoice = Invoice::firstOrFail();
     uploadProof($invoice)->assertSessionHas('success');
 
     expect($invoice->fresh()->status)->toBe(Invoice::STATUS_AWAITING_VERIFICATION)
@@ -179,52 +399,6 @@ test('tenant yang pernah ditolak tidak lagi dapat pemberlakuan langsung', functi
 });
 
 // --- Tagihan Rp 0 (`[BL-049]`) ---
-
-test('penambahan pengguna gratis langsung berlaku tanpa menuntut bukti transfer', function () {
-    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
-    Plan::default()->update(['extra_seat_price' => 0]);
-
-    actingAs($owner);
-    requestUpgrade(2)->assertSessionHas('success');
-
-    $invoice = Invoice::firstOrFail();
-
-    expect($invoice->status)->toBe(Invoice::STATUS_PAID)
-        ->and($invoice->settled_via)->toBe(InvoiceSettlement::SOURCE_ZERO_AMOUNT)
-        // Tak ada yang memeriksa apa pun — tak ada yang perlu diperiksa.
-        ->and($invoice->verified_by)->toBeNull()
-        ->and($invoice->proof_path)->toBeNull()
-        ->and($subscription->fresh()->seats)->toBe(3);
-});
-
-test('permintaan kedua di bulan yang sama ditolak dengan kalimat, bukan galat 500', function () {
-    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
-    Plan::default()->update(['extra_seat_price' => 0]);
-
-    actingAs($owner);
-    requestUpgrade(1)->assertSessionHas('success');
-
-    // Yang pertama sudah lunas, jadi `openUpgradeInvoice()` tidak lagi
-    // menahannya — dan tanpa penjaga periode, `Invoice::create()` menabrak
-    // indeks unik `(tenant_id, period, kind)`.
-    requestUpgrade(1)->assertSessionHas('error');
-
-    expect(Invoice::where('kind', Invoice::KIND_UPGRADE)->count())->toBe(1)
-        ->and($subscription->fresh()->seats)->toBe(2);
-});
-
-test('bukti yang pernah ditolak tidak mengunci penambahan yang memang gratis', function () {
-    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
-    $subscription->update(['provisional_blocked' => true]);
-    Plan::default()->update(['extra_seat_price' => 0]);
-
-    actingAs($owner);
-    requestUpgrade(2);
-
-    // `provisional_blocked` menahan seat yang naik tanpa dibayar. Di sini tak
-    // ada yang harus dibayar, jadi menegakkannya hanya membuat jalan buntu.
-    expect($subscription->fresh()->seats)->toBe(3);
-});
 
 test('tagihan langganan Rp 0 TIDAK ikut dilunasi sendiri', function () {
     ['tenant' => $tenant, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
@@ -247,14 +421,7 @@ test('tagihan langganan Rp 0 TIDAK ikut dilunasi sendiri', function () {
 test('perintah melunasi tagihan gratis yang terlanjur menggantung', function () {
     ['tenant' => $tenant, 'subscription' => $subscription] = makeUpgradeContext(seats: 2);
 
-    $invoice = Invoice::factory()->create([
-        'tenant_id' => $tenant->id,
-        'subscription_id' => $subscription->id,
-        'kind' => Invoice::KIND_UPGRADE,
-        'amount' => 0,
-        'grants_seats' => 5,
-        'previous_seats' => 2,
-    ]);
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 5, previous: 2, amount: 0);
 
     $this->artisan('subscriptions:settle-free-upgrades', ['--dry-run' => true])->assertSuccessful();
 
@@ -292,19 +459,19 @@ test('perintah tidak menyentuh tagihan gratis yang buktinya sudah ditolak', func
         ->and($subscription->fresh()->seats)->toBe(2);
 });
 
-// --- Verifikasi ---
+// --- Verifikasi (tagihan peninggalan) ---
 
 test('verifikasi upgrade menambah seat tanpa memperpanjang periode atau mengubah tarif bulanan', function () {
-    ['owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext(seats: 1);
     $subscription->update([
         'provisional_blocked' => true,
         'price_locked' => 50000,
         'current_period_end' => now()->addDays(10)->toDateString(),
     ]);
 
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
+
     actingAs($owner);
-    requestUpgrade(2);
-    $invoice = Invoice::firstOrFail();
     uploadProof($invoice);
 
     actingAs(PlatformUser::factory()->withAllModules()->create(), 'platform');
@@ -313,18 +480,18 @@ test('verifikasi upgrade menambah seat tanpa memperpanjang periode atau mengubah
     $subscription->refresh();
 
     expect($subscription->seats)->toBe(3)
-        // Biaya sekali-bayar untuk kasir tambahan bukan harga langganan.
+        // Tagihan upgrade bukan harga langganan.
         ->and((float) $subscription->price_locked)->toBe(50000.0)
         ->and($subscription->current_period_end->toDateString())
         ->toBe(now()->addDays(10)->toDateString());
 });
 
 test('pemilik saas bisa membuka bukti transfernya dan aksesnya tercatat', function () {
-    ['owner' => $owner] = makeUpgradeContext();
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext();
+
+    $invoice = legacyUpgradeInvoice($tenant, $subscription, grants: 3, previous: 1);
 
     actingAs($owner);
-    requestUpgrade();
-    $invoice = Invoice::firstOrFail();
     uploadProof($invoice);
 
     actingAs(PlatformUser::factory()->withAllModules()->create(), 'platform');

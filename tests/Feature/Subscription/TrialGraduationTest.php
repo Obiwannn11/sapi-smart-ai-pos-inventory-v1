@@ -129,8 +129,14 @@ test('the seat allowance follows the new plan, and purchased seats survive it', 
     $target = postTrialPlan(includedSeats: 3);
     ['subscription' => $subscription] = freeTrialTenant(daysUntilTrialEnds: 3);
 
-    // Satu seat dibeli di atas jatah paket gratis (2 + 1).
-    $subscription->update(['seats' => Plan::default()->included_seats + 1]);
+    // Satu seat dibeli di atas jatah paket gratis (2 + 1). Sejak `[BL-053]`
+    // jumlah yang dibeli punya kolomnya sendiri dan tidak lagi disimpulkan dari
+    // selisih `seats − included_seats` — jadi keduanya harus disetel bersama,
+    // persis seperti yang dilakukan jalur pembeliannya.
+    $subscription->update([
+        'seats' => Plan::default()->included_seats + 1,
+        'purchased_extra_seats' => 1,
+    ]);
 
     artisan('subscriptions:advance-lifecycle')->assertSuccessful();
 

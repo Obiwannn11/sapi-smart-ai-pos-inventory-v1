@@ -57,6 +57,13 @@ class SubscriptionController extends Controller
                 'pricing_track' => $subscription->pricing_track,
                 'seats' => $subscription->seats,
                 'seats_used' => $subscription->activeSeatsUsed(),
+                // Asal-usul kursinya dipecah, bukan cuma totalnya (`[BL-053]`).
+                // Sejak seat tambahan jadi komponen tagihan bulanan, "6 kursi"
+                // saja tidak lagi menjawab pertanyaan yang benar-benar
+                // ditanyakan tenant saat melihat tagihannya: mana yang sudah
+                // termasuk paket, dan mana yang ia bayar sendiri tiap bulan.
+                'included_seats' => $subscription->plan->included_seats,
+                'extra_seats' => $subscription->purchased_extra_seats,
                 'trial_ends_at' => $subscription->trial_ends_at?->toDateString(),
                 // Paket yang akan dihuni tenant begitu masa gratisnya habis —
                 // `[BL-052]`(c). Diberitahukan SEBELUM hari-H, bukan lewat
@@ -129,15 +136,24 @@ class SubscriptionController extends Controller
                 ]),
             'upgrade' => [
                 'extra_seat_price' => (float) $subscription->plan->extra_seat_price,
+                // Peninggalan: tagihan `KIND_UPGRADE` yang terbit sebelum
+                // 2026-08-07 dan belum selesai. Tak ada lagi yang lahir, tapi
+                // yang menggantung masih menahan pembelian seat baru — lihat
+                // `UpgradeController::store()`.
                 'has_open_request' => $subscriptions->openUpgradeInvoice($tenant) !== null,
-                // Batas satu upgrade per bulan kalender, turunan indeks unik
-                // `(tenant_id, period, kind)`. Dikirim supaya formulirnya tidak
-                // ditawarkan untuk kemudian ditolak — lihat `[BL-050]`.
-                'closed_for_period' => $subscriptions->hasUpgradeInvoiceThisPeriod($tenant),
-                // Dinyatakan terus terang, bukan disembunyikan: tenant berhak
-                // tahu bahwa penambahan pengguna kini menunggu pemeriksaan, dan
-                // kenapa.
-                'is_provisional_blocked' => $subscription->provisional_blocked,
+                // Paling banyak berapa yang boleh dilepas sekarang. Dikirim
+                // sebagai angka, bukan sebagai boolean "boleh/tidak": formulir
+                // yang menawarkan pengurangan lalu menolaknya membuat tenant
+                // menebak sendiri berapa yang sebenarnya bisa.
+                'releasable_seats' => $subscriptions->seatReleaseCeiling($subscription),
+                // Pelepasan yang sudah dijadwalkan tapi belum berlaku
+                // (`[BL-053]`). Tanggalnya ikut, karena sampai hari itu kursinya
+                // masih boleh dipakai — dan tenant yang tidak tahu tanggalnya
+                // akan mengira kursinya sudah hilang hari ini.
+                'scheduled_seats' => $subscription->hasPendingSeatRelease()
+                    ? $subscription->scheduled_extra_seats
+                    : null,
+                'release_at' => $subscription->seat_release_at?->toDateString(),
             ],
             // Peragaan (`[BL-045]`). `false` di produksi dan untuk tenant biasa,
             // sehingga panelnya tidak pernah dirender sama sekali di sana —

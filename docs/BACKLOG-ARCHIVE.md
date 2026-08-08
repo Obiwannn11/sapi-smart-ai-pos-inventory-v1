@@ -657,3 +657,64 @@
   Fungsi `closeList()` dipanggil setiap kali menemui baris kosong (`trimmed === ''`), menutup `<ol>`/`<ul>` yang sedang terbuka. Karena LLM sering menyisipkan baris kosong antar item list untuk keterbacaan, tiap item berakhir jadi list tunggal baru bukan lanjutan list sebelumnya.
 - **Perbaikan:**
   Saat menemui baris kosong, renderer mengintip baris non-kosong berikutnya (`nextLineContinuesList()`); bila masih match pola list dengan `listType` sama, list dibiarkan terbuka (baris kosong = pemisah item), selain itu ditutup seperti semula. Diverifikasi untuk kasus: list dengan spasi antar item, list diikuti paragraf, dan list campuran ordered+unordered.
+
+### [BL-053] Seat Tambahan dan Kuota AI Masih Biaya Sekali Bayar — Keputusan Pemilik Menyebutnya Bulanan
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Keputusan pemilik 2026-08-07 — "seat tambahan include dalam bulanan, begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
+- **Status:** Selesai (2026-08-08) — butir (a)+(b) beserta keputusan pemilik kedua. Lihat `[ADDITION] Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053)` di `docs/CHANGELOG.md`. **Butir (c) — kuota AI — dipecah ke `[BL-069]`, belum dikerjakan.**
+- **Prioritas:** High — angkanya sudah terpasang, jadi satuannya salah **sejak sekarang**, bukan nanti
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `'amount' => $price`, tanpa komponen seat apa pun
+  - `app/Services/SubscriptionService.php` — `requestSeatUpgrade()`: `amount = extra_seat_price × jumlah`, tagihan `KIND_UPGRADE` sekali bayar
+  - `app/Models/Subscription.php` — `seat_high_water` + `recordSeatUsage()`: **sudah ada dan memang untuk ini**
+- **Deskripsi:**
+  Tagihan langganan otomatis hanya memuat harga paket. Seat tambahan ditagih **sekali** lewat invoice `KIND_UPGRADE`, lalu seat-nya melekat permanen. Artinya `extra_seat_price` Rp 20.000 hari ini berbunyi *"Rp 20.000 sekali, seat itu milik Anda selamanya"* — bukan Rp 20.000 per bulan.
+  Angka 20k/15k/12,5k/10k sudah dipasang 2026-08-07 dengan maksud bulanan. Sampai komponen bulanannya ada, **nilainya benar tapi satuannya salah**, dan tiap seat yang dibeli sekarang jadi kesepakatan permanen yang jauh lebih murah daripada yang dimaksud.
+- **Yang membuatnya lebih murah dari perkiraan:** model datanya sudah menunggu. `seat_high_water` ada beserta alasannya yang tertulis — *"Puncak inilah, bukan jumlah aktif saat penagihan, yang menjadi dasar tagihan periode berjalan"* — dengan penjaga akal-akalan yang sudah dipikirkan: menonaktifkan staf sehari sebelum tanggal tagih tidak boleh menghemat sebulan penuh. Yang belum ada hanya komponennya di penerbit.
+- **Usulan Perbaikan:**
+  **(a)** `amount` tagihan langganan jadi `harga + (seat_high_water − included_seats) × extra_seat_price`, dengan rinciannya ikut dibekukan di `pricing_context` — tagihan yang tidak bisa dijelaskan pecahannya akan jadi tiket dukungan pertama.
+  **(b)** **Putuskan tiga hal yang mengikutinya, jangan disimpulkan saat menulis kode:** (1) seat yang terlanjur diberikan seharga Rp 0 — kedua tenant hari ini memegangnya — mulai ditagih atau di-*grandfather*; (2) penambahan di tengah periode: prorata sisa periode lalu masuk tagihan bulanan, atau tunggu periode berikutnya; (3) **tenant Adaptif harganya dari bracket, tapi harga seat-nya dari paket** — dan sejak 2026-08-07 paketnya `paid-1`, jadi seat-nya Rp 15.000 sementara langganannya bisa Rp 10.000. Itu konsisten dengan "Adaptif = `paid-1` yang didiskon", tapi harus disengaja.
+  **(c)** Kuota AI tambahan belum punya bentuk sama sekali — tidak ada kolom, tidak ada alur beli. Kerjakan setelah (a), dan pakai pola yang sama; `Plan::limits` sudah berupa JSON, jadi penambahan kuota per langganan sebaiknya hidup di `subscriptions`, bukan melahirkan paket baru per tenant.
+- **Keputusan pemilik 2026-08-07 (kedua) — dasar tagihan seat bukan pemakaian puncak, melainkan seat yang dibeli.** Ini **mengoreksi butir (a) dan (b)(2) di atas**, jangan dikerjakan menurut bunyi lamanya.
+  Yang diminta: seat tambahan ditagih **karena dibeli**, terpakai atau tidak. Contoh yang diberikan pemilik — paket memberi 3 seat, tenant membeli 2 seat tambahan, tapi yang benar-benar dipakai baru 4 orang (1 seat menganggur): tagihannya tetap 5 seat. Sekali dibeli untuk bulan berjalan, langganannya jalan terus sampai seat itu **dilepas dengan sengaja**.
+  **Akibatnya untuk (a):** rumusnya bukan `seat_high_water − included_seats`, melainkan `purchased_extra_seats` — angka yang dimiliki langganan itu sendiri, bukan angka yang disimpulkan dari pemakaian. `seat_high_water` **tidak lagi jadi dasar harga**; ia paling banter tinggal jadi penjaga *agar tenant tidak memakai lebih banyak seat daripada yang dibelinya*, dan bahkan itu sudah dijaga oleh `seats` biasa. Kalau ternyata tidak ada lagi pembacanya sesudah (a), hapus kolomnya lewat migrasi, jangan tinggalkan sebagai kolom mati yang menyesatkan pembaca berikutnya.
+  **Akibatnya untuk UI:** istilah "puncak"/"pemakaian tertinggi" **dihapus dari halaman langganan**. Yang ditampilkan adalah hak dan asalnya, bukan statistik pemakaian:
+  > Pengguna: **5 seat** — 3 dari paket Premium 1, **2 seat tambahan yang Anda beli** (@ Rp 15.000/bulan = Rp 30.000/bulan). Terpakai 4, tersisa 1.
+  "Terpakai 4" boleh tampil sebagai **informasi**, tapi tidak boleh terbaca seolah memengaruhi tagihan — justru sebaliknya, ia jadi petunjuk kapan tenant sebaiknya melepas seat. Sebutan untuk komponennya: **"seat tambahan"** (dibeli sendiri), lawan dari **"seat bawaan paket"**.
+  **Yang jadi wajib karena keputusan ini, dan belum ada sama sekali: jalan untuk melepas seat.** Selama tagihannya mengikuti pemakaian puncak, tenant yang mengecil ikut mengecil sendiri. Begitu tagihannya mengikuti pembelian, tenant **terkunci membayar selamanya** kecuali ada tombol pengurangan. Ini menggantikan usul `[BL-046]`(d) ("beri batas waktu pada `seat_high_water`") — masalahnya sekarang bukan puncak yang tidak pernah turun, melainkan pembelian yang tidak pernah bisa dibatalkan.
+  **Tiga hal yang masih harus diputuskan sebelum ditulis kodenya:**
+  (1) **Pelepasan berlaku kapan** — seketika (dan tagihan bulan depan turun) atau di akhir periode berjalan? Yang kedua lebih jujur karena bulan berjalan sudah dibayar, dan menutup celah "beli tanggal 1, lepas tanggal 2".
+  (2) **Melepas seat yang masih diduduki staf aktif** — ditolak sampai stafnya dinonaktifkan lebih dulu, atau dibolehkan dan stafnya ikut terkunci? Menolak lebih aman; jangan sampai pelepasan seat diam-diam mematikan akun kasir di tengah jam kerja.
+  (3) **Prorata saat membeli di tengah periode** — masih butir (b)(2) yang lama dan masih terbuka; keputusan ini tidak menjawabnya.
+- **Catatan penutup 2026-08-08 — apa yang berubah dari usul di atas.**
+  - Butir (a) **tidak** dikerjakan menurut rumus aslinya. Keputusan pemilik kedua menggantinya: dasarnya `purchased_extra_seats`, kolom baru, bukan `seat_high_water − included_seats`.
+  - Usul menghapus `seat_high_water` **ditolak setelah diperiksa**: `ActiveSeatsResolver` masih membacanya sebagai dimensi `active_seats` untuk aturan Harga Adaptif. Kolomnya tetap; yang dicabut perannya di penagihan.
+  - Ketiga pertanyaan terbuka dijawab pemilik 2026-08-08: pelepasan berlaku satu periode penuh ke depan (bukan akhir periode berjalan — tagihan berikutnya sudah terbit sebelum itu); seat yang diduduki staf aktif ditolak pelepasannya; pembelian di tengah periode tetap gratis sampai periode habis.
+  - Butir (b)(1) — seat yang terlanjur gratis — dijawab "ikut ditagih". Backfill 2026-08-08 memberi `Kopi Nusantara` dan `Kopi Story` masing-masing 3 seat tambahan; tagihan keduanya naik dari Rp 100.000 ke Rp 145.000.
+
+---
+
+### [BL-050] Satu Tenant Hanya Bisa Menambah Pengguna Sekali per Bulan Kalender
+- **Ditemukan:** 2026-08-07 (saat mengerjakan `[BL-049]`)
+- **Sumber:** Test yang gagal dengan galat SQL, bukan telaah — permintaan upgrade kedua di bulan yang sama menabrak indeks unik
+- **Status:** Selesai (2026-08-08) — **tertutup tanpa menyentuh skemanya.** Lihat `[ADDITION] Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053)` di `docs/CHANGELOG.md`
+- **Prioritas:** Low sekarang; naik jadi Medium begitu `extra_seat_price` bukan nol lagi dan penambahan pengguna jadi jalur berbayar yang sungguhan
+- **Area Terdampak:**
+  - `database/migrations/2026_07_24_190001_add_upgrade_columns_to_invoices_table.php:34` — `unique(['tenant_id', 'period', 'kind'])`
+  - `app/Services/SubscriptionService.php` — `hasUpgradeInvoiceThisPeriod()`, penjaga yang menahannya sekarang
+  - `app/Http/Controllers/Billing/UpgradeController.php` — tempat penjaga itu dipanggil
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `upgrade.closed_for_period`
+  - `resources/js/Pages/Billing/Show.vue` — kalimat penggantinya di panel
+- **Deskripsi:**
+  Indeks unik `(tenant_id, period, kind)` lahir sebagai penjaga tagihan-langganan-ganda: satu tenant tidak boleh ditagih dua kali untuk bulan yang sama. Efek sampingnya tidak pernah dimaksudkan — karena tagihan upgrade juga memakai kolom `period` berformat `Y-m`, tenant hanya bisa punya **satu tagihan penambahan pengguna per bulan kalender**.
+  Selama tagihan upgrade tidak pernah selesai, batas itu tidak pernah tersentuh: `openUpgradeInvoice()` sudah menolak permintaan kedua lebih dulu, dengan kalimat yang masuk akal. Begitu upgrade bisa rampung — gratis seketika (`[BL-049]`) atau lewat verifikasi bukti — permintaan kedua di bulan yang sama lolos penjaga itu dan menabrak indeksnya sebagai **galat 500**. Sudah ditutup 2026-08-07 dengan penjaga yang menolaknya sebagai kalimat, jadi yang tersisa bukan cacat melainkan batasnya sendiri.
+  Kenapa batas itu tetap layak dicabut: warung yang mempekerjakan dua orang di bulan yang sama adalah kejadian biasa, bukan kasus tepi. Jalan memutarnya ada — ajukan sekaligus dalam satu permintaan, `max:20` — tapi itu menuntut tenant tahu lebih dulu berapa orang yang akan ia rekrut sebulan ke depan.
+- **Usulan Perbaikan:**
+  Uniknya sebenarnya hanya dibutuhkan untuk `KIND_SUBSCRIPTION`; tagihan upgrade tidak butuh keunikan apa pun. MySQL tidak punya indeks unik parsial, jadi pola yang portabel adalah **kolom kunci turunan yang null untuk upgrade** — mis. `period_key` berisi `period` untuk tagihan langganan dan `NULL` untuk upgrade, dengan `unique(['tenant_id', 'period_key'])`. MySQL maupun SQLite sama-sama mengabaikan baris ber-NULL pada indeks unik, jadi penjaga tagihan-ganda tetap utuh sementara upgrade bebas berulang.
+  **Yang wajib ikut diperiksa saat mengerjakannya:** `issueDuePeriodInvoices()` dan `Platform\InvoiceController::store()` sama-sama memakai `where('period', ...)->exists()` sebagai penjaga periode-ganda, bukan indeksnya. Keduanya harus ikut berpindah ke kunci yang baru, kalau tidak penjaga aplikasinya dan penjaga basis datanya akan menjaga dua hal yang berbeda.
+  Setelah itu, `hasUpgradeInvoiceThisPeriod()` beserta prop `closed_for_period` dan kalimatnya di `Show.vue` dibuang — ketiganya ada semata-mata untuk membungkus batas ini dengan sopan.
+- **Catatan penutup 2026-08-08 — usulnya tidak jadi dipakai, dan itu bukan kelalaian.**
+  Perubahan skema `period_key` yang diusulkan di atas **tidak diperlukan**. Sejak seat tambahan jadi komponen tagihan bulanan (`[BL-053]`), tak ada lagi tagihan `KIND_UPGRADE` yang lahir — jadi indeks unik `(tenant_id, period, kind)` tidak pernah lagi disentuh oleh penambahan pengguna, dan batas "sekali per bulan kalender" kehilangan objeknya. `hasUpgradeInvoiceThisPeriod()`, prop `closed_for_period`, dan kalimatnya di `Show.vue` dibuang persis seperti yang diminta paragraf terakhir entri ini; yang tidak jadi ditulis hanyalah migrasinya.
+  Indeks uniknya sendiri **tetap berguna** dan sengaja dibiarkan: ia masih menjaga tagihan langganan ganda, yang memang alasan ia lahir.
+
+---

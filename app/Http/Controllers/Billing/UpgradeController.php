@@ -4,30 +4,36 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
-use App\Services\Billing\InvoiceSettlement;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 /**
- * Penambahan seat oleh tenant, dan pengunggahan bukti transfernya.
+ * Pembelian dan pelepasan seat oleh tenant, dan pengunggahan bukti bayar.
  *
- * Alur upgrade provisional: tenant meminta tambahan seat → tagihan terbit →
- * bukti diunggah → seat LANGSUNG berlaku → pemilik SaaS memeriksa belakangan.
- * Menunggu verifikasi manual berarti warung yang kedatangan kasir baru pagi ini
- * tidak bisa mempekerjakannya sampai seseorang membuka email — dan itu alasan
- * yang buruk untuk menahan sebuah usaha.
+ * **Alur seat berubah total 2026-08-07** (`[BL-053]`). Sebelumnya: tenant
+ * meminta tambahan → tagihan sekali bayar terbit → bukti diunggah → seat
+ * berlaku. Sejak seat jadi komponen bulanan, tagihan sekali bayar itu menagih
+ * dua kali untuk hak yang sama — sekali di muka, lalu tiap bulan sesudahnya.
  *
- * Bila paketnya tidak menagih biaya per pengguna, seluruh alur itu dilewati —
- * lihat `InvoiceSettlement::settleIfFree()`.
+ * Yang berjalan sekarang: seat naik seketika, gratis sampai periode berjalan
+ * habis, dan mulai muncul di tagihan bulanan berikutnya. Tidak ada tagihan di
+ * tengah bulan, tidak ada bukti transfer, tidak ada antrean pemeriksaan. Karena
+ * hak itu tidak lagi berhenti sendiri, ada pasangannya: pelepasan seat, yang
+ * berlaku satu periode penuh ke depan.
+ *
+ * `storeProof()` tetap di sini dan tetap dipakai — ia melayani tagihan
+ * LANGGANAN, bukan seat.
  */
 class UpgradeController extends Controller
 {
     public function __construct(
         private readonly SubscriptionService $subscriptions,
-        private readonly InvoiceSettlement $settlement,
     ) {}
 
+    /**
+     * Beli seat tambahan. Berlaku sekarang, tertagih mulai periode berikutnya.
+     */
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -36,28 +42,64 @@ class UpgradeController extends Controller
 
         $tenant = $request->user()->tenant;
 
+        // Peninggalan, dan tetap perlu. Tak ada lagi tagihan `KIND_UPGRADE` yang
+        // lahir, tapi yang terbit sebelum 2026-08-07 masih bisa menggantung —
+        // dan melunasinya menulis `seats = grants_seats`, angka dari dunia lama
+        // yang akan MENURUNKAN jatah tenant yang baru saja membeli di sini.
         if ($this->subscriptions->openUpgradeInvoice($tenant) !== null) {
-            return back()->with('error', 'Masih ada permintaan penambahan pengguna yang belum selesai. Selesaikan dulu yang itu.');
+            return back()->with('error', 'Masih ada tagihan penambahan pengguna lama yang belum selesai. Selesaikan dulu yang itu.');
         }
 
-        // Batas satu tagihan upgrade per bulan datang dari indeks uniknya. Tanpa
-        // penjaga ini, permintaan kedua di bulan yang sama menabrak indeks itu
-        // dan yang dilihat tenant adalah halaman galat.
-        if ($this->subscriptions->hasUpgradeInvoiceThisPeriod($tenant)) {
-            return back()->with('error', 'Penambahan pengguna untuk bulan ini sudah tercatat. Ajukan lagi bulan depan, atau ajukan sekaligus dalam satu permintaan.');
+        $subscription = $this->subscriptions->grantSeats($tenant, $validated['additional_seats']);
+
+        return back()->with('success', sprintf(
+            'Jatah pengguna Anda kini %d dan langsung bisa dipakai. Tambahannya gratis sampai periode ini habis, '
+            .'lalu masuk tagihan bulanan sebesar %s per pengguna.',
+            $subscription->seats,
+            'Rp '.number_format((float) $subscription->plan->extra_seat_price, 0, ',', '.'),
+        ));
+    }
+
+    /**
+     * Lepas seat tambahan. Berlaku di akhir periode berikutnya.
+     *
+     * Dua penjaga, dan keduanya menolak dengan kalimat alih-alih diam-diam
+     * memotong angkanya: melepas lebih banyak daripada yang dibeli, dan melepas
+     * seat yang masih diduduki staf aktif. Yang kedua adalah keputusan pemilik
+     * 2026-08-07 — mematikan akun kasir di tengah jam kerja sebagai efek samping
+     * penghematan tagihan adalah kerugian yang jauh lebih besar.
+     */
+    public function destroy(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'released_seats' => ['required', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $tenant = $request->user()->tenant;
+        $subscription = $this->subscriptions->ensureFor($tenant);
+        $ceiling = $this->subscriptions->seatReleaseCeiling($subscription);
+
+        if ($ceiling < 1) {
+            return back()->with('error', $subscription->entitledExtraSeats() < 1
+                ? 'Anda tidak punya pengguna tambahan untuk dilepas — semua kursi Anda berasal dari paket.'
+                : 'Semua kursi Anda sedang dipakai staf aktif. Nonaktifkan salah satu staf dulu, baru kursinya bisa dilepas.');
         }
 
-        $invoice = $this->subscriptions->requestSeatUpgrade($tenant, $validated['additional_seats']);
-
-        // Tagihannya tetap diterbitkan lebih dulu, bukan dilewati: `grants_seats`
-        // dan `previous_seats` hidup di sana, dan itulah satu-satunya catatan
-        // bahwa seat pernah berpindah dari sekian ke sekian. Yang dilewati
-        // adalah tuntutan membayarnya, bukan jejaknya.
-        if ($this->settlement->settleIfFree($invoice)) {
-            return back()->with('success', 'Pengguna tambahan langsung aktif. Paket Anda tidak menagih biaya per pengguna, jadi tidak ada yang perlu ditransfer.');
+        if ($validated['released_seats'] > $ceiling) {
+            return back()->with('error', sprintf(
+                'Paling banyak %d pengguna tambahan yang bisa dilepas sekarang — sisanya masih dipakai staf aktif.',
+                $ceiling,
+            ));
         }
 
-        return back()->with('success', 'Tagihan penambahan pengguna diterbitkan. Unggah bukti transfer untuk mengaktifkannya.');
+        $subscription = $this->subscriptions->releaseSeats($tenant, $validated['released_seats']);
+
+        return back()->with('success', sprintf(
+            'Pelepasan %d pengguna tercatat dan berlaku %s. Sampai tanggal itu kursinya masih bisa dipakai, '
+            .'dan tagihan sesudahnya sudah tidak memuatnya.',
+            $validated['released_seats'],
+            $subscription->seat_release_at->translatedFormat('j F Y'),
+        ));
     }
 
     /**

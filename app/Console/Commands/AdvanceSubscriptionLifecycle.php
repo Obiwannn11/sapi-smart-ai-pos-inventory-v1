@@ -105,6 +105,16 @@ class AdvanceSubscriptionLifecycle extends Command
             $dryRun ? ' (dry-run)' : ''
         ));
 
+        // Dilaporkan meski nol. Pelepasan seat menurunkan tagihan bulan
+        // berikutnya, dan satu-satunya cara memastikan ia benar-benar berjalan
+        // adalah melihat angkanya bergerak di hari yang dijanjikan kepada
+        // tenant — bukan menyimpulkannya dari tagihan yang sudah telanjur salah.
+        $this->line(sprintf(
+            'Pelepasan seat berlaku         : %d langganan%s',
+            $result['seats_released'],
+            $dryRun ? ' (dry-run)' : ''
+        ));
+
         $this->info($dryRun
             ? 'Tidak ada yang diubah.'
             : 'Selesai.');

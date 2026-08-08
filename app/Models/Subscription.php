@@ -39,6 +39,7 @@ class Subscription extends Model
         'tenant_id', 'plan_id', 'pricing_track', 'track_changed_at', 'track_reverts_at',
         'track_revert_reason',
         'seats', 'seat_high_water', 'provisional_blocked', 'price_locked',
+        'purchased_extra_seats', 'scheduled_extra_seats', 'seat_release_at',
         'trial_ends_at', 'current_period_start', 'current_period_end', 'billing_anchor_day',
     ];
 
@@ -49,6 +50,7 @@ class Subscription extends Model
             'price_locked' => 'decimal:2',
             'track_changed_at' => 'datetime',
             'track_reverts_at' => 'date',
+            'seat_release_at' => 'date',
             'trial_ends_at' => 'datetime',
             'current_period_start' => 'date',
             'current_period_end' => 'date',
@@ -94,10 +96,13 @@ class Subscription extends Model
     /**
      * Naikkan penanda puncak bila pemakaian aktif sekarang melampauinya.
      *
-     * Puncak inilah — bukan jumlah aktif saat penagihan — yang menjadi dasar
-     * tagihan periode berjalan. Tanpa itu, menonaktifkan staf sehari sebelum
-     * tanggal tagih akan menghemat biaya sebulan penuh, dan batas seat berubah
-     * jadi formalitas.
+     * **Bukan lagi dasar tagihan** sejak keputusan pemilik kedua 2026-08-07
+     * (`[BL-053]`): seat tambahan ditagih karena DIBELI, terpakai atau tidak,
+     * jadi puncak pemakaian tidak lagi menentukan nominal apa pun. Yang
+     * dijawabnya sekarang tinggal satu: `active_seats` sebagai dimensi Harga
+     * Adaptif, dibaca `ActiveSeatsResolver`. Di sana alasan lamanya masih utuh —
+     * menonaktifkan staf sehari sebelum penagihan tidak boleh menurunkan bracket
+     * sebulan penuh.
      */
     public function recordSeatUsage(): void
     {
@@ -106,6 +111,37 @@ class Subscription extends Model
         if ($used > $this->seat_high_water) {
             $this->update(['seat_high_water' => $used]);
         }
+    }
+
+    /**
+     * Seat tambahan yang ditagih untuk periode yang dibuka `$periodStart`.
+     *
+     * Hak yang dibeli, bukan pemakaian yang diamati — itulah seluruh isi
+     * keputusan pemilik kedua 2026-08-07. Paket memberi 3 seat, tenant membeli 2
+     * lagi, yang benar-benar dipakai baru 4: tagihannya tetap 5 seat. Satu seat
+     * menganggur adalah kapasitas yang ia beli, bukan diskon yang ia dapat.
+     *
+     * `$periodStart` menentukan apakah pelepasan yang sudah dijadwalkan ikut
+     * berlaku. Ia harus periode yang DITAGIH, bukan `now()`: tagihan terbit
+     * `invoice_lead_days` sebelum periode berjalan habis, jadi menanyakan
+     * keadaan hari ini akan menagih periode depan dengan hak hari ini. Tanpa
+     * `$periodStart` yang dijawab adalah hak yang berlaku sekarang.
+     */
+    public function entitledExtraSeats(?CarbonInterface $periodStart = null): int
+    {
+        $released = $this->seat_release_at !== null
+            && $this->scheduled_extra_seats !== null
+            && $this->seat_release_at->lte($periodStart ?? now());
+
+        return (int) ($released ? $this->scheduled_extra_seats : $this->purchased_extra_seats);
+    }
+
+    /**
+     * Ada pelepasan seat yang sudah diminta tapi belum berlaku?
+     */
+    public function hasPendingSeatRelease(): bool
+    {
+        return $this->seat_release_at !== null && $this->scheduled_extra_seats !== null;
     }
 
     public function isSubsidized(): bool

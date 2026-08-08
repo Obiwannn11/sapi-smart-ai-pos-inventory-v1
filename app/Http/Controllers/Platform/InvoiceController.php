@@ -120,12 +120,19 @@ class InvoiceController extends Controller
             return back()->with('error', 'Tenant ini belum punya langganan.');
         }
 
+        // `kind` ikut disaring (`[BL-058]`): tagihan penambahan seat memakai
+        // `period` yang sama dengan tagihan langganan, jadi tanpa saringan ini
+        // satu upgrade di bulan X membuat pemilik SaaS TIDAK BISA menagih
+        // langganan bulan X sama sekali — ia hanya melihat "sudah ada", padahal
+        // yang ada bukan tagihan yang ia maksud. Indeks uniknya sejak awal
+        // `(tenant_id, period, kind)`; ini menyelaraskan penjaganya.
         $sudahAda = Invoice::where('tenant_id', $validated['tenant_id'])
             ->where('period', $validated['period'])
+            ->where('kind', Invoice::KIND_SUBSCRIPTION)
             ->exists();
 
         if ($sudahAda) {
-            return back()->with('error', "Tagihan periode {$validated['period']} untuk tenant ini sudah ada.");
+            return back()->with('error', "Tagihan langganan periode {$validated['period']} untuk tenant ini sudah ada.");
         }
 
         $resolved = $this->pricing->resolveFor(
@@ -145,6 +152,11 @@ class InvoiceController extends Controller
             'tenant_id' => $validated['tenant_id'],
             'subscription_id' => $subscription->id,
             'period' => $validated['period'],
+            // Ditulis eksplisit meski `$attributes` sudah membawa nilai yang
+            // sama: penjaga di atas kini menyaring `kind`, dan ketergantungan
+            // pada nilai bawaan yang tidak terlihat di sini adalah jenis
+            // kaitan yang putus tanpa suara.
+            'kind' => Invoice::KIND_SUBSCRIPTION,
             'amount' => $validated['amount'],
             'pricing_rule_id' => $mengikutiAturan ? $resolved['rule']->id : null,
             // Konteksnya disimpan apa pun keputusan nominalnya. Justru saat

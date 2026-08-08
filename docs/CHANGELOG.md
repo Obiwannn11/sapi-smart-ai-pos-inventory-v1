@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-08 | ADDITION | Langganan | Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053) |
 | 2026-08-08 | ADDITION | Langganan | Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054) |
 | 2026-08-07 | ADDITION | Langganan | Masa Gratis Berakhir dengan Perpindahan, Bukan dengan Jatuh ke Tenggang (BL-052) |
 | 2026-08-07 | ADDITION | Langganan | Pembayaran Peragaan Berhasil Sendiri: Tombol "Bayar Penuh" Turun Jadi Alat Pengembangan |
@@ -159,6 +160,37 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053)
+
+**Tanggal:** 2026-08-08 · **Area:** Langganan · **Menutup:** `[BL-053]` butir (a)+(b), `[BL-050]`
+
+**Masalahnya.** `extra_seat_price` Rp 15.000 dipasang 2026-08-07 dengan maksud "per bulan", tapi yang dikerjakan kode adalah "sekali bayar": `requestSeatUpgrade()` menerbitkan satu tagihan `KIND_UPGRADE` senilai `harga × jumlah`, lalu seat-nya melekat permanen. Nilainya benar, satuannya salah — dan tiap seat yang dibeli selama itu jadi kesepakatan permanen yang jauh lebih murah daripada yang dimaksud. Tagihan langganan bulanan sendiri hanya memuat harga paket, tanpa komponen seat apa pun.
+
+**Dasar tagihannya: yang dibeli, bukan yang dipakai.** Keputusan pemilik pertama 2026-08-07 mengarah ke puncak pemakaian (`seat_high_water − included_seats`); keputusan kedua di hari yang sama membatalkannya. Seat tambahan ditagih **karena dibeli, terpakai atau tidak** — paket memberi 3, tenant membeli 2, yang dipakai baru 4: tagihannya tetap 5 seat. Konsekuensinya kolom baru `subscriptions.purchased_extra_seats`, karena angka yang jadi dasar uang tidak boleh disimpulkan dari selisih `seats − included_seats` yang ikut bergerak tiap kali tenant berpindah paket.
+
+`seat_high_water` **tidak dihapus**, berbeda dari yang diusulkan entri backlognya. Ia masih punya pembaca: `ActiveSeatsResolver` memakainya sebagai dimensi `active_seats` untuk aturan Harga Adaptif. Menghapus kolomnya akan mengubah pencocokan aturan harga, bukan sekadar membersihkan kolom mati. Yang dicabut adalah perannya di penagihan, bukan kolomnya.
+
+**Yang berjalan sekarang:**
+
+- `issueDuePeriodInvoices()` menagih `harga + seat tambahan × tarif seat`, dengan pecahannya dibekukan di `invoices.pricing_context.billing_breakdown`. Penjaga "tidak ada yang perlu ditagih" kini memeriksa **totalnya**, bukan tarif paketnya — tenant di paket Rp 0 yang membeli seat punya nominal yang benar-benar harus dibayar.
+- Tarif per seat selalu dari **paket**, termasuk untuk tenant Adaptif. Yang didiskon jalur Adaptif adalah harga langganannya, bukan harga penggunanya: tenant Adaptif di `paid-1` membayar Rp 15.000/seat meski langganannya turun ke Rp 10.000.
+- **Membeli** (`grantSeats()`): berlaku seketika, gratis sampai periode berjalan habis, masuk tagihan bulanan berikutnya. Tak ada lagi tagihan di tengah bulan, bukti transfer, atau antrean pemeriksaan untuk seat.
+- **Melepas** (`releaseSeats()`), yang sebelumnya tidak ada sama sekali dan jadi wajib begitu tagihan mengikuti pembelian — tanpanya tenant terkunci membayar selamanya. Berlaku **satu periode penuh ke depan**, bukan akhir periode berjalan: tagihan periode berikutnya terbit `invoice_lead_days` sebelum periode berjalan habis dan sudah memuat seat itu, jadi melepasnya lebih awal akan menagih kursi yang sudah dicabut. Sekaligus menutup celah "beli tanggal 1, lepas tanggal 2" — tiap seat yang dibeli pasti tertagih sekali, tidak pernah nol kali.
+- Seat yang masih diduduki staf aktif **ditolak** pelepasannya, dengan kalimat yang menyebut angkanya. Mematikan akun kasir di tengah jam kerja sebagai efek samping penghematan tagihan adalah kerugian yang jauh lebih besar daripada sebulan tagihan yang tertunda.
+- Membeli lagi **membatalkan** pelepasan yang sedang menunggu — tenant yang berubah pikiran jelas tidak sedang meminta keduanya.
+
+**Halaman langganan berhenti bicara soal pemakaian puncak.** Yang ditampilkan adalah hak beserta asalnya: "6 kursi — 3 dari paket Paid 1, 3 kursi tambahan yang Anda beli (Rp 15.000/kursi/bulan = Rp 45.000/bulan). Terpakai 4, tersisa 2." "Terpakai" tinggal jadi informasi — petunjuk kapan kursi sebaiknya dilepas — bukan angka yang memengaruhi tagihan.
+
+**`[BL-050]` ikut tertutup tanpa menyentuh skemanya.** Batas "satu penambahan pengguna per bulan kalender" lahir sebagai efek samping indeks unik `(tenant_id, period, kind)`. Tanpa tagihan upgrade yang lahir, batas itu tidak punya objek lagi; `hasUpgradeInvoiceThisPeriod()` beserta prop `closed_for_period` dan kalimatnya di layar dibuang. Perubahan skema `period_key` yang diusulkan entri itu tidak jadi diperlukan.
+
+**Yang sengaja ditinggalkan hidup.** `KIND_UPGRADE`, `applyProvisionalUpgrade()`, `revertUpgrade()`, `provisional_blocked`, dan `subscriptions:settle-free-upgrades` tetap ada — tagihan yang terbit sebelum hari ini dan belum selesai masih harus bisa diverifikasi, ditolak, dan dilunasi. Yang berhenti adalah penerbitannya. `UpgradeController::store()` menolak pembelian baru selama masih ada tagihan upgrade lama yang menggantung: melunasinya menulis `seats = grants_seats`, angka dari dunia lama yang akan menurunkan jatah tenant yang baru saja membeli.
+
+**Backfill.** `purchased_extra_seats` diisi dari `max(0, seats − plan.included_seats)` — satu-satunya bukti yang ada untuk baris lama, dan persis angka yang selama ini ditegakkan kepada mereka. Dijalankan 2026-08-08: `Kopi Nusantara` dan `Kopi Story` masing-masing 3 seat tambahan. Tagihan 2026-08-17 keduanya menjadi **Rp 145.000** (Rp 100.000 + 3 × Rp 15.000), naik dari Rp 100.000.
+
+**Yang belum, dan ke mana perginya.** Butir (c) — kuota AI yang bisa dibeli bulanan — jadi `[BL-069]`, lengkap dengan hitungan ongkos per analisis yang diukur dari `ai_analyses.tokens_used` (±1.800 token, ± Rp 9 pada `gpt-4o-mini`) beserta temuan bahwa yang menentukan untung-rugi fitur AI adalah pilihan modelnya, bukan harga kuotanya. Prorata pembelian seat di tengah periode jadi `[BL-070]`: keputusan pemilik memilih "gratis sisa periode" sebagai yang paling sederhana, bukan yang paling adil, dan entri itu menahan pertanyaannya untuk ditinjau ulang dengan data pemakaian nyata. Celah "beli lalu lepas tanpa pernah bayar" tidak ikut terbuka — ia ditutup dari sisi pelepasan, bukan dari sisi prorata.
 
 ---
 
