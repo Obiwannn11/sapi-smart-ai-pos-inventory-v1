@@ -61,6 +61,11 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-08 | ADDITION | Langganan | Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054) |
+| 2026-08-07 | ADDITION | Langganan | Masa Gratis Berakhir dengan Perpindahan, Bukan dengan Jatuh ke Tenggang (BL-052) |
+| 2026-08-07 | ADDITION | Langganan | Pembayaran Peragaan Berhasil Sendiri: Tombol "Bayar Penuh" Turun Jadi Alat Pengembangan |
+| 2026-08-07 | HOTFIX | Langganan | Penjaga Periode-Ganda Menyaring `kind`, dan Tenant yang Dilewati Berhenti Menghilang dari Hitungan (BL-058) |
+| 2026-08-07 | ADDITION | Langganan | Halaman Bayar Berdiri di Atas Gateway Tiruan yang Bicara Seperti Gateway Sungguhan (BL-059) |
 | 2026-08-07 | DECISION | Langganan | Struktur Harga Ditetapkan: Free Dua Bulan, Adaptif Jadi Diskon `paid-1`, dan Tenggat Berhenti Mematikan Kasir |
 | 2026-08-07 | HOTFIX | Langganan | Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau |
 | 2026-08-07 | HOTFIX | Langganan | Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c) |
@@ -154,6 +159,142 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054)
+- **Tanggal:** 2026-08-08
+- **Fase Terkait:** Di Luar Fase — `[BL-054]`, penegak keputusan pemilik 2026-08-07
+- **Dampak:** Model | Middleware | Frontend | Test
+- **Breaking Change:** Tidak, tapi **kebijakannya berubah arah**: tenant yang kemarin tidak bisa menyimpan apa pun di hari pertama tenggat, hari ini bisa berjualan sampai hari ke-20.
+- **Deskripsi:** Config-nya sudah dipasang 2026-08-07 (`grace_intensive_from_day` = 15, `grace_lock_from_day` = 20) dan **tidak ada satu pun yang membacanya**. Penegaknya masih yang lama: `EnsureSubscriptionActive` memblokir seluruh permintaan non-GET begitu status tenant jadi `grace`, artinya kasir tidak bisa menyimpan satu transaksi pun sejak hari pertama. Warung yang tidak bisa berjualan tidak punya uang untuk membayar — tekanannya merusak sumber pembayarannya sendiri. Yang mendarat sekarang adalah pembacanya.
+
+- **Yang menentukan nasib tenant sekarang UMUR tenggatnya, bukan statusnya.** `Tenant::graceDay()` menghitungnya dari `current_period_end`, dan `graceStage()` menerjemahkannya jadi `soft` / `intensive` / `locked` lewat ambang di config. Tidak dihitung sekali lalu disimpan: kolom "hari tenggat" menuntut sesuatu memutakhirkannya tiap tengah malam, dan sesuatu itu pasti gagal pada hari penjadwalnya tidak jalan.
+- **Hari pertama tenggat adalah hari SETELAH periode berakhir.** Hari periodenya habis masih hari terakhir yang dibayar. Menghitungnya sebagai hari pertama menggeser seluruh tangga sehari lebih awal — termasuk tanggal penangguhan yang sudah lebih dulu dipakai `suspensionDateFor()`, kartu Dashboard, dan pita langganan.
+- **`isReadOnly()` berhenti jadi sinonim `grace`.** Ia kini berarti "tahap `locked`", dan `canWrite()` meloloskan tenggat sampai ambang kunci. Keduanya tetap satu-satunya pintu — middleware, pita, modal, dan halaman kunci semuanya bertanya ke sana, jadi kebijakan tenggat tidak pernah punya dua versi.
+- **Langganan yang datanya bolong menghasilkan `soft`, bukan `locked`.** Tenant `grace` tanpa `current_period_end` tetap boleh berjualan. Data langganan yang tidak lengkap adalah masalah kami, dan menutup kasir orang karena masalah kami adalah cara terburuk menemukannya.
+- **Membaca data lama tidak dicabut di tahap mana pun** — termasuk tahap 3, dan ini menyimpang dari tabel di `[BL-054]` yang menulis "menu lain → halaman selesaikan tagihan". Tabel itu berselisih dengan prinsip yang ditulis pemilik di hari yang sama di `config/subscription.php`; **pemilik memutuskan prinsipnya yang menang** (2026-08-08). Yang diganti halaman kunci hanya **layar POS**, karena layar itu ada semata-mata untuk berjualan — laporan, riwayat, stok, dan seluruh ekspor tetap terbuka.
+- **Halaman kuncinya dirender di URL kasir yang asli, bukan pengalihan.** `/cashier/pos` tetap `/cashier/pos`; pengalihan diam-diam ke halaman langganan membuat pengguna mengira aplikasinya rusak, dan menekan Muat Ulang harus mengembalikan kasir ke pekerjaannya begitu tagihannya lunas.
+- **Notifikasi punya dua tingkat, dan yang paling halus sengaja bernada `info`.** Pita merah sepanjang hari kerja hanya melatih orang mengabaikannya, sehingga tahap yang benar-benar mencabut sesuatu tiba tanpa ada yang membacanya. Modal baru hanya muncul sejak tahap `intensive`.
+- **Instruksi bayar yang masih berlaku memadamkan modalnya — dan tidak menyentuh jam tenggatnya.** Menagih orang yang sudah membayar adalah cara tercepat kehilangan mereka; tapi kalau menerbitkan instruksi bayar ikut menunda hari ke-20, menerbitkannya lalu mendiamkannya jadi cara membeli waktu tanpa membayar, berulang kali. Yang padam notifikasinya; hitungan harinya jalan terus.
+- **File Terdampak:**
+  - `app/Models/Tenant.php` — `graceDay()`, `graceStage()`, `isInGrace()`, konstanta `GRACE_STAGE_*`; `canWrite()` dan `isReadOnly()` ditulis ulang.
+  - `app/Http/Middleware/EnsureSubscriptionActive.php` — penolakan tulis bersandar pada tahap, plus `LOCKED_STAGE_PAGES` yang merender `Billing/Locked`.
+  - `app/Http/Middleware/HandleInertiaRequests.php` — payload `auth.tenant.subscription` membawa `stage`, `grace_day`, `grace_days`, `lock_from_day`, `can_write`, `payment_pending`; ia kini terbit untuk **seluruh** tahap tenggat, bukan hanya yang sudah terkunci.
+  - `resources/js/Components/SubscriptionBanner.vue` — tiga nada mengikuti tahap; `resources/js/Components/GraceModal.vue` — modal tahap `intensive`/`locked`, dipasang di shell owner dan kasir.
+  - `resources/js/Pages/Billing/Locked.vue` — halaman "selesaikan tagihan" beserta jalan kembali ke riwayat transaksi.
+  - `database/factories/TenantFactory.php` — `readOnly()` berganti nama jadi `inGrace()`; nama lamanya sudah tidak benar.
+  - `tests/Feature/Subscription/GraceStagesTest.php` — 11 test, seluruh angkanya dibaca dari config. Test lama yang mengunci kebijakan lama ikut diperbaiki di `SubscriptionLifecycleTest`, `SelfOrderSubscriptionGateTest`, dan `KitchenQueueTest` — masing-masing kini punya pasangan "hari awal tenggat tidak menutup apa pun".
+- **Yang masih terbuka:** `[BL-054]`(c) menyebut modal juga padam bila **pengajuan Adaptif** sudah dilakukan. Alurnya belum ada (`[BL-055]`), jadi pemadamnya baru satu: instruksi bayar yang masih berlaku. Sambungkan saat `[BL-055]` mendarat.
+
+---
+
+### [ADDITION] Masa Gratis Berakhir dengan Perpindahan, Bukan dengan Jatuh ke Tenggang (BL-052)
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — `[BL-052]`, turunan keputusan struktur harga hari yang sama
+- **Dampak:** Schema | Model | Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** `trial_ends_at` ditulis di `startTrial()` dan **tidak pernah dibaca lagi oleh siapa pun**. Akibatnya paket `free` tidak bisa hidup: tarifnya Rp 0, penerbit tagihan menghitungnya sebagai "tidak ada yang perlu ditagih" lalu melewatinya **tanpa memperpanjang periode**, periodenya lewat, dan `advanceLifecycle()` menurunkan tenant ke masa tenggang. Tiap periode, selamanya.
+
+  Keputusan pemilik 2026-08-07 menutupnya dengan membatasi masa gratis jadi dua bulan lalu memindahkan tenant ke `paid-1` — tapi pemindahan itu tidak punya penggerak. `changePlan()` sudah ada sejak `[BL-046]`; tak ada satu pun yang memanggilnya otomatis. Yang mendarat sekarang adalah penggeraknya.
+
+- **Urutannya yang jadi intinya, bukan perpindahannya.** `graduateExpiredTrials()` berjalan **sebelum** `issueDuePeriodInvoices()`, dan keduanya tak terpisahkan di dalam `advanceLifecycle()` — bukan dua baris jadwal yang kebetulan berurutan. Terbalik, tagihan berbayar pertama dihitung dari paket Rp 0, dilewati, dan tenantnya jatuh ke tenggang tanpa pernah melihat angka: persis bug yang sedang ditutup, tapi kali ini dengan kode yang terlihat benar.
+- **Dipindahkan H-7, bukan sehari setelah masa gratis habis.** Tagihan periode berikutnya terbit `invoice_lead_days` = 7 hari lebih awal; menunggu `trial_ends_at` benar-benar lewat berarti penerbit sudah melihat tenant ini seharga Rp 0 dan melewatinya. Jendela yang sama sekaligus menjawab `[BL-052]`(c): tagihan yang tiba sepekan lebih awal, dengan nama paket barunya tertulis di halaman langganan, **adalah** pemberitahuan sebelum hari-H.
+- **Sisa hari gratisnya tidak berkurang.** Periode berjalan tidak disentuh — tenant tetap tidak ditagih sampai `current_period_end`. Yang berubah hanya paketnya, dan `paid-1` lebih longgar daripada `free` di kedua sisi yang terasa (3 pengguna vs 2, 15 analisis AI/hari vs 5). Bila kelak ada paket tujuan yang lebih sempit dari paket gratis, jendela ini harus dipikirkan ulang — bukan angkanya, melainkan arahnya.
+- **Tujuannya penanda di `plans`, bukan slug `paid-1` di kode** (`[BL-052]`(b)). Pola `is_adaptive_fallback` sudah membuktikan bentuknya: pemilik SaaS menunjuknya dari `/platform/pricing-rules`, jadi mengganti paket masuk tidak menuntut deploy. Kedua peran eksklusif itu kini berbagi satu `setExclusiveRole()` di `Plan` — ketunggalan yang disalin akan bercabang begitu salah satunya diperbaiki, dan cabang yang lebih longgar jadi perilaku sebenarnya.
+- **Tanpa paket tujuan, perpindahannya berhenti dan bersuara.** Tidak jatuh diam-diam ke paket termurah: menebak berarti memindahkan tenant ke tarif yang tak seorang pun putuskan, lalu menagihkannya. Tenantnya dihitung `stranded`, dicatat sebagai kejadian sensitif, dan diperingatkan di keluaran perintah **serta** di panel harga. Penunjukan yang menunjuk balik ke paket gratis ditolak dengan cara yang sama — ia akan "memindahkan" tenant ke tempat yang sama tiap hari, dan lingkaran yang berjalan mulus jauh lebih sulit dikenali daripada perpindahan yang mengeluh.
+- **Yang sengaja tidak ikut pindah:** tenant yang paketnya bukan `free` (tarif Rp 0 karena keringanan bukan masa gratis yang habis — yang menentukan paketnya, bukan angkanya), langganan tanpa `trial_ends_at` (memindahkan tenant yang tak pernah dijanjikan tanggal berakhir berarti menagihnya karena datanya tidak lengkap), dan tenant `suspended` (mengikuti penerbit tagihan).
+- **File Terdampak:**
+  - `database/migrations/2026_08_07_135635_add_post_trial_target_to_plans_table.php` — kolom `is_post_trial_target`, **beserta penunjukan awalnya ke `paid-1`**. Membiarkannya kosong berarti keadaan awal pemasangan berbentuk persis sama dengan bug yang baru ditutup.
+  - `app/Models/Plan.php` — `postTrialTarget()`, `setPostTrialTarget()`, dan `setExclusiveRole()` yang kini dipakai bersama `setAdaptiveFallback()`.
+  - `app/Services/SubscriptionService.php` — `graduateExpiredTrials()`; `advanceLifecycle()` memanggilnya lebih dulu dan melaporkan `graduated` + `stranded`.
+  - `app/Console/Commands/AdvanceSubscriptionLifecycle.php` — baris perpindahan dilaporkan pertama (urutan keluaran mengikuti urutan kejadian), dan `stranded` muncul sebagai peringatan.
+  - `app/Http/Controllers/Platform/PricingRuleController.php` + `resources/js/Pages/Platform/PricingRules/Index.vue` — kotak centang, lencana, dan peringatan "belum ada paket tujuan".
+  - `app/Http/Controllers/Billing/SubscriptionController.php` + `resources/js/Pages/Billing/Show.vue` — `post_trial_plan`; kalimat masa coba berhenti berjanji "Anda bisa memilih untuk berlangganan" dan menyebut paket serta tarif yang akan berlaku.
+  - `tests/Feature/Subscription/TrialGraduationTest.php` — 14 test; `tests/Feature/Platform/PricingGrandfatherTest.php` — jalur panelnya.
+- **Yang masih terbuka:** `[BL-053]` (seat & kuota AI jadi komponen bulanan) tidak tersentuh — tagihan yang terbit di sini masih murni harga paket.
+
+---
+
+### [ADDITION] Pembayaran Peragaan Berhasil Sendiri: Tombol "Bayar Penuh" Turun Jadi Alat Pengembangan
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — lanjutan `[BL-059]`, atas permintaan pemilik setelah alurnya dicoba
+- **Dampak:** Service | Controller | Frontend | Config | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Alur bayar yang mendarat pagi ini menuntut seseorang menekan tombol bernama **"Bayar penuh"** di panel berlabel "Panel peragaan". Untuk pengembangan itu benar; untuk diperagakan di depan calon klien itu salah — yang seharusnya terlihat adalah orang membayar dari aplikasi banknya, bukan operator menekan tombol yang mengaku peragaan.
+
+  Sekarang pembayarannya **datang sendiri**: instruksi terbit → penantian dengan penanda "Memeriksa pembayaran…" → layarnya berubah jadi lunas. Tidak ada yang perlu ditekan, dan tidak ada langkah yang perlu dijelaskan ke penonton.
+
+- **Yang TIDAK berubah, dan itu intinya:** pelunasan otomatis memakai jalur yang sama persis — notifikasi JSON bertanda tangan HMAC, lewat `PaymentWebhookController`, dengan verifikasi tanda tangan, penjaga idempotensi, pemeriksaan nominal, dan tenggat yang sama. Yang berubah cuma **siapa yang memicunya**: waktu, bukan jari.
+- **Kenapa dipicu dari halaman, bukan dari server saat halamannya dimuat.** Menumpangkannya di `show()` terlihat lebih rapi dan salah: `show()` adalah GET yang dipanggil berulang oleh polling **dan bisa ikut terpanggil prefetch Inertia**. GET yang melunasi tagihan berarti sekadar mengarahkan kursor ke tautannya sudah cukup untuk membayar. Alternatif lain — job tertunda — menuntut queue worker hidup, yang tidak bisa diandalkan saat peragaan. Yang dipilih memakai POST yang sudah ada, tidak butuh worker, dan tidak menaruh efek samping di GET mana pun.
+- **Delapan detik, bukan dua.** Yang sedang diperagakan adalah orang membayar dari aplikasi lain; pembayaran yang masuk seketika justru terbaca sebagai tombol, bukan sebagai pembayaran. Bisa diubah lewat `PAYMENT_FAKE_AUTO_SETTLE_SECONDS`, dan `0` mematikannya — dipakai saat yang sedang diuji justru keadaan yang tidak berakhir berhasil.
+- **File Terdampak:**
+  - `config/subscription.php` — `payment.fake.auto_settle_seconds` (bawaan 8; nilai negatif dibaca sebagai mati, bukan sebagai pembayaran seketika).
+  - `app/Services/Billing/Gateways/FakeGateway.php` — `autoSettleSeconds()`, dan `callbackRequest()` yang **memindahkan penyusunan badan notifikasi dari controller ke driver**. Bentuk kabelnya milik driver: begitu ada penyedia kedua, controller yang menyusun JSON-nya sendiri akan menyusun yang salah.
+  - `app/Http/Controllers/Billing/PaymentController.php` — `simulate()` menyusut jadi satu panggilan; `show()` mengirim `auto_settle_seconds`, dan **selalu 0 untuk percobaan milik gateway lain** supaya tagihan lama tidak menghidupkan kembali pelunasan otomatis.
+  - `resources/js/Pages/Billing/PaymentInstruction.vue` — timer otomatis, penanda "Memeriksa pembayaran…" yang berdenyut (tanpa itu penantian delapan detik terbaca seperti halaman macet, dan orang menekan muat ulang tepat sebelum pembayarannya masuk), dan **empat tombol lama pindah ke `<details>` tertutup bernama "Alat pengembangan"**.
+  - `resources/js/Pages/Billing/Pay.vue` — kotak peringatan "Mode peragaan" turun jadi satu baris. Peragaannya tetap disebut; yang dibuang cuma bobot visualnya, karena kotak amber besar di atas layar bayar membuat seluruh alurnya terbaca sebagai maket.
+- **Test:** 5 tes baru di `PaymentGatewayTest` (30 total di berkas itu) — jeda terkirim ke halaman, `0` mematikannya, nilai negatif dibaca sebagai mati, notifikasi otomatis adalah badan bertanda tangan yang sama dengan yang dikirim panel, dan gateway non-tiruan tidak pernah melaporkan jeda. Suite penuh lulus.
+- **Diperbaiki saat gladi resik:** penanda "Memeriksa pembayaran…" masih tampil setelah tagihannya lunas — `autoSettleArmed` dinilai sekali saat setup dan tidak pernah ikut berubah bersama status. Kondisinya sekarang berpasangan dengan `isPending`. Cacat tampilan, bukan perilaku, tapi persis jenis yang membuat penonton bertanya "berarti belum selesai?" di detik yang salah.
+- **Gladi resik pada data nyata (2026-08-08):** tagihan langganan Rp 100.000 untuk `Kopi Nusantara` periode `2026-08` diterbitkan, lalu dibayar lewat QRIS **tanpa satu pun tombol peragaan ditekan**. Hasilnya: `settled_via = gateway_fake`, `verified_by = null`, `price_locked` 0 → 100.000, periode maju 24 Agu → 24 Sep, tenant tetap `active`. Tagihan itu **berdampingan dengan tagihan `upgrade` periode yang sama** — yang berarti perbaikan `[BL-058]` ikut terbukti di jalur penerbitan, bukan cuma di test.
+- **Catatan:** `[BL-060]` (penyedia sungguhan) diperbarui, bukan ditutup: pemilik mengonfirmasi **belum punya akun Sumopod maupun Xendit** untuk tagihan langganan, jadi entri itu kini menunggu keputusan komersial, bukan dokumentasi API. Ia tidak menahan apa pun — gateway tiruan sudah menyelesaikan kebutuhan development dan peragaan.
+
+---
+
+### [HOTFIX] Penjaga Periode-Ganda Menyaring `kind`, dan Tenant yang Dilewati Berhenti Menghilang dari Hitungan (BL-058)
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-058]`
+- **Dampak:** Service | Controller | Command | Test
+- **Breaking Change:** Tidak. Bentuk kembalian `issueDuePeriodInvoices()` dan `advanceLifecycle()` bertambah satu kunci (`skipped`); tidak ada kunci yang hilang atau berubah arti.
+- **Deskripsi:** Penjaga periode-ganda menolak menerbitkan tagihan bila tenant sudah punya tagihan **apa pun** untuk periode `Y-m` itu — tanpa menyaring `kind`. Tagihan penambahan seat memakai `period` yang sama dengan tagihan langganan, jadi **satu penambahan seat di bulan X membatalkan tagihan langganan bulan X**. Cacat yang sama ada di penerbit manual pemilik SaaS, dengan akibat yang lebih buruk: ia hanya melihat pesan "tagihan sudah ada" dan tidak punya satu pun jalan untuk menagih bulan itu.
+
+  Yang membuatnya mahal adalah **diamnya**. `continue` terjadi sebelum harga dihitung, jadi tenant yang dilewati tidak masuk `issued`, `free`, maupun `unpriced`. Keluaran perintahnya terbaca normal. Satu-satunya cara menyadarinya adalah menghitung sendiri berapa tenant yang seharusnya ditagih.
+
+  Perbaikannya bukan tambalan: ia **menyelaraskan penjaga aplikasi dengan indeks uniknya**, yang sejak awal sudah `(tenant_id, period, kind)`. Sebelum ini keduanya menjaga dua hal yang berbeda.
+- **Terbukti pada data nyata, sebelum dan sesudah.** Kedua tenant (`Kopi Nusantara`, `Kopi Story`) sama-sama memegang tagihan `upgrade` untuk periode `2026-08` — yang satu Rp 0 sisa alur seat gratis, yang satu Rp 15.000 dari uji coba alur bayar `[BL-059]`. Dengan penjaga yang lama, dry-run pada 2026-08-17 akan menerbitkan **0** tagihan padahal keduanya jatuh tempo dengan tarif Rp 100.000. Sesudah perbaikan: `invoiced = 2, skipped = 0`.
+- **Penghitung keempat.** `skipped` ditambahkan dan ditampilkan perintahnya. Tiga penghitung yang ada semuanya menjelaskan **kenapa** sebuah tagihan tidak terbit; yang ini satu-satunya yang tidak, dan justru itu yang membuat cacatnya tak terlihat selama ada. Angka > 0 biasanya wajar — tagihannya memang sudah pernah terbit — tapi sekarang ia bisa dicocokkan alih-alih disimpulkan.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: penjaga menyaring `kind = KIND_SUBSCRIPTION`, penghitung `skipped` baru, ikut diteruskan `advanceLifecycle()`.
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`: penjaga yang sama; pesan galatnya diperjelas jadi "tagihan **langganan** … sudah ada"; `kind` ditulis eksplisit saat membuat, karena penjaganya kini bergantung padanya.
+  - `app/Console/Commands/AdvanceSubscriptionLifecycle.php` — baris keluaran untuk `skipped`.
+  - `tests/Feature/Subscription/AutoInvoiceTest.php` — tiga tes baru: tagihan upgrade tidak lagi menelan tagihan langganan bulan yang sama, tenant yang sudah ditagih terhitung `skipped` (bukan hilang), dan pemilik SaaS tetap bisa mengetik tagihan langganan untuk bulan yang sudah punya upgrade.
+- **Test:** 18 di `AutoInvoiceTest`, 325 di `Feature/Subscription` + `Feature/Platform`, dan suite penuh lulus.
+- **Catatan:** `[BL-050]` (indeks yang membatasi upgrade jadi sekali sebulan) **tidak** disentuh. Arah keduanya berlawanan — yang itu soal penjaga yang terlalu ketat, yang ini soal penjaga yang terlalu longgar — dan menggabungkannya akan membuat keduanya sulit dibaca.
+
+---
+
+### [ADDITION] Halaman Bayar Berdiri di Atas Gateway Tiruan yang Bicara Seperti Gateway Sungguhan (BL-059)
+- **Tanggal:** 2026-08-07
+- **Fase Terkait:** Di Luar Fase — permintaan pemilik untuk peragaan, menutup `[BL-059]`
+- **Dampak:** Migration | Model | Controller | Service | Route | Frontend | Config | Test
+- **Breaking Change:** Tidak. Jalur bukti transfer manual dan tombol simulasi lama keduanya tetap utuh.
+- **Deskripsi:** Tenant kini bisa membayar tagihannya sendiri: pilih kanal (QRIS / VA / e-wallet) → dapat instruksi bernomor transaksi dan bertenggat → bayar → akses pulih **tanpa seorang pun memeriksa apa pun**. Penyedianya masih tiruan, dan itu memang yang diminta untuk peragaan.
+
+  **Keputusan yang menentukan seluruh bentuknya: gateway tiruan melunasi lewat webhook, bukan dengan memanggil `settle()`.** Tombol "Bayar penuh" di panel peragaan menyusun notifikasi JSON, menandatanganinya dengan HMAC yang sama, lalu menyerahkannya ke `PaymentWebhookController` — jalur yang sama persis dengan penyedia sungguhan nanti. Yang tidak ikut terlewati hanyalah routing dan CSRF.
+
+  Alasannya bukan kerapian. Halaman bayar palsu yang tombolnya memanggil `settle()` langsung akan jadi **jalur uang ketiga** dengan bentuk yang sama sekali berbeda dari produksi: yang diperagakan besok hanya membuktikan bahwa jalur peragaan bekerja, dan hari pertama Sumopod dipasang adalah hari pertama jalur webhook-nya pernah dijalankan. Dengan bentuk kabel yang sudah benar sejak sekarang, `[BL-060]` tinggal menulis satu kelas yang mengisi kontrak `PaymentGateway`.
+
+- **Tiga pertanyaan lama di `InvoiceSettlement` akhirnya punya jawaban di kode**, bukan di komentar:
+  1. **Idempotensi** — unik `(gateway, external_id)` + `lockForUpdate()` + baca ulang di dalam transaksi. Notifikasi kedua tidak melunasi apa pun dan **tetap dijawab 200**: penyedia yang menerima galat akan mengulang selamanya sesuatu yang tidak akan pernah berubah.
+  2. **Nominal** — selisih ≥ 1 sen menghentikan pelunasan dan menandai percobaan `mismatch`. Melunasi kurang bayar berarti `settle()` mengunci `price_locked` dari yang **ditagih**, yaitu diam-diam menetapkan tarif yang tak pernah disepakati sambil menutup selisihnya dari uang sendiri.
+  3. **Keaslian** — tanda tangan diverifikasi atas **badan mentah**, bukan atas hasil parse; menandatangani array yang sudah di-decode berarti menandatangani tafsiran kita atas pesan itu, bukan pesannya.
+- **Dua gerbang keamanan, keduanya diuji:**
+  - **Driver tiruan gagal di-resolve di produksi** — exception, bukan diam-diam jatuh ke jalur manual. Yang kedua jauh lebih buruk: halamannya tetap terbuka, tombolnya tetap ada, dan tidak ada yang tahu bahwa yang barusan "lunas" tak pernah dibayar. Webhook-nya ikut hilang (404, bukan 403).
+  - **`settled_via` dipisah per driver** (`gateway` vs `gateway_fake`). Satu nilai untuk keduanya membuat uang peragaan tak terbedakan dari uang sungguhan begitu drivernya diganti.
+- **Keputusan yang sengaja diambil dan perlu ditinjau ulang saat penyedia sungguhan dipasang:** notifikasi **lunas yang datang setelah tenggat lewat tidak melunasi apa pun** — percobaannya ditandai `expired` dan meninggalkan jejak `payments.late` untuk diputuskan orang lewat verifikasi manual. Aman untuk gateway tiruan yang tenggatnya kita sendiri yang tentukan; untuk penyedia sungguhan, tanyakan lebih dulu apakah mereka bisa mengirim `paid` setelah kedaluwarsa.
+- **File Terdampak:**
+  - `database/migrations/2026_08_07_130328_create_payment_attempts_table.php` — tabel baru. Tabel sendiri, bukan kolom di `invoices`: satu tagihan wajar punya beberapa percobaan (kedaluwarsa → ganti kanal → lunas), dan `invoices` sudah unik per `(tenant_id, period, kind)`.
+  - `app/Models/PaymentAttempt.php` + factory — **tanpa `TenantScope`**, mengikuti `Invoice`: baris ini dibaca dari halaman tenant (ada pengguna) dan dari webhook (tidak ada siapa-siapa), dan scope yang diam-diam mengosongkan hasil di dunia kedua membuat pembayaran sah terlihat seperti transaksi tak dikenal.
+  - `app/Services/Billing/Gateways/` — `PaymentGateway` (kontrak), `FakeGateway`, `PaymentGatewayManager`, `CallbackResult`, `InvalidCallbackSignature`.
+  - `app/Http/Controllers/Billing/PaymentController.php` — pilih kanal, terbitkan instruksi, halaman instruksi, panel peragaan. Instruksi yang masih hidup **selalu menang atas yang baru**: nomor VA kedua untuk tagihan yang sama adalah cara termudah membuat tenant mentransfer ke nomor yang tidak ditunggu siapa-siapa.
+  - `app/Http/Controllers/Billing/PaymentWebhookController.php` — tenant ditentukan dari `payment_attempts`, bukan dari sesi.
+  - `app/Services/Billing/InvoiceSettlement.php` — `SOURCE_GATEWAY` & `SOURCE_GATEWAY_FAKE`; docblock kerangka diganti dengan lokasi jawabannya.
+  - `routes/web.php`, `bootstrap/app.php` — empat rute `billing.payment.*` (otomatis ikut `ALWAYS_ALLOWED`, jadi tenant yang ditangguhkan tetap punya jalan keluar) + webhook publik yang dikecualikan CSRF.
+  - `config/subscription.php` — blok `payment` (driver, umur instruksi 60 menit, kunci tanda tangan tiruan).
+  - `resources/js/Pages/Billing/Pay.vue`, `PaymentInstruction.vue` — pemilih kanal & halaman instruksi (QR peragaan, nomor VA yang bisa disalin, hitung mundur, `usePoll` yang berhenti sendiri saat keadaannya final). `Show.vue` — tombol "Bayar sekarang".
+- **Test:** `tests/Feature/Subscription/PaymentGatewayTest.php`, 25 tes / 115 asersi, semuanya lulus; suite `tests/Feature/Subscription` 181 lulus. Yang diuji bukan bahwa tombolnya bekerja melainkan bahwa jalur ini **tidak punya cara** melunasi tagihan yang tidak dibayar: tanda tangan palsu, tanpa tanda tangan, notifikasi berulang, transaksi tak dikenal, nominal kurang, instruksi kedaluwarsa, tenant lain, kasir, dan driver tiruan yang tersasar ke produksi.
+- **Catatan Migrasi:** `php artisan migrate` (sudah dijalankan di basis data pengembangan). Tidak ada dependensi baru. `PAYMENT_DRIVER` dan `PAYMENT_FAKE_SECRET` opsional — bawaannya `fake` dan kunci literal, dan `fake` **tidak akan** hidup di produksi.
+- **Yang sengaja BELUM dikerjakan:** `[BL-061]` mencabut tombol simulasi lama (`SimulatedPaymentController`) — ditunda sampai sesudah peragaan; mencabut satu-satunya jalur yang sudah teruji sehari sebelum demo tidak ada untungnya. Dan `[BL-060]` Sumopod, yang menunggu dokumentasi serta kredensial sandbox.
 
 ---
 

@@ -80,11 +80,13 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > 1. **Bracket D dulu memberi diskon 0%.** Karena Adaptif adalah `paid-1` yang didiskon, dan bracket D berharga sama persis dengan `paid-1` (Rp 100k), tenant di rentang Rp 15–50 jt menyerahkan data penjualannya dan menerima **nol rupiah** keringanan. Tangga Adaptif sebenarnya berakhir di Rp 15 juta, bukan Rp 50 juta. Karena itu D turun ke Rp 75.000 dan tangganya jadi monoton 90/75/50/25/0.
 > 2. **Alur pengajuan membubarkan kebuntuan privasi `[BL-048]`.** Consent diberikan **saat mengajukan**, jadi data omset dikumpulkan setelah tenant memintanya — bukan sebelum. Lingkaran "butuh data yang baru boleh dikumpulkan setelah masuk" tidak pernah terbentuk, dan penilaian otomatis penuh jadi sah, bukan kompromi. Usulan lama (kelayakan sebagai pemberian manual) **dibatalkan**.
-> 3. **Tenggat hari ini sudah mematikan kasir sejak hari pertama.** `EnsureSubscriptionActive` memblokir seluruh permintaan non-GET begitu tenant masuk tenggat. Prinsip lama di `config/subscription.php` ("tenggat mencabut kemampuan MENAMBAH data") ternyata berarti toko tidak bisa berjualan — dan toko yang tidak bisa berjualan tidak punya uang untuk membayar. Prinsipnya dicabut dan diganti tangga tiga tahap; penegaknya belum ada (`[BL-054]`).
+> 3. **Tenggat hari ini sudah mematikan kasir sejak hari pertama.** `EnsureSubscriptionActive` memblokir seluruh permintaan non-GET begitu tenant masuk tenggat. Prinsip lama di `config/subscription.php` ("tenggat mencabut kemampuan MENAMBAH data") ternyata berarti toko tidak bisa berjualan — dan toko yang tidak bisa berjualan tidak punya uang untuk membayar. Prinsipnya dicabut dan diganti tangga tiga tahap; ~~penegaknya belum ada (`[BL-054]`)~~ — penegaknya mendarat 2026-08-08.
 >
 > **Akibat terbesar yang harus disadari:** begitu pengajuan Adaptif otomatis dan bisa dilakukan sendiri, **tangga bracket adalah daftar harga yang sesungguhnya** — Rp 100.000 tinggal harga daftar bagi yang menolak membuka omset. ARPU realistis ada di Rp 25.000–50.000. Setel bracket seolah-olah itu daftar harganya, karena memang akan jadi itu.
 >
-> Yang sudah terpasang 2026-08-07: paket, bracket, `trial_months`, jangkar tanggal daftar, dan tangga tenggat di config. Yang **belum** dan jadi entri baru: `[BL-052]` perpindahan otomatis akhir masa gratis, `[BL-053]` seat & kuota AI jadi komponen bulanan, `[BL-054]` penegak tenggat bertingkat, `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` harga khusus per tenant.
+> Yang sudah terpasang 2026-08-07: paket, bracket, `trial_months`, jangkar tanggal daftar, dan tangga tenggat di config. Yang **belum** dan jadi entri baru: ~~`[BL-052]` perpindahan otomatis akhir masa gratis~~ (selesai 2026-08-08), `[BL-053]` seat & kuota AI jadi komponen bulanan, ~~`[BL-054]` penegak tenggat bertingkat~~ (selesai 2026-08-08), `[BL-055]` alur pengajuan Adaptif, `[BL-056]` pengajuan berlaku bulan mana, `[BL-057]` harga khusus per tenant.
+
+> **Permintaan pemilik 2026-08-07 (pembayaran)** — halaman bayar "ala-ala" untuk development dan peragaan, dengan Sumopod payment gateway menyusul belakangan. Dipecah jadi dua: `[BL-059]` **(selesai hari yang sama)**, dan `[BL-060]` yang menunggu dokumentasi serta kredensial sandbox. Satu hal yang menentukan seluruh bentuk `[BL-059]`: gateway tiruannya **melunasi lewat webhook**, bukan dengan memanggil `settle()` langsung — supaya yang diperagakan besok adalah jalur yang sama dengan yang akan dipakai produksi, dan memasang Sumopod tinggal menukar satu driver. Catatan kecil yang mudah terlewat: nama "Sumopod" sudah dipakai di aplikasi ini untuk **gateway AI**, bukan pembayaran; kredensialnya jangan dipakai ulang.
 
 > **Catatan pemilik 2026-08-08 (pasca-peragaan & laporan progres)** — tujuh saran dari sesi peragaan, sudah **diverifikasi terhadap kode** sebelum jadi entri. Yang perlu diketahui sebelum membacanya satu per satu:
 >
@@ -154,7 +156,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-048] Jalur Harga Adaptif Bisa Dipilih Siapa Saja — Belum Ada Pagar Kelayakan, dan Pagarnya Menabrak Gerbang Privasi
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Keputusan pemilik 2026-08-01 — "khusus yang memiliki omset cukup tinggi sudah hanya bisa bayar premium, tanpa subsidi atau harga adaptif lagi, adaptif khusus omset rendah atau yang saya tentukan baru bisa dapat"
-- **Status:** Open — **kebuntuannya BUBAR 2026-08-07**; ambang omset ditetapkan dan terpasang. Sisa pekerjaannya berpindah ke `[BL-055]` (alur pengajuan) dan `[BL-052]` (pemindahan otomatis)
+- **Status:** Open — **kebuntuannya BUBAR 2026-08-07**; ambang omset ditetapkan dan terpasang. Sisa pekerjaannya berpindah ke `[BL-055]` (alur pengajuan) dan `[BL-052]` (pemindahan otomatis — **selesai 2026-08-08**)
 - **Prioritas:** High
 - **Pemutakhiran 2026-08-07 — usulan (a) DIBATALKAN, dan penyebabnya membubarkan seluruh kebuntuan entri ini.**
   Entri ini macet di satu lingkaran: *untuk menilai kelayakan dibutuhkan data omset yang baru boleh dikumpulkan setelah masuk jalur Adaptif*. Usulan (a) — kelayakan sebagai pemberian manual pemilik SaaS — adalah jalan memutarnya, bukan jawabannya.
@@ -289,49 +291,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-052] Masa Gratis Habis Tanpa Perpindahan ke `paid-1` — Tenant Bertarif Rp 0 Tidak Pernah Ditagih, Ia Jatuh ke Tenggang
-- **Ditemukan:** 2026-08-07 (saat memasang keputusan struktur harga)
-- **Sumber:** Keputusan pemilik 2026-08-07 — "jika user sudah lewat dari masa paket free itu sistem akan otomatis memaksa pindah ke paid 1"
-- **Status:** Open — **penghalang penagihan yang nyata, bukan penyempurnaan**
-- **Prioritas:** High
-- **Area Terdampak:**
-  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `price <= 0` dihitung sebagai `free` lalu `continue`
-  - `app/Services/SubscriptionService.php` — `startTrial()`: menulis `trial_ends_at`, tapi tak ada yang membacanya saat masa itu habis
-  - `app/Services/SubscriptionService.php` — `advanceLifecycle()`: memindahkan keadaan tenant, tidak pernah memindahkan paketnya
-  - `app/Services/SubscriptionService.php` — `changePlan()`: mekanisme pemindahannya **sudah ada**, tinggal tak ada yang memanggilnya otomatis
-- **Deskripsi:**
-  Paket `free` berharga Rp 0, dan itu memang disengaja. Tapi penerbit tagihan memperlakukan harga nol sebagai "tidak ada yang perlu ditagih" lalu melewatinya — **tanpa menerbitkan tagihan dan tanpa memperpanjang periodenya**. Periode itu kemudian lewat, dan `advanceLifecycle()` menurunkan tenant ke masa tenggang.
-  Artinya paket gratis **tidak bisa hidup** di sistem ini: tenant yang duduk di `free` akan jatuh ke tenggang tiap periode, selamanya. Keputusan pemilik menutupnya dengan membatasi masa gratis jadi dua bulan lalu memindahkan tenant ke `paid-1` — tapi **pemindahan itu belum ada penggeraknya.** `trial_ends_at` ditulis dan tidak pernah dibaca lagi.
-- **Keadaan nyata per 2026-08-07 (query, bukan dugaan):** `Kopi Story` — jalur `normal`, paket `free`, `resolveFor()` mengembalikan `source = plan`, `price = Rp 0`. Periodenya berakhir 2026-08-24, penerbitan jatuh 2026-08-17. Ia **tidak akan ditagih apa pun**, lalu turun ke masa tenggang 2026-08-25. Kedua tenant yang ada juga ber-`trial_ends_at = null` — mereka `active` di paket gratis secara permanen, keadaan yang tidak lagi punya tempat dalam struktur baru.
-- **Usulan Perbaikan:**
-  **(a)** Di `advanceLifecycle()`, sebelum penerbitan tagihan: tenant yang `trial_ends_at`-nya sudah lewat dan masih di paket `free` dipindahkan ke `Plan` bawaan berbayar lewat `changePlan()`, dengan jejak `PlatformAuditLog`. Urutannya penting — pindah dulu, baru tagih, supaya tagihan pertamanya sudah memakai harga paket barunya.
-  **(b)** Tujuannya jangan di-*hardcode* ke slug `paid-1`. Pola `is_adaptive_fallback` sudah membuktikan bentuk yang benar: satu penanda "paket tujuan setelah masa gratis" yang ditunjuk pemilik SaaS dari panel, sehingga mengganti paket masuk tidak menuntut deploy.
-  **(c)** Beri tahu tenant **sebelum** hari-H, bukan lewat tagihan yang tiba-tiba muncul. `invoice_lead_days` = 7 sudah menyediakan jendelanya.
-  ~~**(d)** Dua tenant lama (`trial_ends_at = null`, paket `free`) harus diputuskan terpisah.~~ — **Dikerjakan 2026-08-07 atas keputusan pemilik.** Keduanya dipindahkan ke `paid-1` lewat `changePlan()`, seat bayarannya ikut: `Kopi Nusantara` 4 → 5, `Kopi Story` 5 → 6. `Kopi Nusantara` juga dijadwalkan keluar dari jalur Adaptif pada 2026-08-24 (omset Rp 105.946.000, di atas ambang) — `track_reverts_at` disetel langsung, **bukan** lewat `scheduleTrackRevert()`, karena metode itu menghapus `tenant_monthly_metrics` (ia dibangun untuk consent yang dicabut) sementara di sini omsetnya justru bukti yang membenarkan pemindahannya. Jejaknya di `platform_audit_logs`. Keduanya kini resolve ke Rp 100.000 — tapi lihat `[BL-058]`, salah satunya masih tidak akan tertagih.
-
----
-
-### [BL-058] Tagihan Upgrade Seat Menelan Tagihan Langganan di Bulan yang Sama — Tenant Lolos Sebulan Tanpa Terlihat
-- **Ditemukan:** 2026-08-07 (dry-run penerbitan setelah dua tenant dipindahkan ke `paid-1`)
-- **Sumber:** Telaah — dry-run pada 2026-08-17 menerbitkan **1** tagihan padahal dua tenant sama-sama jatuh tempo
-- **Status:** Open — **lubang pendapatan yang aktif**, bukan hutang teknis
-- **Prioritas:** High
-- **Area Terdampak:**
-  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`: `where('tenant_id')->where('period')->exists()`, **tanpa menyaring `kind`**
-  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`: penjaga yang sama, cacat yang sama
-  - `database/migrations/...` — indeks unik `(tenant_id, period, kind)` **sudah** menyaring `kind`; penjaga aplikasinya yang tidak
-- **Deskripsi:**
-  Penjaga periode-ganda menolak penerbitan bila tenant sudah punya tagihan **apa pun** untuk periode `Y-m` itu. Tagihan penambahan seat (`KIND_UPGRADE`) memakai `period` yang sama dengan tagihan langganan, jadi satu penambahan seat di bulan X **membatalkan tagihan langganan bulan X** — diam-diam.
-  Diamnya yang paling mahal: `continue` terjadi **sebelum** harga dihitung, jadi tenant itu tidak masuk hitungan `issued`, `free`, maupun `unpriced`. Keluaran perintah terlihat normal. Satu-satunya cara menyadarinya adalah menghitung sendiri berapa tenant yang seharusnya ditagih.
-- **Terbukti pada data nyata:** `Kopi Story` memegang tagihan `upgrade` Rp 0 untuk periode `2026-08` (sisa alur seat gratis sebelum `[BL-049]` ditutup). Dry-run `issueDuePeriodInvoices()` pada 2026-08-17 menghasilkan `terbit=1, gratis=0, tanpa-tarif=0` — padahal **dua** tenant jatuh tempo dengan tarif Rp 100.000. Tenant itu mendapat sebulan gratis tanpa satu baris pun yang mencatatnya.
-- **Usulan Perbaikan:**
-  **(a)** Kedua penjaga menyaring `kind = KIND_SUBSCRIPTION`. Itu bukan sekadar tambalan — ia **menyelaraskan penjaga aplikasi dengan indeks uniknya**, yang sejak awal sudah memakai `(tenant_id, period, kind)`. Hari ini keduanya menjaga dua hal yang berbeda, persis yang diperingatkan `[BL-050]`.
-  **(b)** Tambahkan test yang menerbitkan tagihan langganan untuk tenant yang sudah punya tagihan `upgrade` di periode yang sama. Tanpa itu perbaikannya akan hilang lagi pada penulisan ulang berikutnya.
-  **(c)** Pertimbangkan menghitung tenant yang dilewati penjaga sebagai counter tersendiri di keluaran perintah. Tiga counter yang ada semuanya menjelaskan **kenapa** sebuah tagihan tidak terbit; yang keempat ini satu-satunya yang tidak, dan itulah yang membuatnya tak terlihat.
-  **(d)** Perbaikan ini **tidak** menunggu `[BL-050]`. Entri itu soal indeks yang membatasi upgrade jadi sekali sebulan; yang ini soal penjaga aplikasi yang menyaring terlalu longgar. Arah keduanya berlawanan, dan yang ini jauh lebih mahal.
-
----
-
 ### [BL-053] Seat Tambahan dan Kuota AI Masih Biaya Sekali Bayar — Keputusan Pemilik Menyebutnya Bulanan
 - **Ditemukan:** 2026-08-07
 - **Sumber:** Keputusan pemilik 2026-08-07 — "seat tambahan include dalam bulanan, begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
@@ -349,38 +308,17 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(a)** `amount` tagihan langganan jadi `harga + (seat_high_water − included_seats) × extra_seat_price`, dengan rinciannya ikut dibekukan di `pricing_context` — tagihan yang tidak bisa dijelaskan pecahannya akan jadi tiket dukungan pertama.
   **(b)** **Putuskan tiga hal yang mengikutinya, jangan disimpulkan saat menulis kode:** (1) seat yang terlanjur diberikan seharga Rp 0 — kedua tenant hari ini memegangnya — mulai ditagih atau di-*grandfather*; (2) penambahan di tengah periode: prorata sisa periode lalu masuk tagihan bulanan, atau tunggu periode berikutnya; (3) **tenant Adaptif harganya dari bracket, tapi harga seat-nya dari paket** — dan sejak 2026-08-07 paketnya `paid-1`, jadi seat-nya Rp 15.000 sementara langganannya bisa Rp 10.000. Itu konsisten dengan "Adaptif = `paid-1` yang didiskon", tapi harus disengaja.
   **(c)** Kuota AI tambahan belum punya bentuk sama sekali — tidak ada kolom, tidak ada alur beli. Kerjakan setelah (a), dan pakai pola yang sama; `Plan::limits` sudah berupa JSON, jadi penambahan kuota per langganan sebaiknya hidup di `subscriptions`, bukan melahirkan paket baru per tenant.
-
----
-
-### [BL-054] Masa Tenggang Belum Bertingkat — Kasir Mati Sejak Hari Pertama, Padahal Keputusan Barunya Tiga Tahap
-- **Ditemukan:** 2026-08-07
-- **Sumber:** Keputusan pemilik 2026-08-07 — "selama tenggat masih boleh jualan"; tangga notif 1–14 / 15–19 / 20–30
-- **Status:** Open — **config-nya sudah ada, penegaknya belum**
-- **Prioritas:** High
-- **Area Terdampak:**
-  - `app/Http/Middleware/EnsureSubscriptionActive.php:62` — `isReadOnly() && ! isMethodSafe()` → memblokir **semua** tulis sejak hari pertama tenggat
-  - `app/Models/Tenant.php` — `canWrite()`, `isReadOnly()`: hanya mengenal dua keadaan, tanpa umur tenggat
-  - `config/subscription.php` — `grace_intensive_from_day` = 15, `grace_lock_from_day` = 20 (**sudah dipasang 2026-08-07**, belum ada pembacanya)
-  - `app/Http/Middleware/HandleInertiaRequests.php` — prop yang menggerakkan tampilan tenggat
-  - `resources/js/Layouts/OwnerLayout.vue:176-177` — `isSuspended` + `isLocked`, satu-satunya penguncian menu yang ada
-- **Deskripsi:**
-  Tenggat hari ini bukan "aplikasi masih jalan, dashboard mati". Ia memblokir **seluruh permintaan non-GET** sejak hari pertama — kasir tidak bisa menyimpan satu transaksi pun, artinya toko tidak bisa berjualan. Prinsip lama di config ("tenggat mencabut kemampuan MENAMBAH data, bukan MEMBACA") ternyata berarti persis itu, dan konsekuensinya tidak pernah diperiksa: warung yang tidak bisa berjualan tidak punya uang untuk membayar, jadi tekanannya merusak sumber pembayarannya sendiri.
-  Keputusan pemilik menggantinya dengan tangga tiga tahap. Config-nya sudah dipasang; middleware, prop, dan tampilannya belum.
-- **Bentuk yang diputuskan:**
-
-  | Hari tenggat | Jualan (POS) | Dashboard analitik | Menu lain | Notifikasi |
-  |---|---|---|---|---|
-  | 1–14 | boleh | terbuka | normal | halus |
-  | 15–19 | boleh | terbuka | normal | intensif, mengganggu |
-  | 20–30 | **berhenti** | terbuka, baca saja | halaman "selesaikan tagihan" + CTA ke pembayaran | paksa |
-  | > 30 | ditangguhkan | tertutup | tertutup | — |
-
-- **Usulan Perbaikan:**
-  **(a)** `Tenant` mendapat umur tenggat (`graceDay()`), dan `EnsureSubscriptionActive` memakainya: tulis diblokir hanya sejak `grace_lock_from_day`, tidak sejak hari pertama. Jangan menaruh angkanya di middleware — ketiganya sudah di config supaya kebijakan tenggat bisa diubah tanpa membaca kelas mana pun.
-  **(b)** Tahap 3 **bukan pengalihan otomatis.** Menu yang terkunci menampilkan halaman pesan sendiri ("selesaikan tagihan untuk membuka halaman ini") dengan tombol ke pembayaran — pengalihan diam-diam membuat pengguna mengira aplikasinya rusak.
-  **(c)** Notifikasi: satu penanda di topbar, plus modal. **Modal-nya padam begitu pembayaran sedang diproses atau pengajuan Adaptif sudah dilakukan** — menagih orang yang sudah membayar adalah cara tercepat kehilangan mereka.
-  **(d) Jebakan yang harus dijaga:** menyenyapkan notifikasi **tidak boleh menghentikan jam tenggat**. Kalau mengunggah bukti bayar ikut menunda hari ke-20, mengunggah gambar kosong membeli 10 hari gratis, berulang kali. Unggahan mematikan notifikasinya; hitungan harinya jalan terus. Bukti yang ditolak menyalakannya kembali di hari yang seharusnya, bukan mundur.
-  **(e)** Prinsip lama di `config/subscription.php` sudah ditulis ulang 2026-08-07 supaya tidak ada dua kebijakan yang berselisih di satu berkas. Jangan menghidupkannya kembali sebagian.
+- **Keputusan pemilik 2026-08-07 (kedua) — dasar tagihan seat bukan pemakaian puncak, melainkan seat yang dibeli.** Ini **mengoreksi butir (a) dan (b)(2) di atas**, jangan dikerjakan menurut bunyi lamanya.
+  Yang diminta: seat tambahan ditagih **karena dibeli**, terpakai atau tidak. Contoh yang diberikan pemilik — paket memberi 3 seat, tenant membeli 2 seat tambahan, tapi yang benar-benar dipakai baru 4 orang (1 seat menganggur): tagihannya tetap 5 seat. Sekali dibeli untuk bulan berjalan, langganannya jalan terus sampai seat itu **dilepas dengan sengaja**.
+  **Akibatnya untuk (a):** rumusnya bukan `seat_high_water − included_seats`, melainkan `purchased_extra_seats` — angka yang dimiliki langganan itu sendiri, bukan angka yang disimpulkan dari pemakaian. `seat_high_water` **tidak lagi jadi dasar harga**; ia paling banter tinggal jadi penjaga *agar tenant tidak memakai lebih banyak seat daripada yang dibelinya*, dan bahkan itu sudah dijaga oleh `seats` biasa. Kalau ternyata tidak ada lagi pembacanya sesudah (a), hapus kolomnya lewat migrasi, jangan tinggalkan sebagai kolom mati yang menyesatkan pembaca berikutnya.
+  **Akibatnya untuk UI:** istilah "puncak"/"pemakaian tertinggi" **dihapus dari halaman langganan**. Yang ditampilkan adalah hak dan asalnya, bukan statistik pemakaian:
+  > Pengguna: **5 seat** — 3 dari paket Premium 1, **2 seat tambahan yang Anda beli** (@ Rp 15.000/bulan = Rp 30.000/bulan). Terpakai 4, tersisa 1.
+  "Terpakai 4" boleh tampil sebagai **informasi**, tapi tidak boleh terbaca seolah memengaruhi tagihan — justru sebaliknya, ia jadi petunjuk kapan tenant sebaiknya melepas seat. Sebutan untuk komponennya: **"seat tambahan"** (dibeli sendiri), lawan dari **"seat bawaan paket"**.
+  **Yang jadi wajib karena keputusan ini, dan belum ada sama sekali: jalan untuk melepas seat.** Selama tagihannya mengikuti pemakaian puncak, tenant yang mengecil ikut mengecil sendiri. Begitu tagihannya mengikuti pembelian, tenant **terkunci membayar selamanya** kecuali ada tombol pengurangan. Ini menggantikan usul `[BL-046]`(d) ("beri batas waktu pada `seat_high_water`") — masalahnya sekarang bukan puncak yang tidak pernah turun, melainkan pembelian yang tidak pernah bisa dibatalkan.
+  **Tiga hal yang masih harus diputuskan sebelum ditulis kodenya:**
+  (1) **Pelepasan berlaku kapan** — seketika (dan tagihan bulan depan turun) atau di akhir periode berjalan? Yang kedua lebih jujur karena bulan berjalan sudah dibayar, dan menutup celah "beli tanggal 1, lepas tanggal 2".
+  (2) **Melepas seat yang masih diduduki staf aktif** — ditolak sampai stafnya dinonaktifkan lebih dulu, atau dibolehkan dan stafnya ikut terkunci? Menolak lebih aman; jangan sampai pelepasan seat diam-diam mematikan akun kasir di tengah jam kerja.
+  (3) **Prorata saat membeli di tengah periode** — masih butir (b)(2) yang lama dan masih terbuka; keputusan ini tidak menjawabnya.
 
 ---
 
@@ -443,6 +381,57 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(a)** Tambahkan `reason` di `Platform\InvoiceController::store()`, wajib **ketika `follows_rule` bernilai false** — memaksa alasan untuk tagihan yang persis mengikuti aturan hanya melatih orang mengetik "sesuai aturan" tanpa membacanya. Deteksinya sudah ada di controller, tinggal dipakai sebagai syarat validasi.
   **(b)** Alasannya masuk `meta` jejak audit berdampingan dengan `follows_rule`, dan ikut terlihat di layar tagihan tenant — nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang.
   **(c)** Jangan menambahkan kolom "harga khusus permanen" per tenant. Pemilik sudah memutuskan harga tetap datang dari paket; harga khusus yang berdiri sendiri berarti membuat paket bayangan yang tidak muncul di daftar mana pun. Bila suatu tenant memang perlu harga tetap yang lain, yang benar adalah **membuat paket baru** — ia auditable dan muncul di panel.
+
+### [BL-061] Tombol Simulasi Lama Kini Jalur Uang Ketiga — Dicabut Setelah Peragaan
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Konsekuensi `[BL-059]`, sudah diantisipasi di butir (i) entri itu
+- **Status:** Open — **sengaja ditunda**, bukan terlewat
+- **Prioritas:** Low
+- **Area Terdampak:**
+  - `app/Http/Controllers/Billing/SimulatedPaymentController.php` — pelunasan peragaan satu klik
+  - `routes/web.php` — `billing.simulate.store`
+  - `resources/js/Pages/Billing/Show.vue` — tombol "Simulasikan pembayaran" dan prop `simulation`
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `simulation.enabled`
+  - `app/Services/Billing/InvoiceSettlement.php` — `SOURCE_SIMULATION` dan `canSimulate()`
+  - `tests/Feature/Subscription/SimulatedPaymentTest.php` — tesnya ikut, kecuali dua tes terakhir yang menguji jalur pemilik SaaS dan harus **dipindahkan**, bukan dihapus
+- **Deskripsi:**
+  Setelah `[BL-059]`, ada tiga cara sebuah tagihan berpindah ke lunas tanpa uang sungguhan diperiksa: bukti transfer manual (sah, tetap dipertahankan), gateway tiruan lewat webhook (jalur baru), dan tombol simulasi satu klik (peninggalan `[BL-045]`). Yang ketiga sekarang mubazir — ia melunasi dengan caranya sendiri, tidak lewat webhook, dan karena itu tidak membuktikan apa pun tentang jalur yang akan dipakai produksi.
+  Gerbangnya memang masih benar (`is_demo` + bukan produksi), jadi ini bukan lubang keamanan. Yang menjadikannya utang adalah jumlahnya: tiap jalur menuju `active` adalah satu tempat lagi yang harus ikut dipikirkan setiap kali aturan pelunasan berubah.
+- **Kenapa belum dicabut:** peragaan ke calon klien dijadwalkan sehari setelah `[BL-059]` mendarat, dan mencabut satu-satunya jalur yang sudah pernah dipakai di depan orang tepat sebelum itu tidak ada untungnya.
+- **Usulan Perbaikan:**
+  **(a)** Cabut controller, rute, tombol, dan prop `simulation` setelah peragaan berjalan mulus.
+  **(b)** `SOURCE_SIMULATION` **jangan dihapus** — nilai itu mungkin sudah tertulis di kolom `settled_via` beberapa tagihan, dan konstanta yang hilang membuat riwayatnya tak terbaca. Beri catatan bahwa ia peninggalan.
+  **(c)** `canSimulate()` ikut dicabut bila tidak ada pemanggil lain yang tersisa.
+  **(d)** Pindahkan dua tes terakhir di `SimulatedPaymentTest` (jalur verifikasi pemilik SaaS lewat `InvoiceSettlement`) ke berkas tes yang bukan tentang simulasi — keduanya menguji jalur yang tetap hidup.
+
+### [BL-060] Integrasi Sumopod Payment Gateway (Sandbox → Produksi) — Terhalang Dokumentasi & Kredensial
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Permintaan pemilik 2026-08-07 — "nanti kalau sudah bagus dan lengkap, baru pakai Sumopod payment gateway-nya (minimal bisa demo, jadi masih pakai sandbox)"
+- **Status:** Blocked — **belum ada akunnya sama sekali** (dikonfirmasi pemilik 2026-08-07), jadi ini bukan menunggu dokumentasi melainkan menunggu keputusan penyedia
+- **Prioritas:** Low sampai akunnya dibuat; naik ke High begitu kredensial sandbox ada
+- **Bergantung pada:** `[BL-059]` — **sudah selesai 2026-08-07**. Kontrak `PaymentGateway`, tabel `payment_attempts`, dan endpoint webhook sudah berdiri; yang tersisa di sini murni pekerjaan driver.
+- **Area Terdampak:**
+  - `app/Services/Billing/Gateways/` — driver `SumopodGateway` baru
+  - `config/services.php:43` — hari ini `sumopod` hanya berisi `key` untuk **gateway AI** (`https://ai.sumopod.com/v1`, lihat `app/Services/Ai/SumoPodProvider.php`)
+  - `.env.example:77` — `SUMOPOD_API_KEY` yang sudah ada adalah kunci AI
+- **Deskripsi:**
+  Yang sudah terpasang di aplikasi ini dengan nama Sumopod adalah **gateway AI** — satu API key untuk memanggil banyak model lewat `ai.sumopod.com`. Produk pembayarannya belum pernah disentuh di sini dan tidak bisa saya verifikasi dari repositori. **Jangan memakai ulang `SUMOPOD_API_KEY` untuk pembayaran**: dua produk berbeda, kemungkinan besar dua kredensial berbeda, dan menumpangkan keduanya pada satu variabel berarti mencabut satu akan mematikan yang lain tanpa alasan yang terlihat. Pakai nama tersendiri (mis. `SUMOPOD_PAY_*`).
+- **Keadaan per 2026-08-07 (dikonfirmasi pemilik):** belum ada akun Sumopod maupun Xendit untuk pembayaran langganan. `XENDIT_SECRET_KEY` yang ada di `.env` bukan bantahan atas itu — ia milik jalur pembayaran **pelanggan di kasir/self-order** (`Api\XenditWebhookController`), bukan tagihan langganan, dan tidak ada akun aktif di belakangnya.
+  Karena itu entri ini **tidak menahan apa pun**: gateway tiruan sudah menyelesaikan kebutuhan development dan peragaan (`[BL-059]`), dan kontraknya sudah berdiri. Yang tersisa murni menunggu keputusan komersial pemilik tentang penyedia mana yang dipakai.
+- **Kalau nanti penyedianya bukan Sumopod:** entri ini tetap berlaku apa adanya. Yang dinamai "Sumopod" di judulnya cuma contoh; seluruh pertanyaan dan pekerjaan di bawah berlaku untuk penyedia mana pun, karena yang mengikatnya adalah kontrak `PaymentGateway`, bukan nama penyedianya.
+- **Yang perlu dijawab pemilik sebelum kode ditulis:**
+  1. Tautan dokumentasi API pembayarannya dan alamat dashboard merchant/sandbox.
+  2. Kanal apa saja yang aktif di akun Anda (QRIS, VA bank mana saja, e-wallet).
+  3. Bentuk autentikasinya (API key di header, HMAC, basic auth) dan **cara memverifikasi tanda tangan callback** — ini syarat masuk `[BL-059]`(f), bukan pelengkap.
+  4. Apakah ada endpoint **cek status transaksi**. Kalau tidak ada, rekonsiliasi hanya bisa bergantung pada webhook, dan webhook yang hilang berarti tenant sudah membayar tapi aksesnya tidak pulih.
+  5. **Biaya admin ditanggung siapa.** Kalau dipotong dari nominal yang diterima, jumlah yang masuk akan selalu lebih kecil dari yang ditagih dan aturan `mismatch` di `[BL-059]`(f) akan menahan **setiap** pembayaran. Keputusannya: tenant membayar nominal + biaya (tagih lebih), atau kita menerima toleransi selisih yang tertulis.
+  6. Kebijakan pembatalan/refund, dan apa yang terjadi pada periode langganan bila terjadi refund.
+- **Pekerjaan setelah pertanyaan terjawab:**
+  **(a)** `SumopodGateway` mengisi kontrak yang sama; seluruh pemanggil di `[BL-059]` tidak berubah.
+  **(b)** Tes memakai `Http::fake()` dengan contoh payload asli dari dokumentasinya — termasuk satu payload dengan tanda tangan salah dan satu payload duplikat.
+  **(c)** Callback sandbox butuh URL publik HTTPS; siapkan tunnel untuk pengujian lokal, dan tanyakan apakah ada allowlist IP di sisi mereka.
+  **(d)** Halaman platform untuk melihat `payment_attempts` per tenant — tanpa itu, kegagalan pembayaran hanya terlihat sebagai tagihan yang tidak kunjung lunas.
+  **(e)** Peralihan produksi dilakukan per-flag config, dan **jalur bukti transfer manual tetap dipertahankan** sebagai cadangan.
 
 ---
 
@@ -597,7 +586,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   4. **Staf terikat satu cabang, dan bagaimana hubungannya dengan RBAC yang sudah ada?** Peran hari ini berlaku se-tenant; "kasir di cabang A saja" adalah dimensi baru pada model izin, bukan peran baru.
   5. **Apa yang terjadi pada tenant yang sudah berjalan?** Jawaban yang paling murah dan paling aman: setiap tenant lahir dengan satu cabang bawaan, dan yang tidak pernah membuat cabang kedua tidak pernah melihat kata "cabang" di mana pun.
 - **Catatan pengerjaan:** kalau nanti dikerjakan, buka sebagai **fase tersendiri** dengan dokumennya sendiri di `docs/phases-*`, bukan sebagai entri backlog. Ukurannya sekelas fase SAAS, dan menyelundupkannya sebagai "satu perbaikan" akan menghasilkan migrasi setengah jadi di tabel yang paling tidak boleh setengah jadi.
-
 
 ---
 
@@ -782,7 +770,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Koreksi 2026-08-07 — klaim *grandfathering* di entri ini SALAH, dan koreksinya penting.**
   Entri ini dulu menyatakan `price_locked` "akan mempertahankan angka nol itu apa adanya". Penguncian harganya memang nyata — `InvoiceSettlement` menulisnya dari nominal yang benar-benar dibayar (`InvoiceSettlement.php:91`) — tapi **tidak ada satu pun pembaca di jalur penagihan.** `issueDuePeriodInvoices()` selalu menghitung ulang lewat `resolveFor()` dan memakai hasilnya apa adanya (`SubscriptionService.php:317`); `price_locked` hanya dibaca dua tempat, keduanya untuk tampilan layar (`Billing\SubscriptionController:38`, `AccountOverview:181`).
   Artinya nominal manual **tidak pernah bertahan ke bulan berikutnya** — tagihan otomatis kembali ke harga aturan. Kebetulan itu justru **persis perilaku yang diminta** keputusan 2026-08-07 untuk input manual (berlaku sebulan saja), jadi yang dulu terlihat sebagai cacat sekarang jadi separuh fitur. Yang belum ada tinggal kolom alasan wajibnya — `[BL-057]`.
-- **Dua tenant lama memegang `price_locked = 0.00`, dan itu belum diputuskan.** Keduanya tenant demo/awal, bukan kesepakatan yang perlu dihormati selamanya. Karena penagih tidak membaca `price_locked`, angka nol itu **tidak** akan menular ke tagihan berikutnya — yang menentukan nasib mereka adalah paketnya, dan keduanya masih di `free` seharga Rp 0. Lihat `[BL-052]`.
+- **Dua tenant lama memegang `price_locked = 0.00`, dan itu belum diputuskan.** Keduanya tenant demo/awal, bukan kesepakatan yang perlu dihormati selamanya. Karena penagih tidak membaca `price_locked`, angka nol itu **tidak** akan menular ke tagihan berikutnya — yang menentukan nasib mereka adalah paketnya, dan keduanya masih di `free` seharga Rp 0. Lihat `[BL-052]`. — **Sudah tidak berlaku sejak 2026-08-07**: keduanya dipindahkan ke `paid-1` dan kini resolve ke Rp 100.000; `[BL-052]` selesai 2026-08-08, jadi tenant gratis berikutnya berpindah sendiri di akhir masa gratisnya. Yang tersisa dari catatan ini hanya `price_locked = 0.00` yang masih menganggur di kedua baris itu.
 
 ### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
 - **Ditemukan:** 2026-07-31
@@ -1034,6 +1022,10 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-054` | Masa tenggang belum bertingkat — kasir mati sejak hari pertama, padahal keputusan barunya tiga tahap | 2026-08-08 (butir (c) sebagian; pemadam kedua menunggu `BL-055`) | `[ADDITION] Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054)` |
+| `BL-052` | Masa gratis habis tanpa perpindahan ke `paid-1` — tenant bertarif Rp 0 tidak pernah ditagih, ia jatuh ke tenggang | 2026-08-08 (butir (d) 2026-08-07) | `[ADDITION] Masa Gratis Berakhir dengan Perpindahan, Bukan dengan Jatuh ke Tenggang (BL-052)` |
+| `BL-058` | Tagihan upgrade seat menelan tagihan langganan di bulan yang sama | 2026-08-07 | `[HOTFIX] Penjaga Periode-Ganda Menyaring kind, dan Tenant yang Dilewati Berhenti Menghilang dari Hitungan (BL-058)` |
+| `BL-059` | Belum ada halaman bayar — tagihan hanya bisa lunas lewat bukti transfer manual atau tombol peragaan satu klik | 2026-08-07 (butir (i) ditunda jadi `BL-061`) | `[ADDITION] Halaman Bayar Berdiri di Atas Gateway Tiruan yang Bicara Seperti Gateway Sungguhan (BL-059)` |
 | `BL-046` | Paket kedua tidak punya tempat berpijak — CRUD-nya ada, pembacanya tidak | 2026-08-01 (butir 1), 2026-08-06 (butir 2) | `[ADDITION] Aturan Tarif Bisa Disunting & Dihentikan…`, `[ADDITION] Paket Kedua Akhirnya Bisa Dihuni: Tenant Bisa Dipindahkan, Seat Bayarnya Ikut (BL-046)` |
 | `BL-045` | Keadaan hanya-baca tak terlihat, dan membayar belum memulihkan akses | 2026-08-06 | `[ADDITION] Keadaan Langganan Terlihat di Setiap Layar, & Satu Pintu Menuju Aktif (BL-045)` |
 | `BL-043` | Login platform berhasil, lalu mendarat di area tenant | 2026-08-05 | `[HOTFIX] Pengalihan Setelah Masuk Memilah Dua Dunia, Bukan Cuma Sebelum Masuk (BL-043)` |
