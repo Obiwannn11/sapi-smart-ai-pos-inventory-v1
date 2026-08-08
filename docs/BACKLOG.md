@@ -332,6 +332,39 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(b)** Alasannya masuk `meta` jejak audit berdampingan dengan `follows_rule`, dan ikut terlihat di layar tagihan tenant — nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang.
   **(c)** Jangan menambahkan kolom "harga khusus permanen" per tenant. Pemilik sudah memutuskan harga tetap datang dari paket; harga khusus yang berdiri sendiri berarti membuat paket bayangan yang tidak muncul di daftar mana pun. Bila suatu tenant memang perlu harga tetap yang lain, yang benar adalah **membuat paket baru** — ia auditable dan muncul di panel.
 
+### [BL-072] Enam Commit Berturut-turut Tidak Bisa Boot — `git bisect` dan `git revert` Menyesatkan di Rentang Itu
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Percobaan menulis ulang riwayat jadi commit atomik; ditemukan karena commit hasil pecahannya gagal menjalankan tes dengan sebab yang bukan berasal dari pecahannya
+- **Status:** Open — **cacat riwayat, bukan cacat kode.** `HEAD` sehat: 786 tes lulus
+- **Prioritas:** Low selama tak ada yang menyusuri riwayat; **High begitu ada yang perlu `bisect` atau `revert` di rentang ini**
+- **Area Terdampak:**
+  - Commit `2ffd393` sampai `329f592` (enam commit berurutan). Sembuh di `342082c`.
+  - `app/Http/Middleware/HandleInertiaRequests.php` — memanggil `App\Models\PaymentAttempt`
+  - `app/Services/SubscriptionService.php` — meng-*import* `App\Services\Pricing\AdaptiveEligibility`
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — men-*type-hint* `App\Services\Billing\Gateways\PaymentGatewayManager`
+- **Deskripsi:**
+  Enam commit berturut-turut memanggil kelas yang berkasnya belum ada. Ketiganya baru lahir bersamaan di `342082c`, yang pesannya sendiri mengakuinya: *"ship the payment gateway and eligibility service HEAD already imports"*.
+
+  | Commit | `PaymentAttempt` | `AdaptiveEligibility` | `PaymentGatewayManager` |
+  |---|---|---|---|
+  | `b3a0686` | ok | ok | ok |
+  | `2ffd393` | **menggantung** | ok | ok |
+  | `c0add23` | **menggantung** | ok | ok |
+  | `18553be` | **menggantung** | **menggantung** | **menggantung** |
+  | `bc24576` | **menggantung** | **menggantung** | **menggantung** |
+  | `f963d94` | **menggantung** | **menggantung** | **menggantung** |
+  | `329f592` | **menggantung** | **menggantung** | **menggantung** |
+  | `342082c` | ok | ok | ok |
+
+  Karena `HandleInertiaRequests` dipakai SETIAP halaman, akibatnya bukan sekadar satu fitur mati: di seluruh rentang itu tidak ada satu pun halaman Inertia yang bisa dirender. Diverifikasi, bukan disimpulkan — checkout ke `c0add23` lalu menjalankan `tests/Feature/Subscription` menghasilkan 25 kegagalan, semuanya `Error: Class "App\Models\PaymentAttempt" not found`.
+- **Kenapa ini berbahaya justru karena tidak terlihat:** `HEAD` hijau, jadi tidak ada yang menagih. Yang menabraknya adalah orang yang datang belakangan dengan pertanyaan wajar — "commit mana yang memecahkan ini?" — lalu `git bisect` menjawab dengan menunjuk commit yang salah, karena setiap commit di rentang itu gagal untuk sebab yang sama sekali berbeda dari yang sedang dicari. `git revert 342082c` juga akan **mematikan `HEAD`**, bukan sekadar mencabut payment gateway: ia membawa pergi tiga kelas yang dipanggil commit-commit di bawahnya.
+- **Sebabnya, supaya tidak berulang:** commit dibuat per "sesi kerja", bukan per perubahan yang berdiri sendiri — pemakai sebuah kelas ikut ter-*commit* lebih dulu daripada kelasnya. Dua commit teratas juga mencampur beberapa concern: `342082c` menggabungkan payment gateway `[BL-059]` dengan `AdaptiveEligibility` dan `PricingService` (24 berkas), dan `a6b45d1` menggabungkan seat bulanan `[BL-053]`, perbaikan `[BL-058]`, serta dokumentasi.
+- **Usulan Perbaikan:**
+  **(a)** **Jangan `bisect` melintasi rentang ini.** Pakai `git bisect skip` untuk `2ffd393`..`329f592`, atau batasi rentangnya ke `342082c..HEAD`.
+  **(b)** **Jangan `revert 342082c`.** Bila payment gateway memang perlu dicabut, cabut lewat commit baru yang membuang pemakainya lebih dulu, bukan dengan membalik commit yang memuat kelasnya.
+  **(c)** Merapikannya berarti menulis ulang **8 commit** dengan basis `b3a0686` — sudah dicoba dan dihentikan 2026-08-08 atas keputusan pemilik. Alasannya: sebagian besar isinya pekerjaan sesi lain, dan menyusun keadaan antaranya menuntut menafsirkan maksud tiap hunk milik orang lain. Riwayat yang ditulis ulang berdasarkan tafsiran bukan riwayat yang lebih bisa dipercaya. Tetap layak dikerjakan bila suatu saat rentang ini benar-benar perlu ditelusuri.
+  **(d)** Aturan ke depan, dan inilah yang sebenarnya menutup entri ini: **satu commit = satu perubahan yang bisa boot sendiri.** Kelas dan pemakainya masuk di commit yang sama, atau kelasnya lebih dulu. Uji cepatnya satu perintah — `git stash && php artisan route:list` sebelum `commit`.
+
 ### [BL-061] Tombol Simulasi Lama Kini Jalur Uang Ketiga — Dicabut Setelah Peragaan
 - **Ditemukan:** 2026-08-07
 - **Sumber:** Konsekuensi `[BL-059]`, sudah diantisipasi di butir (i) entri itu
