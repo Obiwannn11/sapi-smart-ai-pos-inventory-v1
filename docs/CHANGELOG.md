@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-10 | ADDITION | Langganan | Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055) |
 | 2026-08-08 | ADDITION | Langganan | Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053) |
 | 2026-08-08 | ADDITION | Langganan | Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054) |
 | 2026-08-07 | ADDITION | Langganan | Masa Gratis Berakhir dengan Perpindahan, Bukan dengan Jatuh ke Tenggang (BL-052) |
@@ -160,6 +161,36 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055)
+
+**Tanggal:** 2026-08-10 · **Area:** Langganan · **Menutup:** `[BL-055]`, sisa `[BL-048]`(b), pemadam kedua `[BL-054]`(c)
+
+**Masalahnya.** Sejak paket berbayar termurah Rp 100.000, tenant yang tidak sanggup membayarnya tidak punya jalan lain selain jalur Adaptif — dan jalur itu hanya bisa dimasuki lewat halaman persetujuan yang tidak pernah menyebut dirinya sebagai pengajuan keringanan dan tidak menampilkan satu pun angka. Jembatan satu-satunya dari Rp 0 ke tarif berbayar tidak punya papan nama.
+
+**Tangganya dibaca dari data, dan ambangnya diturunkan dari tangga itu.** `PricingService::adaptiveLadder()` menyusun anak tangga dari `pricing_rules` — label, tarif, batas bawah, batas atas — dan `adaptiveCeiling()` mengambil batas atas tertingginya. Keduanya membaca lewat `effectiveRules()`, kumpulan yang **persis sama** dengan yang dipakai `matchContext()` menetapkan harga; tangga yang dipajang dari query sendiri akan menampilkan revisi lama sebuah bracket sementara tagihannya memakai revisi baru. Ambangnya karena itu tidak pernah jadi angka kedua yang harus dijaga tetap sinkron: menggeser `lt` pada bracket teratas dari `/platform/pricing-rules` menggeser ambangnya juga.
+
+**Arah gagalnya ditegakkan, bukan diasumsikan.** Peringatan `[BL-048]` terpasang sebagai kode: kelayakan diperiksa dari **angka omzet terhadap ambang**, bukan dari `price === null`. Bracket yang lupa diberi batas atas membuat `adaptiveCeiling()` mengembalikan `null` — "tak ada ambang", bukan "ambangnya nol" — sehingga tidak seorang pun ditolak. Satu baris syarat yang salah ketik karena itu tidak bisa lagi diam-diam mendorong seluruh tenant ke paket berbayar penuh. Ada testnya, dan itu test yang paling penting di berkasnya.
+
+**Kelayakan dijawab satu kali, dengan ALASANNYA.** `AdaptiveEligibility` menjawab satu pertanyaan — apakah omzetnya di atas ambang — untuk dua arah yang berlawanan, dan sumber angkanya berbeda karena gerbang privasinya berbeda: tenant yang **mengajukan** dinilai dari `SubsidyEstimator` (dihitung untuk mata pemiliknya sendiri, dalam permintaan itu juga, tidak pernah disimpan), tenant yang **sudah di dalam** dinilai dari `tenant_monthly_metrics`. `SubscriptionService::adaptiveVerdict()` merangkainya jadi `eligible` / `active` / `cooldown` / `above_ceiling`. Ketiga penolakan punya jalan keluar yang berbeda — menunggu, membayar penuh, atau tidak melakukan apa-apa — dan layar sekarang menyebutkan yang mana, termasuk angkanya: "Omzet Anda Rp 80.000.000, di atas batas Rp 50.000.000 untuk keringanan."
+
+**Penilaiannya seketika, bukan tanggal 1.** `switchToSubsidized()` memanggil `ComputeTenantMonthlyRevenue::recordFor()` begitu jalurnya berpindah. Sebelumnya tenant yang baru menyerahkan data omzetnya demi keringanan mendarat di halaman yang berkata "omzet Anda belum dihitung" sampai empat minggu — tepat pada orang yang mengajukan karena tidak sanggup membayar bulan ini. Gerbang privasi dua lapisnya diperiksa ulang **di dalam** `recordFor()`, bukan dipercayakan kepada pemanggil: syarat yang hanya hidup di query `handle()` akan dilewati pemanggil kedua yang lupa.
+
+**Melewati ambang berarti pemberitahuan dulu, pindah kemudian.** `reviewAdaptiveCeiling()` berjalan paling akhir di `advanceLifecycle()` dan menandai tenant Adaptif yang omzetnya melewati ujung tangga dengan `track_reverts_at = current_period_end`. Urutannya mengikat: lebih dulu, tenant yang baru ditandai hari ini akan ikut tersapu loop pengembalian di jalan yang sama dan pindah paket di detik yang sama ia diberitahu. Tarif periode berjalan tidak disentuh — `price_locked` dan `invoices.pricing_context` memang dibangun supaya harga berjalan bisa dipertanggungjawabkan.
+
+**Kolom baru `subscriptions.track_revert_reason`, dan kenapa ia harus disimpan.** Pencabutan sukarela dan pemindahan ambang sama-sama berakhir di jalur normal, tapi hanya yang kedua ikut memindahkan paket ke penampung Adaptif. Bisa saja dibedakan dengan menebak dari keadaan lain — "consent-nya masih aktif, berarti ini pemindahan ambang" — dan tebakan itu benar hari ini lalu diam-diam salah pada sebab ketiga yang ditulis siapa pun kelak. Yang keliru bukan sebuah label di layar melainkan paket yang ditagihkan.
+
+**Halaman `/langganan/harga-adaptif`.** Tarif yang berlaku, tagihan langganan terakhir sebagai bukti tarif itu benar-benar diterapkan, tanggal masuk jalur adaptif, tangga bracket lengkap dengan anak tangganya sendiri ditandai, dan ambangnya disebutkan terus terang. Terbuka untuk staf juga — yang digerbang `role:owner` adalah tindakan menyetujuinya, bukan membaca alasannya. Halaman langganan berhenti menaut langsung ke dokumen persetujuan: meminta orang menyetujui pembukaan data penjualannya sebelum ia melihat tangga tarifnya adalah tukar-menukar yang tidak seimbang.
+
+**Pagarnya di tempat perpindahan terjadi, bukan di layar.** `ConsentController::store()` menanyakan verdict yang sama, jadi satu POST tidak bisa melewati tombol yang tidak dirender. Ada testnya.
+
+**Pemadam kedua `[BL-054]`(c) ikut terpasang.** Modal penagihan padam untuk tenant yang sudah mengajukan Adaptif — ia sudah melakukan persis hal yang diminta halaman itu, dan meneruskan teriakan kepadanya menghukum orang yang menurut. Seperti pemadam pertama, yang berhenti hanya notifikasinya; jam tenggatnya jalan terus, karena kalau tidak, mengajukan lalu mendiamkannya jadi cara membeli waktu tanpa membayar.
+
+**Yang sengaja TIDAK diputuskan.** `[BL-056]` — pengajuan berlaku untuk bulan pengajuan atau bulan berikutnya — tetap terbuka dan menunggu keputusan pemilik. Yang mendarat mengikuti apa yang sudah dijanjikan kode dan kalimat suksesnya sejak awal: **berlaku mulai periode berikutnya**. Memilih opsi (ii) di sini akan menjawab pertanyaan pemilik atas namanya sendiri, dan opsi itu menuntut aturan tegas soal tagihan yang sudah sebagian dibayar. Butir (d) `[BL-055]` — pemeriksaan ulang berkala yang menaikkan tenant saat omzetnya naik — sudah berjalan sejak awal lewat `subscriptions:compute-revenue` bulanan plus `resolveFor()` yang dihitung ulang tiap penerbitan tagihan; yang belum ada dan kini ada adalah arah sebaliknya, keluar dari tangga.
+
+**Test:** 18 test baru di `tests/Feature/Subscription/AdaptiveApplicationTest.php`. Suite penuh 822 lulus.
 
 ---
 
