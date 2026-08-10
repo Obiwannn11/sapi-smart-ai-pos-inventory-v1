@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\PaymentAttempt;
 use App\Models\PaymentMethod;
 use App\Models\PlatformUser;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
@@ -137,7 +138,7 @@ class HandleInertiaRequests extends Middleware
      * untuk keterangan yang belum mendesak. Yang mendesak — akses sudah
      * menyempit — justru tidak butuh query apa pun untuk diketahui.
      *
-     * @return array{status: string, stage: string|null, grace_day: int|null, grace_days: int, can_write: bool, payment_pending: bool, suspends_at: string|null, period_ends_at: string|null}|null
+     * @return array{status: string, stage: string|null, grace_day: int|null, grace_days: int, lock_from_day: int, can_write: bool, payment_pending: bool, adaptive_pending: bool, suspends_at: string|null, period_ends_at: string|null}|null
      */
     private function restrictionFor(Tenant $tenant): ?array
     {
@@ -167,6 +168,16 @@ class HandleInertiaRequests extends Middleware
             // mendiamkannya akan jadi cara membeli waktu tanpa membayar
             // (`[BL-054]`(d)).
             'payment_pending' => $this->hasPaymentInFlight($tenant),
+            // Pemadam kedua yang `[BL-054]`(c) minta dan `[BL-055]` sediakan:
+            // tenant yang sudah mengajukan keringanan juga berhenti ditagih
+            // lewat modal. Ia sudah melakukan hal yang diminta halaman itu —
+            // menyerahkan data omzetnya — dan meneruskan teriakan kepadanya
+            // menghukum orang yang justru menurut.
+            //
+            // Tidak butuh query: jalur harga sudah ada di baris tenant, dan
+            // perpindahan ke jalur adaptif hanya terjadi setelah persetujuannya
+            // tercatat.
+            'adaptive_pending' => $tenant->pricing_track === Subscription::TRACK_SUBSIDIZED,
             // Dihitung, bukan disimpan — satu-satunya sumbernya sama dengan
             // yang dipakai kartu Dashboard, supaya tanggal di pita dan tanggal
             // di kartu tidak pernah berselisih.

@@ -365,6 +365,30 @@ test('tenant yang sudah punya jadwal kembali tidak ditimpa penandaan ambang', fu
     expect($subscription->fresh()->track_revert_reason)->toBe(Subscription::REVERT_REVOKED);
 });
 
+// --- Modal tenggat berhenti menagih orang yang sudah mengajukan ---
+
+test('pengajuan adaptif memadamkan modal penagihan', function () {
+    seedAdaptiveLadder();
+    ['tenant' => $tenant, 'owner' => $owner] = makeAdaptiveContext();
+
+    // Status disetel SEBELUM permintaan pertama: `actingAs()` memakai instance
+    // yang sama sepanjang test, dan relasi `tenant`-nya membeku begitu request
+    // pertama memuatnya.
+    $tenant->update(['status' => Tenant::STATUS_GRACE]);
+
+    actingAs($owner);
+
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('auth.tenant.subscription.adaptive_pending', false)
+    );
+
+    post('/langganan/persetujuan/subsidized', ['version' => '1', 'agreed' => true]);
+
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('auth.tenant.subscription.adaptive_pending', true)
+    );
+});
+
 test('tanpa ambang, tak seorang pun dipindahkan', function () {
     PricingRule::query()->forceDelete();
     PricingRule::factory()->revenueBetween(0)->create(['label' => 'SEMUA', 'price' => 10_000]);

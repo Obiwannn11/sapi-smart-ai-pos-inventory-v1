@@ -12,14 +12,19 @@ import Modal from '@/Components/Modal.vue';
  * TIDAK muncul di tahap halus — modal yang muncul sejak hari pertama akan
  * ditutup refleks pada hari kesembilan belas juga.
  *
- * Dua hal yang mematikannya, dan keduanya sengaja:
+ * Tiga hal yang mematikannya, dan ketiganya sengaja:
  *
  * 1. **Pembayaran sedang berjalan** (`payment_pending`). Menagih orang yang
  *    sudah membayar adalah cara tercepat kehilangan mereka. Yang padam hanya
  *    notifikasinya — jam tenggatnya jalan terus di server, karena kalau tidak,
  *    menerbitkan instruksi bayar lalu mendiamkannya jadi cara membeli waktu
  *    tanpa membayar ([BL-054](d)).
- * 2. **Ditutup pengguna**, dan hanya sampai hari berganti. Tahap `locked`
+ * 2. **Pengajuan Harga Adaptif sudah dilakukan** (`adaptive_pending`) — pemadam
+ *    kedua yang [BL-054](c) minta dan [BL-055] sediakan. Tenant yang menyerahkan
+ *    data omzetnya demi keringanan sudah melakukan persis hal yang diminta
+ *    kepadanya; meneruskan teriakan menghukum orang yang menurut. Jam tenggatnya
+ *    juga jalan terus, alasan yang sama seperti di atas.
+ * 3. **Ditutup pengguna**, dan hanya sampai hari berganti. Tahap `locked`
  *    tidak menyimpan penutupannya sama sekali: sesudah kemampuan menulis
  *    dicabut, tidak ada lagi pekerjaan yang bisa diselesaikan dengan
  *    mengabaikannya.
@@ -48,6 +53,7 @@ const show = computed(() => {
     if (restriction.value === null) return false;
     if (restriction.value.status === 'suspended') return false;
     if (restriction.value.payment_pending) return false;
+    if (restriction.value.adaptive_pending) return false;
     if (stage.value !== 'intensive' && stage.value !== 'locked') return false;
 
     return isLocked.value ? true : !dismissed.value;
