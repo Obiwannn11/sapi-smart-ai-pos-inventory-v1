@@ -105,6 +105,19 @@ class AdvanceSubscriptionLifecycle extends Command
             $dryRun ? ' (dry-run)' : ''
         ));
 
+        // Ditonjolkan, bukan dibariskan bersama yang lain: ini satu-satunya
+        // baris yang menaikkan tagihan seseorang. Tenant yang omzetnya melewati
+        // ambang keluar dari keringanan pada periode berikutnya, dan pemilik
+        // SaaS sebaiknya tahu itu terjadi pada hari ia ditandai — bukan pada
+        // hari tagihannya terbit dua kali lipat.
+        if ($result['ceiling_exits'] > 0) {
+            $this->warn(sprintf(
+                'Omzet lewat ambang Adaptif        : %d tenant%s — dijadwalkan pindah ke paket penampung pada periode berikutnya.',
+                $result['ceiling_exits'],
+                $suffix
+            ));
+        }
+
         // Dilaporkan meski nol. Pelepasan seat menurunkan tagihan bulan
         // berikutnya, dan satu-satunya cara memastikan ia benar-benar berjalan
         // adalah melihat angkanya bergerak di hari yang dijanjikan kepada

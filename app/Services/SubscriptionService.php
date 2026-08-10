@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\ComputeTenantMonthlyRevenue;
 use App\Models\Invoice;
 use App\Models\Plan;
 use App\Models\PlatformAuditLog;
@@ -712,9 +713,21 @@ class SubscriptionService
             'pricing_track' => Subscription::TRACK_SUBSIDIZED,
             'track_changed_at' => now(),
             'track_reverts_at' => null,
+            'track_revert_reason' => null,
         ]);
 
         $tenant->update(['pricing_track' => Subscription::TRACK_SUBSIDIZED]);
+
+        // Omzetnya dihitung SEKARANG, bukan menunggu jadwal tanggal 1
+        // (`[BL-055]`(b)). Tanpa ini, tenant yang baru menyerahkan datanya
+        // demi keringanan mendarat di halaman yang mengatakan "omzet Anda
+        // belum dihitung" — sampai empat minggu, tepat pada orang yang
+        // mengajukan karena tidak sanggup membayar bulan ini.
+        //
+        // Dipanggil sesudah kedua kolom jalur ditulis, karena gerbang privasi
+        // di `recordFor()` membaca `tenants.pricing_track`; terbalik, ia akan
+        // menolak menghitung dan diam.
+        (new ComputeTenantMonthlyRevenue)->recordFor($tenant->refresh());
     }
 
     /**
@@ -736,9 +749,123 @@ class SubscriptionService
 
         $subscription->update([
             'track_reverts_at' => $subscription->current_period_end ?? now()->toDateString(),
+            // Sebabnya ikut disimpan supaya pemindahan paket di
+            // `advanceLifecycle()` tidak salah sasaran: pencabutan sukarela
+            // TIDAK memindahkan paket, pemindahan ambang iya.
+            'track_revert_reason' => Subscription::REVERT_REVOKED,
         ]);
 
         TenantMonthlyMetric::where('tenant_id', $tenant->id)->delete();
+    }
+
+    /**
+     * Verdict pengajuan Harga Adaptif untuk satu tenant — berikut ALASANNYA.
+     *
+     * `canSwitchTrack()` menjawab boleh atau tidak, dan itu cukup untuk sebuah
+     * `if`. Yang tidak cukup adalah layarnya: tombol yang mati tanpa keterangan
+     * membuat tenant mengira aplikasinya rusak, lalu menghubungi dukungan untuk
+     * menanyakan hal yang sistem sudah tahu jawabannya (`[BL-055]`(c)). Ketiga
+     * sebab penolakan punya jalan keluar yang berbeda — menunggu, membayar
+     * penuh, atau tidak melakukan apa-apa karena sudah di dalam — dan hanya
+     * kalimat yang menyebut sebabnya bisa menunjukkan jalan itu.
+     *
+     * Urutan pemeriksaannya disengaja: keadaan lebih dulu, baru waktu, baru
+     * omzet. Yang paling murah dan paling pasti didahulukan, dan omzet —
+     * satu-satunya yang menyentuh data penjualan — hanya dihitung bila dua
+     * saringan sebelumnya lolos.
+     *
+     * @return array{eligible: bool, reason: string, available_at: string|null, ceiling: float|null, revenue: float|null}
+     */
+    public function adaptiveVerdict(Tenant $tenant): array
+    {
+        $verdict = fn (string $reason, ?float $revenue = null): array => [
+            'eligible' => $reason === AdaptiveEligibility::REASON_ELIGIBLE,
+            'reason' => $reason,
+            'available_at' => $this->trackSwitchAvailableAt($tenant)?->toDateString(),
+            'ceiling' => $this->eligibility->ceiling(),
+            'revenue' => $revenue,
+        ];
+
+        if ($this->ensureFor($tenant)->isSubsidized()) {
+            return $verdict(AdaptiveEligibility::REASON_ACTIVE);
+        }
+
+        if (! $this->canSwitchTrack($tenant)) {
+            return $verdict(AdaptiveEligibility::REASON_COOLDOWN);
+        }
+
+        $revenue = $this->eligibility->measuredRevenueFor($tenant);
+
+        return $this->eligibility->isAboveCeiling($tenant)
+            ? $verdict(AdaptiveEligibility::REASON_ABOVE_CEILING, $revenue)
+            : $verdict(AdaptiveEligibility::REASON_ELIGIBLE, $revenue);
+    }
+
+    /**
+     * Jadwalkan keluarnya tenant Adaptif yang omzetnya melewati ambang —
+     * `[BL-055]`(e).
+     *
+     * **Pada periode berikutnya, bukan hari ini.** Tarif periode berjalan sudah
+     * dibekukan di `price_locked` dan `invoices.pricing_context` supaya bisa
+     * dipertanggungjawabkan; menaikkannya di tengah periode berarti tenant
+     * membayar angka yang berbeda dari yang tertulis saat periodenya dibuka.
+     * Yang berubah hari ini hanyalah pemberitahuannya — dan justru itu intinya:
+     * tenant tahu sebelum tagihannya naik, bukan sesudah.
+     *
+     * **Consent-nya TIDAK dicabut di sini.** Tenant tidak menarik apa pun; ia
+     * hanya tumbuh. Mencabutnya atas namanya akan menghapus ringkasan omzet
+     * yang justru menjadi bukti kenapa ia dipindahkan.
+     *
+     * Tenant yang sudah punya jadwal kembali — apa pun sebabnya — dilewati.
+     * Menimpanya berarti pencabutan sukarela yang sedang berjalan berubah
+     * diam-diam jadi pemindahan paket.
+     */
+    public function reviewAdaptiveCeiling(bool $dryRun = false): int
+    {
+        $ceiling = $this->eligibility->ceiling();
+
+        // Tanpa ambang, tak ada yang bisa dilewati. Keluar lebih awal supaya
+        // tangga yang tidak berujung tidak menyeret seluruh tenant Adaptif
+        // melewati penghitungan omzet yang jawabannya sudah pasti "tidak".
+        if ($ceiling === null) {
+            return 0;
+        }
+
+        // Omzetnya dihitung SEKALI per tenant lalu dibawa terus. Menanyakannya
+        // ulang untuk jejak audit akan menggandakan query pada satu-satunya
+        // jalur yang menyentuh tiap tenant Adaptif tiap hari.
+        $melewati = Tenant::query()
+            ->where('pricing_track', Subscription::TRACK_SUBSIDIZED)
+            ->whereHas('subscription', fn ($query) => $query->whereNull('track_reverts_at'))
+            ->with('subscription')
+            ->get()
+            ->map(fn (Tenant $tenant) => [
+                'tenant' => $tenant,
+                'revenue' => $this->eligibility->measuredRevenueFor($tenant),
+            ])
+            ->filter(fn (array $baris) => $baris['revenue'] !== null && $baris['revenue'] >= $ceiling);
+
+        if ($dryRun) {
+            return $melewati->count();
+        }
+
+        foreach ($melewati as ['tenant' => $tenant, 'revenue' => $revenue]) {
+            $subscription = $tenant->subscription;
+
+            $subscription->update([
+                'track_reverts_at' => $subscription->current_period_end ?? now()->toDateString(),
+                'track_revert_reason' => Subscription::REVERT_ABOVE_CEILING,
+            ]);
+
+            PlatformAuditLog::record('subscriptions.adaptive-ceiling-exit', $tenant, [
+                'tenant_id' => $tenant->id,
+                'revenue' => $revenue,
+                'ceiling' => $ceiling,
+                'reverts_at' => $subscription->track_reverts_at?->toDateString(),
+            ]);
+        }
+
+        return $melewati->count();
     }
 
     /**
@@ -1037,7 +1164,10 @@ class SubscriptionService
      * tanpa memuatnya. Tenant mendapat sebulan gratis, tiap kali tanggalnya
      * kebetulan berimpit.
      *
-     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int, skipped: int, graduated: int, stranded: int, seats_released: int}
+     * Penandaan tenant Adaptif yang melewati ambang (`[BL-055]`(e)) menutup
+     * barisan, dan urutannya juga mengikat — alasannya di tempatnya dipanggil.
+     *
+     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int, skipped: int, graduated: int, stranded: int, seats_released: int, ceiling_exits: int}
      */
     public function advanceLifecycle(bool $dryRun = false): array
     {
@@ -1066,9 +1196,12 @@ class SubscriptionService
 
         if (! $dryRun) {
             foreach ($reverting()->get() as $subscription) {
+                $karenaAmbang = $subscription->track_revert_reason === Subscription::REVERT_ABOVE_CEILING;
+
                 $subscription->update([
                     'pricing_track' => Subscription::TRACK_NORMAL,
                     'track_reverts_at' => null,
+                    'track_revert_reason' => null,
                     // `track_changed_at` sengaja TIDAK disetel ulang di sini.
                     // Jarak minimum dihitung dari perpindahan yang dipilih
                     // tenant, bukan dari kembalinya otomatis — kalau tidak,
@@ -1076,6 +1209,31 @@ class SubscriptionService
                 ]);
 
                 $subscription->tenant->update(['pricing_track' => Subscription::TRACK_NORMAL]);
+
+                // Hanya pemindahan ambang yang ikut memindahkan paket
+                // (`[BL-055]`(e)). Tenant Adaptif lazimnya masih memegang paket
+                // `free` seharga Rp 0 — mengembalikannya ke jalur normal tanpa
+                // memindahkan paketnya berarti tenant yang omzetnya justru
+                // PALING besar mendarat di tarif nol, kebalikan dari yang
+                // diputuskan.
+                //
+                // Tujuannya paket penampung Adaptif, bukan paket termahal dan
+                // bukan tebakan: penampung itulah yang sudah ditunjuk pemilik
+                // SaaS sebagai rumah tenant yang keluar dari tangga bracket.
+                // Tanpa penunjukan, paketnya dibiarkan apa adanya — sama seperti
+                // `fallbackPlanFor()`, memilih tarif untuk orang tanpa seorang
+                // pun memutuskannya adalah kegagalan yang lebih buruk.
+                $penampung = $karenaAmbang ? Plan::adaptiveFallback() : null;
+
+                if ($penampung !== null && ! $subscription->plan->is($penampung)) {
+                    $this->changePlan($subscription, $penampung);
+
+                    PlatformAuditLog::record('subscriptions.adaptive-ceiling-moved', $subscription->tenant, [
+                        'tenant_id' => $subscription->tenant_id,
+                        'to_plan' => $penampung->slug,
+                        'seats' => $subscription->seats,
+                    ]);
+                }
             }
         }
 
@@ -1089,6 +1247,15 @@ class SubscriptionService
             $expiring()->update(['status' => Tenant::STATUS_GRACE]);
         }
 
+        // Penandaan tenant yang melewati ambang dijalankan PALING AKHIR, dan
+        // urutan itu mengikat sama seperti yang lain. Lebih dulu, tenant yang
+        // baru ditandai hari ini — yang `track_reverts_at`-nya jatuh di masa
+        // lalu karena periodenya sudah lewat — akan ikut tersapu loop
+        // pengembalian di atas pada jalan yang sama, dan pindah paket di detik
+        // yang sama ia diberitahu. Yang dijanjikan `[BL-055]`(e) adalah
+        // pemberitahuan LEBIH DULU, pemindahan pada periode berikutnya.
+        $ceilingExits = $this->reviewAdaptiveCeiling($dryRun);
+
         return [
             'expired' => $expiredCount,
             'suspended' => $suspendedCount,
@@ -1100,6 +1267,7 @@ class SubscriptionService
             'graduated' => $graduation['graduated'],
             'stranded' => $graduation['stranded'],
             'seats_released' => $seatsReleased,
+            'ceiling_exits' => $ceilingExits,
         ];
     }
 }

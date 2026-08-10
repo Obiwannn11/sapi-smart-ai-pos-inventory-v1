@@ -128,7 +128,10 @@ test('mencabut consent menghapus ringkasan omzet seketika', function () {
     actingAs($owner);
     agreeSubsidy();
 
-    foreach ([1, 2, 3] as $bulanLalu) {
+    // Mulai dari dua bulan lalu, bukan satu: sejak `[BL-055]`(b) pengajuan
+    // langsung menghitung omzet bulan tutup terakhir, jadi baris untuk bulan
+    // itu sudah ada dan menambahnya lagi menabrak indeks uniknya.
+    foreach ([2, 3, 4] as $bulanLalu) {
         TenantMonthlyMetric::factory()
             ->forPeriod(now()->startOfMonth()->subMonths($bulanLalu)->format('Y-m'))
             ->create(['tenant_id' => $tenant->id]);

@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Billing;
 use App\Http\Controllers\Controller;
 use App\Models\TenantConsent;
 use App\Services\ConsentService;
+use App\Services\Pricing\AdaptiveEligibility;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Inertia\Response;
 
@@ -117,8 +119,14 @@ class ConsentController extends Controller
     }
 
     /**
-     * Jalur subsidi menuntut satu syarat lagi di luar peran owner: jarak
-     * minimum dari perpindahan jalur terakhir.
+     * Jalur subsidi menuntut syarat di luar peran owner, dan syarat-syarat itu
+     * ditanyakan ke `adaptiveVerdict()` — bukan diperiksa ulang di sini.
+     *
+     * Inilah titik penegakan yang sesungguhnya: halaman mana pun boleh
+     * menampilkan tombolnya, tapi yang benar-benar memindahkan jalur adalah
+     * `store()` di bawah. Pagar yang hanya hidup di layar bisa dilewati dengan
+     * satu POST, dan pagar yang ditulis dua kali akan bercabang begitu salah
+     * satunya diperbaiki (`[BL-055]`(c)).
      */
     private function switchIsAllowed($tenant, string $type): bool
     {
@@ -126,21 +134,45 @@ class ConsentController extends Controller
             return true;
         }
 
-        return $this->subscriptions->canSwitchTrack($tenant);
+        return $this->subscriptions->adaptiveVerdict($tenant)['eligible'];
     }
 
+    /**
+     * Kalimat penolakan yang menyebut sebabnya DAN jalan keluarnya.
+     *
+     * Tiga sebab, tiga jalan keluar yang sama sekali berbeda — menunggu,
+     * membayar penuh, atau tidak melakukan apa-apa karena sudah di dalam.
+     * Menyamaratakannya jadi "tidak bisa" memaksa tenant menebak yang mana,
+     * dan tebakan yang salah berakhir di tiket dukungan.
+     */
     private function blockedReason($tenant, string $type): ?string
     {
-        if ($this->switchIsAllowed($tenant, $type)) {
+        if ($type !== TenantConsent::TYPE_SUBSIDIZED) {
             return null;
         }
 
-        $tersedia = $this->subscriptions->trackSwitchAvailableAt($tenant);
+        $verdict = $this->subscriptions->adaptiveVerdict($tenant);
 
-        return sprintf(
-            'Perpindahan jalur harga hanya bisa dilakukan setiap %d bulan. Anda bisa mengajukannya lagi mulai %s.',
-            SubscriptionService::trackSwitchMinimumMonths(),
-            $tersedia?->translatedFormat('j F Y') ?? '-',
-        );
+        return match ($verdict['reason']) {
+            AdaptiveEligibility::REASON_ELIGIBLE => null,
+            AdaptiveEligibility::REASON_ACTIVE => 'Anda sudah berada di jalur Harga Adaptif. Tidak ada yang perlu diajukan lagi.',
+            AdaptiveEligibility::REASON_ABOVE_CEILING => sprintf(
+                'Omzet Anda %s, di atas batas %s untuk keringanan. Jalur yang berlaku bagi Anda adalah paket berbayar penuh.',
+                $this->rupiah($verdict['revenue']),
+                $this->rupiah($verdict['ceiling']),
+            ),
+            default => sprintf(
+                'Perpindahan jalur harga hanya bisa dilakukan setiap %d bulan. Anda bisa mengajukannya lagi mulai %s.',
+                SubscriptionService::trackSwitchMinimumMonths(),
+                $verdict['available_at'] === null
+                    ? '-'
+                    : Carbon::parse($verdict['available_at'])->translatedFormat('j F Y'),
+            ),
+        };
+    }
+
+    private function rupiah(?float $amount): string
+    {
+        return $amount === null ? '-' : 'Rp '.number_format($amount, 0, ',', '.');
     }
 }
