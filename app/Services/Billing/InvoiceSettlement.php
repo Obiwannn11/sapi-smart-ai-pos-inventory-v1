@@ -115,7 +115,17 @@ class InvoiceSettlement
                 // dibaca ulang dari tabel tarif. Inilah grandfathering:
                 // mengubah tarif besok tidak boleh mengubah apa yang sudah
                 // disepakati hari ini.
-                'price_locked' => $invoice->amount,
+                //
+                // **Nominal nol tidak mengunci apa pun** (keputusan 2026-08-10).
+                // Tagihan langganan Rp 0 hanya bisa lahir dari pemilik SaaS yang
+                // mengetiknya sendiri di panel (`min:0`), dan yang ia putuskan di
+                // situ adalah "bulan ini gratis" — bukan "tarifnya nol mulai
+                // sekarang". Menuliskannya tetap membuat halaman langganan
+                // menjawab "Rp 0/bulan" atas tarif yang bulan depan ditagih
+                // penuh, persis bahaya yang docblock `settleIfFree()` di bawah
+                // namai sebagai `[BL-041]`. Periodenya tetap diperpanjang: itu
+                // memang yang diputuskan, dan itu yang tidak diganggu di sini.
+                ...((float) $invoice->amount > 0.0 ? ['price_locked' => $invoice->amount] : []),
                 // Tanggalnya dihitung service, bukan di sini. Periode
                 // menyambung dari periode sebelumnya dan mengikuti jangkar
                 // tanggal tagih — tiga aturan yang harus jalan bersama, dan
@@ -144,9 +154,15 @@ class InvoiceSettlement
      * menolak menerbitkannya selama tarifnya belum ditetapkan. Yang masih bisa
      * melahirkannya hanyalah pemilik SaaS yang mengetiknya sendiri di panel
      * (`min:0` di `Platform\InvoiceController::store()`), dan melunasinya di
-     * sini akan menulis `price_locked = 0` lalu memperpanjang periodenya —
-     * diam-diam mewariskan tarif nol yang belum pernah diputuskan siapa pun
-     * (`[BL-041]`). Keputusan sebesar itu milik orang, bukan efek samping.
+     * sini akan memperpanjang periodenya tanpa seorang pun memutuskan bahwa
+     * bulan itu memang gratis (`[BL-041]`). Keputusan sebesar itu milik orang,
+     * bukan efek samping.
+     *
+     * Separuh dari bahaya yang dulu dicatat di sini sudah dicabut di sumbernya:
+     * sejak 2026-08-10 `settle()` tidak lagi menulis `price_locked` dari nominal
+     * nol, jadi pelunasan manual sebuah tagihan langganan Rp 0 tak bisa lagi
+     * mewariskan tarif nol. Yang tersisa — perpanjangan periodenya — tetap
+     * menuntut orang yang memutuskannya, dan karena itu batas di bawah tetap.
      *
      * **`provisional_blocked` sengaja tidak diperiksa.** Penjaga itu ada untuk
      * menahan seat yang naik tanpa dibayar; ketika tak ada yang harus dibayar,

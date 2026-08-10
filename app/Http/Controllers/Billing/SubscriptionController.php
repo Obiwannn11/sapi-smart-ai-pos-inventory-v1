@@ -39,7 +39,11 @@ class SubscriptionController extends Controller
         $subscription = $subscriptions->ensureFor($tenant);
         $subscription->loadMissing('plan');
 
-        $effectivePrice = (float) ($subscription->price_locked ?? $subscription->plan->base_price);
+        // Aturannya tinggal di model, bukan di sini: halaman ini bukan satu-
+        // satunya yang menjawab "berapa tarif Anda", dan `price_locked` punya
+        // satu jebakan (nol yang bukan null) yang akan terlewat di penyalinan
+        // pertama. Lihat `Subscription::effectivePrice()`.
+        $effectivePrice = $subscription->effectivePrice();
         $normalConsent = $consents->latestFor($tenant, TenantConsent::TYPE_NORMAL);
         $verdict = $subscriptions->adaptiveVerdict($tenant);
 
@@ -51,10 +55,12 @@ class SubscriptionController extends Controller
             ],
             'subscription' => [
                 'plan_name' => $subscription->plan->name,
-                'base_price' => (float) $subscription->plan->base_price,
-                'price_locked' => $subscription->price_locked === null
-                    ? null
-                    : (float) $subscription->price_locked,
+                // Satu angka, sudah jadi — bukan `base_price` dan `price_locked`
+                // mentah yang harus disatukan lagi oleh template. Halaman ini
+                // pernah menyalin `price_locked ?? base_price` ke dalam
+                // Vue-nya, dan salinan itulah yang memajang "Rp 0/bulan" kepada
+                // tenant bertarif Rp 100.000.
+                'effective_price' => $effectivePrice,
                 'pricing_track' => $subscription->pricing_track,
                 'seats' => $subscription->seats,
                 'seats_used' => $subscription->activeSeatsUsed(),

@@ -47,7 +47,11 @@ class AdaptiveController extends Controller
         $subscription = $subscriptions->ensureFor($tenant);
         $subscription->loadMissing('plan');
 
-        $effectivePrice = (float) ($subscription->price_locked ?? $subscription->plan->base_price);
+        // Aturannya tinggal di model — lihat `Subscription::effectivePrice()`.
+        // Halaman ini menyalin ungkapan `price_locked ?? base_price` dari
+        // halaman langganan berikut jebakannya: kolomnya desimal, jadi `0.00`
+        // bukan `null` dan tarif paket tidak pernah terpakai.
+        $effectivePrice = $subscription->effectivePrice();
         $verdict = $subscriptions->adaptiveVerdict($tenant);
 
         return inertia('Billing/Adaptive', [

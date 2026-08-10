@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-10 | HOTFIX | Langganan | `price_locked` Nol Berhenti Dibaca Sebagai Tarif Rp 0 (BL-041) |
 | 2026-08-10 | ADDITION | Langganan | Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055) |
 | 2026-08-08 | ADDITION | Langganan | Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053) |
 | 2026-08-08 | ADDITION | Langganan | Masa Tenggang Jadi Tangga Tiga Tahap — Kasir Berhenti Mati di Hari Pertama (BL-054) |
@@ -161,6 +162,35 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] `price_locked` Nol Berhenti Dibaca Sebagai Tarif Rp 0 (BL-041)
+
+**Tanggal:** 2026-08-10 · **Area:** Langganan · **Menutup:** catatan terakhir `[BL-041]` ("dua tenant lama memegang `price_locked = 0.00`, dan itu belum diputuskan")
+
+**Masalahnya.** `price_locked` bertipe `decimal(12,2)`, jadi `0.00` **bukan** `null` — dan `price_locked ?? plan->base_price`, ungkapan yang dipakai halaman langganan untuk menjawab "berapa tarif Anda", karena itu tidak pernah jatuh ke tarif paket. Tenant `Kopi Story` (paket `paid-1`, `base_price` Rp 100.000) membaca **"Rp 0/bulan"** di `/langganan` sementara `issueDuePeriodInvoices()` menyiapkan tagihan Rp 100.000 untuknya. Bukan angka yang kurang tepat: layar yang membantah tagihan, pada satu-satunya halaman yang dibuka tenant untuk mengetahui berapa yang harus ia bayar.
+
+**Keputusannya: `price_locked = 0` adalah cacat data, bukan grandfathering yang perlu dihormati.** Tiga hal yang bersama-sama menutup pembacaan sebaliknya:
+
+- **Tak ada jalan yang memutuskannya.** Tagihan langganan Rp 0 tidak bisa lahir sendiri — `issueDuePeriodInvoices()` menolak menerbitkannya (`$amount <= 0.0`), dan `settleIfFree()` sengaja menolak melunasinya. Yang tersisa hanya pemilik SaaS yang mengetik tagihan Rp 0 di panel (`min:0`), dan itu sudah dinamai bahaya oleh docblock-nya sendiri sejak `[BL-049]` — bukan kebijakan.
+- **Nol yang benar-benar ada di basis data artinya "belum diketahui", bukan "nol".** Keduanya ditulis di tempat yang tidak pernah tahu tarifnya: backfill migrasi `2026_07_24_181638` (`'price_locked' => 0` untuk tenant yang sudah ada) dan bawaan `SubscriptionFactory`. Yang jujur adalah `null` — persis yang ditulis `startTrial()`.
+- **Ia tidak meng-grandfather apa pun sekalipun dianggap sah.** Penagih tidak pernah membaca `price_locked`; `issueDuePeriodInvoices()` selalu menghitung ulang lewat `resolveFor()` (koreksi 2026-08-07 di `[BL-041]`). Memajang Rp 0 karena itu memajang tarif yang tidak akan dihormati siapa pun.
+
+**Dikerjakan dua-duanya — sumbernya dan layarnya.** Menambal salah satu saja meninggalkan separuh cacatnya hidup: hanya menambal layar membiarkan nol baru terus lahir, hanya menambal sumbernya membiarkan dua baris yang sudah nol tetap berbohong di layar.
+
+- **`InvoiceSettlement::settle()` berhenti menulis `price_locked` dari nominal nol.** Perpanjangan periode dan pengaktifan tenant TIDAK ikut dicabut: yang diputuskan orang yang menerbitkan tagihan Rp 0 adalah "bulan ini gratis", bukan "tarifnya nol mulai sekarang". Mencabut keduanya sekaligus justru meninggalkan tenant di masa tenggang atas tagihan yang sudah lunas.
+- **`Subscription::effectivePrice()` jadi satu-satunya rumah aturannya**, dan membaca `price_locked` non-positif sebagai kosong. Diletakkan di model, bukan di controller, karena ungkapan `?? ` itu sudah tersalin ke lebih dari satu tempat — termasuk ke dalam template Vue-nya — dan jebakan "nol yang bukan null" akan terlewat di penyalinan berikutnya.
+- **Kedua halaman yang menjawab "berapa tarif Anda" memanggilnya, bukan menghitung sendiri.** `Billing\SubscriptionController` (`/langganan`) dan `Billing\AdaptiveController` (`/langganan/harga-adaptif`) sama-sama menyalin ungkapan itu berikut jebakannya; keduanya kini tidak bisa lagi berselisih, dan ada test yang menjaganya.
+- **Halaman langganan menerima satu angka jadi.** `subscription.price_locked` dan `subscription.base_price` diganti `subscription.effective_price`; `Billing/Show.vue` tidak lagi menyatukan dua angka mentah sendiri.
+
+**Tenant yang memang gratis tetap terbaca Rp 0.** Ia tinggal di paket `free`, yang `base_price`-nya juga nol — jadi menganggap nol sebagai kosong tidak pernah membesarkan tarif siapa pun di layar. Itu yang membuat aturannya aman diterapkan tanpa memandang paket.
+
+**Akibat kedua yang ikut terperbaiki, dan justru yang paling merugikan.** `$effectivePrice` juga masuk ke `SubsidyEstimator::estimateFor()` sebagai tarif pembanding. Terhadap Rp 0 palsu, bracket Rp 25.000 terbaca **lebih mahal** — halamannya lalu memberi tahu tenant yang paling butuh keringanan bahwa mengajukannya tidak menguntungkan. Ada testnya.
+
+**Yang sengaja TIDAK dikerjakan.** (1) **Baris nol yang sudah ada tidak dinormalkan jadi `null` lewat migrasi.** Sejak pembacaannya diperbaiki ia tidak lagi menyesatkan siapa pun, dan menulisi kolom uang untuk kerapian saja bukan alasan yang cukup. (2) **Panel platform tetap memajang kolomnya apa adanya** (`AccountOverview`, `Platform/Tenants/Show.vue`) — di sana yang ditanyakan memang isi kolomnya, bukan tarif yang berlaku. Satu catatan tersisa di sana: petunjuk "Terkunci sejak pembayaran terakhir." berbunyi untuk nilai nol yang tak pernah berasal dari pembayaran mana pun.
+
+**Verifikasi:** `tests/Feature/Subscription/EffectivePriceTest.php` — 9 test, dua arah sekaligus. Nol dibaca sebagai kosong, **dan** harga terkunci yang sungguhan (Rp 50.000 di bawah tarif paket Rp 100.000) tetap dihormati; perbaikan yang hanya menegakkan yang pertama akan diam-diam mencabut grandfathering setiap tenant yang pernah menyepakati tarif di bawah tarif paketnya.
 
 ---
 

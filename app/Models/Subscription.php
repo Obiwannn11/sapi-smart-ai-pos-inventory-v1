@@ -150,6 +150,43 @@ class Subscription extends Model
     }
 
     /**
+     * Tarif bulanan yang berlaku bagi tenant ini — harga terkunci bila ada,
+     * tarif paket bila tidak.
+     *
+     * **`price_locked` yang nol dibaca sebagai KOSONG, bukan sebagai tarif Rp 0**
+     * (keputusan 2026-08-10). Kolomnya desimal, jadi `0.00` bukan `null` dan
+     * `price_locked ?? base_price` tidak pernah jatuh ke tarif paket: tenant
+     * `paid-1` yang kolomnya berisi nol membaca "Tarif Anda sekarang: Rp 0/bulan"
+     * di layar sementara penerbit menyiapkan tagihan Rp 100.000 untuknya. Layar
+     * dan tagihan tidak boleh menyebut dua angka.
+     *
+     * Nol di kolom itu tidak pernah menjadi kesepakatan yang perlu dihormati.
+     * Tagihan langganan Rp 0 tidak bisa lahir sendiri — `issueDuePeriodInvoices()`
+     * menolak menerbitkannya dan `settleIfFree()` menolak melunasinya — sehingga
+     * satu-satunya jalan menuju nol adalah nilai yang berarti "belum diketahui"
+     * yang terlanjur ditulis sebagai angka: backfill migrasi
+     * `2026_07_24_181638` dan bawaan `SubscriptionFactory`. Yang jujur adalah
+     * `null`, seperti yang ditulis `startTrial()`.
+     *
+     * Tenant yang memang tidak membayar apa pun tetap terbaca benar: ia tinggal
+     * di paket `free`, yang `base_price`-nya juga 0. Menganggap nol sebagai
+     * kosong karena itu tidak pernah membesarkan tarif siapa pun di layar.
+     *
+     * Ini pertanyaan TAMPILAN, bukan penagihan. Penagih tidak pernah membaca
+     * `price_locked` sama sekali — `issueDuePeriodInvoices()` selalu menghitung
+     * ulang lewat `PricingService::resolveFor()`; lihat koreksi *grandfathering*
+     * di `[BL-041]`.
+     */
+    public function effectivePrice(): float
+    {
+        $locked = (float) $this->price_locked;
+
+        return $locked > 0.0
+            ? $locked
+            : (float) ($this->plan?->base_price ?? 0);
+    }
+
+    /**
      * Hari dalam bulan yang menjadi tanggal tagih langganan ini (1–31).
      *
      * Jatuh ke tanggal akhir periode berjalan bila jangkarnya belum pernah

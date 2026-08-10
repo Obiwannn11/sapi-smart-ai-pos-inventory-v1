@@ -420,7 +420,7 @@ const invoiceStatusLabels = {
                     <div class="flex items-baseline justify-between px-5 py-3.5">
                         <dt class="text-sm text-muted-foreground">Tarif</dt>
                         <dd class="text-sm font-medium text-foreground tabular-nums">
-                            {{ formatRupiah(subscription.price_locked ?? subscription.base_price) }}
+                            {{ formatRupiah(subscription.effective_price) }}
                             <span class="text-muted-foreground font-normal">/bulan</span>
                         </dd>
                     </div>
