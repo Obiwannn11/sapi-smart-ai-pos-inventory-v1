@@ -267,6 +267,28 @@ const subsidyEstimate = computed(() => {
     };
 });
 
+/**
+ * Kenapa pengajuan Harga Adaptif tertutup, atau null bila terbuka.
+ *
+ * Server mengirim ALASANNYA, bukan cuma boleh-tidaknya (`[BL-055]`(c)). Ketiga
+ * sebab punya jalan keluar yang berbeda — menunggu, membayar penuh, atau tidak
+ * melakukan apa-apa — dan kalimat tunggal "belum bisa" memaksa tenant menebak
+ * yang mana.
+ */
+const subsidyBlocked = computed(() => {
+    if (props.subsidy.can_switch) return null;
+
+    if (props.subsidy.reason === 'above_ceiling') {
+        return `Omzet Anda ${formatRupiah(props.subsidy.measured_revenue)} — di atas batas ${formatRupiah(props.subsidy.ceiling)} untuk keringanan. Harga Adaptif ditujukan untuk usaha beromzet rendah, jadi jalur yang berlaku bagi Anda adalah paket berbayar penuh.`;
+    }
+
+    if (props.subsidy.reason === 'cooldown') {
+        return `Perpindahan jalur berikutnya bisa diajukan mulai ${formatDate(props.subsidy.switch_available_at)}.`;
+    }
+
+    return null;
+});
+
 const estimateTones = {
     positive: 'border-emerald-500/40 bg-emerald-500/[0.07]',
     neutral: 'border-border bg-muted/40',
@@ -547,10 +569,28 @@ const invoiceStatusLabels = {
                         </p>
                     </div>
                     <p v-else class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                        Omzet Anda belum dihitung. Perhitungan pertama berjalan di awal bulan berikutnya.
+                        Belum ada penjualan tercatat di bulan yang sudah tutup, jadi kelompok tarif Anda belum bisa
+                        ditentukan. Angkanya muncul di sini setelah satu bulan penuh berjalan.
                     </p>
 
-                    <p v-if="subsidy.reverts_at" class="mt-2 text-sm text-foreground">
+                    <!-- Dua sebab, dua kalimat. Pencabutan sukarela dan
+                         pemindahan karena omzet melewati ambang sama-sama
+                         berakhir di Harga Tetap, tapi hanya yang kedua menaikkan
+                         tagihan seseorang tanpa ia meminta apa pun — dan itu
+                         harus terbaca sebagai pemberitahuan, bukan konfirmasi. -->
+                    <p
+                        v-if="subsidy.reverts_at && subsidy.revert_reason === 'above_ceiling'"
+                        class="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-sm text-foreground leading-relaxed"
+                    >
+                        Omzet Anda melewati batas keringanan, jadi tarif adaptif berlaku sampai
+                        {{ formatDate(subsidy.reverts_at) }} — setelah itu tarif Anda mengikuti paket berbayar
+                        penuh. Tagihan yang sudah terbit tidak berubah.
+                        <Link href="/langganan/harga-adaptif" class="font-medium underline underline-offset-2">
+                            Lihat rinciannya
+                        </Link>
+                    </p>
+
+                    <p v-else-if="subsidy.reverts_at" class="mt-2 text-sm text-foreground">
                         Persetujuan sudah dicabut. Tarif adaptif berlaku sampai {{ formatDate(subsidy.reverts_at) }},
                         setelah itu kembali ke Harga Tetap.
                     </p>
@@ -633,25 +673,35 @@ const invoiceStatusLabels = {
                         </p>
                     </div>
 
-                    <p v-if="!subsidy.can_switch" class="mt-3 text-sm text-foreground">
-                        Perpindahan jalur berikutnya bisa diajukan mulai {{ formatDate(subsidy.switch_available_at) }}.
+                    <!-- Penolakan menyebut sebabnya, bukan sekadar menutup
+                         pintunya (`[BL-055]`(c)). Omzet di atas ambang dan masa
+                         tunggu tiga bulan menuntut tindakan yang sama sekali
+                         berbeda dari tenant, dan hanya kalimat yang menyebut
+                         yang mana bisa menunjukkannya. -->
+                    <p v-if="subsidyBlocked" class="mt-3 text-sm text-foreground leading-relaxed">
+                        {{ subsidyBlocked }}
                     </p>
+
+                    <!-- Tujuannya halaman pengajuan, bukan langsung ke dokumen
+                         persetujuan. Meminta orang menyetujui pembukaan data
+                         penjualannya sebelum ia melihat tangga tarifnya adalah
+                         tukar-menukar yang tidak seimbang. -->
                     <Link
-                        v-else-if="tenant.is_owner"
-                        href="/langganan/persetujuan/subsidized"
+                        v-if="tenant.is_owner"
+                        href="/langganan/harga-adaptif"
                         :class="[
                             'mt-3 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors duration-150',
-                            subsidyEstimate?.is_cheaper
+                            subsidy.can_switch && subsidyEstimate?.is_cheaper
                                 ? 'bg-emerald-600 text-white hover:bg-emerald-600/90'
                                 : 'border border-border text-foreground hover:bg-accent/40',
                         ]"
                     >
-                        {{ subsidyEstimate?.is_cheaper ? 'Pindah ke Harga Adaptif' : 'Baca ketentuan Harga Adaptif' }}
+                        {{ subsidy.can_switch && subsidyEstimate?.is_cheaper ? 'Ajukan Harga Adaptif' : 'Lihat Harga Adaptif' }}
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                         </svg>
                     </Link>
-                    <p v-else-if="!tenant.is_owner" class="mt-3 text-xs text-muted-foreground">
+                    <p v-else class="mt-3 text-xs text-muted-foreground">
                         Perpindahan jalur harga adalah keputusan pemilik usaha.
                     </p>
                 </template>

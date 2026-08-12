@@ -9,6 +9,7 @@ use App\Models\TenantMonthlyMetric;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\PricingService;
+use App\Services\SubscriptionService;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -115,9 +116,53 @@ test('aturan bersyarat majemuk tidak dipajang sebagai anak tangga umum', functio
         ->toBe(['A', 'B', 'C']);
 });
 
+// --- Halaman pengajuan ---
+
+test('halaman pengajuan menyajikan tangga, tarif berjalan, dan verdict', function () {
+    seedAdaptiveLadder();
+    ['owner' => $owner] = makeAdaptiveContext();
+
+    actingAs($owner);
+
+    get('/langganan/harga-adaptif')
+        ->assertStatus(200)
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Billing/Adaptive')
+            ->has('ladder', 3)
+            ->where('verdict.reason', 'eligible')
+            ->where('verdict.eligible', true)
+            ->where('verdict.ceiling', 50_000_000)
+            ->has('current.price')
+        );
+});
+
+test('halaman pengajuan terbuka untuk staf, karena ia menjelaskan tarif', function () {
+    seedAdaptiveLadder();
+    ['tenant' => $tenant] = makeAdaptiveContext();
+
+    $cashier = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    actingAs($cashier);
+    get('/langganan/harga-adaptif')->assertStatus(200);
+});
+
+test('membuka halaman pengajuan tidak menuliskan ringkasan omzet apa pun', function () {
+    seedAdaptiveLadder();
+    ['tenant' => $tenant, 'owner' => $owner] = makeAdaptiveContext();
+
+    recordClosedMonthSale($tenant, $owner, 3_000_000);
+
+    actingAs($owner);
+    get('/langganan/harga-adaptif')->assertStatus(200);
+
+    // Perkiraannya dihitung untuk mata pemiliknya sendiri, dan tidak boleh
+    // meninggalkan satu baris pun yang bisa dibaca halaman platform.
+    expect(TenantMonthlyMetric::where('tenant_id', $tenant->id)->exists())->toBeFalse();
+});
+
 // --- Pagar kelayakan, ditegakkan di tempat perpindahan benar-benar terjadi ---
 
-test('omzet di atas ambang ditolak di titik perpindahan, bukan hanya di layar', function () {
+test('omzet di atas ambang ditolak dengan menyebut angkanya, dan ditahan di titik perpindahan', function () {
     seedAdaptiveLadder();
     ['tenant' => $tenant, 'owner' => $owner] = makeAdaptiveContext();
 
@@ -125,11 +170,63 @@ test('omzet di atas ambang ditolak di titik perpindahan, bukan hanya di layar', 
 
     actingAs($owner);
 
+    get('/langganan/harga-adaptif')->assertInertia(fn (Assert $page) => $page
+        ->where('verdict.reason', 'above_ceiling')
+        ->where('verdict.eligible', false)
+        ->where('verdict.revenue', 80_000_000)
+    );
+
     // Tombolnya boleh tidak dirender di mana pun; yang menahan adalah ini.
     post('/langganan/persetujuan/subsidized', ['version' => '1', 'agreed' => true])
         ->assertSessionHas('error');
 
     expect($tenant->fresh()->pricing_track)->toBe(Subscription::TRACK_NORMAL);
+});
+
+test('masa tunggu perpindahan disebut sebagai cooldown, bukan sebagai omzet terlalu tinggi', function () {
+    seedAdaptiveLadder();
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeAdaptiveContext();
+
+    recordClosedMonthSale($tenant, $owner, 1_000_000);
+    $subscription->update(['track_changed_at' => now()->subMonth()]);
+
+    actingAs($owner);
+
+    get('/langganan/harga-adaptif')->assertInertia(fn (Assert $page) => $page
+        ->where('verdict.reason', 'cooldown')
+        ->where('verdict.eligible', false)
+        ->where('verdict.available_at', now()->subMonth()
+            ->addMonthsNoOverflow(SubscriptionService::trackSwitchMinimumMonths())->toDateString())
+    );
+});
+
+test('tenant yang sudah di jalur adaptif tidak diminta mengajukan lagi', function () {
+    seedAdaptiveLadder();
+    ['owner' => $owner] = makeAdaptiveContext();
+
+    actingAs($owner);
+    post('/langganan/persetujuan/subsidized', ['version' => '1', 'agreed' => true]);
+
+    get('/langganan/harga-adaptif')->assertInertia(fn (Assert $page) => $page
+        ->where('verdict.reason', 'active')
+        ->where('verdict.eligible', false)
+    );
+});
+
+test('halaman langganan mengirim alasan penolakan, bukan cuma tombol mati', function () {
+    seedAdaptiveLadder();
+    ['tenant' => $tenant, 'owner' => $owner] = makeAdaptiveContext();
+
+    recordClosedMonthSale($tenant, $owner, 80_000_000);
+
+    actingAs($owner);
+
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('subsidy.can_switch', false)
+        ->where('subsidy.reason', 'above_ceiling')
+        ->where('subsidy.ceiling', 50_000_000)
+        ->where('subsidy.measured_revenue', 80_000_000)
+    );
 });
 
 test('omzet di bawah ambang tetap boleh mengajukan', function () {

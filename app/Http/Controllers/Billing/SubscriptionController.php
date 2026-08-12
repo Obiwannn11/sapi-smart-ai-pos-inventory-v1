@@ -41,6 +41,7 @@ class SubscriptionController extends Controller
 
         $effectivePrice = (float) ($subscription->price_locked ?? $subscription->plan->base_price);
         $normalConsent = $consents->latestFor($tenant, TenantConsent::TYPE_NORMAL);
+        $verdict = $subscriptions->adaptiveVerdict($tenant);
 
         return inertia('Billing/Show', [
             'tenant' => [
@@ -99,9 +100,22 @@ class SubscriptionController extends Controller
             'subsidy' => [
                 'is_active' => $subscription->isSubsidized(),
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_SUBSIDIZED),
-                'can_switch' => $subscriptions->canSwitchTrack($tenant),
-                'switch_available_at' => $subscriptions->trackSwitchAvailableAt($tenant)?->toDateString(),
+                'can_switch' => $verdict['eligible'],
+                // Alasannya, bukan cuma boleh-tidaknya (`[BL-055]`(c)). Tombol
+                // yang mati tanpa sebab membuat tenant menebak yang mana dari
+                // tiga penghalang yang sedang berlaku — dan tebakan yang salah
+                // berakhir di tiket dukungan atas sesuatu yang sistem sudah tahu
+                // jawabannya.
+                'reason' => $verdict['reason'],
+                'ceiling' => $verdict['ceiling'],
+                'measured_revenue' => $verdict['revenue'],
+                'switch_available_at' => $verdict['available_at'],
                 'reverts_at' => $subscription->track_reverts_at?->toDateString(),
+                // Pemindahan karena omzet melewati ambang dibedakan dari
+                // pencabutan sukarela: yang satu menaikkan tagihan bulan depan,
+                // yang satu memang diminta tenant sendiri. Satu kalimat untuk
+                // keduanya akan salah pada separuh pembacanya.
+                'revert_reason' => $subscription->track_revert_reason,
                 // Tenant selalu boleh melihat omzetnya sendiri berikut angka
                 // persisnya — ini datanya. Yang dibatasi adalah pandangan
                 // pengelola layanan, bukan pandangan pemiliknya.

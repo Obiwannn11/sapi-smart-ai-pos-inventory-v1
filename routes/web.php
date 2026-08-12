@@ -67,6 +67,13 @@ Route::middleware(['auth', 'tenant'])
         Route::get('/langganan', [\App\Http\Controllers\Billing\SubscriptionController::class, 'show'])
             ->name('show');
 
+        // Halaman pengajuan Harga Adaptif (`[BL-055]`). Sengaja bukan
+        // `role:owner`: ia menjelaskan tarif, dan staf yang mendarat di sini
+        // dari halaman langganan berhak membaca alasannya. Yang mengikat usaha
+        // pada perjanjian tetap milik owner, digerbang di rute persetujuan.
+        Route::get('/langganan/harga-adaptif', [\App\Http\Controllers\Billing\AdaptiveController::class, 'show'])
+            ->name('adaptive.show');
+
         // `{type?}` = normal | subsidized. Dua dokumen terpisah dengan halaman
         // yang sama; tipe yang tak dikenal jatuh ke 404.
         Route::get('/langganan/persetujuan/{type?}', [\App\Http\Controllers\Billing\ConsentController::class, 'show'])
