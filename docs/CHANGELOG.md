@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | DECISION | UI | Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033) |
 | 2026-08-13 | ADDITION | AI | Kuota AI Berhenti Tinggal di `.env`: Kebijakan Berjangka Waktu, Promo, dan Tombol Mengembalikan Jatah Hari Ini (BL-047) |
 | 2026-08-13 | ADDITION | Laporan | Grafik Kedua Aplikasi Ini: Garis Tren di Rekap Bulanan (BL-064) |
 | 2026-08-13 | ADDITION | UI | Kerangka Pemuatan Jadi Komponen, dan Empat Halaman Terberat Berhenti Menunggu Kueri Paling Lambat (BL-037) |
@@ -167,6 +168,34 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-033]`, seluruh butirnya. Ini commit pertama dari satu jalan yang menggarap empat entri permukaan publik (`[BL-033]`, `[BL-032]`(2), `[BL-041]`(b)(c), `[BL-066]`, `[BL-067]`); ia dikerjakan lebih dulu supaya halaman `/harga` yang menyusul lahir sudah memakai gaya keluarga ini, bukan disentuh ulang belakangan.
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak. Tidak ada rute, controller, maupun data yang berubah.
+- **Deskripsi:** `/`, `/api-docs`, dan `/dokumentasi` sebelumnya berdiri di atas tiga sumber gaya berbeda dan dua identitas merek berbeda. Sekarang ketiganya memuat satu partial palet, satu partial wordmark, dan satu set ikon yang sama dengan aplikasi di balik login.
+- **Alasan:** Review demo pemilik — "dokumentasi publik dan dokumentasi teknis seperti ai dan api kasih konsisten" dan "konsep logo SAPI Pos seperti di halaman dokumentasi menarik". Yang diminta bukan memindahkan halaman, melainkan membuat ketiganya terasa satu produk.
+
+- **Wordmark `SAPI POS` versi dokumentasi jadi identitas resmi, dan dua permukaan lain yang mengalah.** Landing dan `/api-docs` memakai "SAPI" telanjang; `/dokumentasi` memakai "SAPI" tebal + "POS" kecil berhuruf besar. Yang kedua yang dipilih pemilik, jadi partialnya dibentuk persis dari CSS `.docs-brand` yang ia gantikan — 17px/800 untuk "SAPI", 10px/uppercase/`0.12em`/`--text-dim` untuk "POS". Konsekuensinya `/dokumentasi` **tidak berubah sedikit pun** secara visual, yang memang seharusnya: ia halaman rujukannya, bukan yang perlu diperbaiki.
+- **Palet jadi partial Blade, BUKAN pindah ke `resources/css/app.css` — dan penting untuk tahu kenapa.** Entri backlognya menawarkan kedua jalan. Yang kedua tidak bisa dipakai: nama `--border` di palet publik bertabrakan dengan token bernama sama milik shell aplikasi (`app.css`), yang dipetakan `@theme inline` jadi utilitas `border-border` dan dipakai seluruh halaman Vue. Menaruh nilai publik di `:root` global berarti menggeser garis di setiap layar di balik login demi tiga halaman pemasaran. Partial menjaganya tetap sebatas permukaan yang memakainya.
+- **Token khusus komponen sengaja tidak ikut diangkat.** `--badge-*` (badge metode HTTP) dan `--code-*` (blok kode) tetap tinggal di `api-docs.blade.php` karena hanya satu permukaan memakainya. Yang naik ke partial hanya yang benar-benar dipakai bersama, plus `--red-soft` yang jadi rujukan `--badge-delete-text`.
+- **Melepas `cdn.tailwindcss.com` bukan sekadar membuang dua permintaan pihak ketiga — CDN itu Tailwind v3, sementara build Vite proyek ini v4.** Karena skripnya menyuntikkan `<style>` saat runtime, ia dimuat **setelah** `app.css` dan karenanya menang. Artinya selama ini dua halaman publik dirender oleh Tailwind versi lain daripada seluruh aplikasi, dengan arti kelas yang berbeda. Yang benar-benar berbeda di halaman ini cuma satu: `shadow-sm` v3 (`0 1px 2px rgb(0 0 0/0.05)`) adalah `shadow-xs` di v4, jadi tujuh tempat di landing diganti namanya supaya bayangannya tetap setipis sekarang, bukan menebal diam-diam.
+- **`flex-shrink-0` diperiksa dan sengaja TIDAK diubah.** Dugaan awalnya utilitas ini hilang di v4 dan 12 pemakaiannya akan patah begitu CDN dilepas. Build membuktikan sebaliknya — v4 masih memancarkan `.flex-shrink-0,.shrink-0{flex-shrink:0}`. Penggantian nama yang sempat dilakukan dikembalikan: ia tidak mengubah satu piksel pun, dan mencampur 12 baris rapi-rapian ke commit yang seharusnya bisa dibaca sebagai "satu keluarga desain" hanya membuat diff-nya sulit ditinjau. Utilitas usang yang sama dipakai ±30 komponen Vue; membereskannya adalah pekerjaan tersendiri, bukan sisipan di sini.
+- **Ikon menyusul ke permukaan publik.** Ketiganya tidak memuat satu pun tautan favicon, jadi tab pemasaran menampilkan ikon bawaan peramban sementara tab aplikasi menampilkan ikon SAPI — dua produk berbeda bagi orang yang membuka keduanya berdampingan. Partial `favicon` memuat berkas yang persis sama dengan `resources/views/app.blade.php`, termasuk `theme-color`.
+- **`public/sapi-logo.png` tetap tidak dirujuk siapa pun.** Entri backlognya menyebutnya sebagai aset menganggur, dan ia masih menganggur: wordmark yang dipilih pemilik berbentuk teks, bukan gambar, jadi memasangnya hanya akan menambah identitas ketiga. Berkasnya dibiarkan, bukan dihapus — keputusan membuang aset bukan bagian dari entri ini.
+- **File Terdampak:**
+  - `resources/views/public/partials/theme.blade.php` — **baru.** 13 token palet bersama; komentarnya memuat alasan ia tidak boleh pindah ke `app.css`.
+  - `resources/views/public/partials/wordmark.blade.php` — **baru.** Wordmark `SAPI POS` dengan tiga ukuran (`sm` topbar dokumentasi, `md` nav, `lg` footer) dan penanda `interactive` untuk induk `.group`. Warnanya dari token palet, bukan skala abu-abu Tailwind, supaya ikut bergeser bila paletnya berubah.
+  - `resources/views/public/partials/favicon.blade.php` — **baru.** Ikon + `theme-color`, sama dengan shell aplikasi.
+  - `resources/views/public/landing.blade.php` — CDN Tailwind beserta blok `tailwind.config`-nya dibuang; `@include` tiga partial; dua wordmark (nav + footer) diganti; tujuh `shadow-sm` → `shadow-xs`.
+  - `resources/views/public/api-docs.blade.php` — CDN dibuang; 13 token palet duplikat dihapus dari `<style>`-nya, menyisakan token badge & kode; dua wordmark diganti; aturan `.footer-brand` yang jadi mati ikut dihapus.
+  - `resources/views/public/docs/layout.blade.php` — `:root` duplikat diganti `@include`; aturan `.docs-brand b` dan `.docs-brand span` yang jadi mati dihapus; komentar kepala berkas yang menyatakan paletnya "disalin dari /api-docs" diperbarui karena tidak lagi benar.
+  - `tests/Feature/Public/BrandingTest.php` — **baru.** 4 test × 4 permukaan (`/`, `/api-docs`, `/dokumentasi`, `/dokumentasi/panduan`): wordmark, token palet, ikon, dan ketiadaan CDN Tailwind.
+- **Cara memeriksanya.** 25 test di `tests/Feature/Public` lewat. Selain itu ketiga halaman dibuka di peramban dan diperiksa lewat *computed style*, bukan hanya lewat HTML — karena yang dipertaruhkan penghapusan CDN adalah gaya yang benar-benar terpakai, bukan kelas yang tertulis. Yang dipastikan: token palet resolve di ketiganya; wordmark `/dokumentasi` tetap 17px/10px seperti sebelumnya; badge dan blok kode `/api-docs` masih berwarna; dan `shadow-xs` menghasilkan `rgba(0,0,0,0.05) 0 1px 2px 0` — nilai v3 yang lama, terjaga.
+- **Yang TIDAK dikerjakan:** `[BL-032]` butir (1) tulis-ulang daftar fitur dan butir (3) tangkapan layar & avatar ±600 KB tetap **Open** atas keputusan pemilik. Bagian harga karangan "Rp 149k / Rp 299k" di landing juga masih berdiri — itu `[BL-032]`(2), commit berikutnya di jalan yang sama.
 
 ---
 

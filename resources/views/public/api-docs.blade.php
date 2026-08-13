@@ -6,6 +6,8 @@
     <title>API Reference — SAPI Mobile POS</title>
     <meta name="description" content="Dokumentasi lengkap REST API Mobile POS SAPI. Referensi endpoint, autentikasi Sanctum, request/response JSON.">
 
+    @include('public.partials.favicon')
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -14,35 +16,11 @@
 
     @vite(['resources/css/app.css'])
 
-    <!-- Tailwind CDN (same as landing) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
-                    colors: { primary: '#0e9f6e', brand: '#34d399' },
-                }
-            }
-        }
-    </script>
+    @include('public.partials.theme')
 
     <style>
-        /* ─── PALETTE (same as landing) ─────────────────── */
+        /* Token khusus permukaan ini; paletnya dari `partials/theme`. */
         :root {
-            --bg:            oklch(0.97 0.006 150);
-            --bg-card:       oklch(0.993 0.004 150);
-            --bg-surface:    oklch(0.94 0.008 150);
-            --green:         oklch(0.58 0.128 162);
-            --green-cta:     oklch(0.51 0.12 162);
-            --green-hover:   oklch(0.46 0.115 162);
-            --green-faint:   oklch(0.93 0.035 162);
-            --text:          oklch(0.23 0.015 160);
-            --text-muted:    oklch(0.48 0.012 160);
-            --text-dim:      oklch(0.62 0.010 155);
-            --border:        oklch(0.88 0.010 150);
-            --border-faint:  oklch(0.92 0.008 150);
-            --red-soft:      oklch(0.58 0.18 27);
             /* method badge colors */
             --badge-get:     oklch(0.93 0.06 162);
             --badge-get-text:oklch(0.38 0.10 162);
@@ -548,7 +526,6 @@
             flex-wrap: wrap;
             gap: 12px;
         }
-        .footer-brand { font-weight: 700; color: var(--green); font-size: 0.9rem; }
         .footer-copy { font-size: 0.8rem; color: var(--text-dim); }
 
         @media (prefers-reduced-motion: reduce) {
@@ -565,7 +542,7 @@
                 <!-- Brand -->
                 <div class="flex-shrink-0">
                     <a href="/" class="flex items-center gap-3 group">
-                        <span class="font-extrabold text-xl md:text-2xl tracking-tighter text-gray-900 group-hover:text-primary transition-colors">SAPI</span>
+                        @include('public.partials.wordmark', ['size' => 'md', 'interactive' => true])
                     </a>
                 </div>
 
@@ -1780,7 +1757,7 @@ Accept: application/json</pre>
                 <!-- FOOTER -->
                 <div class="docs-footer">
                     <div class="docs-footer-inner">
-                        <span class="footer-brand">SAPI</span>
+                        @include('public.partials.wordmark', ['size' => 'sm'])
                         <span class="footer-copy">© {{ date('Y') }} SAPI — Kasir Pintar untuk UMKM Indonesia</span>
                     </div>
                 </div>

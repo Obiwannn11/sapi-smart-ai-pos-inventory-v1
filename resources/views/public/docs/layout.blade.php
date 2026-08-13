@@ -1,10 +1,11 @@
 {{--
     Kerangka bersama halaman dokumentasi.
 
-    Paletnya disalin dari /api-docs supaya kedua permukaan dokumentasi terasa
-    satu keluarga. CSS-nya sengaja dipisah ke sini, bukan diambil dari berkas
-    api-docs: berkas itu 1800 baris dan memuat komponen khusus endpoint yang
-    tidak dipakai halaman prosa.
+    Paletnya kini datang dari `public/partials/theme`, dipakai bersama landing
+    dan /api-docs — sebelumnya ia salinan dari berkas api-docs. CSS tata letak
+    di bawah tetap tinggal di sini, bukan diambil dari berkas itu: berkas itu
+    1800 baris dan memuat komponen khusus endpoint yang tidak dipakai halaman
+    prosa.
 --}}
 <!DOCTYPE html>
 <html lang="id" class="scroll-smooth">
@@ -14,6 +15,8 @@
     <title>@yield('title') — Dokumentasi SAPI</title>
     <meta name="description" content="@yield('description', 'Dokumentasi SAPI — panduan penggunaan aplikasi kasir dan dokumentasi developer.')">
 
+    @include('public.partials.favicon')
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -22,21 +25,9 @@
 
     @vite(['resources/css/app.css'])
 
-    <style>
-        :root {
-            --bg:           oklch(0.97 0.006 150);
-            --bg-card:      oklch(0.993 0.004 150);
-            --bg-surface:   oklch(0.94 0.008 150);
-            --green:        oklch(0.58 0.128 162);
-            --green-cta:    oklch(0.51 0.12 162);
-            --green-faint:  oklch(0.93 0.035 162);
-            --text:         oklch(0.23 0.015 160);
-            --text-muted:   oklch(0.48 0.012 160);
-            --text-dim:     oklch(0.62 0.010 155);
-            --border:       oklch(0.88 0.010 150);
-            --border-faint: oklch(0.92 0.008 150);
-        }
+    @include('public.partials.theme')
 
+    <style>
         * { box-sizing: border-box; }
 
         body {
@@ -59,8 +50,6 @@
             border-bottom: 1px solid var(--border-faint);
         }
         .docs-brand { display: flex; align-items: baseline; gap: 7px; text-decoration: none; }
-        .docs-brand b { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; }
-        .docs-brand span { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.12em; }
         .docs-topbar-sep { color: var(--border); }
         .docs-topbar-title { font-size: 14px; font-weight: 700; color: var(--text-muted); }
         .docs-topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 18px; }
@@ -179,7 +168,7 @@
 
     <header class="docs-topbar">
         <a href="{{ route('landing') }}" class="docs-brand">
-            <b>SAPI</b><span>POS</span>
+            @include('public.partials.wordmark', ['size' => 'sm'])
         </a>
         <span class="docs-topbar-sep">/</span>
         <a href="{{ route('docs.index') }}" class="docs-topbar-title" style="text-decoration:none;">Dokumentasi</a>
