@@ -6,13 +6,23 @@ import DatePicker from '@/Components/DatePicker.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import Button from '@/Components/Button.vue';
+import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
+import { useAiQuota } from '@/composables/useAiQuota';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     analyses: { type: Array, default: () => [] },
     active: { type: Object, default: null },
+    // Kuota dikirim ke HALAMAN INI, bukan cuma ke Pengaturan (`[BL-062]`):
+    // di sinilah ia dibelanjakan, jadi di sinilah sisanya perlu terbaca
+    // SEBELUM tombolnya ditekan.
+    aiQuota: { type: Object, default: () => ({}) },
 });
+
+// Keadaan kuota dipakai dua kali di halaman ini — oleh meternya dan oleh tombol
+// yang dimatikan — jadi keduanya membacanya dari satu perhitungan yang sama.
+const { isBlocked: quotaBlocked } = useAiQuota(() => props.aiQuota);
 
 // ── Static maps ──────────────────────────────────────────────────────────────
 const typeOptions = [
@@ -83,6 +93,11 @@ const submit = () => {
 // ── Polling (Inertia v2) ─────────────────────────────────────────────────────
 // While the shown analysis is pending/processing, refresh the relevant props
 // every 3s until it reaches a terminal state.
+//
+// `aiQuota` ikut disegarkan karena jatah baru terpotong saat analisisnya
+// BERHASIL — di antrean, bukan saat tombol ditekan. Tanpa ini meternya masih
+// memperlihatkan angka sebelum analisis ini berjalan, dan owner baru tahu
+// jatahnya berkurang setelah memuat ulang halaman.
 let timer = null;
 watch(
     () => displayed.value?.status,
@@ -93,7 +108,7 @@ watch(
         }
         if (status === 'pending' || status === 'processing') {
             timer = setTimeout(() => {
-                router.reload({ only: ['active', 'analyses'] });
+                router.reload({ only: ['active', 'analyses', 'aiQuota'] });
             }, 3000);
         }
     },
@@ -283,8 +298,17 @@ const selectAnalysis = (analysis) => {
                     <p v-if="form.errors.prompt" class="mt-1 text-xs text-red-600">{{ form.errors.prompt }}</p>
                 </div>
 
-                <div class="flex justify-end">
-                    <Button type="submit" :loading="form.processing">
+                <!-- Sisa kuota berdiri tepat di sebelah tombol yang
+                     membelanjakannya, dan tombolnya mati saat jatahnya nol:
+                     menolak di layar jauh lebih murah — dan jauh lebih jelas —
+                     daripada menolak di antrean beberapa detik kemudian. -->
+                <div class="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
+                    <AiQuotaMeter :quota="aiQuota" variant="compact" class="sm:max-w-md" />
+
+                    <!-- Alasannya tidak diulang di bawah tombol: meternya
+                         berdiri di baris yang sama, dan menuliskannya dua kali
+                         hanya membuat keduanya lebih mudah diabaikan. -->
+                    <Button type="submit" :loading="form.processing" :disabled="quotaBlocked" class="shrink-0">
                         <template #icon>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

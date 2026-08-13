@@ -63,8 +63,51 @@ test('free tier remaining reflects daily limit minus usage', function () {
     $this->get(route('owner.settings.index'))
         ->assertInertia(
             fn ($page) => $page
-                ->where('aiFreeTier.daily_limit', 5)
-                ->where('aiFreeTier.remaining', 3)
+                ->where('aiQuota.daily_limit', 5)
+                ->where('aiQuota.used', 2)
+                ->where('aiQuota.remaining', 3)
+                ->where('aiQuota.using_free_tier', true)
+        );
+});
+
+test('settings quota block reports byok tenants as unmetered', function () {
+    config(['ai.free_tier.daily_limit' => 5]);
+
+    \App\Models\AiUsage::create([
+        'tenant_id' => $this->tenant->id,
+        'date' => now()->toDateString(),
+        'count' => 2,
+    ]);
+
+    $this->tenant->update(['ai_api_key' => 'sk-own-key']);
+
+    // `used` nol, bukan 2: pemakaian dari masa sebelum kuncinya diisi tidak
+    // boleh dibacakan sebagai jatah yang sedang berjalan.
+    $this->get(route('owner.settings.index'))
+        ->assertInertia(
+            fn ($page) => $page
+                ->where('aiQuota.using_free_tier', false)
+                ->where('aiQuota.used', 0)
+        );
+});
+
+test('quota block names the plan when the limit comes from one', function () {
+    $plan = \App\Models\Plan::factory()->create([
+        'name' => 'Paket Warung',
+        'limits' => ['ai_daily' => 9],
+    ]);
+
+    \App\Models\Subscription::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'plan_id' => $plan->id,
+    ]);
+
+    $this->get(route('owner.settings.index'))
+        ->assertInertia(
+            fn ($page) => $page
+                ->where('aiQuota.daily_limit', 9)
+                ->where('aiQuota.limit_source', 'plan')
+                ->where('aiQuota.plan_name', 'Paket Warung')
         );
 });
 

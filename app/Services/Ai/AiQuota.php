@@ -27,11 +27,60 @@ use App\Models\Tenant;
  *
  * Kuota hanya berlaku saat tenant memakai kunci bersama milik aplikasi. Tenant
  * yang mengisi kunci API-nya sendiri membayar pemakaiannya sendiri, jadi tidak
- * ada yang perlu dijatah — pemeriksaan itu tinggal di pemanggilnya, karena
- * kelas ini menjawab "berapa jatahnya", bukan "apakah ia perlu dijatah".
+ * ada yang perlu dijatah — keputusan itu tetap milik `AiProviderFactory`,
+ * karena tiga metode di bawah menjawab "berapa jatahnya", bukan "apakah ia
+ * perlu dijatah".
+ *
+ * `snapshotFor()` adalah satu-satunya pengecualian, dan pengecualian yang
+ * disengaja: sejak `[BL-062]` angka ini dibaca DUA layar — Pengaturan dan AI
+ * Analysis — dan keduanya butuh kedua jawaban itu sekaligus. Merakitnya di
+ * masing-masing controller berarti syarat BYOK ditulis dua kali, dan yang
+ * pertama kali salah menuliskannya akan memasang "sisa 0 dari 5" di layar
+ * tenant yang justru tak berbatas. Jadi perakitannya dikunci di sini, sementara
+ * pertanyaan "perlu dijatah?" tetap didelegasikan, tidak ditiru.
  */
 class AiQuota
 {
+    public function __construct(protected AiProviderFactory $providers) {}
+
+    /**
+     * Seluruh keadaan kuota yang dibutuhkan layar, dalam satu bentuk.
+     *
+     * Dipakai apa adanya oleh Pengaturan (versi lengkap) dan AI Analysis (versi
+     * ringkas di sebelah tombol kirim). Keduanya membedakan tiga keadaan yang
+     * di antrean berakhir sebagai tiga pesan galat berbeda, jadi ketiganya
+     * harus bisa dibedakan dari data ini saja:
+     *
+     *   - `using_free_tier` salah → tenant ber-BYOK, angka kuota tidak berlaku
+     *   - `daily_limit` nol       → paketnya tidak menyertakan analisis AI
+     *   - `remaining` nol         → jatah hari ini sudah dibelanjakan
+     *
+     * `used` sengaja nol untuk tenant ber-BYOK: pemakaian mereka memang tidak
+     * pernah dicatat di `ai_usages`, dan membacakan angka basi dari masa
+     * sebelum kuncinya diisi hanya akan membingungkan.
+     *
+     * @return array{using_free_tier: bool, daily_limit: int, used: int, remaining: int, limit_source: string, plan_name: string|null}
+     */
+    public function snapshotFor(Tenant $tenant): array
+    {
+        $usingFreeTier = $this->providers->isUsingFreeTier($tenant);
+        $plan = $this->planFor($tenant);
+        $limit = $this->dailyLimitFor($tenant);
+        $used = $usingFreeTier ? $this->usedTodayBy($tenant) : 0;
+
+        return [
+            'using_free_tier' => $usingFreeTier,
+            'daily_limit' => $limit,
+            'used' => $used,
+            'remaining' => max(0, $limit - $used),
+            // Dari mana batasnya datang — supaya owner yang merasa jatahnya
+            // kurang tahu apakah yang perlu diubah itu paketnya, atau memang
+            // bawaan platform yang berlaku karena ia belum berlangganan.
+            'limit_source' => $plan?->limit(Plan::LIMIT_AI_DAILY) === null ? 'platform' : 'plan',
+            'plan_name' => $plan?->name,
+        ];
+    }
+
     /**
      * Batas analisis AI per hari untuk tenant ini.
      */

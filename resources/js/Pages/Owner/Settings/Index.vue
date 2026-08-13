@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { useForm, usePage, router, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -11,7 +12,10 @@ const props = defineProps({
     features: Object,
     orderIdentityModes: { type: Object, default: () => ({}) },
     featureWarnings: Object,
-    aiFreeTier: Object,
+    // Blok yang sama yang dibaca AI Analysis, ditampilkan di sini dalam versi
+    // lengkapnya (`[BL-062]`): di halaman ini angkanya adalah konteks untuk
+    // keputusan BYOK, jadi ia dibedah, bukan cuma diringkas satu baris.
+    aiQuota: Object,
     mcp: Object,
 });
 
@@ -279,16 +283,11 @@ const revokeMcpToken = () => {
                         Pakai kunci API sendiri (BYOK) untuk pemakaian tanpa batas, atau biarkan kosong untuk memakai kuota gratis harian.
                     </p>
 
-                    <!-- Sisa kuota free tier (hanya bila key belum diisi) -->
-                    <div
-                        v-if="!tenant.ai_key_set"
-                        class="mb-4 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700"
-                    >
-                        <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>Sisa kuota gratis hari ini: <strong>{{ aiFreeTier.remaining }}</strong> dari {{ aiFreeTier.daily_limit }}.</span>
-                    </div>
+                    <!-- Keadaan kuota, versi lengkap. Tidak lagi disembunyikan
+                         saat kunci BYOK terisi: justru di keadaan itu owner perlu
+                         diberi tahu apa yang ia lepaskan, dan apa yang kembali
+                         berlaku bila kolom kuncinya dikosongkan. -->
+                    <AiQuotaMeter :quota="aiQuota" variant="detailed" class="mb-5" />
 
                     <!-- Provider -->
                     <div class="mb-4">

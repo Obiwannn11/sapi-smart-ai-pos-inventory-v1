@@ -76,10 +76,11 @@ class SettingsController extends Controller
                     ->count(),
                 'pending_analyses' => AiAnalysis::where('status', AiAnalysis::STATUS_PENDING)->count(),
             ],
-            'aiFreeTier' => [
-                'daily_limit' => $quota->dailyLimitFor($tenant),
-                'remaining' => $quota->remainingFor($tenant),
-            ],
+            // Versi LENGKAP dari blok yang sama yang muncul ringkas di AI
+            // Analysis (`[BL-062]`). Di sini ia konteks untuk keputusan BYOK,
+            // jadi angkanya dibedah — batas, terpakai, sisa, dan dari mana
+            // batasnya datang; di sana ia peringatan sebelum bertindak.
+            'aiQuota' => $quota->snapshotFor($tenant),
             'mcp' => [
                 'token_set' => $user->tokens()->where('name', self::MCP_TOKEN_NAME)->exists(),
                 'endpoint' => url('/mcp/business'),

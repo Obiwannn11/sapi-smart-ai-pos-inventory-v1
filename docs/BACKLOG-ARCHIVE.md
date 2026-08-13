@@ -10,6 +10,29 @@
 
 ## Daftar Entri
 
+### [BL-062] Sisa Kuota AI Hanya Terlihat di Pengaturan — Bukan di Halaman yang Menghabiskannya
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "tambahan menu ai di analysis, coba pindahkan kuotanya ke AI Analysis (bukan di profil saja)"
+- **Status:** Selesai (2026-08-13) — usulan (a)–(d) mendarat: blok kuota dikirim dari `index()` **dan** `show()`, meternya berdiri sebaris dengan tombol yang kini mati saat jatahnya nol (dan penolakannya pindah dari antrean ke `store()`), tenant ber-BYOK melihat keterangan lain alih-alih angka nol, dan versi lengkapnya tetap tinggal di Pengaturan. Butir (e) TIDAK dikerjakan — "menu turunan" di AI Analysis masih perlu diperjelas lebih dulu. Lihat `[ADDITION] Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/SettingsController.php:26,80-81` — satu-satunya pembaca `AiQuota` untuk layar: `daily_limit` + `remaining`
+  - `resources/js/Pages/Owner/Settings/Index.vue:282-290` — "Sisa kuota gratis hari ini: N dari M", dan hanya tampil bila kunci BYOK belum diisi
+  - `app/Http/Controllers/Owner/AiAnalysisController.php:15-20` — `index()` hanya mengirim `analyses`; **tidak menyentuh `AiQuota` sama sekali**
+  - `app/Jobs/RunAiAnalysisJob.php:92-99` — penolakan karena kuota habis terjadi **di antrean**, setelah tombol ditekan
+  - `app/Services/Ai/AiQuota.php` — sudah jadi satu-satunya pembaca kuota, lengkap dengan alasan tertulisnya
+- **Deskripsi:**
+  Kuota dibelanjakan di `/ai-analysis` tapi hanya bisa dilihat di `/pengaturan`. Akibatnya bukan sekadar tidak nyaman: karena penolakan kuota terjadi di dalam job, owner menekan "Analisis", melihat statusnya `pending`, lalu beberapa detik kemudian menemukan analisisnya gagal — tanpa pernah diberi tahu di layar itu bahwa jatahnya memang sudah nol sejak awal. Angka yang bisa mencegah itu sudah dihitung dan sudah punya kelas sendiri; ia hanya tidak pernah dikirim ke halaman yang membutuhkannya.
+  Yang perlu dicatat sebagai batasan: `AiQuota` menjawab "berapa jatahnya", bukan "apakah ia perlu dijatah" — pemeriksaan BYOK tinggal di pemanggil. Jadi memindahkan tampilannya tanpa ikut memindahkan syarat itu akan memasang "sisa 0 dari 5" di layar tenant yang justru sedang memakai kunci sendiri dan tak berbatas.
+- **Usulan Perbaikan:**
+  **(a)** Kirim blok kuota yang sama dari `AiAnalysisController::index()` **dan** `show()` — keduanya me-render komponen yang sama, jadi melewatkan salah satunya membuat angkanya hilang begitu satu analisis dibuka.
+  **(b)** Tampilkan di dekat tombol kirim, dan **matikan tombolnya saat sisa nol** dengan alasan yang terbaca. Menolak di layar jauh lebih murah daripada menolak di antrean.
+  **(c)** Tenant ber-BYOK melihat keterangan lain ("memakai kunci sendiri — tanpa batas harian"), bukan angka kuota. Pakai syarat yang sama dengan `Settings/Index.vue:282`.
+  **(d)** **Jangan** mencabutnya dari Pengaturan. Di sana ia konteks untuk keputusan BYOK; di AI Analysis ia peringatan sebelum bertindak. Dua pembaca, dua maksud — dan `AiQuota` memang dibuat supaya keduanya tidak bisa berselisih.
+  **(e)** Saran ini menyinggung "menu AI di analysis". Menu `/ai-analysis` sudah ada di `OwnerLayout`; kalau yang dimaksud adalah menu **turunan** (mis. riwayat vs buat baru), itu permintaan terpisah yang perlu diperjelas lebih dulu.
+
+---
+
 ### [BL-048] Jalur Harga Adaptif Bisa Dipilih Siapa Saja — Belum Ada Pagar Kelayakan, dan Pagarnya Menabrak Gerbang Privasi
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Keputusan pemilik 2026-08-01 — "khusus yang memiliki omset cukup tinggi sudah hanya bisa bayar premium, tanpa subsidi atau harga adaptif lagi, adaptif khusus omset rendah atau yang saya tentukan baru bisa dapat"

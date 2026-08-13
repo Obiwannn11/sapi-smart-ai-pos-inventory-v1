@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-13 | ADDITION | AI | Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062) |
 | 2026-08-10 | HOTFIX | Langganan | `price_locked` Nol Berhenti Dibaca Sebagai Tarif Rp 0 (BL-041) |
 | 2026-08-10 | ADDITION | Langganan | Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055) |
 | 2026-08-08 | ADDITION | Langganan | Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053) |
@@ -162,6 +163,36 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062)
+- **Tanggal:** 2026-08-13
+- **Fase Terkait:** Di Luar Fase — `[BL-062]`
+- **Dampak:** Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak. Prop `aiFreeTier` di halaman Pengaturan berganti nama jadi `aiQuota` dan berisi lebih banyak kunci; tidak ada API publik atau skema yang tersentuh.
+- **Deskripsi:** Kuota AI dibelanjakan di `/owner/ai-analysis` tapi satu-satunya tempat sisanya bisa dilihat adalah `/owner/settings`. Akibatnya bukan sekadar tidak nyaman: karena penolakan kuota terjadi di dalam `RunAiAnalysisJob`, owner menekan "Analisa", melihat statusnya `pending`, lalu beberapa detik kemudian menemukan analisisnya `failed` — tanpa pernah diberi tahu di layar itu bahwa jatahnya memang sudah nol sejak sebelum ia menekan tombolnya. Angka yang bisa mencegah itu sudah dihitung dan sudah punya kelasnya sendiri; ia hanya tidak pernah dikirim ke halaman yang membutuhkannya.
+
+- **Satu blok data, dua layar, dan sengaja begitu.** `AiQuota::snapshotFor()` jadi satu-satunya perakit keadaan kuota: `using_free_tier`, `daily_limit`, `used`, `remaining`, `limit_source`, `plan_name`. Merakitnya di masing-masing controller berarti syarat BYOK ditulis dua kali, dan yang pertama kali salah menuliskannya akan memasang "sisa 0 dari 5" di layar tenant yang justru tak berbatas. Pertanyaan "perlu dijatah?" tetap didelegasikan ke `AiProviderFactory::isUsingFreeTier()`, tidak ditiru — batas kelas yang sudah ditulis di docblock `AiQuota` tetap berlaku, `snapshotFor()` hanya menyusun jawabannya.
+- **Kuotanya dikirim dari `index()` DAN `show()`.** Keduanya me-render komponen yang sama, jadi melewatkan salah satunya membuat angkanya hilang begitu satu analisis dibuka lewat tautannya. Ia juga ikut dalam daftar prop yang disegarkan polling (`only: ['active', 'analyses', 'aiQuota']`), karena jatah baru terpotong saat analisisnya **berhasil** — di antrean, bukan saat tombol ditekan. Tanpa itu meternya memperlihatkan angka dari sebelum analisis yang baru saja selesai.
+- **Penolakannya pindah ke `store()`, dan tidak menghapus penolakan di antrean.** Job tetap memeriksa hal yang sama — ia harus, karena bisa mengantre lebih lama daripada jatah yang tersisa — tapi penolakan di sana lahir sebagai baris `failed` di riwayat owner yang sebetulnya bisa dicegah sebelum apa pun dibuat. Kini permintaan tanpa jatah berbalik dengan flash `error` dan **nol baris** `ai_analyses`. Kalimatnya sejalan dengan yang dilontarkan `assertQuota()`, supaya satu keadaan tidak menerima dua penjelasan berbeda.
+- **Tombolnya mati di layar, dan itu bukan pengganti pagar servernya.** `:disabled` pada tombol "Analisa" adalah yang membuat penolakan terbaca sebelum diklik; pemeriksaan di `store()` adalah yang membuatnya tetap benar saat permintaan datang tanpa lewat tombol itu.
+- **Tenant ber-BYOK melihat keterangan lain, bukan angka nol.** "Memakai kunci API sendiri — tanpa batas kuota harian", tanpa meter, dengan tombol tetap hidup — dan `used` dikirim nol, bukan angka basi dari masa sebelum kuncinya diisi.
+- **Batas nol dibedakan dari kuota habis.** Paket yang memang tidak menyertakan analisis AI (`plans.limits.ai_daily = 0`) berbunyi "Paket ini tidak menyertakan analisis AI" dengan jalan keluar "naikkan paket", bukan "kuota habis, coba lagi besok" — kalimat yang menyuruh owner menunggu sesuatu yang tidak akan datang.
+- **Di Pengaturan ia TIDAK dicabut, malah dibedah.** Di sana angkanya adalah konteks untuk keputusan BYOK; di AI Analysis ia peringatan sebelum bertindak. Dua pembaca, dua maksud. Versi Pengaturan menampilkan batas/terpakai/sisa, meter pemakaian berpersentase, asal batasnya (nama paket, atau bawaan platform), dan dua hal yang sebelumnya tidak pernah dikatakan di mana pun: jatah tidak menumpuk ke hari berikutnya, dan hanya analisis yang berhasil yang memotong kuota.
+- **Panelnya berhenti disembunyikan saat kunci BYOK terisi.** Sebelumnya blok kuota lenyap begitu `ai_key_set` benar, jadi tepat di keadaan ketika owner sedang menimbang untuk melepas kuncinya, layar tidak mengatakan apa yang akan ia dapatkan kembali. Kini keadaan BYOK punya isinya sendiri, lengkap dengan angka kuota yang berlaku bila kolom kuncinya dikosongkan.
+- **Ambang "hampir habis" ada di 34% sisa.** Di bawah itu meternya berubah amber sebelum berubah merah di nol. Peringatan yang baru muncul saat jatahnya benar-benar nol bukan peringatan, itu pemberitahuan.
+- **File Terdampak:**
+  - `app/Services/Ai/AiQuota.php` — `snapshotFor()` + injeksi `AiProviderFactory`; docblock kelasnya diperluas untuk menamai pengecualian yang disengaja itu.
+  - `app/Http/Controllers/Owner/AiAnalysisController.php` — `aiQuota` di `index()` dan `show()`, penolakan kuota di `store()`, plus penolong `quotaSnapshot()` dan `quotaRejection()`.
+  - `app/Http/Controllers/Owner/SettingsController.php` — `aiFreeTier` (dua kunci) diganti `aiQuota` (blok penuh).
+  - `resources/js/composables/useAiQuota.js` — penurun keadaan (`byok` / `unavailable` / `empty` / `low` / `ok`), dipakai bersama oleh meternya dan oleh tombol yang dimatikan supaya keduanya tidak bisa berselisih.
+  - `resources/js/Components/AiQuotaMeter.vue` — dua varian dari satu komponen: `compact` (AI Analysis) dan `detailed` (Pengaturan).
+  - `resources/js/Pages/Owner/AiAnalysis/Index.vue` — meter ringkas sebaris dengan tombol kirim, tombol ber-`:disabled`, dan `aiQuota` ikut disegarkan polling.
+  - `resources/js/Pages/Owner/Settings/Index.vue` — blok satu baris lama diganti panel lengkapnya.
+  - `tests/Feature/Owner/AiAnalysisControllerTest.php` — 6 test baru: kuota terkirim di `index()` dan `show()`, BYOK dibaca tanpa batas, penolakan di layar tanpa baris `failed` dan tanpa job, paket tanpa jatah AI, dan BYOK yang tidak pernah ditolak.
+  - `tests/Feature/Owner/SettingsAiTest.php` — nama prop diperbarui, plus BYOK (`used` nol) dan batas yang bersumber dari paket.
+- **Yang TIDAK dikerjakan:** saran aslinya menyinggung "menu AI di analysis". Menu `/ai-analysis` sudah ada di `OwnerLayout`; kalau yang dimaksud menu **turunan** (mis. riwayat vs buat baru), itu permintaan terpisah yang perlu diperjelas lebih dulu dan tidak ikut di sini.
 
 ---
 
