@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | ADDITION | RBAC | Halaman Staf Menjawab "Orang Ini Bisa Buka Apa Saja", dan Baris Owner Mengaku Melewati Seluruh Pemeriksaan (BL-038) |
 | 2026-08-14 | DECISION | UI | Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033) |
 | 2026-08-13 | ADDITION | AI | Kuota AI Berhenti Tinggal di `.env`: Kebijakan Berjangka Waktu, Promo, dan Tombol Mengembalikan Jatah Hari Ini (BL-047) |
 | 2026-08-13 | ADDITION | Laporan | Grafik Kedua Aplikasi Ini: Garis Tren di Rekap Bulanan (BL-064) |
@@ -168,6 +169,31 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Halaman Staf Menjawab "Orang Ini Bisa Buka Apa Saja", dan Baris Owner Mengaku Melewati Seluruh Pemeriksaan (BL-038)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-038]`, seluruh butirnya.
+- **Dampak:** Controller | Frontend | Test
+- **Breaking Change:** Tidak. Tidak ada rute, skema, maupun aturan izin yang berubah — yang bertambah hanya prop Inertia dan tampilannya.
+- **Deskripsi:** Halaman Staf sebelumnya menjawab "orang ini rolenya apa"; sekarang ia menjawab "orang ini bisa membuka apa saja", dengan lencana modul di bawah nama rolenya. Owner ikut berbaris sebagai baris tersendiri yang menyatakan terus terang bahwa aksesnya tidak berasal dari role.
+- **Alasan:** Review demo pemilik — "dalam konsep tim dan akses, staf dan role konsepnya dia langsung melihat kalau orang ini (email ini) memiliki akses ke module module berikut". Sebelum ini jawabannya menuntut tiga langkah: baca nama role di halaman Staf, pindah ke halaman Role, cocokkan sendiri.
+
+- **Datanya tidak dihitung ulang — ia sudah ada sejak RBAC mendarat.** `User::modulePermissions()` sudah menjadi satu-satunya sumber jawaban ini dan sudah dipakai `HandleInertiaRequests` serta payload autentikasi mobile. Yang ditambahkan controller hanya memanggilnya per baris. Menulis perhitungan kedua khusus untuk halaman ini akan melahirkan dua jawaban yang pasti bercabang begitu salah satunya diperbaiki.
+- **Owner mendapat baris sendiri, dan itu bagian yang paling penting dari entri ini.** Kueri staf menyaring `role = 'cashier'`, jadi selama ini satu-satunya akun yang aksesnya TIDAK berasal dari role justru satu-satunya yang tidak pernah muncul di layar mana pun. Akibat praktisnya nyata: `Gate::before` meloloskan owner dari setiap gerbang, sehingga mencabut modul dari role yang kebetulan dipegang owner tidak mengubah apa pun — dan tidak ada yang memberi tahu. Barisnya sekarang mengatakannya: satu lencana "Akses penuh — melewati seluruh pemeriksaan", plus satu kalimat bahwa mengubah role tidak akan membatasinya.
+- **Baris owner dibaca dari `['*']`, bukan dari "ini kan baris owner".** `modulePermissions()` sudah mengembalikan `['*']` untuk owner, dan Vue-nya memeriksa nilai itu (`bypassesEveryCheck`) alih-alih menyimpulkan dari jenis barisnya. Bedanya baru terasa nanti: kalau suatu saat ada akun lain yang melewati pemeriksaan, ia akan tampil benar tanpa halaman ini disentuh.
+- **`ownerRows()` mengambil dari kolom `role`, bukan dari user yang sedang masuk.** Satu usaha yang dijalankan berdua punya dua baris owner. Daftar yang hanya menampilkan dirinya sendiri justru menyembunyikan rekannya — padahal "siapa saja yang bisa apa di toko ini" adalah pertanyaan yang halaman ini ada untuk menjawabnya.
+- **Barisnya sengaja tanpa tombol aksi.** Edit, Nonaktifkan, dan Hapus semuanya ditolak server untuk owner (`authorizeStaff()` sudah meng-`abort_if` `isOwner()`), dan tombol yang selalu ditolak lebih buruk daripada tombol yang tidak ada.
+- **`with('roles.permissions')` bukan optimasi spekulatif.** `modulePermissions()` menanyakan tujuh modul lewat Gate; tanpa eager load, tiap pertanyaan menarik relasi rolenya sendiri — tujuh kueri per orang, dikali jumlah staf. Jumlahnya memang dibatasi seat sehingga tak akan meledak, tapi biayanya nol dan alasannya ditulis di tempatnya.
+- **Label modul datang dari `config/rbac.php` lewat prop, bukan diketik ulang di Vue.** Bentuk propnya sama persis dengan yang sudah dikirim halaman Role, sehingga tidak ada daftar label kedua yang harus ikut diperbarui saat katalog modul berubah.
+- **Satu perubahan kata yang bukan kosmetik.** Staf tanpa role dulu berlencana "POS saja". Itu tidak benar: tanpa role ia tidak memegang permission `pos` sama sekali — yang membuatnya tetap bisa mengakses kasir adalah hal lain. Lencananya sekarang "Tanpa role", dengan keterangan "Belum ada modul — hanya bisa membuka kasir" di bawahnya, sehingga yang tertulis di layar sama dengan yang benar-benar dihitung `modulePermissions()` (daftar kosong).
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/StaffController.php` — `index()` mengirim `modules` per staf, prop `owners` baru, dan katalog label `modules`; kueri staf meng-eager-load `roles.permissions`; method privat `ownerRows()` baru.
+  - `resources/js/Pages/Owner/Staff/Index.vue` — prop `owners` & `modules`, helper `moduleLabel()` dan `bypassesEveryCheck()`; baris owner di atas daftar staf; kolom "Role" jadi "Role & modul" dengan lencana modul di bawah nama role; lencana "POS saja" jadi "Tanpa role"; teks kosong jadi "Belum ada staf selain pemilik" karena tabelnya tidak lagi benar-benar kosong.
+  - `tests/Feature/Owner/StaffModuleVisibilityTest.php` — **baru.** 8 test: modul efektif per staf, staf tanpa role berdaftar kosong, pencabutan modul dari role terlihat di halaman, owner punya baris, baris owner berisi `['*']` bahkan ketika owner memegang role, owner kedua ikut terdaftar, owner tenant lain tidak bocor, dan katalog label terkirim utuh.
+- **Cara memeriksanya.** 8 test baru lewat, dan 104 test di `tests/Feature/Owner`, `tests/Feature/Authorization`, serta `SeatLimitTest` ikut dijalankan dan tetap hijau. Sisi Vue diverifikasi lewat `vite build` (876 modul, sukses) — **tidak** lewat peramban: halaman ini ada di balik login, dan mengisi kata sandi bukan tindakan yang boleh saya lakukan.
+- **Yang TIDAK dikerjakan:** tidak ada. Seluruh butir `[BL-038]` tertutup, termasuk tambahan baris owner yang diminta pemilik saat entri ini dikerjakan.
 
 ---
 

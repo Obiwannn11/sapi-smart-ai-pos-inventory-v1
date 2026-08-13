@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,8 +22,12 @@ class StaffController extends Controller
         $tenant = $request->user()->tenant;
         $subscription = $this->subscriptions->ensureFor($tenant);
 
+        // `roles.permissions` ikut dimuat karena `modulePermissions()` menanyakan
+        // tiap modul lewat Gate. Tanpa ini setiap pertanyaan menarik relasinya
+        // sendiri: tujuh kueri per orang, dikali jumlah staf.
         $staff = User::where('tenant_id', $tenant->id)
             ->where('role', 'cashier')
+            ->with('roles.permissions')
             ->orderBy('name')
             ->get()
             ->map(fn (User $user) => [
@@ -31,11 +36,29 @@ class StaffController extends Controller
                 'email' => $user->email,
                 'is_active' => $user->is_active,
                 'roles' => $user->getRoleNames(),
+                // Pertanyaan "orang ini bisa membuka apa saja" sudah dijawab
+                // server sejak lama; yang belum ada hanya tempat menampilkannya.
+                // Dikirim mentah (nama modul), labelnya diambil dari katalog di
+                // bawah supaya tidak ada daftar label kedua yang harus dijaga.
+                'modules' => $user->modulePermissions(),
             ]);
 
         return Inertia::render('Owner/Staff/Index', [
             'staff' => $staff,
+            // Owner ikut berbaris meski ia bukan staf dan tidak memakan seat.
+            // Justru dialah satu-satunya akun yang aksesnya TIDAK berasal dari
+            // role — ia melewati seluruh pemeriksaan (`Gate::before`) — dan
+            // tanpa barisnya itu jadi satu-satunya fakta akses yang tak pernah
+            // terlihat di layar mana pun. Akibat praktisnya: mencabut modul dari
+            // role owner tidak mengubah apa-apa, dan tak ada yang memberi tahu.
+            'owners' => $this->ownerRows($tenant->id),
             'roles' => Role::where('tenant_id', $tenant->id)->orderBy('name')->pluck('name'),
+            // Katalog label modul, bentuknya sama dengan yang dipakai halaman
+            // Role. Sumbernya satu: `config/rbac.php`.
+            'modules' => collect(config('rbac.modules'))->map(fn (array $meta, string $name) => [
+                'name' => $name,
+                'label' => $meta['label'],
+            ])->values(),
             // Angka seat ditampilkan sebelum tombol ditekan, bukan hanya di
             // pesan penolakan. Batas yang baru terlihat saat dilanggar terasa
             // seperti jebakan.
@@ -148,6 +171,33 @@ class StaffController extends Controller
         $staff->delete();
 
         return back()->with('success', 'Akun staf berhasil dihapus.');
+    }
+
+    /**
+     * Baris owner untuk tabel staf — dibaca saja, tanpa tombol aksi.
+     *
+     * Jamak, bukan tunggal: yang dipakai adalah kolom `role`, bukan user yang
+     * sedang masuk. Satu usaha yang dijalankan berdua akan punya dua baris, dan
+     * daftar yang hanya menampilkan dirinya sendiri justru menyembunyikan
+     * rekannya — persis pertanyaan yang halaman ini ada untuk menjawabnya.
+     *
+     * @return Collection<int, array{id: int, name: string, email: string, modules: list<string>}>
+     */
+    private function ownerRows(int $tenantId): Collection
+    {
+        return User::where('tenant_id', $tenantId)
+            ->where('role', 'owner')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                // `['*']` — bukan daftar tujuh modul. Owner tidak memegang modul
+                // terbanyak, ia melewati pemeriksaannya, dan dua hal itu terlihat
+                // sama di layar kalau yang dikirim daftar biasa.
+                'modules' => $user->modulePermissions(),
+            ]);
     }
 
     /**

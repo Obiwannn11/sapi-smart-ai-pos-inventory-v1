@@ -9,9 +9,18 @@ defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     staff: Array,
+    owners: { type: Array, default: () => [] },
     roles: Array,
+    modules: { type: Array, default: () => [] },
     seats: Object,
 });
+
+const moduleLabel = (name) => props.modules.find((m) => m.name === name)?.label ?? name;
+
+// `['*']` dari `User::modulePermissions()`. Dibaca dari payload, bukan
+// disimpulkan dari "baris ini baris owner": kalau suatu saat ada akun lain yang
+// melewati pemeriksaan, ia akan tampil benar tanpa halaman ini diubah.
+const bypassesEveryCheck = (row) => row.modules?.includes('*') ?? false;
 
 const seatsFull = computed(() => props.seats.used >= props.seats.total);
 
@@ -215,11 +224,52 @@ const toggleActive = (member) => {
                     <tr class="bg-gray-50 border-b border-gray-200">
                         <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Nama</th>
                         <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role &amp; modul</th>
                         <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
+                    <!--
+                        Baris owner. Dibaca saja: tidak ada Edit, Nonaktifkan,
+                        atau Hapus, karena tak satu pun dari ketiganya berlaku
+                        untuk pemilik akun — `authorizeStaff()` di server memang
+                        menolaknya, dan tombol yang selalu ditolak lebih buruk
+                        daripada tombol yang tidak ada.
+                    -->
+                    <tr v-for="owner in owners" :key="`owner-${owner.id}`" class="bg-primary/[0.04]">
+                        <td class="px-5 py-4">
+                            <span class="text-sm font-medium text-gray-900">{{ owner.name }}</span>
+                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[0.65rem] font-medium bg-primary/10 text-primary">
+                                Pemilik
+                            </span>
+                        </td>
+                        <td class="px-5 py-4">
+                            <span class="text-sm text-gray-600">{{ owner.email }}</span>
+                        </td>
+                        <td class="px-5 py-4">
+                            <template v-if="bypassesEveryCheck(owner)">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                                    Akses penuh — melewati seluruh pemeriksaan
+                                </span>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Aksesnya tidak berasal dari role, jadi mengubah role tidak akan membatasinya.
+                                </p>
+                            </template>
+                            <div v-else class="flex flex-wrap gap-1">
+                                <span
+                                    v-for="mod in owner.modules"
+                                    :key="mod"
+                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                                >
+                                    {{ moduleLabel(mod) }}
+                                </span>
+                            </div>
+                        </td>
+                        <td class="px-5 py-4 text-right">
+                            <span class="text-xs text-gray-400">—</span>
+                        </td>
+                    </tr>
+
                     <tr v-for="member in staff" :key="member.id" class="hover:bg-gray-50 transition-colors">
                         <td class="px-5 py-4">
                             <span class="text-sm font-medium" :class="member.is_active ? 'text-gray-900' : 'text-gray-400'">
@@ -236,6 +286,11 @@ const toggleActive = (member) => {
                             <span class="text-sm text-gray-600">{{ member.email }}</span>
                         </td>
                         <td class="px-5 py-4">
+                            <!--
+                                Nama role tetap ada, tapi sebagai ASAL-USUL —
+                                yang menjawab "orang ini bisa buka apa saja"
+                                adalah lencana modul di bawahnya, bukan namanya.
+                            -->
                             <span
                                 v-if="member.roles.length"
                                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary"
@@ -243,8 +298,21 @@ const toggleActive = (member) => {
                                 {{ member.roles[0] }}
                             </span>
                             <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-                                POS saja
+                                Tanpa role
                             </span>
+
+                            <div v-if="member.modules.length" class="mt-1.5 flex flex-wrap gap-1">
+                                <span
+                                    v-for="mod in member.modules"
+                                    :key="mod"
+                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                                >
+                                    {{ moduleLabel(mod) }}
+                                </span>
+                            </div>
+                            <p v-else class="mt-1.5 text-xs text-gray-400">
+                                Belum ada modul — hanya bisa membuka kasir.
+                            </p>
                         </td>
                         <td class="px-5 py-4 text-right">
                             <div class="flex items-center justify-end gap-2">
@@ -267,7 +335,7 @@ const toggleActive = (member) => {
                     </tr>
                     <tr v-if="staff.length === 0">
                         <td colspan="4" class="px-5 py-12 text-center">
-                            <p class="text-sm text-gray-500">Belum ada staf</p>
+                            <p class="text-sm text-gray-500">Belum ada staf selain pemilik</p>
                             <button @click="openCreate" class="mt-2 text-sm text-primary hover:text-primary/80 font-medium">
                                 Tambah staf pertama
                             </button>

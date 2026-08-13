@@ -10,6 +10,22 @@
 
 ## Daftar Entri
 
+### [BL-038] Halaman Staf Tidak Menunjukkan Modul Efektif Per Orang
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "dalam konsep tim dan akses, staf dan role konsepnya dia langsung melihat kalau orang ini (email ini) memiliki akses ke module module berikut"
+- **Status:** **Selesai 2026-08-14** (seluruh butir; baris owner ditambahkan atas permintaan pemilik saat entri ini dikerjakan)
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Pages/Owner/Staff/Index.vue:236-243` — tiap baris hanya menampilkan surel dan satu lencana berisi **nama role**
+  - `resources/js/Pages/Owner/Roles/Index.vue:205-211` — daftar modul ada, tapi di halaman Role, terpisah dari orangnya
+  - `app/Models/User.php:85-96` — `modulePermissions()` sudah menghitung daftar itu dan sudah dibagikan ke Inertia; datanya ada, tinggal ditampilkan
+  - `app/Providers/AppServiceProvider.php:87-89` — `Gate::before` membuat owner lolos semua gerbang, dan `modulePermissions()` mengembalikan `['*']` untuknya
+- **Deskripsi:**
+  Untuk menjawab "si A ini bisa buka apa saja?", pemilik harus membaca nama role di halaman Staf, lalu pindah ke halaman Role, lalu mencocokkan sendiri. Padahal jawabannya sudah dihitung server. Satu hal lagi yang tidak pernah terlihat di UI mana pun: owner bukan pemegang role dengan modul terbanyak, melainkan **melewati pemeriksaan sepenuhnya** — jadi mencabut modul dari role owner tidak akan berpengaruh apa-apa, dan tidak ada yang memberi tahu itu.
+- **Usulan Perbaikan:**
+  Kirim `modulePermissions()` tiap anggota ke `Owner/Staff/Index` dan tampilkan lencana modulnya di bawah surel, bukan nama role saja (nama role tetap ada sebagai asal-usulnya). Untuk owner, tampilkan satu lencana "Akses penuh — melewati seluruh pemeriksaan" alih-alih memuntahkan seluruh daftar modul, sesuai maksud `['*']` yang sudah ditulis di `User::modulePermissions()`.
+- **Catatan penutup:** usulan aslinya menulis "untuk owner, tampilkan satu lencana Akses penuh" tanpa menyebut di mana barisnya berada — dan ternyata tidak ada: kueri staf menyaring `role = 'cashier'`, jadi owner tidak pernah punya baris untuk ditempati. Yang dikerjakan karena itu bukan mengubah lencana, melainkan menambahkan baris owner (jamak — dibaca dari kolom `role`, bukan dari user yang sedang masuk) sebagai baris hanya-baca di atas daftar staf.
+
 ### [BL-033] Tiga Permukaan Publik Belum Satu Keluarga — Desain, Aset, dan Wordmark
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "dokumentasi publik dan dokumentasi teknis seperti ai dan api kasih konsisten", "konsep logo SAPI Pos seperti di halaman dokumentasi menarik"
