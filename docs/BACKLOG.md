@@ -95,7 +95,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 > - **"Dynamic pricing" di saran ini berarti mesin harga langganan SaaS**, bukan diskon barang mendekati kedaluwarsa (`[BL-018]`). Keduanya sama-sama pernah disebut "harga dinamis" di proyek ini; `[BL-066]` memakai arti yang pertama, sesuai `docs/SAPI-Pitch-Fitur-Unggulan_v1.0.md` bagian 3.
 > - **Saran cabang sengaja dipatok terakhir** atas permintaan pemilik sendiri ("pastiin yang lain berhasil semua dulu"). `[BL-068]` mencatat kenapa syarat itu tepat: tidak ada satu pun konsep cabang di kode hari ini, dan menambahkannya menyentuh hampir setiap tabel operasional.
 >
-> Urutan yang disarankan, termurah dulu: `[BL-064]` (grafik) → `[BL-063]` (rekap bulanan) → `[BL-067]` (keterlihatan seat/kuota) → `[BL-066]` (penjelasan Dynamic Pricing di landing) → `[BL-065]` (PPN, menunggu keputusan bentuk) → `[BL-068]` (cabang, paling akhir). Dua yang pertama tidak menyentuh uang sama sekali dan bisa dikerjakan kapan saja. `[BL-062]` (kuota AI pindah ke tempat ia dipakai) selesai 2026-08-13.
+> Urutan yang disarankan, termurah dulu: `[BL-064]` (grafik; `[BL-063]` selesai 2026-08-13 dan sudah menyiapkan deret harian yang jadi sumbernya) → `[BL-067]` (keterlihatan seat/kuota) → `[BL-066]` (penjelasan Dynamic Pricing di landing) → `[BL-065]` (PPN, menunggu keputusan bentuk) → `[BL-068]` (cabang, paling akhir). `[BL-062]` (kuota AI pindah ke tempat ia dipakai) selesai 2026-08-13.
 
 > **Catatan pemilik 2026-08-13 (penyisiran backlog)** — pemilik menanyakan empat fitur yang dikiranya mungkin terlewat dicatat; seluruhnya sudah **diperiksa terhadap kode**, dan hasilnya dua sudah tercatat, dua memang terlewat. **Sudah ada:** offline + printer Bluetooth + lapisan native adalah `[BL-016]` (Capacitor ada di sana sebagai opsi 2, dan lingkupnya sudah dikunci Android saja), sedangkan upsell dari sinyal stok sudah **selesai** lewat `[BL-017]`/`[BL-025]` — sisanya hanya bundling berdiskon yang menunggu `[BL-018]`. **Benar-benar terlewat:** upsell yang **ditargetkan manual oleh owner** — tiga strategi yang ada semuanya menurunkan saran dari data dan tidak ada satu pun tempat bagi owner menuliskan targetnya sendiri — jadi `[BL-074]`; dan **foto bukti pembayaran non-tunai**, yang nol kode (`transaction_payments` hanya punya `reference_code`), jadi `[BL-075]`. Satu hal yang mudah menyesatkan dan sudah ditulis di dalam `[BL-075]`: `invoices.proof_path` yang sudah ada itu bukti tenant membayar langganan SaaS, **bukan** bukti pelanggan membayar di kasir. `[BL-076]` lahir dari keputusan pemilik di hari yang sama — penyimpanan `[BL-075]` untuk sementara di disk server, dan pemindahannya ke object storage dicatat terpisah supaya "sementara" tidak diam-diam jadi permanen.
 
@@ -319,25 +319,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-063] Laporan Hanya Ada Per Satu Tanggal — Belum Ada Rekap Bulanan
-- **Ditemukan:** 2026-08-08
-- **Sumber:** Saran pasca-peragaan — "grafik laporan dalam bulanan"
-- **Status:** Open
-- **Prioritas:** Medium
-- **Area Terdampak:**
-  - `app/Http/Controllers/Owner/ReportController.php:22-83` — `daily()`: seluruh isinya disaring `whereEffectiveDate($date)`, satu hari saja
-  - `routes/web.php:168-172` — hanya `reports.daily` dan `reports.upsell`; tidak ada rute rekap periode
-  - `app/Http/Controllers/Owner/DashboardController.php:59-66` — satu-satunya agregasi lintas hari yang ada, dan dipatok 7 hari terakhir
-  - `app/Models/Transaction.php` — `effectiveDateSql()` + `whereEffectiveFrom()`: **bahan yang dibutuhkan sudah ada**
-- **Deskripsi:**
-  Semua laporan di aplikasi ini menjawab pertanyaan "hari ini bagaimana". Tidak ada satu pun permukaan yang menjawab "bulan ini bagaimana", padahal itu satuan yang dipakai pemilik toko saat menghitung sewa, gaji, dan setoran. Yang paling dekat adalah tren 7 hari di dashboard — terlalu pendek untuk melihat pola akhir pekan, apalagi tanggal muda vs tanggal tua.
-  Kabar baiknya, bagian yang biasanya paling sulit sudah beres: laporan sudah memakai **tanggal efektif**, bukan `created_at`, jadi penjualan offline yang baru tersinkron esok hari tetap masuk ke bulan yang benar. Rekap bulanan yang dibangun di atas `effectiveDateSql()` tidak akan mewarisi cacat itu.
-- **Usulan Perbaikan:**
-  **(a)** Satu rute `reports.monthly` dengan parameter `month` (`Y-m`), isinya sejajar dengan harian: omzet, jumlah transaksi, void, rekap metode bayar, produk terlaris — plus satu deret harian untuk grafiknya (`[BL-064]`).
-  **(b)** Agregasi di database, jangan menarik seluruh transaksi sebulan ke memori lalu menjumlahkannya di PHP. `daily()` boleh melakukan itu karena sehari muat; sebulan di tenant yang ramai tidak.
-  **(c)** **Putuskan dulu: bulan kalender atau periode langganan?** Keduanya masuk akal dan hasilnya berbeda — periode langganan tenant berjangkar di tanggal daftar (keputusan 2026-08-07), jadi "bulan ini" versi tagihan bukan 1–31. Saran saya bulan kalender untuk laporan operasional, karena itu yang dipakai pemilik toko menghitung sewa dan gaji; jangan campur keduanya di satu layar.
-  **(d)** Sekalian sediakan unduhan CSV-nya. Rekap bulanan yang tidak bisa dibawa ke spreadsheet akan tetap disalin manual.
-
 ### [BL-064] Satu-satunya Grafik di Aplikasi Ini Ada di Dashboard — Batang, Tujuh Hari, dan Laporan Tidak Punya Grafik Sama Sekali
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "grafik dan line chart"
@@ -347,6 +328,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - `resources/js/Components/DailyChart.vue` — satu-satunya komponen grafik; `import { Bar } from 'vue-chartjs'`, dan hanya `BarElement` yang diregistrasi
   - `resources/js/Pages/Owner/Dashboard.vue:262` — **satu-satunya** pemakainya di seluruh `resources/js`
   - `resources/js/Pages/Owner/Reports/Daily.vue`, `Reports/Upsell.vue` — nol grafik; semuanya tabel dan kartu angka
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` (2026-08-13) — **tempat pasang pertamanya sudah berdiri**; prop `dailySeries` berisi satu baris untuk SETIAP tanggal di bulan itu, termasuk hari nol, jadi garisnya tidak perlu diinterpolasi. Hari ini deret itu dibaca lewat tabel "Rincian Harian"
   - `package.json:20,23` — `chart.js` ^4.5.1 dan `vue-chartjs` ^5.3.3 **sudah terpasang**
 - **Deskripsi:**
   Pustaka grafiknya sudah ada di proyek dan sudah dipakai sekali. Yang belum ada adalah jenis grafik kedua dan pemakai kedua. Halaman Laporan — tempat orang justru datang untuk melihat pola — seluruhnya berupa tabel; sementara dashboard, tempat orang hanya melirik, adalah satu-satunya yang punya grafik.
@@ -354,7 +336,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Usulan Perbaikan:**
   **(a)** Komponen `TrendChart.vue` berbasis `Line`, dengan `PointElement` + `LineElement` diregistrasi. **Jangan mengubah `DailyChart` jadi serba-bisa** lewat prop `type` — dua grafik dengan sumbu dan tujuan berbeda yang dipaksa satu komponen akan penuh percabangan sebelum pemakai ketiga muncul.
   **(b)** Ikuti pola warna `DailyChart`: baca `--color-primary`/`--color-brand` dari CSS variable, jangan mematok heksadesimal. Itu yang membuat grafiknya ikut tema, dan grafik kedua yang mematok warna sendiri akan langsung terlihat asing.
-  **(c)** Pasang di rekap bulanan `[BL-063]` lebih dulu — itu data yang paling butuh garis. Baru sesudahnya pertimbangkan tren di halaman harian (mis. per jam).
+  **(c)** Pasang di rekap bulanan lebih dulu — itu data yang paling butuh garis. Halamannya sudah ada sejak `[BL-063]` selesai (2026-08-13) beserta deret hariannya, jadi yang tersisa hanya komponennya dan satu baris pemasangan di atas tabel "Rincian Harian". Baru sesudahnya pertimbangkan tren di halaman harian (mis. per jam).
   **(d)** Beri keadaan kosong yang jelas. Tenant baru yang membuka laporan dan melihat kanvas kosong tanpa keterangan akan menganggapnya rusak.
 
 ### [BL-065] Pajak/PPN Belum Ada Sama Sekali — dan Bentuk yang Diminta Menentukan Kolomnya, Bukan Tampilannya
@@ -1096,6 +1078,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-063` | Laporan hanya ada per satu tanggal — belum ada rekap bulanan | 2026-08-13 (butir (a)-(d)) | `[ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)` |
 | `BL-062` | Sisa kuota AI hanya terlihat di Pengaturan — bukan di halaman yang menghabiskannya | 2026-08-13 (butir (a)–(d); butir (e) tidak dikerjakan, perlu diperjelas lebih dulu) | `[ADDITION] Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062)` |
 | `BL-048` | Jalur Harga Adaptif bisa dipilih siapa saja — belum ada pagar kelayakan, dan pagarnya menabrak gerbang privasi | 2026-08-10 (butir (a) dibatalkan 2026-08-07; butir (b) lewat `BL-055`) | `[ADDITION] Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055)` |
 | `BL-055` | Pengajuan Harga Adaptif belum punya wujud — halaman, penilaian otomatis, dan pemindahan saat melewati ambang | 2026-08-10 (butir (a)–(f); butir (g) dipecah ke `BL-073`) | `[ADDITION] Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055)` |

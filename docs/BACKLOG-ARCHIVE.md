@@ -10,6 +10,30 @@
 
 ## Daftar Entri
 
+### [BL-063] Laporan Hanya Ada Per Satu Tanggal — Belum Ada Rekap Bulanan
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "grafik laporan dalam bulanan"
+- **Status:** Selesai (2026-08-13) — seluruh usulan (a)-(d) mendarat: rute `reports.monthly`, agregasi penuh di basis data, bulan kalender, dan unduhan CSV. Lihat `[ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/ReportController.php:22-83` — `daily()`: seluruh isinya disaring `whereEffectiveDate($date)`, satu hari saja
+  - `routes/web.php:168-172` — hanya `reports.daily` dan `reports.upsell`; tidak ada rute rekap periode
+  - `app/Http/Controllers/Owner/DashboardController.php:59-66` — satu-satunya agregasi lintas hari yang ada, dan dipatok 7 hari terakhir
+  - `app/Models/Transaction.php` — `effectiveDateSql()` + `whereEffectiveFrom()`: **bahan yang dibutuhkan sudah ada**
+- **Deskripsi:**
+  Semua laporan di aplikasi ini menjawab pertanyaan "hari ini bagaimana". Tidak ada satu pun permukaan yang menjawab "bulan ini bagaimana", padahal itu satuan yang dipakai pemilik toko saat menghitung sewa, gaji, dan setoran. Yang paling dekat adalah tren 7 hari di dashboard — terlalu pendek untuk melihat pola akhir pekan, apalagi tanggal muda vs tanggal tua.
+  Kabar baiknya, bagian yang biasanya paling sulit sudah beres: laporan sudah memakai **tanggal efektif**, bukan `created_at`, jadi penjualan offline yang baru tersinkron esok hari tetap masuk ke bulan yang benar. Rekap bulanan yang dibangun di atas `effectiveDateSql()` tidak akan mewarisi cacat itu.
+- **Usulan Perbaikan:**
+  **(a)** Satu rute `reports.monthly` dengan parameter `month` (`Y-m`), isinya sejajar dengan harian: omzet, jumlah transaksi, void, rekap metode bayar, produk terlaris — plus satu deret harian untuk grafiknya (`[BL-064]`).
+  **(b)** Agregasi di database, jangan menarik seluruh transaksi sebulan ke memori lalu menjumlahkannya di PHP. `daily()` boleh melakukan itu karena sehari muat; sebulan di tenant yang ramai tidak.
+  **(c)** **Putuskan dulu: bulan kalender atau periode langganan?** Keduanya masuk akal dan hasilnya berbeda — periode langganan tenant berjangkar di tanggal daftar (keputusan 2026-08-07), jadi "bulan ini" versi tagihan bukan 1–31. Saran saya bulan kalender untuk laporan operasional, karena itu yang dipakai pemilik toko menghitung sewa dan gaji; jangan campur keduanya di satu layar.
+  **(d)** Sekalian sediakan unduhan CSV-nya. Rekap bulanan yang tidak bisa dibawa ke spreadsheet akan tetap disalin manual.
+- **Catatan penutup (2026-08-13):**
+  Butir (c) diputuskan sesuai saran entri ini: **bulan kalender**, dan periode langganan sengaja tidak muncul di layar yang sama. Butir (a) ditambah tiga hal yang tidak tertulis di sini tapi memang yang dicari pemilik saat membuka rekap bulanan — pembanding terhadap bulan sebelumnya, "hari berjualan" sebagai penyebut rata-rata harian, dan hari teramai.
+  Laba kotor tidak diikutkan meski `ProfitService` sudah ada: COGS-nya memakai `cost_price` yang tidak semua tenant isi, dan margin 100% palsu lebih buruk daripada tidak ada angka margin.
+
+---
+
 ### [BL-062] Sisa Kuota AI Hanya Terlihat di Pengaturan — Bukan di Halaman yang Menghabiskannya
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "tambahan menu ai di analysis, coba pindahkan kuotanya ke AI Analysis (bukan di profil saja)"

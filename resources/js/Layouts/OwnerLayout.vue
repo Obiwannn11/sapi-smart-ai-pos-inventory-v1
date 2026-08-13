@@ -58,6 +58,7 @@ const iconPaths = {
         'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L19 12l-3.714 2.143L13 21l-2.286-6.857L7 12l3.714-2.143L13 5z',
     clipboard:
         'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+    'trending-up': 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6',
 };
 
 const NavIcon = defineComponent({
@@ -118,6 +119,7 @@ const sidebarGroups = [
         label: 'Keuangan',
         items: [
             { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report', perm: 'reports' },
+            { name: 'Laporan Bulanan', href: '/owner/reports/monthly', icon: 'trending-up', perm: 'reports' },
             { name: 'Saran Jual', href: '/owner/reports/upsell', icon: 'sparkles', perm: 'reports' },
             { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt', perm: 'reports' },
             { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash', perm: 'reports' },

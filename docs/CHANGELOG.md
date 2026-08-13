@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-13 | ADDITION | Laporan | Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063) |
 | 2026-08-13 | ADDITION | AI | Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062) |
 | 2026-08-10 | HOTFIX | Langganan | `price_locked` Nol Berhenti Dibaca Sebagai Tarif Rp 0 (BL-041) |
 | 2026-08-10 | ADDITION | Langganan | Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055) |
@@ -163,6 +164,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)
+- **Tanggal:** 2026-08-13
+- **Fase Terkait:** Di Luar Fase — `[BL-063]`
+- **Dampak:** Controller | Rute | Frontend | Test
+- **Breaking Change:** Tidak. Laporan harian, tren 7 hari di dashboard, dan seluruh permukaan lama tidak disentuh.
+- **Deskripsi:** Sebelum ini setiap laporan di aplikasi menjawab pertanyaan yang sama — "hari ini bagaimana". Tidak ada satu pun yang menjawab "bulan ini bagaimana", padahal itu satuan yang dipakai pemilik toko saat menghitung sewa, gaji, dan setoran; yang paling dekat adalah tren 7 hari di dashboard, terlalu pendek untuk membedakan pola akhir pekan, apalagi tanggal muda dari tanggal tua. `/owner/reports/monthly` mengisi lubang itu.
+
+- **Bulan kalender, bukan periode langganan — dan keduanya sengaja tidak bertemu di satu layar.** Periode langganan tenant berjangkar di tanggal daftar (keputusan 2026-08-07), jadi "bulan ini" versi tagihan bukan tanggal 1–31. Laporan ini operasional: yang dipakai menghitung sewa dan gaji adalah bulan kalender, dan mencampur dua definisi "bulan" di satu halaman hanya melahirkan dua angka omzet yang sama-sama benar dan saling membantah. Periode langganan tetap milik `/langganan`.
+- **Tidak ada satu baris transaksi pun yang dimuat ke memori.** `daily()` boleh menarik transaksinya satu per satu karena sehari muat; sebulan di tenant yang ramai tidak. Seluruh isi halaman datang dari empat query agregat — deret harian, total bulan pembanding, rekap metode bayar, dan produk terlaris — dan angka ringkasannya (omzet, jumlah transaksi, void, rata-rata) diturunkan dari deret harian yang sudah jadi, bukan dari query baru per angka.
+- **Deret hariannya memuat SETIAP tanggal, termasuk yang nol.** Hari tutup yang hilang dari deret akan tersambung jadi garis lurus begitu grafiknya dipasang (`[BL-064]`), dan garis itu terbaca seolah toko tetap ramai. Nol yang eksplisit membuat deretnya jujur sebelum ada yang menggambarnya.
+- **Angkanya memakai tanggal penjualan sebenarnya.** Rekapnya berdiri di atas `effectiveDateSql()`, jadi penjualan offline yang baru tersinkron di bulan berikutnya tetap dihitung di bulan saat transaksinya terjadi — cacat yang paling mahal untuk ditemukan belakangan justru tidak pernah diwarisi.
+- **Perbandingan dengan bulan sebelumnya ikut, dan "tidak ada pembanding" ditulis apa adanya.** Rekap bulanan tanpa pembanding hanya angka besar tanpa arti. Tapi tumbuh dari nol bukan "naik 100%": bulan pembanding yang kosong menghasilkan `null`, dan layarnya menulis "Tidak ada pembanding", bukan persentase yang dikarang.
+- **"Hari berjualan", bukan jumlah hari kalender.** Rata-rata omzet harian dibagi dengan hari yang benar-benar ada transaksinya. Toko yang libur enam hari tidak boleh terbaca seperti toko yang sepi sebulan penuh.
+- **CSV-nya berisi persis yang ada di layar, dalam empat blok bersekat.** Rekap bulanan yang tidak bisa dibawa ke spreadsheet akan tetap disalin ulang dengan tangan. BOM UTF-8 dipasang di depan supaya Excel tidak membacanya sebagai ANSI dan mengacak nama produk beraksen.
+- **Bulan yang belum terjadi tidak bisa dipilih.** Tombol "bulan berikutnya" mati di bulan berjalan dan bulan-bulan di depan padam di panel pemilih. Laporan kosong tanpa sebab adalah cara termudah membuat aplikasi yang sehat terlihat rusak.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/ReportController.php` — `monthly()`, `monthlyExport()`, plus penolong privat `resolveMonth()`, `dailySeriesFor()`, `summarizeSeries()`, `monthTotals()`, `deltaPercent()`, `paymentSummaryFor()`, `topProductsFor()`, `monthLabel()`.
+  - `routes/web.php` — `reports.monthly` dan `reports.monthly.export`, di dalam grup `permission:reports` yang sudah ada.
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` — halamannya: kartu ringkasan, ritme bulan, tabel pembanding, rekap metode bayar, produk terlaris, rincian harian (tiap baris bertaut ke laporan hariannya).
+  - `resources/js/Components/MonthPicker.vue` — pemilih bulan (panah maju/mundur + panel 12 bulan), mengikuti pola `DatePicker.vue`.
+  - `resources/js/Layouts/OwnerLayout.vue` — menu "Laporan Bulanan" di grup Keuangan, plus ikon `trending-up`.
+  - `tests/Feature/Owner/ReportTest.php` — 10 test baru: batas bulan, tanggal efektif vs tanggal sync, void terpisah dari omzet, hari nol tetap ada di deret, pembanding bulan lalu (termasuk yang tanpa pembanding), parameter tak terbaca jatuh ke bulan berjalan, isolasi antar-tenant, dan isi CSV-nya.
+- **Yang masih terbuka:** grafik garisnya belum dipasang — itu `[BL-064]`, dan `dailySeries` di payload memang sudah disiapkan untuk jadi sumbernya. Sampai grafiknya mendarat, deret itu dibaca lewat tabel "Rincian Harian". Laba kotor sengaja tidak ikut: `ProfitService` sudah ada, tapi COGS-nya bersandar pada `cost_price` yang tidak semua tenant isi, dan margin 100% palsu di laporan bulanan lebih buruk daripada tidak ada angka margin sama sekali.
 
 ---
 

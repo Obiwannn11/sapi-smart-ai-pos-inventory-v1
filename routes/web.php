@@ -178,6 +178,11 @@ Route::middleware(['auth', 'tenant'])
             Route::get('reports/daily', [\App\Http\Controllers\Owner\ReportController::class, 'daily'])
                 ->name('reports.daily');
 
+            Route::get('reports/monthly', [\App\Http\Controllers\Owner\ReportController::class, 'monthly'])
+                ->name('reports.monthly');
+            Route::get('reports/monthly/export', [\App\Http\Controllers\Owner\ReportController::class, 'monthlyExport'])
+                ->name('reports.monthly.export');
+
             Route::get('reports/upsell', [\App\Http\Controllers\Owner\ReportController::class, 'upsell'])
                 ->name('reports.upsell');
 

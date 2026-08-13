@@ -11,8 +11,10 @@ use App\Models\TransactionItem;
 use App\Models\TransactionPayment;
 use App\Models\UpsellEvent;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
@@ -77,6 +79,306 @@ class ReportController extends Controller
             'paymentSummary' => $paymentSummary,
             'topProducts' => $topProducts,
         ]);
+    }
+
+    /**
+     * Rekap penjualan satu bulan kalender.
+     *
+     * Bulan KALENDER, bukan periode langganan. Keduanya masuk akal, tapi ini
+     * laporan operasional — satuan yang dipakai pemilik toko untuk menghitung
+     * sewa, gaji, dan setoran adalah tanggal 1 sampai akhir bulan. Periode
+     * langganan (berjangkar di tanggal daftar) tetap milik halaman tagihan,
+     * dan sengaja tidak dicampur di layar ini.
+     *
+     * Semua angka diagregasi di database. daily() boleh menarik transaksinya
+     * satu per satu karena sehari muat di memori; sebulan di tenant yang ramai
+     * tidak, jadi di sini tidak ada satu pun baris transaksi yang di-hydrate.
+     */
+    public function monthly(Request $request): Response
+    {
+        $month = $this->resolveMonth($request->input('month'));
+        $previous = $month->copy()->subMonth();
+
+        $dailySeries = $this->dailySeriesFor($month);
+        $summary = $this->summarizeSeries($dailySeries);
+        $previousTotals = $this->monthTotals($previous);
+
+        return Inertia::render('Owner/Reports/Monthly', [
+            'month' => $month->format('Y-m'),
+            'monthLabel' => $this->monthLabel($month),
+            'range' => [
+                'from' => $month->toDateString(),
+                'to' => $month->copy()->endOfMonth()->toDateString(),
+            ],
+            'summary' => $summary,
+            'comparison' => [
+                'month' => $previous->format('Y-m'),
+                'label' => $this->monthLabel($previous),
+                'total_revenue' => $previousTotals['total_revenue'],
+                'total_transactions' => $previousTotals['total_transactions'],
+                'revenue_delta_pct' => $this->deltaPercent($summary['total_revenue'], $previousTotals['total_revenue']),
+                'transactions_delta_pct' => $this->deltaPercent($summary['total_transactions'], $previousTotals['total_transactions']),
+            ],
+            'dailySeries' => $dailySeries,
+            'paymentSummary' => $this->paymentSummaryFor($month),
+            'topProducts' => $this->topProductsFor($month),
+        ]);
+    }
+
+    /**
+     * Unduhan CSV dari rekap bulanan yang sedang dilihat.
+     *
+     * Isinya persis yang ada di layar, dalam empat blok bersekat: ringkasan,
+     * rincian harian, metode pembayaran, dan produk terlaris. Rekap bulanan
+     * yang tidak bisa dibawa ke spreadsheet akan tetap disalin dengan tangan.
+     */
+    public function monthlyExport(Request $request): StreamedResponse
+    {
+        $month = $this->resolveMonth($request->input('month'));
+
+        $dailySeries = $this->dailySeriesFor($month);
+        $summary = $this->summarizeSeries($dailySeries);
+        $paymentSummary = $this->paymentSummaryFor($month);
+        $topProducts = $this->topProductsFor($month);
+        $label = $this->monthLabel($month);
+
+        return response()->streamDownload(function () use ($label, $summary, $dailySeries, $paymentSummary, $topProducts) {
+            $out = fopen('php://output', 'w');
+
+            // BOM UTF-8: tanpa ini Excel membaca CSV-nya sebagai ANSI dan nama
+            // produk beraksen berubah jadi karakter aneh.
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['RINGKASAN']);
+            fputcsv($out, ['Bulan', $label]);
+            fputcsv($out, ['Omzet', $summary['total_revenue']]);
+            fputcsv($out, ['Transaksi selesai', $summary['total_transactions']]);
+            fputcsv($out, ['Rata-rata per transaksi', $summary['average_transaction']]);
+            fputcsv($out, ['Transaksi void', $summary['voided_count']]);
+            fputcsv($out, ['Hari berjualan', $summary['active_days']]);
+            fputcsv($out, ['Rata-rata omzet per hari berjualan', $summary['average_active_day_revenue']]);
+            fputcsv($out, []);
+
+            fputcsv($out, ['RINCIAN HARIAN']);
+            fputcsv($out, ['Tanggal', 'Transaksi', 'Omzet', 'Void']);
+            foreach ($dailySeries as $day) {
+                fputcsv($out, [$day['date'], $day['count'], $day['revenue'], $day['voided']]);
+            }
+            fputcsv($out, ['TOTAL', $summary['total_transactions'], $summary['total_revenue'], $summary['voided_count']]);
+            fputcsv($out, []);
+
+            fputcsv($out, ['METODE PEMBAYARAN']);
+            fputcsv($out, ['Metode', 'Tipe', 'Total']);
+            foreach ($paymentSummary as $row) {
+                fputcsv($out, [$row->name, $row->type, $row->total]);
+            }
+            fputcsv($out, []);
+
+            fputcsv($out, ['PRODUK TERLARIS']);
+            fputcsv($out, ['Varian', 'Qty Terjual', 'Omzet']);
+            foreach ($topProducts as $row) {
+                fputcsv($out, [$row->variant_name, $row->total_qty, $row->total_revenue]);
+            }
+
+            fclose($out);
+        }, 'laporan-bulanan-'.$month->format('Y-m').'.csv', [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    /**
+     * Awal bulan dari parameter `month` (format `Y-m`).
+     *
+     * Parameter yang tidak terbaca jatuh ke bulan berjalan, bukan 422: ini
+     * penyaring tampilan, dan laporan bulan ini lebih berguna daripada layar galat.
+     */
+    private function resolveMonth(?string $month): Carbon
+    {
+        if (is_string($month) && preg_match('/^\d{4}-\d{2}$/', $month) === 1) {
+            try {
+                return Carbon::createFromFormat('Y-m-d', $month.'-01')->startOfMonth();
+            } catch (\Throwable) {
+                // Bulan yang tidak masuk akal (mis. 2026-13) jatuh ke bawah.
+            }
+        }
+
+        return Carbon::now()->startOfMonth();
+    }
+
+    /**
+     * Deret harian satu bulan penuh; tanggal tanpa transaksi tetap muncul nol.
+     *
+     * Nol yang eksplisit itu yang membuat deretnya jujur: hari tutup yang
+     * hilang dari deret akan tersambung jadi garis lurus di grafik dan
+     * terbaca seolah toko tetap ramai.
+     *
+     * @return array<int, array{date: string, count: int, revenue: float, voided: int}>
+     */
+    private function dailySeriesFor(Carbon $month): array
+    {
+        $effectiveDate = Transaction::effectiveDateSql();
+        $completed = Transaction::STATUS_COMPLETED;
+        $voided = Transaction::STATUS_VOIDED;
+
+        $rows = Transaction::query()
+            ->whereEffectiveBetween($month, $month->copy()->endOfMonth())
+            ->whereIn('status', [$completed, $voided])
+            ->selectRaw("DATE({$effectiveDate}) as date")
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as tx_count', [$completed])
+            ->selectRaw('SUM(CASE WHEN status = ? THEN total_amount ELSE 0 END) as revenue', [$completed])
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as voided_count', [$voided])
+            ->groupByRaw("DATE({$effectiveDate})")
+            ->get()
+            ->keyBy('date');
+
+        $series = [];
+        $cursor = $month->copy();
+        $lastDay = $month->copy()->endOfMonth();
+
+        while ($cursor->lte($lastDay)) {
+            $date = $cursor->toDateString();
+            $row = $rows->get($date);
+
+            $series[] = [
+                'date' => $date,
+                'count' => (int) ($row->tx_count ?? 0),
+                'revenue' => (float) ($row->revenue ?? 0),
+                'voided' => (int) ($row->voided_count ?? 0),
+            ];
+
+            $cursor->addDay();
+        }
+
+        return $series;
+    }
+
+    /**
+     * Angka ringkasan bulan, diturunkan dari deret harian yang sudah diagregasi.
+     *
+     * Menjumlahkan 28–31 baris di PHP jauh lebih murah daripada mengirim
+     * query agregat baru untuk tiap angka.
+     *
+     * @param  array<int, array{date: string, count: int, revenue: float, voided: int}>  $series
+     * @return array{total_revenue: float, total_transactions: int, voided_count: int, average_transaction: float, days_in_month: int, active_days: int, average_active_day_revenue: float, best_day: array{date: string, revenue: float, count: int}|null}
+     */
+    private function summarizeSeries(array $series): array
+    {
+        $totalRevenue = (float) array_sum(array_column($series, 'revenue'));
+        $totalTransactions = (int) array_sum(array_column($series, 'count'));
+        $voidedCount = (int) array_sum(array_column($series, 'voided'));
+
+        $activeDays = array_values(array_filter($series, fn (array $day) => $day['count'] > 0));
+        $bestDay = null;
+
+        foreach ($activeDays as $day) {
+            if ($bestDay === null || $day['revenue'] > $bestDay['revenue']) {
+                $bestDay = ['date' => $day['date'], 'revenue' => $day['revenue'], 'count' => $day['count']];
+            }
+        }
+
+        return [
+            'total_revenue' => $totalRevenue,
+            'total_transactions' => $totalTransactions,
+            'voided_count' => $voidedCount,
+            'average_transaction' => $totalTransactions > 0 ? round($totalRevenue / $totalTransactions, 2) : 0.0,
+            'days_in_month' => count($series),
+            // Hari berjualan, bukan jumlah hari kalender: toko yang libur enam
+            // hari tidak boleh terbaca seperti toko yang sepi sebulan penuh.
+            'active_days' => count($activeDays),
+            'average_active_day_revenue' => count($activeDays) > 0 ? round($totalRevenue / count($activeDays), 2) : 0.0,
+            'best_day' => $bestDay,
+        ];
+    }
+
+    /**
+     * Omzet dan jumlah transaksi satu bulan — dipakai sebagai pembanding.
+     *
+     * @return array{total_revenue: float, total_transactions: int}
+     */
+    private function monthTotals(Carbon $month): array
+    {
+        $row = Transaction::query()
+            ->where('status', Transaction::STATUS_COMPLETED)
+            ->whereEffectiveBetween($month, $month->copy()->endOfMonth())
+            ->selectRaw('COUNT(*) as total_transactions, COALESCE(SUM(total_amount), 0) as total_revenue')
+            ->first();
+
+        return [
+            'total_revenue' => (float) $row->total_revenue,
+            'total_transactions' => (int) $row->total_transactions,
+        ];
+    }
+
+    /**
+     * Selisih persen terhadap bulan sebelumnya.
+     *
+     * null bila pembandingnya nol: tumbuh dari nol bukan "naik 100%",
+     * melainkan tidak punya pembanding — dan layarnya harus bilang begitu.
+     */
+    private function deltaPercent(float|int $current, float|int $previous): ?float
+    {
+        if ((float) $previous === 0.0) {
+            return null;
+        }
+
+        return round((($current - $previous) / $previous) * 100, 1);
+    }
+
+    /**
+     * Rekap per metode pembayaran dalam satu bulan.
+     *
+     * Bentuknya sengaja sama dengan daily() supaya tabelnya bisa dibaca
+     * dengan kebiasaan yang sama.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function paymentSummaryFor(Carbon $month)
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $endOfMonth = $month->copy()->endOfMonth();
+
+        return TransactionPayment::query()
+            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
+            ->join('payment_methods', function ($join) use ($tenantId) {
+                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
+                    ->where('payment_methods.tenant_id', $tenantId);
+            })
+            ->whereHas('transaction', function ($q) use ($month, $endOfMonth) {
+                $q->where('status', Transaction::STATUS_COMPLETED)
+                    ->whereEffectiveBetween($month, $endOfMonth);
+            })
+            ->groupBy('payment_methods.name', 'payment_methods.type')
+            ->orderByDesc('total')
+            ->get();
+    }
+
+    /**
+     * Produk terlaris dalam satu bulan.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function topProductsFor(Carbon $month)
+    {
+        $endOfMonth = $month->copy()->endOfMonth();
+
+        return TransactionItem::query()
+            ->selectRaw('variant_name, SUM(qty) as total_qty, SUM(subtotal) as total_revenue')
+            ->whereHas('transaction', function ($q) use ($month, $endOfMonth) {
+                $q->where('status', Transaction::STATUS_COMPLETED)
+                    ->whereEffectiveBetween($month, $endOfMonth);
+            })
+            ->groupBy('variant_name')
+            ->orderByDesc('total_qty')
+            ->take(10)
+            ->get();
+    }
+
+    /**
+     * Label bulan berbahasa Indonesia, mis. "Agustus 2026".
+     */
+    private function monthLabel(Carbon $month): string
+    {
+        return $month->locale('id')->translatedFormat('F Y');
     }
 
     /**
