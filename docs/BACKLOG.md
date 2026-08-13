@@ -207,7 +207,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-072] Enam Commit Berturut-turut Tidak Bisa Boot — `git bisect` dan `git revert` Menyesatkan di Rentang Itu
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Percobaan menulis ulang riwayat jadi commit atomik; ditemukan karena commit hasil pecahannya gagal menjalankan tes dengan sebab yang bukan berasal dari pecahannya
-- **Status:** Open — **cacat riwayat, bukan cacat kode.** `HEAD` sehat: 786 tes lulus
+- **Status:** Open — **cacat riwayat, bukan cacat kode.** `HEAD` sehat: 879 tes lulus (diverifikasi ulang 2026-08-14; 786 saat entri ini ditulis 2026-08-08)
 - **Prioritas:** Low selama tak ada yang menyusuri riwayat; **High begitu ada yang perlu `bisect` atau `revert` di rentang ini**
 - **Area Terdampak:**
   - Commit `2ffd393` sampai `329f592` (enam commit berurutan). Sembuh di `342082c`.
