@@ -4,6 +4,7 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import MonthPicker from '@/Components/MonthPicker.vue';
+import TrendChart from '@/Components/TrendChart.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -262,6 +263,13 @@ const paymentTypeLabel = (type) => {
                 </table>
             </div>
         </div>
+
+        <!-- Tren harian: bentuk bulannya, sebelum angkanya dibaca satu per satu -->
+        <TrendChart
+            :data="dailySeries"
+            :title="`Tren Omzet Harian — ${monthLabel}`"
+            :empty-label="`Belum ada penjualan di ${monthLabel}`"
+        />
 
         <!-- Rincian harian -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

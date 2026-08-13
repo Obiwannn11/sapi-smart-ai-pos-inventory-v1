@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-13 | ADDITION | Laporan | Grafik Kedua Aplikasi Ini: Garis Tren di Rekap Bulanan (BL-064) |
 | 2026-08-13 | ADDITION | Laporan | Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063) |
 | 2026-08-13 | ADDITION | AI | Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062) |
 | 2026-08-10 | HOTFIX | Langganan | `price_locked` Nol Berhenti Dibaca Sebagai Tarif Rp 0 (BL-041) |
@@ -164,6 +165,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Grafik Kedua Aplikasi Ini: Garis Tren di Rekap Bulanan (BL-064)
+- **Tanggal:** 2026-08-13
+- **Fase Terkait:** Di Luar Fase — `[BL-064]`, dipasang di atas rekap bulanan yang mendarat hari yang sama (`[BL-063]`)
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak. `DailyChart` di dashboard tidak disentuh sama sekali.
+- **Deskripsi:** Sampai kemarin seluruh aplikasi hanya punya satu grafik — batang tujuh hari di dashboard — dan halaman Laporan, tempat orang justru datang untuk melihat pola, seratus persen berupa tabel. `TrendChart.vue` menambah bentuk kedua: garis, untuk deret panjang yang bentuknya memang lain.
+
+- **Komponen baru, bukan `DailyChart` yang dibuat serba-bisa.** Menambahkan prop `type` ke komponen yang sudah ada akan menyatukan dua grafik yang sumbu, kerapatan titik, dan tujuannya berbeda — dan percabangannya akan menumpuk jauh sebelum pemakai ketiga muncul. Batang tetap milik perbandingan tujuh hari yang berdiri sendiri; garis milik deret sebulan.
+- **Warnanya dibaca dari tema, termasuk yang tembus pandang.** `--color-primary` dan `--color-brand` diambil dari CSS variable seperti `DailyChart`. Yang baru adalah arsirannya: warna tema ditulis dalam `oklch()`, yang tidak bisa disisipi alpha dengan menempel string, jadi warnanya dilukis ke kanvas 1×1 lalu pikselnya dibaca kembali — apa pun format yang dipahami browser masuk, `rgba()` keluar. Grafiknya tetap ikut tema tanpa satu pun heksadesimal dipatok.
+- **Titik-titiknya disembunyikan sampai disentuh.** Tiga puluh satu bulatan di satu garis membuat bentuk trennya sendiri sulit dilihat; `pointRadius: 0` dengan `pointHitRadius: 12` menjaga garisnya bersih tanpa membuat tooltipnya sulit dikejar. Label sumbu X memakai `autoSkip` — tanggal 1, 3, 5, … alih-alih 31 angka yang saling menindih.
+- **Tooltipnya menjawab pertanyaan berikutnya, bukan mengulang yang sudah terlihat.** Judulnya tanggal lengkap berbahasa Indonesia, isinya omzet, barisnya yang terakhir jumlah transaksi — dan hari nol menulis "tidak ada penjualan", bukan "0 transaksi" yang terbaca seperti kesalahan.
+- **Kanvas kosong diganti keterangan.** Tenant baru yang membuka laporan dan melihat kotak putih tanpa penjelasan akan menganggapnya rusak, bukan kosong. Keadaan kosongnya dipicu oleh "tidak ada omzet sama sekali", bukan oleh "tidak ada data" — deret bulanan selalu berisi 31 baris, jadi memeriksa panjang array tidak akan pernah menangkap bulan yang sepi.
+- **File Terdampak:**
+  - `resources/js/Components/TrendChart.vue` — komponen baru; `LineElement`, `PointElement`, `CategoryScale`, `LinearScale`, `Filler`, `Tooltip` diregistrasi di sana, terpisah dari registrasi `DailyChart`.
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` — dipasang tepat di atas tabel "Rincian Harian", memakai `dailySeries` yang memang sudah disiapkan `[BL-063]` (setiap tanggal ada, termasuk hari nol — garisnya tidak perlu diinterpolasi).
+- **Cara memeriksanya.** Proyek ini tidak punya test runner frontend, dan menambahkannya adalah perubahan dependensi tersendiri. Yang bisa diperiksa tanpa itu sudah diperiksa: bentuk `dailySeries` dikunci sepuluh test Pest milik `[BL-063]`, dan komponennya dijalankan di luar aplikasi dengan data 31 hari — 31 titik tergambar, `oklch(0.62 0.13 165)` benar berubah jadi `rgba(2, 158, 114, 0.12)` untuk arsirannya, sumbu Y mulai dari nol, label X menyusut jadi 16, dan bulan tanpa omzet menampilkan keterangan alih-alih kanvas.
+- **Yang masih terbuka:** tren per jam di laporan harian — butir (c) `[BL-064]` menyebutnya sebagai "pertimbangkan sesudahnya", dan memang belum dikerjakan. Ia butuh agregasi per jam yang hari ini tidak ada di `daily()`, dan pertanyaan yang dijawabnya berbeda ("jam berapa toko ramai", bukan "bulan ini naik atau turun"). Buka entri sendiri bila memang dibutuhkan.
 
 ---
 

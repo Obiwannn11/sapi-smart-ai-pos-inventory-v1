@@ -10,6 +10,31 @@
 
 ## Daftar Entri
 
+### [BL-064] Satu-satunya Grafik di Aplikasi Ini Ada di Dashboard — Batang, Tujuh Hari, dan Laporan Tidak Punya Grafik Sama Sekali
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "grafik dan line chart"
+- **Status:** Selesai (2026-08-13) — butir (a), (b), dan (d) mendarat utuh; butir (c) dikerjakan pada bagian yang wajib ("pasang di rekap bulanan lebih dulu"), sementara kalimat keduanya ("pertimbangkan tren per jam di halaman harian") memang sebuah pertimbangan dan sengaja tidak dikerjakan. Lihat `[ADDITION] Grafik Kedua Aplikasi Ini: Garis Tren di Rekap Bulanan (BL-064)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `resources/js/Components/DailyChart.vue` — satu-satunya komponen grafik; `import { Bar } from 'vue-chartjs'`, dan hanya `BarElement` yang diregistrasi
+  - `resources/js/Pages/Owner/Dashboard.vue:262` — **satu-satunya** pemakainya di seluruh `resources/js`
+  - `resources/js/Pages/Owner/Reports/Daily.vue`, `Reports/Upsell.vue` — nol grafik; semuanya tabel dan kartu angka
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` (2026-08-13) — tempat pasang pertamanya; prop `dailySeries` berisi satu baris untuk SETIAP tanggal di bulan itu, termasuk hari nol, jadi garisnya tidak perlu diinterpolasi
+  - `package.json:20,23` — `chart.js` ^4.5.1 dan `vue-chartjs` ^5.3.3 **sudah terpasang**
+- **Deskripsi:**
+  Pustaka grafiknya sudah ada di proyek dan sudah dipakai sekali. Yang belum ada adalah jenis grafik kedua dan pemakai kedua. Halaman Laporan — tempat orang justru datang untuk melihat pola — seluruhnya berupa tabel; sementara dashboard, tempat orang hanya melirik, adalah satu-satunya yang punya grafik.
+  Batang cocok untuk membandingkan hari yang berdiri sendiri, dan itu sebabnya `DailyChart` memilihnya. Untuk deret panjang seperti rekap bulanan (`[BL-063]`), batang jadi ramai dan garis tren jauh lebih terbaca — jadi ini bukan mengganti yang sudah ada, melainkan menambah bentuk kedua untuk data yang bentuknya memang lain.
+- **Usulan Perbaikan:**
+  **(a)** Komponen `TrendChart.vue` berbasis `Line`, dengan `PointElement` + `LineElement` diregistrasi. **Jangan mengubah `DailyChart` jadi serba-bisa** lewat prop `type` — dua grafik dengan sumbu dan tujuan berbeda yang dipaksa satu komponen akan penuh percabangan sebelum pemakai ketiga muncul.
+  **(b)** Ikuti pola warna `DailyChart`: baca `--color-primary`/`--color-brand` dari CSS variable, jangan mematok heksadesimal. Itu yang membuat grafiknya ikut tema, dan grafik kedua yang mematok warna sendiri akan langsung terlihat asing.
+  **(c)** Pasang di rekap bulanan `[BL-063]` lebih dulu — itu data yang paling butuh garis. Baru sesudahnya pertimbangkan tren di halaman harian (mis. per jam).
+  **(d)** Beri keadaan kosong yang jelas. Tenant baru yang membuka laporan dan melihat kanvas kosong tanpa keterangan akan menganggapnya rusak.
+- **Catatan penutup (2026-08-13):**
+  Satu hal yang tidak tertulis di entri ini tapi jadi bagian tersulitnya: warna tema proyek ini ditulis dalam `oklch()`, dan arsiran di bawah garis butuh versi tembus pandangnya. Alpha tidak bisa ditempelkan ke string `oklch()`, jadi warnanya dilukis ke kanvas 1x1 lalu pikselnya dibaca kembali — butir (b) tetap ditegakkan (nol heksadesimal dipatok) tanpa memaksa tema pindah format warna.
+  Tren per jam di laporan harian tetap tidak ada. Ia butuh agregasi per jam yang belum ada di `daily()` dan menjawab pertanyaan yang berbeda ("jam berapa toko ramai"); buka entri sendiri bila memang dibutuhkan, jangan diselundupkan sebagai sisa entri ini.
+
+---
+
 ### [BL-063] Laporan Hanya Ada Per Satu Tanggal — Belum Ada Rekap Bulanan
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "grafik laporan dalam bulanan"
