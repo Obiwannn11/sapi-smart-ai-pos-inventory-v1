@@ -71,7 +71,7 @@ class AiAnalysisController extends Controller
     }
 
     /**
-     * @return array{using_free_tier: bool, daily_limit: int, used: int, remaining: int, limit_source: string, plan_name: string|null}
+     * @return array{using_free_tier: bool, daily_limit: int, used: int, remaining: int, limit_source: string, plan_name: string|null, bonus: int, bonus_label: string|null}
      */
     protected function quotaSnapshot(): array
     {

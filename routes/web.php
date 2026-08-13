@@ -410,6 +410,24 @@ Route::prefix('platform')
                     ->name('plans.update');
             });
 
+            // Modul: Kuota AI — kebijakan jatah analisis harian, dan tombol
+            // mengembalikan pemakaian hari ini. Sengaja TERPISAH dari
+            // `pricing_rules` meski batas per paket disetel di sana: yang di
+            // halaman ini menyentuh tagihan kunci bersama milik pemilik SaaS,
+            // bukan tarif yang dibayar tenant.
+            Route::middleware('platform.can:ai_quota')->group(function () {
+                Route::get('/ai-quota', [\App\Http\Controllers\Platform\AiQuotaController::class, 'index'])
+                    ->name('ai-quota.index');
+                Route::post('/ai-quota/policies', [\App\Http\Controllers\Platform\AiQuotaController::class, 'store'])
+                    ->name('ai-quota.store');
+                Route::put('/ai-quota/policies/{aiQuotaPolicy}', [\App\Http\Controllers\Platform\AiQuotaController::class, 'update'])
+                    ->name('ai-quota.update');
+                Route::delete('/ai-quota/policies/{aiQuotaPolicy}', [\App\Http\Controllers\Platform\AiQuotaController::class, 'destroy'])
+                    ->name('ai-quota.destroy');
+                Route::post('/ai-quota/reset', [\App\Http\Controllers\Platform\AiQuotaController::class, 'resetUsage'])
+                    ->name('ai-quota.reset');
+            });
+
             // Modul: Data Omzet jalur Harga Adaptif — sengaja TERPISAH dari
             // `subscriptions`. Staf platform bisa diberi daftar langganan tanpa
             // diberi angka omzet kliennya.

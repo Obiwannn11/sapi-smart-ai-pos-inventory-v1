@@ -116,3 +116,19 @@ test('invalid provider is rejected', function () {
         'ai_provider' => 'invalid-provider',
     ])->assertSessionHasErrors('ai_provider');
 });
+
+test('promo yang berjalan ikut terbaca di halaman Pengaturan', function () {
+    config(['ai.free_tier.daily_limit' => 5]);
+
+    \App\Models\AiQuotaPolicy::factory()->bonus(3)->create(['label' => 'Promo Agustus']);
+
+    // Angkanya naik DAN alasannya ikut, supaya hari promo berakhir tidak
+    // terbaca owner sebagai aplikasi yang mendadak memotong jatahnya.
+    $this->get(route('owner.settings.index'))
+        ->assertInertia(
+            fn ($page) => $page
+                ->where('aiQuota.daily_limit', 8)
+                ->where('aiQuota.bonus', 3)
+                ->where('aiQuota.bonus_label', 'Promo Agustus')
+        );
+});

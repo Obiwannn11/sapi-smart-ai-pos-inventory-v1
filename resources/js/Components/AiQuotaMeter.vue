@@ -82,6 +82,21 @@ const limitSourceNote = computed(() => {
 
     return 'Batas ini adalah bawaan platform — paket Anda tidak menetapkan batas sendiri.';
 });
+
+// Promo disebut sebagai barisnya sendiri, bukan dilebur ke angka batas: jatah
+// yang naik tanpa alasan yang terbaca akan dikira jatah tetap, dan hari promo
+// berakhir akan terbaca sebagai aplikasi yang rusak (`[BL-047]`(a)).
+const bonusNote = computed(() => {
+    const bonus = Number(props.quota?.bonus ?? 0);
+
+    if (bonus <= 0) {
+        return null;
+    }
+
+    const label = props.quota?.bonus_label;
+
+    return `Termasuk tambahan ${bonus} analisis/hari${label ? ` dari promo ${label}` : ''}, yang berlaku sementara.`;
+});
 </script>
 
 <template>
@@ -248,6 +263,10 @@ const limitSourceNote = computed(() => {
                 <li class="flex gap-1.5">
                     <span class="text-gray-300" aria-hidden="true">•</span>
                     <span>{{ limitSourceNote }}</span>
+                </li>
+                <li v-if="bonusNote" class="flex gap-1.5">
+                    <span class="text-gray-300" aria-hidden="true">•</span>
+                    <span>{{ bonusNote }}</span>
                 </li>
                 <li class="flex gap-1.5">
                     <span class="text-gray-300" aria-hidden="true">•</span>

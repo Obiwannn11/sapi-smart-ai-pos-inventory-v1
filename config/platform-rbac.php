@@ -37,6 +37,10 @@ return [
         'subscriptions' => ['label' => 'Langganan', 'sensitive' => false, 'available' => true],
         'payments' => ['label' => 'Pembayaran', 'sensitive' => false, 'available' => true],
         'pricing_rules' => ['label' => 'Aturan Harga', 'sensitive' => true, 'available' => true],
+        // Sensitif karena menyentuh uang pemilik SaaS sendiri: menaikkan kuota
+        // bersama menaikkan tagihan kunci bersama, dan "reset semua" membelanjakan
+        // ulang kuota sehari penuh untuk seluruh tenant sekaligus.
+        'ai_quota' => ['label' => 'Kuota AI', 'sensitive' => true, 'available' => true],
         'revenue_data' => ['label' => 'Data Omzet Harga Adaptif', 'sensitive' => true, 'available' => true],
         'audit_logs' => ['label' => 'Log Audit', 'sensitive' => true, 'available' => true],
     ],
