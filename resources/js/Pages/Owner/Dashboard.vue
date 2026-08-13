@@ -1,10 +1,15 @@
 <script setup>
 import { computed } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Deferred, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import BadgeCard from '@/Components/BadgeCard.vue';
 import DailyChart from '@/Components/DailyChart.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
+import SkeletonChart from '@/Components/Skeleton/SkeletonChart.vue';
+import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -238,7 +243,17 @@ const invoiceStatusLabels = {
             </div>
         </div>
 
-        <!-- Badges -->
+        <!-- Badges. Ditunda: kartunya lahir dari agregat paling berat di halaman
+             ini, dan bukan angka pertama yang dicari owner saat membuka layar. -->
+        <Deferred data="badges">
+            <template #fallback>
+                <SkeletonPanel label="Memuat alert & notifikasi…">
+                    <SkeletonGrid :count="2" columns="grid-cols-1 md:grid-cols-2">
+                        <SkeletonCard icon :lines="2" padding="p-4" />
+                    </SkeletonGrid>
+                </SkeletonPanel>
+            </template>
+
         <div v-if="badges.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4">
             <div class="flex items-center justify-between gap-3">
                 <h3 class="text-sm font-semibold text-gray-700">Alert & Notifikasi</h3>
@@ -257,11 +272,28 @@ const invoiceStatusLabels = {
                 />
             </div>
         </div>
+        </Deferred>
 
-        <!-- Chart Trend 7 Hari -->
-        <DailyChart :data="dailyTrend" />
+        <!-- Chart Trend 7 Hari. Kerangkanya setinggi kanvas aslinya (h-64) supaya
+             panel di bawahnya tidak melompat saat grafiknya jadi. -->
+        <Deferred data="dailyTrend">
+            <template #fallback>
+                <SkeletonPanel label="Memuat grafik 7 hari…">
+                    <SkeletonChart :bars="7" height-class="h-64" />
+                </SkeletonPanel>
+            </template>
+
+            <DailyChart :data="dailyTrend" />
+        </Deferred>
 
         <!-- Transaksi Terbaru -->
+        <Deferred data="recentTransactions">
+            <template #fallback>
+                <SkeletonPanel flush action label="Memuat transaksi terbaru…">
+                    <SkeletonList :rows="5" />
+                </SkeletonPanel>
+            </template>
+
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h3 class="text-sm font-semibold text-gray-700">Transaksi Terbaru</h3>
@@ -305,6 +337,7 @@ const invoiceStatusLabels = {
                 Belum ada transaksi hari ini
             </div>
         </div>
+        </Deferred>
 
         <!-- Quick Links -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">

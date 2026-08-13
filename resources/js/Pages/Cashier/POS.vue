@@ -12,6 +12,8 @@ import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import UpsellStrip from '@/Components/UpsellStrip.vue';
 import OrderIdentityModal from '@/Components/OrderIdentityModal.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useCatalogCache } from '@/composables/useCatalogCache';
 import { useOfflineQueue } from '@/composables/useOfflineQueue';
@@ -35,7 +37,7 @@ const { show: showFlash } = useFlash();
 // service worker's cache — those props are stale and, unlike the snapshot, we
 // cannot tell the cashier how old they are.
 const { isOnline, markOffline } = useOnlineStatus();
-const { snapshot, loadSnapshot, saveSnapshot, cachedAtLabel } = useCatalogCache();
+const { snapshot, loaded: snapshotLoaded, loadSnapshot, saveSnapshot, cachedAtLabel } = useCatalogCache();
 
 const usingCachedCatalog = computed(() => !isOnline.value && snapshot.value !== null);
 
@@ -56,6 +58,23 @@ const catalogPaymentMethods = computed(() =>
 // harga sama sekali.
 const catalogUpsell = computed(() =>
     usingCachedCatalog.value ? (snapshot.value.upsell ?? null) : (props.upsell ?? null)
+);
+
+/**
+ * Katalog sekarang ditunda (Inertia::defer di POSController), jadi propsnya
+ * belum ada saat layar pertama muncul. Ini yang membedakan "belum sampai" —
+ * yang tampil sebagai kerangka grid — dari "sudah sampai tapi kosong", yang
+ * tampil sebagai "Produk tidak ditemukan".
+ *
+ * Saat offline tidak ada permintaan lanjutan yang bisa dikirim, jadi yang
+ * ditunggu bukan props melainkan snapshot IndexedDB. Begitu pembacaannya
+ * selesai, halaman ini dianggap siap meski snapshotnya ternyata tidak ada:
+ * kasir tanpa katalog tersimpan harus melihat kalimat yang menjelaskan itu
+ * (spanduk offline di atas sudah menyebutkannya), bukan kerangka yang berdenyut
+ * selamanya.
+ */
+const catalogReady = computed(() =>
+    isOnline.value ? Array.isArray(props.products) : snapshotLoaded.value
 );
 
 // Offline payments are cash-only, enforced here AND on the server. Card/QRIS
@@ -79,21 +98,31 @@ const {
 } = useOfflineQueue();
 
 onMounted(() => {
-    if (isOnline.value) {
-        saveSnapshot({
-            products: props.products,
-            categories: props.categories,
-            paymentMethods: props.paymentMethods,
-            upsell: props.upsell,
-        });
-    } else {
-        loadSnapshot();
-    }
+    if (!isOnline.value) loadSnapshot();
 
     refreshQueue().then(() => {
         if (isOnline.value) flush();
     });
 });
+
+/**
+ * Panen katalog menunggu propsnya datang, bukan saat mount. Sejak katalog
+ * ditunda ([BL-037]) `props.products` masih undefined pada cat pertama, dan
+ * menyimpan saat itu akan menimpa snapshot yang masih bagus dengan katalog
+ * kosong — kasir baru akan tahu akibatnya nanti, saat koneksinya jatuh dan
+ * layarnya kosong. `upsell` sengaja satu grup dengan `products` di server,
+ * jadi keduanya sudah sampai bersamaan saat watcher ini jalan.
+ */
+watch(() => props.products, (products) => {
+    if (!isOnline.value || !Array.isArray(products)) return;
+
+    saveSnapshot({
+        products,
+        categories: props.categories,
+        paymentMethods: props.paymentMethods,
+        upsell: props.upsell,
+    });
+}, { immediate: true });
 
 watch(isOnline, (online) => {
     if (!online) {
@@ -829,7 +858,18 @@ onUnmounted(stopResizeCart);
 
                 <!-- Product Grid -->
                 <div class="flex-1 overflow-y-auto px-4 pb-4">
-                    <div v-if="filteredProducts.length > 0"
+                    <!-- Kerangka katalog: grid dan bentuk kartunya sama dengan
+                         yang di bawah, jadi tidak ada yang bergeser saat produk
+                         sungguhan menggantikannya. -->
+                    <SkeletonGrid
+                        v-if="!catalogReady"
+                        :count="8"
+                        columns="grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4"
+                        label="Memuat katalog produk…"
+                    >
+                        <SkeletonCard media :lines="2" footer border-width="border-2" />
+                    </SkeletonGrid>
+                    <div v-else-if="filteredProducts.length > 0"
                          class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
                         <ProductCard
                             v-for="product in filteredProducts"

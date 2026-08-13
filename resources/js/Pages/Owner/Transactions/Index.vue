@@ -1,7 +1,8 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import DatePicker from '@/Components/DatePicker.vue';
 
@@ -127,8 +128,15 @@ const statusLabel = (status) => {
             </div>
         </div>
 
-        <!-- Transaction Table -->
+        <!-- Transaction Table. Ditunda: filternya sudah bisa dipakai sementara
+             satu halaman transaksi masih dimuat, dan kerangka ini juga yang
+             muncul setiap filter diubah. -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred data="transactions">
+                <template #fallback>
+                    <SkeletonTable :rows="8" :columns="6" label="Memuat transaksi…" />
+                </template>
+
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50">
@@ -199,6 +207,7 @@ const statusLabel = (status) => {
                     />
                 </div>
             </div>
+            </Deferred>
         </div>
     </div>
 </template>

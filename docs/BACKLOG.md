@@ -58,7 +58,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-01** — `[BL-043]`–`[BL-047]` berasal dari catatan menjalankan panel platform, dan sudah **diverifikasi terhadap kode**. Empat dari lima bukan "belum ada sama sekali" melainkan **setengah jadi**: gerbang hanya-baca sudah menegakkan dirinya tapi tak terlihat (`[BL-045]`), CRUD paket sudah ada tapi tak ada yang membacanya (`[BL-046]`), kuota AI sudah ada tapi tinggal di `.env` (`[BL-047]`), dan siklus hidup langganan sudah berpindah keadaan tapi tak pernah menerbitkan tagihan (`[BL-044]`). Hanya `[BL-043]` yang murni cacat. **Koreksi terhadap catatan 2026-07-31 (kedua) di atas:** butir (1) di sana — "pemisahan login platform vs login tenant sudah utuh" — benar untuk *guard, broker, dan pengalihan tamu*, tapi **tidak** untuk pengalihan **setelah** berhasil masuk; lihat `[BL-043]`.
 >
-> Urutan yang disarankan: ~~`[BL-043]` (cacat, berdiri sendiri, kecil)~~ → ~~`[BL-030]` (mumpung `invoices` masih kosong)~~ → `[BL-041]`(a) menetapkan angka → ~~`[BL-044]`~~ (butir b saja; butir c menunggu `[BL-048]`) → ~~`[BL-046]`~~ → `[BL-047]` → ~~`[BL-045]`~~. Yang dicoret selesai 2026-08-05 s.d. 2026-08-06. **Yang tersisa di jalur ini seluruhnya menunggu keputusan angka Anda**, bukan pekerjaan kode: `[BL-041]`(a) tarif Premium, dan `[BL-048]` ambang omset Adaptif.
+> Urutan yang disarankan: ~~`[BL-043]` (cacat, berdiri sendiri, kecil)~~ → ~~`[BL-030]` (mumpung `invoices` masih kosong)~~ → `[BL-041]`(a) menetapkan angka → ~~`[BL-044]`~~ (butir b saja; butir c menunggu `[BL-048]`) → ~~`[BL-046]`~~ → ~~`[BL-047]`~~ (selesai 2026-08-13) → ~~`[BL-045]`~~. Yang dicoret selesai 2026-08-05 s.d. 2026-08-13. **Yang tersisa di jalur ini seluruhnya menunggu keputusan angka Anda**, bukan pekerjaan kode: `[BL-041]`(a) tarif Premium, dan `[BL-048]` ambang omset Adaptif.
 
 > **Keputusan pemilik 2026-08-01 (struktur tarif)** — Rp 100k ditetapkan sebagai **puncak bracket Harga Adaptif**, sejajar dengan harga Premium; tenant beromset tinggi tidak lagi berhak atas Adaptif dan hanya bisa Premium; kelayakan Adaptif ditentukan pemilik SaaS. Rinciannya di blok "Keputusan pemilik" pada `[BL-041]`. Dampaknya menyebar ke tiga entri: `[BL-044]` (pertanyaan tarifnya terjawab), `[BL-046]` (Premium dapat pembeda kedua, dan jalur pindah paket berubah dari nyaman jadi wajib), dan satu entri baru **`[BL-048]`** — pagar kelayakan jalur Adaptif, yang ternyata **menabrak gerbang privasi**: menilai kelayakan masuk butuh data omset yang baru boleh dikumpulkan setelah masuk. Baca `[BL-048]` sebelum menyentuh `canSwitchTrack()`.
 >
@@ -126,34 +126,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - **Sisa yang belum: butir (c).** Ditunda atas keputusan pemilik 2026-08-06 karena menawarkan dua jalur menuntut pagar kelayakan `[BL-048]` yang belum ada — menyodorkan pilihan yang sistem belum bisa tolak persis yang keputusan 2026-08-01 tutup. Kartu langganan di dashboard (`[BL-040]`) sudah menampilkan tagihan terbuka, jadi tenant tetap tahu berapa yang harus dibayar.
   - ~~**Yang perlu ditinjau ulang saat (c) atau tunggakan disentuh:** `renewPeriod()` memakai aturan "tunggakan tidak ditumpuk" (`[BL-030]`).~~ — **ditinjau 2026-08-07, aturannya tetap.** Tiap periode TIDAK punya tagihannya sendiri: `current_period_end` tidak pernah maju selama tenant belum membayar, jadi kunci `Y-m` periodenya membeku dan penjaga periode-ganda menolak penerbitan sesudahnya. Satu pelanggaran = satu tagihan, satu pembayaran = satu periode; keduanya bertemu, bukan bertabrakan. Dipatok test *"a lapse only ever produces one invoice, and one payment clears it"*. Syarat yang mematahkannya dicatat di `[BL-051]`.
   - **Ditemukan saat meninjaunya (sudah diperbaiki 2026-08-07):** tenant yang turun ke masa tenggang **tanpa pernah ditagih** — tarifnya masih Rp 0 atau `null` saat periodenya habis — dikecualikan penerbit selamanya, jadi menetapkan tarifnya besok tidak menerbitkan apa pun. Itu persis nasib yang menunggu `Kopi Story` pada 2026-08-25. Lihat entri CHANGELOG *"Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau"*.
-
-### [BL-047] Kuota AI Gratis Terkunci di `.env` — Bukan Kebijakan yang Bisa Diatur Pemilik SaaS
-- **Ditemukan:** 2026-08-01
-- **Sumber:** Catatan pemilik — "atur kuota gratis umum ... apakah per hari, di reset semua, atau ada promo dalam waktu tertentu ... jadi sudah tidak statis hard coded 5 request per hari, bisa di atur di platform account"
-- **Status:** Open
-- **Prioritas:** Medium
-- **Area Terdampak:**
-  - `config/ai.php:15` — `'daily_limit' => env('AI_FREE_TIER_DAILY_LIMIT', 5)`
-  - `app/Jobs/RunAiAnalysisJob.php:86-95` — `assertQuota()`: satu-satunya penegakan, membaca config
-  - `app/Jobs/RunAiAnalysisJob.php:97-105` — `incrementUsage()`: satu baris `ai_usages` per (tenant, tanggal)
-  - `app/Http/Controllers/Owner/SettingsController.php:25,78-81` — angka yang sama dibacakan ke owner sebagai `daily_limit`/`remaining`
-  - `app/Services/Ai/AiProviderFactory.php:16` — kuota hanya berlaku saat tenant memakai kunci bersama; kunci sendiri = tanpa batas
-  - Platform console: **tidak ada** halaman apa pun yang menyentuh kuota AI (`php artisan route:list --path=platform`)
-- **Deskripsi:**
-  Catatan ini akurat, dengan satu koreksi istilah: angkanya bukan *hard-coded* melainkan *env-coded* — sudah lewat `config()`, jadi bisa diubah tanpa menyunting kelas, tapi tetap menuntut akses server dan `config:clear`. Bagi pemilik SaaS yang duduk di panel, jaraknya sama saja dengan hard-coded.
-  Yang membuatnya lebih dari sekadar "pindahkan ke tabel": angka itu hari ini adalah **satu angka untuk semua** dan **hanya berbentuk harian**. Ketiga bentuk yang disebut catatan tidak muat di dalamnya — kuota per paket (`[BL-046]`), reset serentak, dan promo berjangka waktu masing-masing menuntut yang berbeda. Reset serentak butuh cara membatalkan hitungan berjalan (`ai_usages` disimpan per tanggal, jadi "reset semua hari ini" = menghapus baris tanggal itu, bukan menyetel ulang sebuah angka). Promo berjangka butuh masa berlaku, dan tanpa `effective_from`/`effective_until` ia akan berakhir sebagai angka yang lupa dikembalikan.
-  Catatan juga menyentuh "api key ai bisa di setup gratisan": itu **sudah** berjalan — `AiProviderFactory:16` memakai kunci bersama bila tenant tidak mengisi kuncinya sendiri, dan kuota inilah yang menjaga tagihan kunci bersama itu.
-- **Usulan Perbaikan:**
-  **(a)** Pindahkan kebijakannya ke data dengan bentuk yang sama seperti `pricing_rules` — berlaku sejak kapan sampai kapan — bukan satu kolom pengaturan tunggal. Pola yang sudah terbukti di repo ini: `pricing_rules` + `effective_from`, dengan `PricingService` sebagai satu-satunya pembaca. Promo berjangka jadi baris biasa yang kedaluwarsa sendiri, bukan angka yang harus diingat untuk dikembalikan.
-  **(b)** Urutan pembacaan yang jelas dan tunggal: kuota paket (`[BL-046]`) → kebijakan/promo berlaku → bawaan `config/ai.php`. Tulis di satu kelas, jangan disebar; `assertQuota()` dan `SettingsController` harus memanggil kelas yang sama, karena angka yang dibacakan ke owner dan angka yang menolak permintaannya wajib identik.
-  **(c)** Halaman platform untuk mengaturnya, digerbang modul sendiri lewat `platform.can:` seperti modul lain, dan perubahannya tercatat di `PlatformAuditLog` — menaikkan kuota bersama berarti menaikkan tagihan kunci bersama, jadi jejaknya perlu ada.
-  **(d)** "Reset semua" ditulis sebagai aksi tersendiri (menghapus baris `ai_usages` tanggal berjalan), bukan sebagai efek samping mengubah angka kuota. Dua hal yang berbeda artinya jangan dijadikan satu tombol.
-- **Pemutakhiran 2026-08-01 — butir (b) SELESAI, dan kuota per paket sudah bisa diatur dari panel.** Lihat entri CHANGELOG *"Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung"*. Yang berubah:
-  - `App\Services\Ai\AiQuota` — **pembaca tunggal**, persis usulan (b). Urutannya hari ini: **batas paket (`plans.limits.ai_daily`) → bawaan `config/ai.php`**. `RunAiAnalysisJob::assertQuota()` dan `Owner\SettingsController` memanggil kelas yang sama.
-  - Kuota per paket (`[BL-046]`(1)) sudah bisa diatur dari `/platform/pricing-rules` → **Ubah paket → "Analisis AI per hari"**. Kosong = ikut bawaan platform, `0` = paket tidak menyertakan AI.
-  - Jejak audit `plans.update` kini mencatat `ai_daily_limit` sebelum & sesudah — sebagian dari usulan (c).
-  **Yang tersisa: (a), sisa (c), dan (d).** Kebijakan berjangka waktu (promo, masa berlaku) belum ada bentuknya; tempatnya kelak **di antara** kedua lapis yang sudah ada di `AiQuota` — sisipkan di situ, jangan tambahkan pembaca kedua. Halaman platform khusus kuota bersama dan aksi "reset semua" juga belum ada. Bawaan platform masih di `.env`, dan bagi pemilik SaaS yang duduk di panel jaraknya masih sama seperti sebelumnya — yang berubah, ia kini bisa dilampaui per paket tanpa menyentuh server.
-- **Ditemukan saat mengerjakannya (sudah diperbaiki):** `incrementUsage()` memakai `firstOrCreate` berkunci tanggal, padahal kolom `ai_usages.date` tersimpan sebagai datetime. Barisnya tak pernah ketemu, lalu penyisipan keduanya ditolak indeks unik — **analisis KEDUA seorang tenant di hari yang sama selalu gagal**, padahal jatahnya masih ada. Diperbaiki dengan `whereDate`, dengan test yang gagal sebelum perbaikannya.
 
 ### [BL-051] Tenant yang Sudah Ditangguhkan Tidak Punya Tagihan untuk Dibayar
 - **Ditemukan:** 2026-08-07 (saat meninjau `renewPeriod()` × `[BL-044]`)
@@ -316,7 +288,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(d)** Halaman platform untuk melihat `payment_attempts` per tenant — tanpa itu, kegagalan pembayaran hanya terlihat sebagai tagihan yang tidak kunjung lunas.
   **(e)** Peralihan produksi dilakukan per-flag config, dan **jalur bukti transfer manual tetap dipertahankan** sebagai cadangan.
 
-
 ---
 
 ### [BL-065] Pajak/PPN Belum Ada Sama Sekali — dan Bentuk yang Diminta Menentukan Kolomnya, Bukan Tampilannya
@@ -419,7 +390,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Prioritas:** Medium — tidak mendesak seperti seat (satuannya tidak sedang salah, ia memang belum ada sama sekali), tapi sudah dijanjikan pemilik dan sudah disebut di `[BL-067]`(e) sebagai hal yang **tidak boleh** dijanjikan di landing sebelum ada wujudnya
 - **Area Terdampak:**
   - `app/Models/Plan.php` — `limits.ai_daily` menetapkan jatah harian per paket (2/5, 3/15, 5/30, 10/60); tak ada satu pun kolom untuk tambahan per langganan
-  - `app/Services/Ai/AiQuota.php` — `dailyLimitFor()` membaca paket lalu bawaan platform, dua tingkat, tanpa celah untuk kuota yang dibeli
+  - `app/Services/Ai/AiQuota.php` — sejak `[BL-047]` selesai (2026-08-13) urutannya: batas paket → kebijakan bawaan platform (`ai_quota_policies` mode `baseline`) → `config/ai.php`, lalu promo (mode `bonus`) menambah di atas hasilnya. Masih tanpa celah untuk kuota yang DIBELI langganan; tempatnya satu tingkat di atas paket, sebelum promo dijumlahkan
   - `app/Services/SubscriptionService.php` — `seatChargeFor()` + `issueDuePeriodInvoices()`: polanya sudah ada dan tinggal ditiru
   - `resources/js/Pages/Billing/Show.vue` — panel beli/lepas kursi; kuota AI belum punya panel apa pun
   - `app/Http/Controllers/Platform/PricingRuleController.php` — form paket menyetel `ai_daily_limit`, tapi tak ada harga per satuan kuota
@@ -617,7 +588,7 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
 ### [BL-037] Perpindahan Halaman Hanya Ditandai Progress Bar — Belum Ada Skeleton
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "render skeleton, hilangkan progress bar yang mengganggu dan keliatan aplikasi lambat loading, terutama di kasir dan owner dashboard"
-- **Status:** Open
+- **Status:** In Progress — **komponen kerangka selesai dan terpasang di 4 halaman (2026-08-13)**; sisa halamannya dilacak di tabel "Pelacakan Penerapan" di bawah
 - **Prioritas:** Medium (tidak ada yang rusak, tapi ini yang membuat aplikasi terasa lambat)
 - **Area Terdampak:**
   - `resources/js/app.js:16-18` — `progress: { color: 'var(--primary)' }`, bar bawaan Inertia dan satu-satunya penanda perpindahan halaman
@@ -628,6 +599,37 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
   Karena semua prop dihitung sebelum respons dikirim, halaman tidak muncul sama sekali sampai kueri paling lambat selesai — dan selama itu satu-satunya umpan balik adalah garis tipis di puncak layar. Dua halaman terberatnya justru yang paling sering dibuka. Pedoman Inertia v2 di `CLAUDE.md` sudah menyebut pasangan yang benar untuk ini: deferred props disertai kerangka beranimasi.
 - **Usulan Perbaikan:**
   Pindahkan bagian yang tidak dibutuhkan pada cat pertama ke `Inertia::defer()` — di POS: katalog produk dan metode pembayaran; di dashboard: tren harian, badge, dan transaksi terakhir (metrik hari ini tetap eager karena itulah isi utama layarnya). Bungkus tiap bagian dengan `<WhenVisible>`/`<Deferred>` dan kerangka `animate-pulse` yang **menempati ruang yang sama** dengan isi aslinya, supaya tidak ada lompatan tata letak saat data tiba. Baru setelah itu progress bar layak dikecilkan atau dimatikan — mematikannya lebih dulu justru menghilangkan satu-satunya penanda yang ada sekarang.
+
+- **Pemutakhiran 2026-08-13 — komponennya sudah ada, dan itu yang mengubah sisa pekerjaan ini jadi pekerjaan mekanis.**
+  Delapan komponen di `resources/js/Components/Skeleton/` menggantikan rencana "kerangka `animate-pulse` per halaman": `Skeleton.vue` (primitif, satu-satunya tempat warna/radius/denyut didefinisikan), `SkeletonText`, `SkeletonPanel`, `SkeletonCard`, `SkeletonGrid`, `SkeletonTable`, `SkeletonList`, `SkeletonChart`. Aturan pemakaiannya dicatat di **`DESIGN.md` §6 "Loading States (Skeletons)"** — termasuk Aturan Ruang yang Sama, Aturan Pasangan (satu kerangka = satu `Inertia::defer()`, tidak boleh sebelah saja), dan larangan menulis blok `animate-pulse` lepas di dalam halaman. Tanpa catatan itu, kerangka berikutnya akan lahir sebagai dialek kedua.
+  Metode bayar di POS **tidak** ikut ditunda seperti usulan awal: kueri-nya satu baris pendek, dan kasir bisa menekan Bayar sebelum permintaan lanjutan sampai. Yang ditunda di sana katalog produk dan indeks upsell — keduanya dalam satu grup, karena `useCatalogCache` menyimpan katalog beserta sarannya dalam satu snapshot offline.
+  Satu jebakan yang ikut ditambal di `POS.vue`: panen snapshot offline dulu berjalan `onMounted`. Dengan katalog yang ditunda, saat itu propnya masih `undefined` — dan menyimpan saat itu akan **menimpa snapshot yang masih bagus dengan katalog kosong**. Panennya sekarang menunggu propnya datang (`watch` + penjaga `Array.isArray`).
+  Ringkasan `Owner/Reports/Daily` juga ikut berubah cara hitungnya: dulu ia menjumlahkan koleksi yang sudah dimuat, sekarang agregat `SUM`/`COUNT` — sebab koleksinya sudah tidak ada lagi di respons pertama. Angkanya sama, dan sekarang ada tesnya.
+  Progress bar di `app.js` **belum** disentuh, sesuai catatan di atas: ia masih satu-satunya penanda untuk halaman yang belum punya kerangka. Ia baru layak dikecilkan atau dimatikan setelah tabel di bawah ini habis.
+
+- **Pelacakan Penerapan** (kolom "Prop yang ditunda" adalah pekerjaan sisi server yang harus ikut; kerangka tanpa `defer` tidak akan pernah tampil)
+
+| Halaman | Prop yang ditunda | Kerangka | Prioritas | Status |
+|---|---|---|---|---|
+| `Cashier/POS` | `products`, `upsell` | `SkeletonGrid` + `SkeletonCard media` | High | **Selesai 2026-08-13** |
+| `Owner/Dashboard` | `dailyTrend`, `recentTransactions`, `badges` (grup terpisah) | `SkeletonPanel` + `SkeletonChart` / `SkeletonList` / `SkeletonGrid` | High | **Selesai 2026-08-13** |
+| `Owner/Reports/Daily` | `transactions`, `paymentSummary`, `topProducts` | `SkeletonPanel` + `SkeletonTable` / `SkeletonList` | High | **Selesai 2026-08-13** |
+| `Owner/Transactions/Index` | `transactions` (paginated) | `SkeletonTable` | High | **Selesai 2026-08-13** |
+| `Cashier/TransactionHistory` | `transactions` belum ditunda; `products` + `paymentMethods` **sudah** ditunda tapi kerangkanya masih buatan sendiri di `TransactionEditModal.vue:193` | `SkeletonTable` untuk daftarnya, plus migrasi kerangka modal ke `SkeletonText` | High | Open |
+| `Owner/Products/Index` | daftar produk beserta varian dan stoknya | `SkeletonTable` | High | Open |
+| `Owner/Reports/Monthly` | `dailySeries`, rekap metode bayar, produk terlaris | `SkeletonPanel` + `SkeletonTable`; `SkeletonChart` untuk `TrendChart` — grafiknya sudah terpasang sejak `[BL-064]` selesai 2026-08-13 | Medium | Open |
+| `Owner/Stock/Index` | daftar stok per varian | `SkeletonTable` | Medium | Open |
+| `Owner/Stock/Movements`, `Owner/Stock/History` | daftar mutasi | `SkeletonTable` | Medium | Open |
+| `Owner/Reports/Upsell` | rincian per saran | `SkeletonPanel` + `SkeletonTable` | Medium | Open |
+| `Owner/CashDrawers/Index` | daftar sesi kas | `SkeletonTable` | Medium | Open |
+| `Owner/OfflineReview/Index` | daftar transaksi offline gagal | `SkeletonList` | Medium | Open |
+| `Owner/AiAnalysis/Index` | sudah punya kerangka sendiri di `Index.vue:324` — migrasikan ke komponen bersama | `SkeletonText` / `SkeletonPanel` | Medium | Open |
+| `Owner/Transactions/Detail` | `products` + `paymentMethods` sudah ditunda; kerangkanya ikut milik `TransactionEditModal` | migrasi kerangka modal | Medium | Open |
+| `Cashier/Queue` | daftar pesanan dapur (perhatikan polling: kerangka hanya untuk pemuatan pertama, bukan tiap poll) | `SkeletonList` | Medium | Open |
+| `Platform/Dashboard`, `Platform/Tenants/Index`, `Platform/Subscriptions/Index`, `Platform/AuditLogs/Index` | daftar dan agregat konsol platform | `SkeletonTable` | Medium | Open |
+| Daftar master pendek: `Owner/Categories/Index`, `Owner/Modifiers/Index`, `Owner/PaymentMethods/Index`, `Owner/Staff/Index`, `Owner/Roles/Index` | daftarnya | `SkeletonTable` / `SkeletonList` | Low | Open |
+
+  **Yang sengaja TIDAK masuk daftar:** halaman autentikasi (`Auth/*`), halaman formulir (`Owner/Products/Form`, `Owner/Settings/Index`), halaman tagihan bertahap (`Billing/*`), dan halaman galat (`Errors/*`). Semuanya ringan, propnya kecil, dan kerangka di sana hanya menambah satu kedipan sebelum isi yang sebetulnya sudah siap. Menerapkan kerangka ke seluruh 48 halaman bukan tujuan entri ini.
 
 ### [BL-038] Halaman Staf Tidak Menunjukkan Modul Efektif Per Orang
 - **Ditemukan:** 2026-07-31
@@ -1058,9 +1060,10 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-047` | Kuota AI gratis terkunci di `.env` — bukan kebijakan yang bisa diatur pemilik SaaS | 2026-08-01 (butir (b)), 2026-08-13 (butir (a), (c), (d)) | `[ADDITION] Kuota AI Berhenti Tinggal di `.env`: Kebijakan Berjangka Waktu, Promo, dan Tombol Mengembalikan Jatah Hari Ini (BL-047)` |
 | `BL-064` | Satu-satunya grafik ada di dashboard — laporan tidak punya grafik sama sekali | 2026-08-13 (butir (a),(b),(d) + butir (c) bagian rekap bulanan) | `[ADDITION] Grafik Kedua Aplikasi Ini: Garis Tren di Rekap Bulanan (BL-064)` |
-| `BL-063` | Laporan hanya ada per satu tanggal — belum ada rekap bulanan | 2026-08-13 (butir (a)-(d)) | `[ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)` |
 | `BL-062` | Sisa kuota AI hanya terlihat di Pengaturan — bukan di halaman yang menghabiskannya | 2026-08-13 (butir (a)–(d); butir (e) tidak dikerjakan, perlu diperjelas lebih dulu) | `[ADDITION] Sisa Kuota AI Pindah ke Halaman yang Membelanjakannya, dan Penolakannya Pindah dari Antrean ke Layar (BL-062)` |
+| `BL-063` | Laporan hanya ada per satu tanggal — belum ada rekap bulanan | 2026-08-13 (butir (a)–(d)) | `[ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)` |
 | `BL-048` | Jalur Harga Adaptif bisa dipilih siapa saja — belum ada pagar kelayakan, dan pagarnya menabrak gerbang privasi | 2026-08-10 (butir (a) dibatalkan 2026-08-07; butir (b) lewat `BL-055`) | `[ADDITION] Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055)` |
 | `BL-055` | Pengajuan Harga Adaptif belum punya wujud — halaman, penilaian otomatis, dan pemindahan saat melewati ambang | 2026-08-10 (butir (a)–(f); butir (g) dipecah ke `BL-073`) | `[ADDITION] Pengajuan Harga Adaptif Punya Halaman, Dinilai Seketika, dan Berujung pada Ambang (BL-055)` |
 | `BL-049` | "Tambah pengguna" menerbitkan tagihan Rp 0 dan meminta bukti transfernya, dan kursi tidak pernah bisa turun | 2026-08-10 (butir (b)+(c) 2026-08-07; butir (a)+(d) tertutup oleh `BL-041`(a) dan `BL-053`, tanpa kode baru) | `[HOTFIX] Tagihan Rp 0 Berhenti Meminta Bukti Transfer Nol Rupiah (BL-049 butir b & c)` + `[ADDITION] Seat Tambahan Jadi Komponen Bulanan, dan Untuk Pertama Kalinya Bisa Dilepas (BL-053)` |

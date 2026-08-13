@@ -42,16 +42,12 @@ class POSController extends Controller
             return redirect()->route('cashier.cash-drawer.index');
         }
 
-        // Load data untuk POS
+        // Load data untuk POS.
+        // Kategori dan metode bayar tetap eager: keduanya satu kueri pendek dan
+        // keduanya dipakai pada cat pertama — chip kategori langsung terlihat,
+        // dan metode bayar harus sudah ada sebelum kasir menekan Bayar. Katalog
+        // produk yang berat justru ditunda, lihat Inertia::defer() di bawah.
         $categories = Category::select('id', 'name')->get();
-
-        $products = Product::where('is_active', true)
-            ->with([
-                'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
-                'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
-                'category:id,name',
-            ])
-            ->get();
 
         $paymentMethods = PaymentMethod::where('is_active', true)->get();
 
@@ -61,14 +57,31 @@ class POSController extends Controller
 
         return Inertia::render('Cashier/POS', [
             'categories' => $categories,
-            'products' => $products,
             'paymentMethods' => $paymentMethods,
             'cashDrawer' => $openDrawer,
             'tenantName' => Auth::user()->tenant->name,
+
+            // --- Katalog dan indeks upsell: ditunda ([BL-037]) ---
+            // Keduanya kueri terberat di halaman ini (produk membawa varian,
+            // grup modifier, dan kategorinya; indeks upsell menelusuri seluruh
+            // varian yang bisa dijual), dan selama ini layar kasir tidak muncul
+            // sama sekali sampai keduanya selesai. Sekarang kerangka grid
+            // produk yang tampil lebih dulu — lihat Cashier/POS.vue.
+            //
+            // Satu grup, bukan dua: indeks upsell ikut disimpan useCatalogCache
+            // bersama katalognya, jadi keduanya harus sampai bersamaan supaya
+            // snapshot offline tidak pernah menyimpan katalog tanpa sarannya.
+            'products' => Inertia::defer(fn () => Product::where('is_active', true)
+                ->with([
+                    'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
+                    'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
+                    'category:id,name',
+                ])
+                ->get()),
             // Indeks saran upsell ikut props, bukan endpoint tersendiri: dengan
             // begitu ia ikut ter-snapshot useCatalogCache dan tetap hidup saat
             // perangkat offline — lihat PHASE-UPSELL §Tahap C.
-            'upsell' => $this->upsellIndexBuilder->build($user->tenant),
+            'upsell' => Inertia::defer(fn () => $this->upsellIndexBuilder->build($user->tenant)),
         ]);
     }
 

@@ -29,55 +29,70 @@ class ReportController extends Controller
         // whereEffectiveDate, bukan created_at: penjualan offline dibuat di server
         // saat sync (bisa esok harinya) — laporan harian harus memakai kapan
         // penjualannya benar-benar terjadi, bukan kapan barisnya masuk.
-        $transactions = Transaction::with(['user:id,name', 'items', 'payments.paymentMethod'])
-            ->where('status', Transaction::STATUS_COMPLETED)
-            ->whereEffectiveDate($date)
-            ->latest()
-            ->get();
+        //
+        // Totalnya dihitung dengan agregat, bukan dengan menjumlahkan koleksi
+        // yang sudah dimuat: daftar transaksinya kini ditunda ([BL-037]), jadi
+        // koleksi itu tidak ada lagi di sini — dan SUM di basis data memang
+        // lebih murah daripada memuat setiap baris beserta item serta
+        // pembayarannya hanya untuk dijumlahkan di PHP.
+        $completed = Transaction::where('status', Transaction::STATUS_COMPLETED)
+            ->whereEffectiveDate($date);
 
-        $totalRevenue = $transactions->sum('total_amount');
-        $totalTransactions = $transactions->count();
+        $totalRevenue = (clone $completed)->sum('total_amount');
+        $totalTransactions = (clone $completed)->count();
         $voidedCount = Transaction::where('status', Transaction::STATUS_VOIDED)
             ->whereEffectiveDate($date)
             ->count();
 
-        // Rekap per metode pembayaran
         $tenantId = auth()->user()->tenant_id;
-        $paymentSummary = TransactionPayment::query()
-            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', function ($join) use ($tenantId) {
-                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
-                    ->where('payment_methods.tenant_id', $tenantId);
-            })
-            ->whereHas('transaction', function ($q) use ($date) {
-                $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveDate($date);
-            })
-            ->groupBy('payment_methods.name', 'payment_methods.type')
-            ->get();
-
-        // Produk terlaris hari itu
-        $topProducts = TransactionItem::query()
-            ->selectRaw('variant_name, SUM(qty) as total_qty, SUM(subtotal) as total_revenue')
-            ->whereHas('transaction', function ($q) use ($date) {
-                $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveDate($date);
-            })
-            ->groupBy('variant_name')
-            ->orderByDesc('total_qty')
-            ->take(10)
-            ->get();
 
         return Inertia::render('Owner/Reports/Daily', [
             'date' => $date,
+            // Ringkasan tetap eager: tiga angka inilah yang dicari owner saat
+            // membuka laporan, dan ketiganya hanya agregat.
             'summary' => [
                 'total_revenue' => $totalRevenue,
                 'total_transactions' => $totalTransactions,
                 'voided_count' => $voidedCount,
             ],
-            'transactions' => $transactions,
-            'paymentSummary' => $paymentSummary,
-            'topProducts' => $topProducts,
+
+            // --- Bagian yang ditunda ([BL-037]) ---
+            // Daftar transaksi lengkap (dengan item dan pembayaran tiap baris)
+            // dipisah dari dua rekap agregat: rekapnya hampir selalu sampai
+            // lebih dulu dan langsung terbaca, tanpa menunggu daftar panjang di
+            // bawahnya. Kerangka pemuatan tiap bagian ada di
+            // Owner/Reports/Daily.vue.
+            'transactions' => Inertia::defer(fn () => Transaction::with(['user:id,name', 'items', 'payments.paymentMethod'])
+                ->where('status', Transaction::STATUS_COMPLETED)
+                ->whereEffectiveDate($date)
+                ->latest()
+                ->get()),
+
+            // Rekap per metode pembayaran
+            'paymentSummary' => Inertia::defer(fn () => TransactionPayment::query()
+                ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
+                ->join('payment_methods', function ($join) use ($tenantId) {
+                    $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
+                        ->where('payment_methods.tenant_id', $tenantId);
+                })
+                ->whereHas('transaction', function ($q) use ($date) {
+                    $q->where('status', Transaction::STATUS_COMPLETED)
+                        ->whereEffectiveDate($date);
+                })
+                ->groupBy('payment_methods.name', 'payment_methods.type')
+                ->get(), 'rekap'),
+
+            // Produk terlaris hari itu
+            'topProducts' => Inertia::defer(fn () => TransactionItem::query()
+                ->selectRaw('variant_name, SUM(qty) as total_qty, SUM(subtotal) as total_revenue')
+                ->whereHas('transaction', function ($q) use ($date) {
+                    $q->where('status', Transaction::STATUS_COMPLETED)
+                        ->whereEffectiveDate($date);
+                })
+                ->groupBy('variant_name')
+                ->orderByDesc('total_qty')
+                ->take(10)
+                ->get(), 'rekap'),
         ]);
     }
 
@@ -402,10 +417,14 @@ class ReportController extends Controller
             $query->whereRaw('DATE('.Transaction::effectiveDateSql().') <= ?', [$request->to]);
         }
 
-        $transactions = $query->paginate(25);
-
         return Inertia::render('Owner/Transactions/Index', [
-            'transactions' => $transactions,
+            // Ditunda ([BL-037]): filter dan tombolnya bisa langsung dipakai
+            // sementara satu halaman transaksi beserta kasir dan pembayarannya
+            // masih dimuat. Karena mengubah filter mengirim ulang seluruh
+            // kunjungan, kerangka tabel juga muncul kembali setiap filter
+            // berubah — dan itu memang yang diinginkan: ada tanda bahwa isi
+            // tabel sedang diganti, bukan tabel lama yang diam-diam tertinggal.
+            'transactions' => Inertia::defer(fn () => $query->paginate(25)),
             'filters' => $request->only(['status', 'from', 'to']),
         ]);
     }

@@ -1,9 +1,12 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import DatePicker from '@/Components/DatePicker.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -88,6 +91,13 @@ const toggleTx = (id) => {
         </div>
 
         <!-- Rekap per Payment Method -->
+        <Deferred data="paymentSummary">
+            <template #fallback>
+                <SkeletonPanel label="Memuat rekap metode pembayaran…">
+                    <SkeletonTable :rows="3" :columns="3" :header="false" />
+                </SkeletonPanel>
+            </template>
+
         <div v-if="paymentSummary.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <h3 class="text-sm font-semibold text-gray-700 mb-3">Rekap per Metode Pembayaran</h3>
             <div class="overflow-x-auto">
@@ -120,8 +130,16 @@ const toggleTx = (id) => {
                 </table>
             </div>
         </div>
+        </Deferred>
 
         <!-- Top Products -->
+        <Deferred data="topProducts">
+            <template #fallback>
+                <SkeletonPanel label="Memuat produk terlaris…">
+                    <SkeletonTable :rows="5" :columns="4" :header="false" />
+                </SkeletonPanel>
+            </template>
+
         <div v-if="topProducts.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <h3 class="text-sm font-semibold text-gray-700 mb-3">Top 10 Produk Terlaris</h3>
             <div class="overflow-x-auto">
@@ -145,8 +163,17 @@ const toggleTx = (id) => {
                 </table>
             </div>
         </div>
+        </Deferred>
 
-        <!-- Transaction List -->
+        <!-- Transaction List. Bagian terberat halaman ini: tiap baris membawa
+             item dan pembayarannya, jadi ia yang paling lama sampai. -->
+        <Deferred data="transactions">
+            <template #fallback>
+                <SkeletonPanel flush label="Memuat daftar transaksi…">
+                    <SkeletonList :rows="6" :leading="false" />
+                </SkeletonPanel>
+            </template>
+
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-100">
                 <h3 class="text-sm font-semibold text-gray-700">Daftar Transaksi</h3>
@@ -201,5 +228,6 @@ const toggleTx = (id) => {
                 Tidak ada transaksi pada tanggal ini
             </div>
         </div>
+        </Deferred>
     </div>
 </template>

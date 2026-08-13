@@ -261,7 +261,51 @@ The most-tapped element in the system.
 - **Out of stock:** `opacity-60`, border fades to `--muted`, `cursor-not-allowed`. "Habis" badge in `bg-destructive/10 text-destructive`.
 - **Price:** `text-primary`. The only Pandan-colored text in the card; the decision anchor for the cashier.
 
-## 6. Do's and Don'ts
+## 6. Loading States (Skeletons)
+
+A page transition should show the *shape* of the page it is going to, not a thin bar at the top of the one it is leaving. The progress bar answers "something is happening"; a skeleton answers "here is what is coming, and where it will sit" — which is the difference between an app that feels slow and an app that feels busy.
+
+Skeletons are not decoration bolted onto a slow page. They are the client half of a server decision: a section gets a skeleton **only** when its prop is deferred with `Inertia::defer()`, because a prop that already arrives in the first response has nothing to wait for.
+
+### The Component Set
+All skeletons live in `resources/js/Components/Skeleton/` and are built from one primitive. Import them directly; there is no barrel file.
+
+- **`Skeleton.vue`** — the primitive: one `bg-muted` block with the pulse. Colour, radius scale and animation are defined here and nowhere else. Size comes from the caller's classes (`<Skeleton class="h-4 w-32" />`), never from a prop.
+- **`SkeletonText.vue`** — a stack of line bars for a paragraph or a row's two or three lines. The closing line is short so the block reads as prose, not as a table.
+- **`SkeletonPanel.vue`** — the card shell a deferred section loads inside: `bg-card`, border, xl radius, ambient shadow, plus a placeholder heading. `flush` moves the heading into its own bordered header for bodies that run edge to edge.
+- **`SkeletonCard.vue`** — one card: `media` for the square-image product card, `icon` for the alert card. `borderWidth` copies the real card's stroke (the POS product card carries `border-2`).
+- **`SkeletonGrid.vue`** — repeats a card across the same grid as the real content. The `columns` string is copied verbatim from the grid it replaces.
+- **`SkeletonTable.vue`** — a real `<table>` of placeholder cells, so the browser distributes columns the way it will once rows arrive.
+- **`SkeletonList.vue`** — the row list: leading tile, two lines, right-aligned value over meta.
+- **`SkeletonChart.vue`** — bars at the chart's real height.
+
+```vue
+<Deferred data="recentTransactions">
+    <template #fallback>
+        <SkeletonPanel flush action label="Memuat transaksi terbaru…">
+            <SkeletonList :rows="5" />
+        </SkeletonPanel>
+    </template>
+
+    <!-- the real panel -->
+</Deferred>
+```
+
+### Named Rules
+
+**The Same-Space Rule.** A skeleton occupies the same box as the content it replaces. Copy the grid classes, the row padding, the chart height, the card's border width. A skeleton that is the wrong size trades one annoyance (waiting) for a worse one (the page moving under a finger already on its way down).
+
+**The Deferred-Pair Rule.** Every skeleton pairs with an `Inertia::defer()` on the server, and every deferred prop gets a skeleton. Half of the pair is worse than neither: a deferred prop with no fallback flashes an empty panel, and a fallback with no deferred prop never renders.
+
+**The First-Paint Rule.** What stays eager is the answer the screen exists to give, plus anything the user can act on while waiting: today's metrics on the dashboard, the three totals on the daily report, category chips and payment methods in the POS, the filter row on a transaction list. What gets deferred is everything that is only *read* — long lists, trend charts, alert aggregates, full catalogs.
+
+**The One-Tone Rule.** Skeleton blocks are `bg-muted` and nothing else. No shimmer gradients, no sweeping highlight, no second grey. The pulse is Tailwind's `animate-pulse` (opacity only, never a layout property) and it is always paired with `motion-reduce:animate-none`.
+
+**The Announced-Loading Rule.** Grey blocks say nothing to a screen reader, so every loading region carries `role="status"` with an Indonesian `sr-only` label ("Memuat transaksi terbaru…") and the blocks themselves are `aria-hidden`. Never leave a loading region silent — and never announce it twice: the **outermost** skeleton owns the label. `SkeletonPanel` always announces; the composed blocks announce only when they are given a `label`, which is why one nested inside a panel is passed none.
+
+**The Progress Bar Rule.** The Inertia progress bar in `resources/js/app.js` stays until every page in the `[BL-037]` tracking table has its skeleton. It is the only signal the pages without one have; removing it first would take away the only feedback that exists rather than replacing it.
+
+## 7. Do's and Don'ts
 
 ### Do:
 - **Do** reference all colors via CSS custom properties and Tailwind utilities (`bg-primary`, `text-foreground`). Never hardcode OKLCH or hex values in component files.
@@ -274,6 +318,8 @@ The most-tapped element in the system.
 - **Do** apply the `.dark` class to `<html>` for dark mode; all tokens shift automatically without component changes.
 - **Do** keep `active:scale-[0.97]` on the POS product card. It is the only tactile feedback signal for a cashier tapping at speed.
 - **Do** write copy in Indonesian: "Bayar", "Batal", "Simpan", "Hapus". Not translated from English defaults.
+- **Do** build every loading state out of `resources/js/Components/Skeleton/`, and give the skeleton the same box as the content it replaces.
+- **Do** pair each skeleton with an `Inertia::defer()` prop on the server, and each deferred prop with a skeleton.
 
 ### Don't:
 - **Don't** use `border-left` or `border-right` greater than 1px as a colored accent stripe. Rewrite with `bg-primary/10` tint or a full border.
@@ -287,3 +333,6 @@ The most-tapped element in the system.
 - **Don't** apply the Western startup cream aesthetic (Notion / Linear): off-white backgrounds, editorial typographic sidebars, visual language that reads as imported rather than native.
 - **Don't** nest cards inside cards. A second border-plus-shadow surface inside an outer card doubles visual weight without adding information.
 - **Don't** animate layout properties (width, height, padding, margin). Transition only opacity, transform, background-color, border-color, and box-shadow.
+- **Don't** write a one-off `animate-pulse` block inside a page. If the existing skeleton components do not cover the shape, extend them — a second loading vocabulary is how the first one stops being a system.
+- **Don't** dress a skeleton up: no shimmer sweep, no gradient, no spinner on top of it, and no second grey tone beside `bg-muted`.
+- **Don't** use random widths or heights in a skeleton. A placeholder that reshuffles on every render draws the eye to itself instead of to the page that is loading.

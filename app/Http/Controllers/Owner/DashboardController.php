@@ -55,17 +55,8 @@ class DashboardController extends Controller
             ->whereEffectiveFrom($weekStart)
             ->sum('total_amount');
 
-        // --- Trend 7 hari ---
-        $effectiveDate = Transaction::effectiveDateSql();
-        $dailyTrend = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereEffectiveFrom(now()->subDays(6)->toDateString())
-            ->selectRaw("DATE({$effectiveDate}) as date, COUNT(*) as count, SUM(total_amount) as revenue")
-            ->groupByRaw("DATE({$effectiveDate})")
-            ->orderBy('date')
-            ->get();
-
-        // --- Badges ---
-        $badges = $this->badgeHelper->generate($tenant);
+        // Tren, badge, dan transaksi terakhir sengaja TIDAK dihitung di sini —
+        // lihat Inertia::defer() di bawah.
 
         // --- Ringkasan Langganan ---
         // Ikut ke dashboard karena halaman langganan tidak punya pintu masuk
@@ -76,13 +67,6 @@ class DashboardController extends Controller
         $subscription = $this->subscriptions->ensureFor($tenant);
         $outstanding = $this->subscriptions->outstandingInvoice($tenant);
 
-        // --- Transaksi Terbaru ---
-        $recentTransactions = Transaction::with('user:id,name')
-            ->where('status', Transaction::STATUS_COMPLETED)
-            ->latest()
-            ->take(5)
-            ->get(['id', 'code', 'total_amount', 'user_id', 'created_at', 'source']);
-
         return Inertia::render('Owner/Dashboard', [
             'metrics' => [
                 'today_revenue' => $todayRevenue,
@@ -91,9 +75,34 @@ class DashboardController extends Controller
                 'week_revenue' => $weekRevenue,
                 'today_by_payment_method' => $todayByPaymentMethod,
             ],
-            'dailyTrend' => $dailyTrend,
-            'badges' => $badges,
-            'recentTransactions' => $recentTransactions,
+            // --- Bagian yang ditunda ([BL-037]) ---
+            // Tidak satu pun dari ketiganya dibutuhkan untuk cat pertama,
+            // sedangkan metrik hari ini di atasnya adalah isi utama layar ini.
+            // Selama ini seluruh halaman menunggu kueri paling lambat sebelum
+            // muncul sama sekali; sekarang metrik tampil lebih dulu dan ketiga
+            // bagian ini punya kerangka pemuatannya sendiri di
+            // Owner/Dashboard.vue.
+            //
+            // Badge dipisah ke grupnya sendiri supaya agregat yang paling berat
+            // (BadgeHelperService memeriksa stok, upsell, dan kas sekaligus)
+            // tidak menahan tren dan daftar transaksi yang masing-masing hanya
+            // satu kueri.
+            'dailyTrend' => Inertia::defer(function () {
+                $effectiveDate = Transaction::effectiveDateSql();
+
+                return Transaction::where('status', Transaction::STATUS_COMPLETED)
+                    ->whereEffectiveFrom(now()->subDays(6)->toDateString())
+                    ->selectRaw("DATE({$effectiveDate}) as date, COUNT(*) as count, SUM(total_amount) as revenue")
+                    ->groupByRaw("DATE({$effectiveDate})")
+                    ->orderBy('date')
+                    ->get();
+            }),
+            'recentTransactions' => Inertia::defer(fn () => Transaction::with('user:id,name')
+                ->where('status', Transaction::STATUS_COMPLETED)
+                ->latest()
+                ->take(5)
+                ->get(['id', 'code', 'total_amount', 'user_id', 'created_at', 'source'])),
+            'badges' => Inertia::defer(fn () => $this->badgeHelper->generate($tenant), 'badges'),
             'subscription' => [
                 'status' => $tenant->status,
                 'track' => $subscription->pricing_track,

@@ -10,6 +10,37 @@
 
 ## Daftar Entri
 
+### [BL-047] Kuota AI Gratis Terkunci di `.env` — Bukan Kebijakan yang Bisa Diatur Pemilik SaaS
+- **Ditemukan:** 2026-08-01
+- **Sumber:** Catatan pemilik — "atur kuota gratis umum ... apakah per hari, di reset semua, atau ada promo dalam waktu tertentu ... jadi sudah tidak statis hard coded 5 request per hari, bisa di atur di platform account"
+- **Status:** Selesai (2026-08-13) — butir (b) mendarat 2026-08-01; butir (a), (c), dan (d) mendarat 2026-08-13. Butir (a) dikerjakan dengan satu penyimpangan yang disengaja: promo TIDAK jadi mata rantai di urutan fallback melainkan lapis penambah di atasnya, sebab setiap paket menyetel `limits.ai_daily` sendiri sehingga lapis pengisi-kekosongan akan lahir sebagai kode mati. Lihat `[ADDITION] Kuota AI Berhenti Tinggal di `.env`: Kebijakan Berjangka Waktu, Promo, dan Tombol Mengembalikan Jatah Hari Ini (BL-047)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `config/ai.php:15` — `'daily_limit' => env('AI_FREE_TIER_DAILY_LIMIT', 5)`
+  - `app/Jobs/RunAiAnalysisJob.php:86-95` — `assertQuota()`: satu-satunya penegakan, membaca config
+  - `app/Jobs/RunAiAnalysisJob.php:97-105` — `incrementUsage()`: satu baris `ai_usages` per (tenant, tanggal)
+  - `app/Http/Controllers/Owner/SettingsController.php:25,78-81` — angka yang sama dibacakan ke owner sebagai `daily_limit`/`remaining`
+  - `app/Services/Ai/AiProviderFactory.php:16` — kuota hanya berlaku saat tenant memakai kunci bersama; kunci sendiri = tanpa batas
+  - Platform console: **tidak ada** halaman apa pun yang menyentuh kuota AI (`php artisan route:list --path=platform`)
+- **Deskripsi:**
+  Catatan ini akurat, dengan satu koreksi istilah: angkanya bukan *hard-coded* melainkan *env-coded* — sudah lewat `config()`, jadi bisa diubah tanpa menyunting kelas, tapi tetap menuntut akses server dan `config:clear`. Bagi pemilik SaaS yang duduk di panel, jaraknya sama saja dengan hard-coded.
+  Yang membuatnya lebih dari sekadar "pindahkan ke tabel": angka itu hari ini adalah **satu angka untuk semua** dan **hanya berbentuk harian**. Ketiga bentuk yang disebut catatan tidak muat di dalamnya — kuota per paket (`[BL-046]`), reset serentak, dan promo berjangka waktu masing-masing menuntut yang berbeda. Reset serentak butuh cara membatalkan hitungan berjalan (`ai_usages` disimpan per tanggal, jadi "reset semua hari ini" = menghapus baris tanggal itu, bukan menyetel ulang sebuah angka). Promo berjangka butuh masa berlaku, dan tanpa `effective_from`/`effective_until` ia akan berakhir sebagai angka yang lupa dikembalikan.
+  Catatan juga menyentuh "api key ai bisa di setup gratisan": itu **sudah** berjalan — `AiProviderFactory:16` memakai kunci bersama bila tenant tidak mengisi kuncinya sendiri, dan kuota inilah yang menjaga tagihan kunci bersama itu.
+- **Usulan Perbaikan:**
+  **(a)** Pindahkan kebijakannya ke data dengan bentuk yang sama seperti `pricing_rules` — berlaku sejak kapan sampai kapan — bukan satu kolom pengaturan tunggal. Pola yang sudah terbukti di repo ini: `pricing_rules` + `effective_from`, dengan `PricingService` sebagai satu-satunya pembaca. Promo berjangka jadi baris biasa yang kedaluwarsa sendiri, bukan angka yang harus diingat untuk dikembalikan.
+  **(b)** Urutan pembacaan yang jelas dan tunggal: kuota paket (`[BL-046]`) → kebijakan/promo berlaku → bawaan `config/ai.php`. Tulis di satu kelas, jangan disebar; `assertQuota()` dan `SettingsController` harus memanggil kelas yang sama, karena angka yang dibacakan ke owner dan angka yang menolak permintaannya wajib identik.
+  **(c)** Halaman platform untuk mengaturnya, digerbang modul sendiri lewat `platform.can:` seperti modul lain, dan perubahannya tercatat di `PlatformAuditLog` — menaikkan kuota bersama berarti menaikkan tagihan kunci bersama, jadi jejaknya perlu ada.
+  **(d)** "Reset semua" ditulis sebagai aksi tersendiri (menghapus baris `ai_usages` tanggal berjalan), bukan sebagai efek samping mengubah angka kuota. Dua hal yang berbeda artinya jangan dijadikan satu tombol.
+- **Pemutakhiran 2026-08-01 — butir (b) SELESAI, dan kuota per paket sudah bisa diatur dari panel.** Lihat entri CHANGELOG *"Aturan Tarif Bisa Disunting & Dihentikan, Paket Punya Batas AI dan Peran Penampung"*. Yang berubah:
+  - `App\Services\Ai\AiQuota` — **pembaca tunggal**, persis usulan (b). Urutannya hari ini: **batas paket (`plans.limits.ai_daily`) → bawaan `config/ai.php`**. `RunAiAnalysisJob::assertQuota()` dan `Owner\SettingsController` memanggil kelas yang sama.
+  - Kuota per paket (`[BL-046]`(1)) sudah bisa diatur dari `/platform/pricing-rules` → **Ubah paket → "Analisis AI per hari"**. Kosong = ikut bawaan platform, `0` = paket tidak menyertakan AI.
+  - Jejak audit `plans.update` kini mencatat `ai_daily_limit` sebelum & sesudah — sebagian dari usulan (c).
+  **Yang tersisa: (a), sisa (c), dan (d).** Kebijakan berjangka waktu (promo, masa berlaku) belum ada bentuknya; tempatnya kelak **di antara** kedua lapis yang sudah ada di `AiQuota` — sisipkan di situ, jangan tambahkan pembaca kedua. Halaman platform khusus kuota bersama dan aksi "reset semua" juga belum ada. Bawaan platform masih di `.env`, dan bagi pemilik SaaS yang duduk di panel jaraknya masih sama seperti sebelumnya — yang berubah, ia kini bisa dilampaui per paket tanpa menyentuh server.
+- **Ditemukan saat mengerjakannya (sudah diperbaiki):** `incrementUsage()` memakai `firstOrCreate` berkunci tanggal, padahal kolom `ai_usages.date` tersimpan sebagai datetime. Barisnya tak pernah ketemu, lalu penyisipan keduanya ditolak indeks unik — **analisis KEDUA seorang tenant di hari yang sama selalu gagal**, padahal jatahnya masih ada. Diperbaiki dengan `whereDate`, dengan test yang gagal sebelum perbaikannya.
+- **Pemutakhiran 2026-08-13 — SELESAI.** `ai_quota_policies` (dua mode: `baseline` untuk kuota bawaan platform, `bonus` untuk promo), halaman `/platform/ai-quota` di balik modul `ai_quota`, dan tombol "Reset Semua" yang berdiri sendiri. `config/ai.php` sengaja TIDAK dihapus — ia tetap lapis terakhir, sehingga tabel yang lahir kosong berarti tak ada satu pun tenant yang jatahnya berubah oleh pemasangan ini. Yang tidak termasuk dan tetap terbuka: kuota tambahan yang bisa DIBELI tenant = `[BL-069]`, masih terhalang keputusan harga.
+
+---
+
 ### [BL-064] Satu-satunya Grafik di Aplikasi Ini Ada di Dashboard — Batang, Tujuh Hari, dan Laporan Tidak Punya Grafik Sama Sekali
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "grafik dan line chart"
@@ -19,7 +50,7 @@
   - `resources/js/Components/DailyChart.vue` — satu-satunya komponen grafik; `import { Bar } from 'vue-chartjs'`, dan hanya `BarElement` yang diregistrasi
   - `resources/js/Pages/Owner/Dashboard.vue:262` — **satu-satunya** pemakainya di seluruh `resources/js`
   - `resources/js/Pages/Owner/Reports/Daily.vue`, `Reports/Upsell.vue` — nol grafik; semuanya tabel dan kartu angka
-  - `resources/js/Pages/Owner/Reports/Monthly.vue` (2026-08-13) — tempat pasang pertamanya; prop `dailySeries` berisi satu baris untuk SETIAP tanggal di bulan itu, termasuk hari nol, jadi garisnya tidak perlu diinterpolasi
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` (2026-08-13) — **tempat pasang pertamanya sudah berdiri**; prop `dailySeries` berisi `[{ date, count, revenue, voided }]` untuk SETIAP tanggal di bulan itu, termasuk hari nol, jadi garisnya tidak perlu diinterpolasi. Hari ini deret itu dibaca lewat tabel "Rincian Harian"
   - `package.json:20,23` — `chart.js` ^4.5.1 dan `vue-chartjs` ^5.3.3 **sudah terpasang**
 - **Deskripsi:**
   Pustaka grafiknya sudah ada di proyek dan sudah dipakai sekali. Yang belum ada adalah jenis grafik kedua dan pemakai kedua. Halaman Laporan — tempat orang justru datang untuk melihat pola — seluruhnya berupa tabel; sementara dashboard, tempat orang hanya melirik, adalah satu-satunya yang punya grafik.
@@ -27,35 +58,11 @@
 - **Usulan Perbaikan:**
   **(a)** Komponen `TrendChart.vue` berbasis `Line`, dengan `PointElement` + `LineElement` diregistrasi. **Jangan mengubah `DailyChart` jadi serba-bisa** lewat prop `type` — dua grafik dengan sumbu dan tujuan berbeda yang dipaksa satu komponen akan penuh percabangan sebelum pemakai ketiga muncul.
   **(b)** Ikuti pola warna `DailyChart`: baca `--color-primary`/`--color-brand` dari CSS variable, jangan mematok heksadesimal. Itu yang membuat grafiknya ikut tema, dan grafik kedua yang mematok warna sendiri akan langsung terlihat asing.
-  **(c)** Pasang di rekap bulanan `[BL-063]` lebih dulu — itu data yang paling butuh garis. Baru sesudahnya pertimbangkan tren di halaman harian (mis. per jam).
+  **(c)** Pasang di rekap bulanan lebih dulu — itu data yang paling butuh garis. Halamannya sudah ada sejak `[BL-063]` selesai (2026-08-13) beserta deret hariannya, jadi yang tersisa hanya komponennya dan satu baris pemasangan di atas tabel "Rincian Harian". Baru sesudahnya pertimbangkan tren di halaman harian (mis. per jam).
   **(d)** Beri keadaan kosong yang jelas. Tenant baru yang membuka laporan dan melihat kanvas kosong tanpa keterangan akan menganggapnya rusak.
 - **Catatan penutup (2026-08-13):**
-  Satu hal yang tidak tertulis di entri ini tapi jadi bagian tersulitnya: warna tema proyek ini ditulis dalam `oklch()`, dan arsiran di bawah garis butuh versi tembus pandangnya. Alpha tidak bisa ditempelkan ke string `oklch()`, jadi warnanya dilukis ke kanvas 1x1 lalu pikselnya dibaca kembali — butir (b) tetap ditegakkan (nol heksadesimal dipatok) tanpa memaksa tema pindah format warna.
+  Satu hal yang tidak tertulis di entri ini tapi jadi bagian tersulitnya: warna tema proyek ini ditulis dalam `oklch()`, dan arsiran di bawah garis butuh versi tembus pandangnya. Alpha tidak bisa ditempelkan ke string `oklch()`, jadi warnanya dilukis ke kanvas 1×1 lalu pikselnya dibaca kembali — butir (b) tetap ditegakkan (nol heksadesimal dipatok) tanpa memaksa tema pindah format warna.
   Tren per jam di laporan harian tetap tidak ada. Ia butuh agregasi per jam yang belum ada di `daily()` dan menjawab pertanyaan yang berbeda ("jam berapa toko ramai"); buka entri sendiri bila memang dibutuhkan, jangan diselundupkan sebagai sisa entri ini.
-
----
-
-### [BL-063] Laporan Hanya Ada Per Satu Tanggal — Belum Ada Rekap Bulanan
-- **Ditemukan:** 2026-08-08
-- **Sumber:** Saran pasca-peragaan — "grafik laporan dalam bulanan"
-- **Status:** Selesai (2026-08-13) — seluruh usulan (a)-(d) mendarat: rute `reports.monthly`, agregasi penuh di basis data, bulan kalender, dan unduhan CSV. Lihat `[ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)` di `docs/CHANGELOG.md`
-- **Prioritas:** Medium
-- **Area Terdampak:**
-  - `app/Http/Controllers/Owner/ReportController.php:22-83` — `daily()`: seluruh isinya disaring `whereEffectiveDate($date)`, satu hari saja
-  - `routes/web.php:168-172` — hanya `reports.daily` dan `reports.upsell`; tidak ada rute rekap periode
-  - `app/Http/Controllers/Owner/DashboardController.php:59-66` — satu-satunya agregasi lintas hari yang ada, dan dipatok 7 hari terakhir
-  - `app/Models/Transaction.php` — `effectiveDateSql()` + `whereEffectiveFrom()`: **bahan yang dibutuhkan sudah ada**
-- **Deskripsi:**
-  Semua laporan di aplikasi ini menjawab pertanyaan "hari ini bagaimana". Tidak ada satu pun permukaan yang menjawab "bulan ini bagaimana", padahal itu satuan yang dipakai pemilik toko saat menghitung sewa, gaji, dan setoran. Yang paling dekat adalah tren 7 hari di dashboard — terlalu pendek untuk melihat pola akhir pekan, apalagi tanggal muda vs tanggal tua.
-  Kabar baiknya, bagian yang biasanya paling sulit sudah beres: laporan sudah memakai **tanggal efektif**, bukan `created_at`, jadi penjualan offline yang baru tersinkron esok hari tetap masuk ke bulan yang benar. Rekap bulanan yang dibangun di atas `effectiveDateSql()` tidak akan mewarisi cacat itu.
-- **Usulan Perbaikan:**
-  **(a)** Satu rute `reports.monthly` dengan parameter `month` (`Y-m`), isinya sejajar dengan harian: omzet, jumlah transaksi, void, rekap metode bayar, produk terlaris — plus satu deret harian untuk grafiknya (`[BL-064]`).
-  **(b)** Agregasi di database, jangan menarik seluruh transaksi sebulan ke memori lalu menjumlahkannya di PHP. `daily()` boleh melakukan itu karena sehari muat; sebulan di tenant yang ramai tidak.
-  **(c)** **Putuskan dulu: bulan kalender atau periode langganan?** Keduanya masuk akal dan hasilnya berbeda — periode langganan tenant berjangkar di tanggal daftar (keputusan 2026-08-07), jadi "bulan ini" versi tagihan bukan 1–31. Saran saya bulan kalender untuk laporan operasional, karena itu yang dipakai pemilik toko menghitung sewa dan gaji; jangan campur keduanya di satu layar.
-  **(d)** Sekalian sediakan unduhan CSV-nya. Rekap bulanan yang tidak bisa dibawa ke spreadsheet akan tetap disalin manual.
-- **Catatan penutup (2026-08-13):**
-  Butir (c) diputuskan sesuai saran entri ini: **bulan kalender**, dan periode langganan sengaja tidak muncul di layar yang sama. Butir (a) ditambah tiga hal yang tidak tertulis di sini tapi memang yang dicari pemilik saat membuka rekap bulanan — pembanding terhadap bulan sebelumnya, "hari berjualan" sebagai penyebut rata-rata harian, dan hari teramai.
-  Laba kotor tidak diikutkan meski `ProfitService` sudah ada: COGS-nya memakai `cost_price` yang tidak semua tenant isi, dan margin 100% palsu lebih buruk daripada tidak ada angka margin.
 
 ---
 
@@ -79,6 +86,30 @@
   **(c)** Tenant ber-BYOK melihat keterangan lain ("memakai kunci sendiri — tanpa batas harian"), bukan angka kuota. Pakai syarat yang sama dengan `Settings/Index.vue:282`.
   **(d)** **Jangan** mencabutnya dari Pengaturan. Di sana ia konteks untuk keputusan BYOK; di AI Analysis ia peringatan sebelum bertindak. Dua pembaca, dua maksud — dan `AiQuota` memang dibuat supaya keduanya tidak bisa berselisih.
   **(e)** Saran ini menyinggung "menu AI di analysis". Menu `/ai-analysis` sudah ada di `OwnerLayout`; kalau yang dimaksud adalah menu **turunan** (mis. riwayat vs buat baru), itu permintaan terpisah yang perlu diperjelas lebih dulu.
+
+---
+
+### [BL-063] Laporan Hanya Ada Per Satu Tanggal — Belum Ada Rekap Bulanan
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "grafik laporan dalam bulanan"
+- **Status:** Selesai (2026-08-13) — seluruh usulan (a)–(d) mendarat: rute `reports.monthly`, agregasi penuh di basis data, bulan kalender, dan unduhan CSV. Lihat `[ADDITION] Laporan Bulanan: Satu Bulan Kalender, Diagregasi di Basis Data, dengan Unduhan CSV (BL-063)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/ReportController.php:22-83` — `daily()`: seluruh isinya disaring `whereEffectiveDate($date)`, satu hari saja
+  - `routes/web.php:168-172` — hanya `reports.daily` dan `reports.upsell`; tidak ada rute rekap periode
+  - `app/Http/Controllers/Owner/DashboardController.php:59-66` — satu-satunya agregasi lintas hari yang ada, dan dipatok 7 hari terakhir
+  - `app/Models/Transaction.php` — `effectiveDateSql()` + `whereEffectiveFrom()`: **bahan yang dibutuhkan sudah ada**
+- **Deskripsi:**
+  Semua laporan di aplikasi ini menjawab pertanyaan "hari ini bagaimana". Tidak ada satu pun permukaan yang menjawab "bulan ini bagaimana", padahal itu satuan yang dipakai pemilik toko saat menghitung sewa, gaji, dan setoran. Yang paling dekat adalah tren 7 hari di dashboard — terlalu pendek untuk melihat pola akhir pekan, apalagi tanggal muda vs tanggal tua.
+  Kabar baiknya, bagian yang biasanya paling sulit sudah beres: laporan sudah memakai **tanggal efektif**, bukan `created_at`, jadi penjualan offline yang baru tersinkron esok hari tetap masuk ke bulan yang benar. Rekap bulanan yang dibangun di atas `effectiveDateSql()` tidak akan mewarisi cacat itu.
+- **Usulan Perbaikan:**
+  **(a)** Satu rute `reports.monthly` dengan parameter `month` (`Y-m`), isinya sejajar dengan harian: omzet, jumlah transaksi, void, rekap metode bayar, produk terlaris — plus satu deret harian untuk grafiknya (`[BL-064]`).
+  **(b)** Agregasi di database, jangan menarik seluruh transaksi sebulan ke memori lalu menjumlahkannya di PHP. `daily()` boleh melakukan itu karena sehari muat; sebulan di tenant yang ramai tidak.
+  **(c)** **Putuskan dulu: bulan kalender atau periode langganan?** Keduanya masuk akal dan hasilnya berbeda — periode langganan tenant berjangkar di tanggal daftar (keputusan 2026-08-07), jadi "bulan ini" versi tagihan bukan 1–31. Saran saya bulan kalender untuk laporan operasional, karena itu yang dipakai pemilik toko menghitung sewa dan gaji; jangan campur keduanya di satu layar.
+  **(d)** Sekalian sediakan unduhan CSV-nya. Rekap bulanan yang tidak bisa dibawa ke spreadsheet akan tetap disalin manual.
+- **Catatan penutup (2026-08-13):**
+  Butir (c) diputuskan sesuai saran entri ini: **bulan kalender**, dan periode langganan sengaja tidak muncul di layar yang sama. Butir (a) ditambah tiga hal yang tidak tertulis di sini tapi memang yang dicari pemilik saat membuka rekap bulanan — pembanding terhadap bulan sebelumnya, "hari berjualan" sebagai penyebut rata-rata harian, dan hari teramai. Grafiknya sengaja belum ikut; `dailySeries` sudah berbentuk siap-pakai untuk `[BL-064]`.
+  Laba kotor tidak diikutkan meski `ProfitService` sudah ada: COGS-nya memakai `cost_price` yang tidak semua tenant isi, dan margin 100% palsu lebih buruk daripada tidak ada angka margin.
 
 ---
 

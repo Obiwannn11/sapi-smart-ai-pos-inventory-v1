@@ -367,7 +367,12 @@ test('status di luar daftar tetap ditolak validasi', function () {
 test('indeks upsell membawa saklar wajib milik tenant', function () {
     actingAs($this->cashier);
 
-    get('/cashier/pos')->assertInertia(fn ($page) => $page->where('upsell.mandatory', false));
+    // Indeks upsell ikut ditunda bersama katalognya ([BL-037]), jadi ia tidak
+    // ada di respons pertama — yang diperiksa adalah permintaan lanjutannya.
+    get('/cashier/pos')->assertInertia(fn ($page) => $page
+        ->missing('upsell')
+        ->loadDeferredProps(fn ($reload) => $reload->where('upsell.mandatory', false))
+    );
 
     $this->tenant->update(['upsell_mandatory' => true]);
 
@@ -376,7 +381,9 @@ test('indeks upsell membawa saklar wajib milik tenant', function () {
     // dengan instance segar — ini artefak test, bukan perilaku request nyata.
     actingAs($this->cashier->fresh());
 
-    get('/cashier/pos')->assertInertia(fn ($page) => $page->where('upsell.mandatory', true));
+    get('/cashier/pos')->assertInertia(fn ($page) => $page
+        ->loadDeferredProps(fn ($reload) => $reload->where('upsell.mandatory', true))
+    );
 });
 
 test('owner bisa menyalakan penawaran wajib dari pengaturan', function () {
