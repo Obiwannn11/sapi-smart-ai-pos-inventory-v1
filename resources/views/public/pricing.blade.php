@@ -95,10 +95,22 @@
 
             <div class="price-table-wrap">
                 <table class="price-table">
+                    {{--
+                        Istilahnya "Pengguna termasuk" / "Pengguna tambahan",
+                        mengikuti label yang sudah dipakai `/langganan`
+                        (`Billing/Show.vue`). Keputusan 2026-08-07 menamai
+                        pasangannya "seat bawaan paket" vs "seat tambahan", tapi
+                        kata "seat" tidak pernah muncul di satu pun layar tenant
+                        — memakainya di sini justru akan jadi kata ketiga yang
+                        dilarang `[BL-067]`(c).
+                    --}}
                     <thead>
                         <tr>
                             <th>Paket</th>
                             <th>Tarif per bulan</th>
+                            <th>Pengguna termasuk</th>
+                            <th>Analisis AI per hari</th>
+                            <th>Pengguna tambahan</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -117,6 +129,28 @@
                                         Rp {{ number_format($plan['price'], 0, ',', '.') }}
                                     @endif
                                 </td>
+                                <td class="cell-price">{{ $plan['included_seats'] }}</td>
+                                {{--
+                                    `null` berarti paket ini tidak menyetel
+                                    batasnya sendiri dan ikut bawaan platform —
+                                    BUKAN nol. Menuliskannya "0" akan memajang
+                                    paket yang tidak menjual AI padahal ia dapat
+                                    jatah.
+                                --}}
+                                <td class="cell-price">
+                                    @if ($plan['ai_daily'] === null)
+                                        Ikut bawaan platform
+                                    @else
+                                        {{ $plan['ai_daily'] }}
+                                    @endif
+                                </td>
+                                <td class="cell-price">
+                                    @if ($plan['extra_seat_price'] <= 0)
+                                        Gratis
+                                    @else
+                                        Rp {{ number_format($plan['extra_seat_price'], 0, ',', '.') }}
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -126,6 +160,21 @@
             <div class="price-note">
                 Masa gratis berlaku {{ $pricing['trial_months'] }} bulan. Sesudahnya akun berpindah sendiri ke paket lanjutan —
                 tidak berhenti, dan tidak menunggu Anda melakukan apa pun.
+            </div>
+
+            {{--
+                `[BL-067]`(d): batas yang tidak dijelaskan konsekuensinya akan
+                dibaca sebagai batas keras yang memutus fitur. Dua kalimat ini
+                menjawabnya sekaligus menyebut jalan keluarnya.
+
+                Yang TIDAK boleh ada di sini: janji "beli tambahan kuota AI".
+                Alur belinya belum berbentuk sama sekali — `[BL-067]`(e),
+                menunggu `[BL-069]`.
+            --}}
+            <div class="price-note">
+                <strong>Tentang batas analisis AI.</strong>
+                Jatahnya berulang setiap hari. Bila habis, analisis berikutnya ditolak sampai besok — fitur lain di aplikasi
+                tidak ikut berhenti. Anda juga bisa memakai API key sendiri, dan batas ini tidak lagi berlaku.
             </div>
         </section>
 

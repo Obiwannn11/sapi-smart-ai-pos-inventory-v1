@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 
 // Halaman ini terbuka untuk SEMUA pengguna tenant, bukan owner saja — begitu
@@ -25,6 +26,10 @@ const props = defineProps({
     // sungguhan padahal tiruan adalah cara termudah membuat orang mengira
     // uangnya sudah berpindah.
     payment: { type: Object, default: () => ({ enabled: false, is_simulated: false }) },
+    // Kuota AI (`[BL-067]`(b)). Sebelum ini isi paket terpecah dua — kursi
+    // dijawab di halaman ini, kuota AI hanya di Pengaturan — dan tidak ada satu
+    // pun layar yang menjawab "paket saya dapat apa saja".
+    aiQuota: { type: Object, default: null },
 });
 
 /**
@@ -490,6 +495,25 @@ const invoiceStatusLabels = {
                             Pelepasan kursi tercatat: mulai {{ formatDate(upgrade.release_at) }} kursi tambahan Anda
                             menjadi {{ upgrade.scheduled_seats }}. Sampai tanggal itu semuanya masih bisa dipakai.
                         </p>
+                    </div>
+
+                    <!-- Kuota AI, di blok yang sama dengan kursi (`[BL-067]`(b)).
+                         Memakai meteran yang sudah ada, bukan menggambar ulang
+                         angkanya: yang dibacakan di sini dan yang dibacakan di
+                         Pengaturan wajib identik, dan dua tempat yang menghitung
+                         sendiri-sendiri adalah cara termudah membuatnya tidak.
+
+                         Varian `compact`, BUKAN `detailed` meski peran halaman
+                         ini lebih dekat ke Pengaturan. Alasannya bukan selera:
+                         teks varian `detailed` berbunyi "kolom API Key di bawah"
+                         dan "isi kunci API Anda sendiri di bawah" — benar di
+                         Pengaturan, karena kolomnya memang ada di sana, dan
+                         salah di halaman ini. Varian `compact` tidak terikat
+                         tempat, dan jalan keluarnya berupa tautan ke halaman
+                         kredensial, bukan tunjuk-arah ke bawah. -->
+                    <div v-if="aiQuota" class="px-5 py-3.5">
+                        <dt class="text-sm text-muted-foreground">Analisis AI</dt>
+                        <AiQuotaMeter :quota="aiQuota" variant="compact" class="mt-2" />
                     </div>
                 </dl>
             </div>

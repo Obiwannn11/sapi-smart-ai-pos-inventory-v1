@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | ADDITION | Langganan | Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067) |
 | 2026-08-14 | ADDITION | Langganan | Halaman `/harga` Membacakan Kedua Jalur Tarif kepada Orang yang Belum Mendaftar (BL-041 butir c) |
 | 2026-08-14 | HOTFIX | UI | Dua Paket Karangan di Landing Diganti Paket yang Benar-Benar Ditagihkan (BL-032 butir 2) |
 | 2026-08-14 | ADDITION | Langganan | Satu Pembaca Harga untuk Permukaan Tanpa Sesi, Sebelum Ada yang Membacanya (BL-041, BL-066, BL-067) |
@@ -174,6 +175,31 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-067]` butir (a)–(e). Commit kelima di jalan permukaan publik.
+- **Dampak:** Controller | Frontend | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Berapa pengguna dan berapa analisis AI yang didapat sebuah paket kini terbaca di `/harga` dan di landing — sebelum orang mendaftar — dan di `/langganan` keduanya duduk di satu blok, bukan terpecah antara dua halaman.
+- **Alasan:** Datanya sudah lengkap dan rapi di `plans` sejak lama; yang tidak ada adalah satu pun permukaan yang memperlihatkannya. Calon klien memilih paket tanpa tahu berapa kasir yang boleh dipakainya; pendaftar baru menemukan batasnya saat menambah staf ketiga dan ditolak.
+
+- **Istilahnya "pengguna", BUKAN "seat" — dan ini penyimpangan yang disengaja dari bunyi harfiah entrinya.** `[BL-067]`(c) meminta memakai "seat bawaan paket" vs "seat tambahan" sesuai keputusan 2026-08-07, dan menutup dengan "jangan memperkenalkan kata ketiga di permukaan publik". Kedua syarat itu ternyata bertabrakan: pencarian di seluruh layar tenant menemukan kata "seat" **nol kali** sebagai teks yang dibaca orang — `/langganan` menulis "Pengguna tambahan", "kursi", dan "N dari paket X". Memakai "seat" di halaman publik justru akan **menjadi** kata ketiga yang dilarang kalimat penutupnya. Yang dipakai karenanya "Pengguna termasuk" / "Pengguna tambahan", menyalin label yang sudah ada di `Billing/Show.vue`. Pasangan konsepnya — bawaan paket vs tambahan — tetap persis seperti yang diputuskan.
+- **Kuota AI di `/langganan` memakai `AiQuotaMeter` varian `compact`, bukan `detailed` — dan alasannya bukan selera.** Peran halaman ini lebih dekat ke Pengaturan, jadi `detailed` yang tampak benar. Tapi teks varian itu berbunyi "Kosongkan kolom API Key **di bawah**" dan "Isi kunci API Anda sendiri **di bawah**" — benar di Pengaturan, karena kolomnya memang ada di sana, dan menunjuk ke ruang kosong di halaman langganan. Varian `compact` tidak terikat tempat, dan jalan keluarnya berupa **tautan** ke halaman kredensial. Ini ditemukan saat membaca komponennya, bukan setelah dipasang.
+- **Satu pembaca, bukan hitungan ketiga.** `SubscriptionController` memanggil `AiQuota::snapshotFor()` — kelas yang sama yang dipakai Pengaturan dan AI Analysis. Angka yang dibacakan di tiga layar wajib identik, dan tiga tempat yang menghitung sendiri-sendiri adalah cara termudah membuatnya tidak.
+- **`ai_daily` null tetap dibaca "ikut bawaan platform" di kedua permukaan publik.** Pembedaan ini sudah dijaga `PublicPricing` dan `Plan::limit()`; di sini ia akhirnya sampai ke layar. Ada test yang memastikan tidak ada permukaan yang menuliskan "0 analisis" untuk paket yang sebenarnya dapat jatah.
+- **Konsekuensi kuota habis ditulis terus terang (`[BL-067]`(d)).** "Bila habis, analisis berikutnya ditolak sampai besok — fitur lain di aplikasi tidak ikut berhenti", plus BYOK sebagai jalan keluar. Kalimat kedua itu yang menentukan: batas yang tidak dijelaskan konsekuensinya akan dibaca sebagai batas keras yang memutus seluruh aplikasi.
+- **Tidak ada janji membeli kuota AI di mana pun (`[BL-067]`(e)), dan itu dijaga test.** Alur belinya belum berbentuk sama sekali — tidak ada kolom, tidak ada tagihan, tidak ada layar; `[BL-069]` masih terhalang keputusan harga. Test-nya menyapu `/` dan `/harga` sekaligus, supaya janji itu tidak masuk diam-diam lewat penyuntingan berikutnya.
+- **File Terdampak:**
+  - `resources/views/public/pricing.blade.php` — tabel jalur Harga Tetap dapat tiga kolom baru (pengguna termasuk, analisis AI/hari, pengguna tambahan) plus catatan konsekuensi kuota.
+  - `resources/views/public/landing.blade.php` — tiap kartu paket dapat daftar isi paketnya, dari `plans`.
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — mengirim `aiQuota` dari `AiQuota::snapshotFor()`.
+  - `resources/js/Pages/Billing/Show.vue` — meteran kuota AI masuk ke blok yang sama dengan kursi.
+  - `tests/Feature/Public/PlanContentsTest.php` — **baru.** 7 test, termasuk penjaga istilah dan penjaga janji-kuota.
+- **Cara memeriksanya.** 48 test di `tests/Feature/Public` dan 278 di `tests/Feature/Subscription` + `SettingsAiTest` lewat. Kedua permukaan publik juga dibuka di peramban: tabel `/harga` memajang 2/5, 3/15, 5/30, 10/60 dengan seat tambahan 20k/15k/12,5k/10k — sama persis dengan keputusan pemilik 2026-08-07 — dan pada 390px halaman tidak ikut menggeser ke samping karena tabelnya bergulir di dalam kotaknya sendiri.
+- **Yang TIDAK dikerjakan:** `[BL-069]` (kuota AI yang bisa dibeli) tidak disentuh dan sengaja tidak dijanjikan. Daftar **kapabilitas** per paket — fitur apa yang menyala di paket mana — juga masih belum ada; itu `[BL-032]` butir (1), dan sumber datanya memang belum ada (`plans.limits` memuat batas, bukan kapabilitas).
 
 ---
 

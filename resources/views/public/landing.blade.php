@@ -706,10 +706,38 @@
                         </div>
 
                         @if ($plan['is_free'])
-                            <p @class(['text-sm font-bold', 'text-primary/40' => $highlighted, 'text-gray-500' => ! $highlighted])>
+                            <p @class(['text-sm font-bold mb-6', 'text-primary/40' => $highlighted, 'text-gray-500' => ! $highlighted])>
                                 {{ $pricing['trial_months'] }} bulan pertama, lalu pindah ke paket berbayar.
                             </p>
                         @endif
+
+                        {{--
+                            Isi paket, dari `plans` (`[BL-067]`(a)). Istilahnya
+                            mengikuti label yang sudah dipakai `/langganan`
+                            — "pengguna", bukan "seat", yang tidak pernah muncul
+                            di satu pun layar tenant (`[BL-067]`(c)).
+                        --}}
+                        <ul @class([
+                            'space-y-2.5 mb-8 text-[14px] font-bold',
+                            'text-white/90' => $highlighted,
+                            'text-gray-600' => ! $highlighted,
+                        ])>
+                            <li>{{ $plan['included_seats'] }} pengguna termasuk</li>
+                            <li>
+                                @if ($plan['ai_daily'] === null)
+                                    Analisis AI ikut bawaan platform
+                                @else
+                                    {{ $plan['ai_daily'] }} analisis AI/hari
+                                @endif
+                            </li>
+                            <li>
+                                @if ($plan['extra_seat_price'] <= 0)
+                                    Pengguna tambahan gratis
+                                @else
+                                    Pengguna tambahan Rp {{ number_format($plan['extra_seat_price'], 0, ',', '.') }}/bulan
+                                @endif
+                            </li>
+                        </ul>
 
                         <a href="{{ route('register') }}" @class([
                             'w-full mt-auto py-4 rounded-[1.5rem] font-black text-center transition-all',

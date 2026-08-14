@@ -338,28 +338,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(d)** Perdalam `resources/docs/panduan/langganan.md` sebagai versi panjangnya, dan tautkan dari landing. Landing menjawab "kira-kira saya bayar berapa"; panduan menjawab "kalau omzet saya turun bulan depan, bagaimana".
   **(e)** Periksa istilahnya konsisten. Dokumen internal memakai "Dynamic Pricing" (nama mesinnya), UI memakai "Harga Adaptif" vs "Harga Tetap" (nama jalurnya), dan `[BL-018]` memakai "harga dinamis" untuk hal yang sama sekali berbeda — diskon barang mendekati kedaluwarsa. **Jangan pakai "dynamic pricing" di permukaan tenant** sebelum tabrakan istilah itu diselesaikan.
 
-### [BL-067] Isi Paket — Berapa Seat, Berapa Kuota AI — Tidak Terlihat Sebelum Orang Mendaftar
-- **Ditemukan:** 2026-08-08
-- **Sumber:** Saran pasca-peragaan — "perbaiki juga include seats atau tambahan kuota akun"
-- **Status:** Open — **sisi tagihannya sudah punya entri sendiri**, lihat di bawah
-- **Prioritas:** Medium
-- **Yang TIDAK termasuk entri ini:** seat jadi komponen bulanan dan jalan melepas seat = `[BL-053]` (selesai 2026-08-08); kuota AI yang bisa dibeli = `[BL-069]`; tagihan Rp 0 saat menambah pengguna = `[BL-049]`. Entri ini murni tentang **keterlihatannya**, jangan dikerjakan sebagai duplikat ketiganya.
-- **Area Terdampak:**
-  - `resources/views/public/landing.blade.php` — bagian harga tidak menyebut seat maupun kuota AI sama sekali (dan paketnya sendiri karangan, `[BL-032]`)
-  - `app/Http/Controllers/Auth/AuthController.php:35-47` — pendaftaran tidak menampilkan isi paket apa pun
-  - `resources/js/Pages/Billing/Show.vue:395-435` — **satu-satunya** tempat yang menjelaskannya dengan benar: harga per pengguna tambahan /bulan, "N dari M" pengguna aktif, plus bar pemakaian
-  - `resources/js/Components/AiQuotaMeter.vue` — kuota AI kini tampil di Pengaturan (versi lengkap) **dan** di AI Analysis (versi ringkas), sejak `[BL-062]` selesai 2026-08-13. Yang masih kurang untuk entri ini: keduanya hanya bicara kuota AI, tidak pernah menyebut seat, dan tidak satu pun terlihat sebelum orang jadi tenant
-  - `app/Models/Plan.php:35` — `included_seats` + `extra_seat_price` sudah jadi kolom paket; `limits.ai_daily` sudah jadi batas kuota per paket
-- **Deskripsi:**
-  Datanya lengkap dan sudah rapi di model: tiap paket tahu berapa seat bawaannya, berapa harga seat tambahannya, dan berapa jatah AI hariannya (keputusan 2026-08-07: 2/5, 3/15, 5/30, 10/60). Yang tidak ada adalah satu pun permukaan yang memperlihatkan itu **sebelum** orang jadi tenant. Calon klien memilih paket tanpa tahu berapa kasir yang boleh dipakainya; pendaftar baru menemukan batasnya saat menambah staf ketiga dan ditolak.
-  Di dalam aplikasi pun keterangannya tersebar: seat di `/langganan`, kuota AI di `/pengaturan`, dan tidak ada satu tempat yang menjawab "paket saya dapat apa saja".
-- **Usulan Perbaikan:**
-  **(a)** Tabel perbandingan paket di landing yang barisnya diambil dari `plans` — nama, harga, seat bawaan, kuota AI/hari, harga seat tambahan. Satu sumber dengan `[BL-032]`(2) dan `[BL-066]`(c); jangan dibuat sebagai tabel HTML ketiga yang bisa basi sendiri.
-  **(b)** Ringkasan isi paket di halaman `/langganan`, satu blok, mencakup **keduanya** — bukan seat saja seperti hari ini.
-  **(c)** Pakai istilah yang sudah diputuskan 2026-08-07: **"seat bawaan paket"** vs **"seat tambahan"**. Jangan memperkenalkan kata ketiga di permukaan publik.
-  **(d)** Untuk kuota AI, sebutkan juga **apa yang terjadi saat habis** (analisis ditolak sampai besok) dan bahwa BYOK melepas batas itu. Batas yang tidak dijelaskan konsekuensinya akan dibaca sebagai batas keras yang memutus fitur.
-  **(e)** **Jangan menjanjikan "tambah kuota AI" di landing sebelum `[BL-069]` ada.** Alur belinya belum berbentuk sama sekali — tidak ada kolom, tidak ada tagihan, tidak ada layar.
-
 ### [BL-068] Multi-Cabang Belum Punya Wujud Apa Pun — Satu Tenant = Satu Outlet di Seluruh Basis Kode
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "saran fitur cabang (pastiin yang lain berhasil semua dulu)"
@@ -1011,6 +989,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-067` | Isi paket — berapa seat, berapa kuota AI — tidak terlihat sebelum orang mendaftar | 2026-08-14 (butir (a)–(e)) | `[ADDITION] Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067)` |
 | `BL-039` | "Profil Usaha" mencampur merek, aturan kerja, kapabilitas, dan kredensial | 2026-08-14 (seluruh butir; unggah logo struk ditahan menunggu `BL-076`) | `[REFACTOR] "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039)` |
 | `BL-038` | Halaman staf tidak menunjukkan modul efektif per orang | 2026-08-14 (seluruh butir + baris owner) | `[ADDITION] Halaman Staf Menjawab "Orang Ini Bisa Buka Apa Saja", dan Baris Owner Mengaku Melewati Seluruh Pemeriksaan (BL-038)` |
 | `BL-033` | Tiga permukaan publik belum satu keluarga — desain, aset, dan wordmark | 2026-08-14 | `[DECISION] Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033)` |

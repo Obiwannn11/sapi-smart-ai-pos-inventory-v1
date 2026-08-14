@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\TenantConsent;
+use App\Services\Ai\AiQuota;
 use App\Services\Billing\Gateways\PaymentGatewayManager;
 use App\Services\Billing\InvoiceSettlement;
 use App\Services\ConsentService;
@@ -34,6 +35,7 @@ class SubscriptionController extends Controller
         SubsidyEstimator $estimator,
         InvoiceSettlement $settlement,
         PaymentGatewayManager $gateways,
+        AiQuota $quota,
     ): Response {
         $tenant = $request->user()->tenant;
         $subscription = $subscriptions->ensureFor($tenant);
@@ -89,6 +91,14 @@ class SubscriptionController extends Controller
                 // pintunya tertutup, bukan sekadar bahwa ia akan tertutup.
                 'suspends_at' => $subscriptions->suspensionDateFor($tenant)?->toDateString(),
             ],
+            // Kuota AI ikut dikirim ke halaman langganan (`[BL-067]`(b)).
+            // Sebelum ini isi paket terpecah dua: kursi dijawab di sini, kuota
+            // AI hanya di Pengaturan, dan tidak ada satu pun layar yang
+            // menjawab "paket saya dapat apa saja". Bentuknya sama persis
+            // dengan yang dipakai Pengaturan dan AI Analysis — satu pembaca,
+            // `AiQuota::snapshotFor()`, bukan hitungan ketiga yang bisa
+            // berbeda dari keduanya.
+            'aiQuota' => $quota->snapshotFor($tenant),
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),
                 // Versi dikirim BERPASANGAN supaya halamannya bisa membedakan
