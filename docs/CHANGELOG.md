@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | HOTFIX | UI | Avatar Testimoni Turun dari 1,8 MB Jadi 5 KB — dan Ternyata JPEG Berekstensi `.png` (BL-032 butir 3) |
 | 2026-08-14 | HOTFIX | UI | Landing Berhenti Menjanjikan Login Google, Katalog Otomatis, dan "Ribuan UMKM" (BL-032 butir 1) |
 | 2026-08-14 | ADDITION | Langganan | Tenant Jalur Harga Tetap Akhirnya Bisa Melihat Kelasnya Sendiri (BL-041 butir b) |
 | 2026-08-14 | ADDITION | Langganan | Landing Menjelaskan Cara Tarif Dihitung — dan Berhenti Menjanjikan Penguncian yang Tidak Pernah Ada (BL-066) |
@@ -178,6 +179,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Avatar Testimoni Turun dari 1,8 MB Jadi 5 KB — dan Ternyata JPEG Berekstensi `.png` (BL-032 butir 3)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-032]` butir (3), bagian avatarnya.
+- **Dampak:** Frontend | Aset | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Tiga avatar testimoni turun dari ±600 KB masing-masing jadi ±2 KB, sebagai WebP 96 piksel.
+- **Alasan:** Ketiganya berukuran 1024×1024 dan dirender `w-12 h-12` — 48 piksel. Digabung 1,8 MB, lebih berat dari seluruh tangkapan layar landing dijumlahkan.
+
+- **Berkasnya ternyata JPEG, bukan PNG, dan itu separuh penjelasan bobotnya.** `avatar_andi.png` dan dua saudaranya berawalan `FF D8 FF E0 ... JFIF` — JPEG dengan ekstensi `.png`. Ketahuan karena `imagecreatefrompng()` menolak membukanya. Konversinya karena itu memakai `imagecreatefromstring()`, yang mendeteksi formatnya sendiri.
+- **Dikerjakan dengan GD bawaan PHP, tanpa menambah dependensi.** ImageMagick tidak terpasang, `cwebp` tidak ada, `sharp` bukan bagian `node_modules`. Yang tersedia adalah ekstensi `gd` PHP dengan dukungan WebP menyala. Perlu dicatat sebagai jebakan lingkungan: di Windows, `convert` yang ada di `PATH` **bukan** ImageMagick melainkan utilitas konversi sistem berkas bawaan Windows — menjalankannya dengan argumen gambar bukan sekadar gagal.
+- **96 piksel untuk kotak 48 piksel**, supaya tetap tajam di layar kepadatan ganda. Atribut `width`/`height` dan `loading="lazy"` ikut dipasang: yang pertama mencegah pergeseran tata letak saat gambarnya menyusul, yang kedua menahan ketiganya sampai bagian testimoni benar-benar didekati.
+- **Berkas PNG lamanya dihapus, bukan ditinggalkan.** Ia tidak lagi dirujuk siapa pun, dan membiarkan 1,8 MB menganggur di `public/` mengalahkan seluruh tujuan butir ini. Riwayat git tetap memegangnya bila suatu saat dibutuhkan.
+- **File Terdampak:**
+  - `public/avatar_{andi,budi,santi}.webp` — **baru**, 1,9 / 1,5 / 1,9 KB.
+  - `public/avatar_{andi,budi,santi}.png` — **dihapus**, ±600 KB masing-masing.
+  - `resources/views/public/landing.blade.php` — rujukannya berpindah, plus `width`/`height`/`loading`.
+  - `tests/Feature/Public/LandingClaimsTest.php` — satu test: rujukannya `.webp`, berkasnya ada dan di bawah 15 KB, dan `.png`-nya benar-benar hilang.
+- **Cara memeriksanya.** 65 test di `tests/Feature/Public` lewat. Hasil konversinya juga dibuka dan dilihat — 96 piksel, wajahnya masih terbaca, bukan sekadar berkas yang ukurannya benar.
+- **Yang TIDAK dikerjakan:** bagian tangkapan layar `[BL-032]`(3) — kelimanya masih tertanggal 25 Mei. Entrinya tetap **Open** untuk itu.
 
 ---
 

@@ -912,7 +912,7 @@
                         "SAPI sangat membantu café saya. Dulu sering kehabisan biji kopi di jam sibuk, sekarang AI-nya selalu kasih tau 2 hari sebelumnya."
                     </p>
                     <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_andi.png') }}" alt="Andi" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
+                        <img src="{{ asset('avatar_andi.webp') }}" alt="Andi" width="96" height="96" loading="lazy" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
                         <div>
                             <p class="font-black text-gray-900">Andi</p>
                             <p class="text-sm font-bold text-gray-400">Owner Senja Coffee</p>
@@ -926,7 +926,7 @@
                         "Badge Helper-nya beneran ajaib. Saya nggak perlu lagi pusing liat grafik rumit, tinggal eksekusi saran dari SAPI."
                     </p>
                     <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_santi.png') }}" alt="Santi" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
+                        <img src="{{ asset('avatar_santi.webp') }}" alt="Santi" width="96" height="96" loading="lazy" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
                         <div>
                             <p class="font-black text-gray-900">Santi</p>
                             <p class="text-sm font-bold text-gray-400">Manajer Roti Enak</p>
@@ -940,7 +940,7 @@
                         "Fitur prediksi stoknya akurat banget. Modal saya jadi nggak tertimbun di barang yang nggak laku."
                     </p>
                     <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_budi.png') }}" alt="Budi" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
+                        <img src="{{ asset('avatar_budi.webp') }}" alt="Budi" width="96" height="96" loading="lazy" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
                         <div>
                             <p class="font-black text-gray-900">Budi</p>
                             <p class="text-sm font-bold text-gray-400">Toko Kelontong Modern</p>

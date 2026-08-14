@@ -50,3 +50,20 @@ test('landing menyebut kapabilitas yang benar-benar ada', function () {
         expect(mb_strtolower($html))->toContain(mb_strtolower($capability));
     }
 });
+
+test('avatar testimoni dilayani sebagai berkas kecil, bukan potret 600 KB', function () {
+    // Ketiganya dulu ±600 KB — dan ternyata JPEG berekstensi `.png` — untuk
+    // dirender 48 piksel. Sekarang WebP 96 px, ±2 KB.
+    get('/')
+        ->assertStatus(200)
+        ->assertSee('avatar_andi.webp')
+        ->assertDontSee('avatar_andi.png');
+
+    foreach (['andi', 'budi', 'santi'] as $name) {
+        $path = public_path("avatar_{$name}.webp");
+
+        expect(file_exists($path))->toBeTrue()
+            ->and(filesize($path))->toBeLessThan(15 * 1024)
+            ->and(file_exists(public_path("avatar_{$name}.png")))->toBeFalse();
+    }
+});
