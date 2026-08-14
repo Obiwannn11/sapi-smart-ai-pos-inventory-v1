@@ -99,6 +99,47 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-13 (penyisiran backlog)** — pemilik menanyakan empat fitur yang dikiranya mungkin terlewat dicatat; seluruhnya sudah **diperiksa terhadap kode**, dan hasilnya dua sudah tercatat, dua memang terlewat. **Sudah ada:** offline + printer Bluetooth + lapisan native adalah `[BL-016]` (Capacitor ada di sana sebagai opsi 2, dan lingkupnya sudah dikunci Android saja), sedangkan upsell dari sinyal stok sudah **selesai** lewat `[BL-017]`/`[BL-025]` — sisanya hanya bundling berdiskon yang menunggu `[BL-018]`. **Benar-benar terlewat:** upsell yang **ditargetkan manual oleh owner** — tiga strategi yang ada semuanya menurunkan saran dari data dan tidak ada satu pun tempat bagi owner menuliskan targetnya sendiri — jadi `[BL-074]`; dan **foto bukti pembayaran non-tunai**, yang nol kode (`transaction_payments` hanya punya `reference_code`), jadi `[BL-075]`. Satu hal yang mudah menyesatkan dan sudah ditulis di dalam `[BL-075]`: `invoices.proof_path` yang sudah ada itu bukti tenant membayar langganan SaaS, **bukan** bukti pelanggan membayar di kasir. `[BL-076]` lahir dari keputusan pemilik di hari yang sama — penyimpanan `[BL-075]` untuk sementara di disk server, dan pemindahannya ke object storage dicatat terpisah supaya "sementara" tidak diam-diam jadi permanen.
 
+### [BL-078] Testimoni di Landing Berdiri di Atas Nama dan Potret yang Tidak Bisa Dipertanggungjawabkan
+- **Ditemukan:** 2026-08-14
+- **Sumber:** Temuan saat mengerjakan `[BL-032]` butir (1) — empat klaim lain di halaman yang sama terbukti karangan dan dibuang; bagian ini sengaja ditahan karena keputusannya bukan teknis
+- **Status:** Open — **butuh keputusan pemilik**, bukan butuh implementasi
+- **Prioritas:** Medium — tidak ada angka yang salah dan tidak ada yang bocor, tapi ia satu-satunya sisa karangan di permukaan pertama yang dilihat calon klien
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php` — tiga blok testimoni: Andi (kafe), Santi, Budi, masing-masing dengan kutipan bertanda kutip
+  - `public/avatar_{andi,budi,santi}.webp` — potretnya; sudah dikecilkan jadi ±2 KB oleh `[BL-032]`(3), tapi bobot bukan persoalan entri ini
+- **Deskripsi:**
+  Tiga kutipan bernama lengkap dengan wajah, dan tidak ada satu pun pelanggan bernama itu. Basis data berisi dua tenant, keduanya demo (`Kopi Nusantara`, `Kopi Story`). Potretnya foto stok — bukan orang yang pernah memakai aplikasi ini.
+  Kenapa ini dipisah dari `[BL-032]`: empat klaim lain di halaman yang sama (login Google, katalog otomatis, "AI mengenali kebutuhan bisnis", "ribuan UMKM") dibuang karena **bisa diperiksa ke kode** — ada atau tidak ada, dan jawabannya tidak ada. Testimoni tidak begitu. Ia bisa saja mewakili percakapan nyata dengan calon klien yang namanya disamarkan, dan itu praktik yang lazim. Yang tidak bisa saya tentukan sendiri adalah mana dari keduanya.
+- **Yang perlu diputuskan pemilik:**
+  1. **Apakah ketiga kutipan itu berasal dari orang nyata?** Bila ya, cukup ganti potret stoknya dengan sesuatu yang tidak mengaku-aku wajah orang — inisial, ilustrasi, atau logo usahanya — dan tambahkan keterangan bahwa namanya disamarkan.
+  2. **Bila tidak**, ada dua jalan jujur: hapus bagiannya sampai ada pengguna sungguhan yang bersedia dikutip, atau ganti jadi bagian yang tidak mengaku sebagai kesaksian — misalnya "untuk siapa aplikasi ini dibuat", yang menyampaikan hal yang sama tanpa mengarang orang.
+- **Kenapa tidak dikerjakan sekalian:** menghapus testimoni adalah keputusan pemasaran, dan menggantinya dengan karangan yang lebih halus justru memperburuk. Keduanya milik pemilik, bukan konsekuensi teknis dari entri mana pun.
+
+### [BL-077] Kompres/Resize/WEBP Otomatis Baru Ada di Foto Produk — Tiga Jalur Gambar Lain Melewatinya
+- **Ditemukan:** 2026-08-14
+- **Sumber:** Pertanyaan pemilik — "apakah ada auto compress resize dan convert ke webp untuk gambar" — lalu ditelusuri ke seluruh jalur gambar di basis kode
+- **Status:** Open
+- **Prioritas:** Low — tidak ada angka yang salah dan tidak ada data yang bocor karenanya; yang terkena hanya biaya jaringan dan disk. Naik ke Medium bila `[BL-075]` menyala, karena sejak itu gambar tak terkompresi ikut masuk antrean offline
+- **Area Terdampak:**
+  - `app/Services/ImageService.php:57-64` — **sudah ada dan sudah benar**: `cover(800,800)` + `cover(200,200)`, `toWebp(quality: 80)`, dua rendition, disk privat
+  - `app/Http/Controllers/Owner/ProductController.php:52,97` — satu-satunya pemanggil `ImageService::upload()`
+  - `app/Http/Controllers/Billing/UpgradeController.php:113,123` — bukti transfer langganan: `->store('proofs','local')` **apa adanya**, tanpa resize, tanpa konversi, sampai 4 MB per berkas
+  - `app/Http/Requests/StoreProductRequest.php:22`, `UpdateProductRequest.php:22` — batas unggah 5 MB; seluruh 5 MB itu tetap menyeberangi jaringan sebelum dikecilkan di server
+  - `vite.config.js:7-14` — tidak ada plugin gambar; aset statis dipakai apa adanya
+  - `public/Stock-Management.png` (160 KB), `public/Dashboard-owner.png` (140 KB), `public/sapi-logo.png` (92 KB), `public/Product-List.png` (96 KB) — tangkapan layar landing masih PNG
+  - `resources/js/` — **tidak ada** `canvas`/`toBlob`/`createImageBitmap` di mana pun; kompresi sisi peramban belum pernah ditulis
+- **Deskripsi:**
+  Jawaban singkatnya: **ada, tapi hanya untuk foto produk.** `ImageService` melakukan ketiganya sekaligus — potong persegi 800px, turunkan thumbnail 200px, konversi WEBP kualitas 80 — dan itu berjalan otomatis pada setiap simpan/ubah produk. Yang perlu diluruskan adalah anggapan bahwa itu berlaku menyeluruh; ia tidak. Tiga jalur gambar lain tidak menyentuhnya sama sekali:
+  1. **Bukti transfer langganan.** `UpgradeController` menyimpan berkas mentah. Validasinya menerima `pdf` di samping `jpg|jpeg|png`, jadi ini **bukan** kasus "tinggal panggil `ImageService`" — sebuah PDF tidak bisa dilewatkan ke encoder WEBP, dan mengubahnya jadi gambar berarti kehilangan berkas aslinya. Jalur ini butuh percabangan berdasarkan tipe berkas, bukan penambalan satu baris.
+  2. **Sisi peramban, semua unggahan.** Foto 12 MP dari kamera ponsel dikirim utuh lebih dulu, baru dikecilkan setelah sampai. Untuk owner yang mengunggah katalog sambil online ini masih dapat diterima. Untuk `[BL-075]` butir (e) ia **tidak** dapat diterima, dan di sana alasannya sudah ditulis panjang: gambar masuk outbox IndexedDB sebelum ada server yang bisa mengecilkannya.
+  3. **Aset statis landing.** Tidak ada pipeline sama sekali. Bukti bahwa ini terasa: perbaikan avatar testimoni 1,8 MB → 5 KB pada `[BL-032]` dikerjakan **manual sekali jalan**; tidak ada yang mencegah berkas berat berikutnya masuk dengan cara yang sama.
+- **Usulan Perbaikan:**
+  **(a) Kerjakan sisi peramban lebih dulu, bukan sisi server.** Kompresi sebelum unggah menguntungkan ketiga jalur sekaligus dan merupakan prasyarat `[BL-075]`, sementara dua sisanya hanya merapikan yang sudah bekerja. Bentuknya satu composable `useImageCompressor` di atas `createImageBitmap` + `canvas.toBlob('image/webp')`, dipakai `ProductForm` sekarang dan `PaymentModal` nanti.
+  **(b) Jangan sentuh `ImageService` untuk mendukung bukti transfer.** Kelas itu tegas: produk, persegi, dua rendition, disk privat. Bukti bayar bukan persegi dan bisa berupa PDF. Percabangannya di pemanggil — bila `mime` gambar, kompresi; bila PDF, simpan apa adanya.
+  **(c) Aset statis diselesaikan di waktu build, bukan dengan disiplin manusia.** Satu plugin Vite pengonversi gambar menutup celahnya permanen; menambahkannya berarti mengubah dependensi, jadi butuh persetujuan lebih dulu.
+  **(d) Yang sengaja TIDAK diusulkan:** AVIF, `srcset` multi-lebar, dan rendition ketiga. WEBP 800/200 sudah memadai untuk kisi POS dan kartu produk; menambah format berarti menambah cabang penyajian di `MediaController` demi keuntungan yang belum ada yang mengeluhkan ketiadaannya.
+- **Catatan:** `QUALITY`, `MAIN_SIZE`, dan `THUMB_SIZE` adalah konstanta kelas (`ImageService.php:33-37`), bukan konfigurasi — sama seperti `DISK` pada `[BL-076]`(a). Bila suatu saat ketiganya perlu berbeda per lingkungan, kerjakan bersama entri itu, jangan sendiri-sendiri.
+
 ### [BL-044] Trial Habis Tanpa Ada yang Menerbitkan Tagihan — Bulan Kedua Tidak Pernah Menagih
 - **Ditemukan:** 2026-08-01
 - **Sumber:** Catatan pemilik — "tambahan status jika akun masih gratis, untuk bulan pertama tetapkan full gratis, tapi jika sudah masuk bulan kedua wajib melakukan ajukan subsidi atau kena tagihan biaya normal yaitu 100 k"
