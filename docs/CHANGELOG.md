@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | HOTFIX | UI | Landing Berhenti Menjanjikan Login Google, Katalog Otomatis, dan "Ribuan UMKM" (BL-032 butir 1) |
 | 2026-08-14 | ADDITION | Langganan | Tenant Jalur Harga Tetap Akhirnya Bisa Melihat Kelasnya Sendiri (BL-041 butir b) |
 | 2026-08-14 | ADDITION | Langganan | Landing Menjelaskan Cara Tarif Dihitung — dan Berhenti Menjanjikan Penguncian yang Tidak Pernah Ada (BL-066) |
 | 2026-08-14 | ADDITION | Langganan | Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067) |
@@ -177,6 +178,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Landing Berhenti Menjanjikan Login Google, Katalog Otomatis, dan "Ribuan UMKM" (BL-032 butir 1)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-032]` butir (1).
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Daftar fitur di landing ditulis ulang dari kapabilitas yang benar-benar ada, dan empat klaim yang tidak didukung apa pun dibuang.
+- **Alasan:** Entri ini semula berbunyi "tulis ulang daftar fitur dari kapabilitas yang benar-benar ada" — masalah kelengkapan. Yang ditemukan saat mengerjakannya lebih tajam: sebagian isinya bukan sekadar usang melainkan **tidak pernah ada**.
+
+- **Empat klaim dibuang karena salah, bukan karena usang — masing-masing diperiksa ke kode lebih dulu.**
+  1. **"Cukup hubungkan akun Google Anda"** beserta tombol "Lanjutkan dengan Google" yang dimockup lengkap dengan logonya. Tidak ada Socialite di `composer.json`, tidak ada rute OAuth, dan `AuthController@register` hanya menerima email + kata sandi. Ini bukan fitur usang; ini jalur masuk yang tidak pernah ada.
+  2. **"SAPI otomatis membuatkan kategori produk, daftar menu populer, dan saran stok awal."** `register()` membuat tepat tiga hal: tenant, langganan masa coba, dan user owner. Tidak ada satu baris katalog pun disemai — `[BL-034]` justru mencatat kebalikannya, bahwa tiap tenant baru mendarat di aplikasi paling kosongnya.
+  3. **"AI SAPI akan langsung mengenali kebutuhan bisnis Anda"** dari kategori usaha. `business_type` tidak menyentuh satu pun `*_enabled`; ia hanya dipakai penetapan harga (`[BL-034]`).
+  4. **"digunakan ribuan UMKM."** Basis datanya berisi dua tenant, keduanya demo.
+- **Yang menggantikannya adalah yang memang bisa ditunjuk barisnya.** Kartu fiturnya kini menyebut split bill, modifier per item, tagihan terbuka di topbar kasir, sesi kas dengan ringkasan selisih, stok per varian berikut riwayat dan opname, papan antrian dapur, saran jual dari sinyal stok, kuota AI yang terlihat sisanya, BYOK, dan RBAC per modul. Langkah pendaftarannya menyebut apa yang benar-benar terjadi: empat isian, verifikasi email, masa gratis dua bulan yang berakhir dengan perpindahan otomatis, lalu katalog yang disusun sendiri.
+- **Kapabilitas yang berbentuk API disebut sebagai API, bukan sebagai layar.** Pesan mandiri (`api/orders`), POS mobile (`api/mobile/*`), dan MCP semuanya nyata — dan tidak satu pun punya halaman bawaan. `[BL-032]` mengeluh landing tidak menyebutnya sama sekali; menyebutnya seolah fitur yang tinggal dibuka akan mengulang persis kesalahan yang entri ini bersihkan. Kartunya menyebutnya antarmuka program dan menaut ke `/api-docs`.
+- **Testimoni pelanggan sengaja TIDAK disentuh.** Tiga kutipan bernama (Andi, Santi, Budi) berdiri di atas potret stok dan kemungkinan besar karangan juga — tapi menghapus testimoni adalah keputusan pemasaran pemilik, bukan konsekuensi teknis dari butir ini. Dicatat sebagai `[BL-077]`.
+- **File Terdampak:**
+  - `resources/views/public/landing.blade.php` — tiga kartu fitur ditulis ulang, satu kartu API ditambahkan, empat langkah pendaftaran dibetulkan, mockup tombol Google dibuang.
+  - `tests/Feature/Public/LandingClaimsTest.php` — **baru.** 5 test yang mengunci klaim-klaim itu tidak kembali, dan mengunci sebutan kapabilitasnya tetap ada.
+- **Cara memeriksanya.** 65 test di `tests/Feature/Public` lewat. Test-nya sengaja mengunci **sebutan**, bukan kalimatnya: menulis ulang copy-nya tidak akan menggagalkan test, sementara menghidupkan kembali janji Google atau katalog otomatis akan.
+- **Yang TIDAK dikerjakan:** `[BL-032]` butir (3) bagian tangkapan layar masih tertunda; avatar sudah beres di entri terpisah.
 
 ---
 

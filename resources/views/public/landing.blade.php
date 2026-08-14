@@ -349,27 +349,49 @@
                                 <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
                                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                                 </div>
-                                <h4 class="text-2xl font-black text-gray-900 mb-4">Core POS System</h4>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Kasir & Sesi Kas</h4>
                                 <p class="text-lg text-gray-600 font-medium leading-relaxed">
-                                    Transaksi super cepat dengan dukungan multi-pembayaran (QRIS, Tunai, Transfer). Manajemen produk dan varian yang fleksibel untuk segala jenis bisnis UMKM.
+                                    Split bill, banyak metode bayar, dan modifier per item. Tagihan terbuka menunggu di topbar kasir sampai dilunasi,
+                                    dan tiap shift dibuka-tutup lewat sesi kas dengan ringkasan selisihnya.
                                 </p>
                             </div>
                             <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-2">
                                 <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
                                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                 </div>
-                                <h4 class="text-2xl font-black text-gray-900 mb-4">Smart Layer AI</h4>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Analisis AI & Saran Jual</h4>
                                 <p class="text-lg text-gray-600 font-medium leading-relaxed">
-                                    Bukan sekadar data. AI kami mempelajari pola unik di toko Anda dan memberikan saran aksi nyata melalui Badge Helper yang intuitif.
+                                    Analisis penjualan yang bisa dibaca, dengan jatah harian yang selalu terlihat sisanya.
+                                    Stok yang menumpuk berubah jadi saran jual di layar kasir — dan kunci API Anda sendiri melepas batasnya.
                                 </p>
                             </div>
                             <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-3">
                                 <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
                                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                                 </div>
-                                <h4 class="text-2xl font-black text-gray-900 mb-4">Inventory Prediction</h4>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Stok, Antrian, & Peran</h4>
                                 <p class="text-lg text-gray-600 font-medium leading-relaxed">
-                                    Hindari Dead Stock. SAPI memprediksi kebutuhan stok Anda berdasarkan tren historis, memastikan Anda selalu punya barang saat pelanggan mencari.
+                                    Stok per varian dengan riwayat pergerakan dan opname. Papan antrian dapur untuk yang memasak per pesanan.
+                                    Tiap staf hanya membuka modul yang memang haknya.
+                                </p>
+                            </div>
+
+                            {{--
+                                Kapabilitas yang nyata tapi BUKAN halaman siap
+                                pakai: pesan mandiri dan MCP berbentuk API, dan
+                                POS mobile punya referensinya sendiri. Disebut
+                                apa adanya sebagai antarmuka program — memajangnya
+                                seolah layar yang tinggal dibuka persis jenis
+                                karangan yang dibersihkan `[BL-032]`.
+                            --}}
+                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-4">
+                                <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
+                                    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                                </div>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Terbuka lewat API</h4>
+                                <p class="text-lg text-gray-600 font-medium leading-relaxed">
+                                    Pesan mandiri, POS mobile, dan asisten AI Anda sendiri lewat MCP — semuanya berbentuk API, bukan layar bawaan,
+                                    dan <a href="{{ route('api-docs') }}" class="text-primary hover:underline">referensinya terbuka</a> untuk dibaca sebelum Anda memutuskan.
                                 </p>
                             </div>
                         </div>
@@ -397,7 +419,7 @@
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
                 <h3 class="text-4xl lg:text-5xl font-black text-gray-900">Bukti Nyata Sistem SAPI</h3>
-                <p class="text-lg text-gray-600 font-medium mt-4">Kami tidak hanya bicara fitur, inilah tampilan asli dashboard dan manajemen SAPI yang digunakan ribuan UMKM.</p>
+                <p class="text-lg text-gray-600 font-medium mt-4">Bukan mockup — inilah layar yang benar-benar dipakai sehari-hari, diambil dari aplikasi yang berjalan.</p>
             </div>
 
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -548,20 +570,11 @@
                     <div class="relative grid lg:grid-cols-2 gap-12 items-center reveal">
                         <div class="lg:text-right lg:pr-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">1</div>
-                            <h4 class="text-2xl font-black text-gray-900 mb-4">Daftar / Login Cepat</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Cukup hubungkan akun Google Anda atau daftar dengan email. Tanpa formulir panjang yang membosankan.</p>
+                            <h4 class="text-2xl font-black text-gray-900 mb-4">Daftar dengan Email</h4>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Empat isian: nama usaha, jenis usaha, email, dan kata sandi. Verifikasi emailnya, lalu masuk.</p>
                         </div>
                         <div class="lg:pl-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center gap-4">
-                                <div class="w-full h-12 border border-gray-100 rounded-xl flex items-center justify-center gap-3 font-bold text-gray-600 text-sm">
-                                    <svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                                    Lanjutkan dengan Google
-                                </div>
-                                <div class="w-full flex items-center gap-2 px-10">
-                                    <div class="flex-1 h-px bg-gray-100"></div>
-                                    <span class="text-[10px] font-bold text-gray-300 uppercase">Atau</span>
-                                    <div class="flex-1 h-px bg-gray-100"></div>
-                                </div>
                                 <div class="w-full space-y-2">
                                     <div class="h-10 bg-gray-50 rounded-lg w-full"></div>
                                     <div class="h-10 bg-primary rounded-lg w-full"></div>
@@ -574,8 +587,8 @@
                     <div class="relative grid lg:grid-cols-2 gap-12 items-center reveal pt-24 lg:pt-32">
                         <div class="lg:order-2 lg:pl-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">2</div>
-                            <h4 class="text-2xl font-black text-gray-900 mb-4">Setup AI Bisnis Anda</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Cukup masukkan nama toko dan pilih kategori usaha Anda. AI SAPI akan langsung mengenali kebutuhan bisnis Anda.</p>
+                            <h4 class="text-2xl font-black text-gray-900 mb-4">Masa Gratis Langsung Berjalan</h4>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Dua bulan, semua fitur terbuka, tanpa kartu kredit. Sesudahnya akun berpindah sendiri ke paket berbayar — tidak berhenti mendadak.</p>
                         </div>
                         <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 space-y-4">
@@ -598,8 +611,8 @@
                     <div class="relative grid lg:grid-cols-2 gap-12 items-center reveal pt-24 lg:pt-32">
                         <div class="lg:text-right lg:pr-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">3</div>
-                            <h4 class="text-2xl font-black text-gray-900 mb-4">AI Menyiapkan Toko Anda</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Berdasarkan kategori, SAPI otomatis membuatkan kategori produk, daftar menu populer, dan saran stok awal.</p>
+                            <h4 class="text-2xl font-black text-gray-900 mb-4">Susun Katalog Anda</h4>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Produk, varian, dan modifier disusun sendiri lewat halaman Katalog — sesuai menu yang benar-benar Anda jual, bukan tebakan.</p>
                         </div>
                         <div class="lg:pl-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center text-center">
@@ -607,7 +620,7 @@
                                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
                                 </div>
                                 <h5 class="font-black text-gray-900 mb-1 text-sm">Menyiapkan Toko...</h5>
-                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Membuat Katalog Produk Kopi</p>
+                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Katalog · Produk & Varian</p>
                                 <div class="w-full bg-gray-100 h-1.5 rounded-full mt-6 overflow-hidden">
                                     <div class="bg-primary h-full w-2/3"></div>
                                 </div>
@@ -620,7 +633,7 @@
                         <div class="lg:order-2 lg:pl-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">4</div>
                             <h4 class="text-2xl font-black text-gray-900 mb-4">Siap Digunakan!</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Hanya dalam hitungan detik, dashboard dan sistem kasir Anda sudah siap. Langsung mulai transaksi pertama Anda.</p>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Buka sesi kas, dan kasir siap dipakai. Laporan harian, rekap bulanan, dan analisis AI mengikuti dari transaksi yang masuk.</p>
                         </div>
                         <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-3 rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
