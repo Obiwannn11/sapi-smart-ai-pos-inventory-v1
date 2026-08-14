@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | ADDITION | Langganan | Halaman `/harga` Membacakan Kedua Jalur Tarif kepada Orang yang Belum Mendaftar (BL-041 butir c) |
 | 2026-08-14 | HOTFIX | UI | Dua Paket Karangan di Landing Diganti Paket yang Benar-Benar Ditagihkan (BL-032 butir 2) |
 | 2026-08-14 | ADDITION | Langganan | Satu Pembaca Harga untuk Permukaan Tanpa Sesi, Sebelum Ada yang Membacanya (BL-041, BL-066, BL-067) |
 | 2026-08-14 | REFACTOR | Pengaturan | "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039) |
@@ -173,6 +174,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Halaman `/harga` Membacakan Kedua Jalur Tarif kepada Orang yang Belum Mendaftar (BL-041 butir c)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-041]` butir (c). Commit keempat di jalan permukaan publik; pemakai kedua `PublicPricing`.
+- **Dampak:** Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak. Rute baru, tidak ada yang berubah perilakunya.
+- **Deskripsi:** `/harga` berdiri: tarif jalur Harga Tetap per paket, tangga Harga Adaptif beserta rentang omzet dan ambangnya, perbandingan tegas dua jalur, dan syarat perpindahannya — semuanya dibaca dari `plans` dan `pricing_rules`. Landing menautkannya.
+- **Alasan:** Mesin "kelas sesuai omzet" sudah berjalan lama, dan sejak `[BL-055]` tangganya bisa dilihat tenant di `/langganan/harga-adaptif`. Yang tidak pernah ada adalah halaman untuk orang yang **belum** mendaftar — padahal merekalah yang harus memutuskan apakah jalur ini masuk akal baginya.
+
+- **Menumpang kerangka `/dokumentasi`, bukan menulis kerangka keempat.** `[BL-033]` baru saja menyatukan tiga permukaan publik; menambahkan halaman kelima dengan gaya sendiri akan membatalkan pekerjaan itu di hari yang sama. Kerangka docs dibuat sedikit lebih umum untuk menampungnya: judul topbar, tautannya, dan sufiks `<title>` jadi `@yield` bersuku cadang bawaan — halaman dokumentasi yang ada tidak berubah sama sekali karena bawaannya persis nilai lamanya.
+- **Kata-kata rentang omzet disalin persis dari `Billing/Adaptive.vue:49-52`, bukan disusun ulang.** Versi pertama saya menulis "Di bawah Rp 2.000.000" untuk bracket A dan "Rp X – Rp Y" untuk sisanya. Itu **berbeda** dari yang sudah dibaca tenant di halaman langganan, yang menulis "Rp 0 – di bawah Rp 2.000.000". Dua halaman yang menjelaskan tangga yang sama tidak boleh menyebut rentang yang sama dengan dua cara berbeda, jadi yang publik yang mengalah. Termasuk cabang `Semua omzet` yang semula saya lewatkan.
+- **Ambang hanya disebut bila memang ada.** `ceiling` null berarti tangganya tidak berujung, bukan ambang nol. Ada test yang memastikan halaman tidak menuliskan "di bawah Rp 0" — kalimat yang akan memberi tahu **setiap** pengunjung bahwa omzetnya terlalu tinggi untuk Harga Adaptif.
+- **Tanpa satu pun aturan tarif, bagian Adaptif hilang seluruhnya — bukan jadi tabel kosong.** Halaman tetap berdiri dengan jalur Harga Tetap saja. Tabel tangga tanpa satu baris pun lebih buruk daripada tidak ada: ia menjanjikan jalur yang tidak bisa diambil siapa pun.
+- **Perbandingannya menyebut apa yang diminta dari pembaca, bukan hanya apa yang ia dapat.** Kolom Harga Adaptif menuliskan terus terang bahwa jalur itu menuntut persetujuan eksplisit atas pemakaian total omzet bulanan, dan bahwa angkanya dihitung otomatis dari transaksi — bukan dari laporan yang diisi sendiri. Meminta orang menyetujui sesuatu tanpa lebih dulu bisa membacanya adalah cara tercepat membuat pengajuan itu ditolak, atau lebih buruk, disetujui tanpa dipahami.
+- **Landing menaut, tidak menyalin.** Entri backlognya menulis "Landing menaut ke sana, menggantikan bagian harga yang sekarang" — dan "bagian harga yang sekarang" saat itu berarti dua paket karangan, yang sudah diganti data nyata beberapa jam sebelumnya. Jadi yang ditambahkan hanya tautannya; kartu di landing tetap menjawab "berapa", dan `/harga` menjawab sisanya. Memuat tangga bracket di landing berarti menulis tabel kedua yang harus dijaga tetap sama.
+- **File Terdampak:**
+  - `app/Http/Controllers/Public/PricingController.php` — **baru.** Satu aksi; seluruh angkanya dari `PublicPricing`.
+  - `routes/web.php` — rute `/harga` bernama `pricing`, di kelompok rute publik.
+  - `resources/views/public/pricing.blade.php` — **baru.** Hero, tabel jalur Harga Tetap, tangga Adaptif, perbandingan dua kolom, dan syarat perpindahan jalur.
+  - `resources/views/public/docs/layout.blade.php` — judul topbar, tautannya, dan sufiks `<title>` jadi `@yield` bersuku cadang bawaan.
+  - `resources/views/public/landing.blade.php` — tautan "Lihat rincian harga & jalur Harga Adaptif" di bawah kartu paket.
+  - `tests/Feature/Public/PricingPageTest.php` — **baru.** 10 test.
+- **Cara memeriksanya.** 41 test di `tests/Feature/Public` lewat. Halaman juga dibuka di peramban: tangga A–D terbaca dari `pricing_rules` dengan rentang dan tarif yang benar (10k/25k/50k/75k, ambang Rp 50 jt), judul tab "Harga — SAPI POS", dan pada 390px perbandingan dua kolomnya menumpuk jadi satu tanpa halaman ikut menggeser ke samping.
+- **Yang TIDAK dikerjakan:** `[BL-041]` butir (b) — kelas harga untuk tenant jalur Harga Tetap di `/langganan` — belum disentuh, dan entrinya tetap **Open**. Halaman ini juga belum menyebut seat bawaan maupun kuota AI tiap paket; itu `[BL-067]`, commit berikutnya.
 
 ---
 

@@ -520,6 +520,12 @@ Route::get('/', [\App\Http\Controllers\Public\LandingController::class, 'index']
 // komponen yang tidak terwakili markdown (kartu endpoint, badge method).
 Route::get('/api-docs', [\App\Http\Controllers\Public\LandingController::class, 'docs'])->name('api-docs');
 
+// Halaman harga publik — membacakan aturan tarif yang benar-benar berlaku
+// kepada orang yang belum punya sesi. Tenant yang sudah masuk melihat versi
+// miliknya sendiri di `/langganan/harga-adaptif` (BL-055); halaman ini tidak
+// menyentuh tenant sama sekali.
+Route::get('/harga', [\App\Http\Controllers\Public\PricingController::class, 'index'])->name('pricing');
+
 // Hub Dokumentasi — dua jalur: panduan penggunaan & dokumentasi developer.
 Route::get('/dokumentasi', [\App\Http\Controllers\Public\DocsController::class, 'index'])->name('docs.index');
 Route::get('/dokumentasi/{track}/{page?}', [\App\Http\Controllers\Public\DocsController::class, 'show'])

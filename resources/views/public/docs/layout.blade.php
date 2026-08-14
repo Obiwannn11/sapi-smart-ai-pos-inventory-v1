@@ -1,5 +1,7 @@
 {{--
-    Kerangka bersama halaman dokumentasi.
+    Kerangka bersama halaman dokumentasi — dan sejak `[BL-041]`(c) juga halaman
+    `/harga`, yang menumpang topbar, palet, dan gaya prosanya lewat
+    `@extends` supaya tidak lahir sumber gaya keempat.
 
     Paletnya kini datang dari `public/partials/theme`, dipakai bersama landing
     dan /api-docs — sebelumnya ia salinan dari berkas api-docs. CSS tata letak
@@ -12,7 +14,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title') — Dokumentasi SAPI</title>
+    <title>@yield('title') — @yield('title-suffix', 'Dokumentasi SAPI')</title>
     <meta name="description" content="@yield('description', 'Dokumentasi SAPI — panduan penggunaan aplikasi kasir dan dokumentasi developer.')">
 
     @include('public.partials.favicon')
@@ -171,7 +173,9 @@
             @include('public.partials.wordmark', ['size' => 'sm'])
         </a>
         <span class="docs-topbar-sep">/</span>
-        <a href="{{ route('docs.index') }}" class="docs-topbar-title" style="text-decoration:none;">Dokumentasi</a>
+        {{-- Judul topbar bisa diganti halaman yang menumpang kerangka ini; --}}
+        {{-- bawaannya tetap Dokumentasi supaya halaman docs tidak berubah.  --}}
+        <a href="@yield('topbar-href', route('docs.index'))" class="docs-topbar-title" style="text-decoration:none;">@yield('topbar-title', 'Dokumentasi')</a>
 
         <div class="docs-topbar-actions">
             <a href="{{ route('api-docs') }}" class="docs-topbar-link is-hideable">Referensi API</a>

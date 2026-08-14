@@ -719,6 +719,18 @@
                     </div>
                 @endforeach
             </div>
+
+            {{--
+                Kartu di atas sengaja hanya menjawab "berapa". Jalur Harga
+                Adaptif, tangga bracketnya, dan syarat berpindah jalur ada di
+                `/harga` — memuatnya di landing berarti menulis tabel kedua yang
+                harus dijaga tetap sama (`[BL-041]`(c)).
+            --}}
+            <p class="text-center mt-12 reveal">
+                <a href="{{ route('pricing') }}" class="font-black text-primary hover:underline">
+                    Lihat rincian harga & jalur Harga Adaptif &rarr;
+                </a>
+            </p>
         </div>
     </section>
 
