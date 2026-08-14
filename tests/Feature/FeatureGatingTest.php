@@ -240,7 +240,7 @@ test('owner bisa mengubah flag dari settings', function () {
 
     actingAs($owner);
 
-    $this->patch('/owner/settings', [
+    $this->patch('/owner/settings/operations', [
         'kitchen_queue_enabled' => true,
         'self_order_enabled' => false,
         'ai_enabled' => false,

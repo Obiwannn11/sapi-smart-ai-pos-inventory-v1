@@ -59,6 +59,11 @@ const iconPaths = {
     clipboard:
         'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
     'trending-up': 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6',
+    cog: [
+        'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+        'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+    ],
+    key: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z',
 };
 
 const NavIcon = defineComponent({
@@ -138,7 +143,12 @@ const sidebarGroups = [
     {
         label: 'Pengaturan',
         items: [
-            { name: 'Profil Usaha', href: '/owner/settings', icon: 'office-building', ownerOnly: true },
+            // Tiga halaman, bukan satu "Profil Usaha" yang memuat lima urusan
+            // sekaligus ([BL-039]). Namanya pun ikut diperbaiki: yang dulu
+            // disebut profil sebagian besar bukan profil.
+            { name: 'Profil & Merek', href: '/owner/settings', icon: 'office-building', ownerOnly: true },
+            { name: 'Cara Kerja Sistem', href: '/owner/settings/operations', icon: 'cog', ownerOnly: true },
+            { name: 'Integrasi & Kredensial', href: '/owner/settings/integrations', icon: 'key', ownerOnly: true },
             // Rutenya sendiri TIDAK digerbang role:owner — halaman langganan
             // sengaja terbuka untuk semua pengguna tenant, karena begitu tenant
             // ditangguhkan setiap halaman lain mengarah ke sana dan kasir yang
@@ -179,9 +189,23 @@ const visibleGroups = computed(() =>
 const isSuspended = computed(() => auth.tenant?.is_suspended === true);
 const isLocked = (item) => isSuspended.value && item.href !== '/langganan';
 
+// Tautan yang jadi awalan tautan lain di sidebar — `/owner/settings` terhadap
+// `/owner/settings/operations` ([BL-039]). Untuk yang seperti ini `startsWith`
+// menyalakan induk DAN anaknya sekaligus, dan breadcrumb mengambil yang pertama
+// ketemu, yaitu yang salah. Daftarnya diturunkan dari sidebar itu sendiri,
+// bukan ditulis tangan, supaya halaman bersarang berikutnya tidak mengulang
+// bug yang sama diam-diam.
+const parentHrefs = new Set(
+    sidebarGroups.flatMap((group) => group.items).flatMap((item, _, all) =>
+        all.some((other) => other.href !== item.href && other.href.startsWith(`${item.href}/`))
+            ? [item.href]
+            : [],
+    ),
+);
+
 const isActive = (href) => {
     const url = page.url;
-    if (href === '/owner/dashboard') return url === '/owner/dashboard';
+    if (href === '/owner/dashboard' || parentHrefs.has(href)) return url === href;
     return url.startsWith(href);
 };
 

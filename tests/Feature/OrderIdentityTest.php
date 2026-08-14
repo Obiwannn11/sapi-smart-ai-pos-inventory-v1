@@ -205,7 +205,7 @@ test('owner bisa menyetel mode identitas pesanan', function () {
 
     actingAs($owner);
 
-    patch('/owner/settings', [
+    patch('/owner/settings/operations', [
         'order_identity_mode' => Tenant::ORDER_IDENTITY_CODE,
     ])->assertRedirect();
 
@@ -220,7 +220,7 @@ test('mode identitas asing ditolak', function () {
 
     actingAs($owner);
 
-    patch('/owner/settings', ['order_identity_mode' => 'nomor_hp'])
+    patch('/owner/settings/operations', ['order_identity_mode' => 'nomor_hp'])
         ->assertSessionHasErrors('order_identity_mode');
 
     expect($this->tenant->fresh()->order_identity_mode)->toBe(Tenant::ORDER_IDENTITY_NONE);
@@ -236,7 +236,7 @@ test('menyimpan pengaturan lain tidak mengembalikan mode identitas ke none', fun
 
     actingAs($owner);
 
-    patch('/owner/settings', ['phone' => '021-1234567'])->assertRedirect();
+    patch('/owner/settings/operations', ['ai_enabled' => true])->assertRedirect();
 
     expect($this->tenant->fresh()->order_identity_mode)->toBe(Tenant::ORDER_IDENTITY_TABLE);
 });

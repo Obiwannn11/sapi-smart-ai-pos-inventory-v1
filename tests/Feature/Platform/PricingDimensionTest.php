@@ -352,6 +352,8 @@ test('nominal yang ditetapkan sendiri tidak ditautkan ke aturan mana pun', funct
         // Pemilik SaaS memberi potongan; aturannya tidak menghasilkan angka ini.
         'amount' => 15_000,
         'due_date' => now()->addWeek()->toDateString(),
+        // Menyimpang dari aturan berarti alasannya wajib (`[BL-057]`(a)).
+        'amount_reason' => 'Potongan kesepakatan.',
     ])->assertSessionHas('success');
 
     $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
@@ -414,13 +416,7 @@ test('pemilik toko mengatur sendiri tipe usahanya dari Pengaturan', function () 
     $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
 
     actingAs($owner)
-        ->patch('/owner/settings', [
-            'business_type' => 'retail',
-            'kitchen_queue_enabled' => false,
-            'self_order_enabled' => false,
-            'ai_enabled' => true,
-            'upsell_mandatory' => false,
-        ])
+        ->patch('/owner/settings', ['business_type' => 'retail'])
         ->assertSessionHasNoErrors();
 
     expect($tenant->fresh()->business_type)->toBe('retail');

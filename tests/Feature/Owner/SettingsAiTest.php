@@ -13,7 +13,7 @@ beforeEach(function () {
 });
 
 test('ai_api_key is stored encrypted', function () {
-    $this->patch(route('owner.settings.update'), [
+    $this->patch(route('owner.settings.integrations.update'), [
         'ai_provider' => 'openai',
         'ai_api_key' => 'sk-super-secret',
         'ai_model' => 'gpt-4o-mini',
@@ -25,13 +25,13 @@ test('ai_api_key is stored encrypted', function () {
         ->and($this->tenant->getRawOriginal('ai_api_key'))->not->toBe('sk-super-secret');
 });
 
-test('settings props expose ai_key_set but never the key itself', function () {
+test('integrations props expose ai_key_set but never the key itself', function () {
     $this->tenant->update(['ai_api_key' => 'sk-hidden']);
 
-    $this->get(route('owner.settings.index'))
+    $this->get(route('owner.settings.integrations.index'))
         ->assertInertia(
             fn ($page) => $page
-                ->component('Owner/Settings/Index')
+                ->component('Owner/Settings/Integrations')
                 ->where('tenant.ai_key_set', true)
                 ->missing('tenant.ai_api_key')
         );
@@ -40,7 +40,7 @@ test('settings props expose ai_key_set but never the key itself', function () {
 test('blank ai_api_key does not overwrite existing stored key', function () {
     $this->tenant->update(['ai_api_key' => 'sk-existing']);
 
-    $this->patch(route('owner.settings.update'), [
+    $this->patch(route('owner.settings.integrations.update'), [
         'ai_provider' => 'gemini',
         'ai_api_key' => '',
     ])->assertRedirect();
@@ -60,7 +60,7 @@ test('free tier remaining reflects daily limit minus usage', function () {
         'count' => 2,
     ]);
 
-    $this->get(route('owner.settings.index'))
+    $this->get(route('owner.settings.integrations.index'))
         ->assertInertia(
             fn ($page) => $page
                 ->where('aiQuota.daily_limit', 5)
@@ -70,7 +70,7 @@ test('free tier remaining reflects daily limit minus usage', function () {
         );
 });
 
-test('settings quota block reports byok tenants as unmetered', function () {
+test('integrations quota block reports byok tenants as unmetered', function () {
     config(['ai.free_tier.daily_limit' => 5]);
 
     \App\Models\AiUsage::create([
@@ -83,7 +83,7 @@ test('settings quota block reports byok tenants as unmetered', function () {
 
     // `used` nol, bukan 2: pemakaian dari masa sebelum kuncinya diisi tidak
     // boleh dibacakan sebagai jatah yang sedang berjalan.
-    $this->get(route('owner.settings.index'))
+    $this->get(route('owner.settings.integrations.index'))
         ->assertInertia(
             fn ($page) => $page
                 ->where('aiQuota.using_free_tier', false)
@@ -102,7 +102,7 @@ test('quota block names the plan when the limit comes from one', function () {
         'plan_id' => $plan->id,
     ]);
 
-    $this->get(route('owner.settings.index'))
+    $this->get(route('owner.settings.integrations.index'))
         ->assertInertia(
             fn ($page) => $page
                 ->where('aiQuota.daily_limit', 9)
@@ -112,7 +112,7 @@ test('quota block names the plan when the limit comes from one', function () {
 });
 
 test('invalid provider is rejected', function () {
-    $this->patch(route('owner.settings.update'), [
+    $this->patch(route('owner.settings.integrations.update'), [
         'ai_provider' => 'invalid-provider',
     ])->assertSessionHasErrors('ai_provider');
 });
@@ -124,7 +124,7 @@ test('promo yang berjalan ikut terbaca di halaman Pengaturan', function () {
 
     // Angkanya naik DAN alasannya ikut, supaya hari promo berakhir tidak
     // terbaca owner sebagai aplikasi yang mendadak memotong jatahnya.
-    $this->get(route('owner.settings.index'))
+    $this->get(route('owner.settings.integrations.index'))
         ->assertInertia(
             fn ($page) => $page
                 ->where('aiQuota.daily_limit', 8)

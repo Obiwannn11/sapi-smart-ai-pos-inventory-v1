@@ -239,15 +239,35 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::resource('roles', \App\Http\Controllers\Owner\RoleController::class)
             ->only(['index', 'store', 'update', 'destroy']);
 
-        // Settings
-        Route::get('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'index'])
+        // Settings — TIGA halaman, tiga endpoint ([BL-039]).
+        //
+        // Pemecahannya bukan soal tata letak: satu `update` yang lama menerima
+        // identitas usaha, dasar tarif, kapabilitas modul, dan kunci API dalam
+        // SATU permintaan. Endpoint yang terpisah membuat "form ini tidak boleh
+        // bisa menulis kredensial" jadi sifat rutenya, bukan kesepakatan yang
+        // dijaga kehati-hatian.
+        //
+        // Path `settings` yang lama tetap jadi milik Profil & Merek, beserta
+        // nama rute `owner.settings.index`/`.update` — tautan dan bookmark yang
+        // sudah beredar mendarat di tempat yang masih masuk akal.
+        Route::get('settings', [\App\Http\Controllers\Owner\Settings\BusinessProfileController::class, 'index'])
             ->name('settings.index');
-        Route::patch('settings', [\App\Http\Controllers\Owner\SettingsController::class, 'update'])
+        Route::patch('settings', [\App\Http\Controllers\Owner\Settings\BusinessProfileController::class, 'update'])
             ->name('settings.update');
-        Route::post('settings/mcp-token', [\App\Http\Controllers\Owner\SettingsController::class, 'generateMcpToken'])
-            ->name('settings.mcp-token.generate');
-        Route::delete('settings/mcp-token', [\App\Http\Controllers\Owner\SettingsController::class, 'revokeMcpToken'])
-            ->name('settings.mcp-token.revoke');
+
+        Route::get('settings/operations', [\App\Http\Controllers\Owner\Settings\SystemBehaviorController::class, 'index'])
+            ->name('settings.operations.index');
+        Route::patch('settings/operations', [\App\Http\Controllers\Owner\Settings\SystemBehaviorController::class, 'update'])
+            ->name('settings.operations.update');
+
+        Route::get('settings/integrations', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'index'])
+            ->name('settings.integrations.index');
+        Route::patch('settings/integrations', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'update'])
+            ->name('settings.integrations.update');
+        Route::post('settings/integrations/mcp-token', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'generateMcpToken'])
+            ->name('settings.integrations.mcp-token.generate');
+        Route::delete('settings/integrations/mcp-token', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'revokeMcpToken'])
+            ->name('settings.integrations.mcp-token.revoke');
     });
 
 // --- Cashier Routes (owner juga bisa akses) ---

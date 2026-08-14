@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | REFACTOR | Pengaturan | "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039) |
 | 2026-08-14 | ADDITION | RBAC | Halaman Staf Menjawab "Orang Ini Bisa Buka Apa Saja", dan Baris Owner Mengaku Melewati Seluruh Pemeriksaan (BL-038) |
 | 2026-08-14 | DECISION | UI | Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033) |
 | 2026-08-13 | ADDITION | AI | Kuota AI Berhenti Tinggal di `.env`: Kebijakan Berjangka Waktu, Promo, dan Tombol Mengembalikan Jatah Hari Ini (BL-047) |
@@ -169,6 +170,43 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [REFACTOR] "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-039]`, seluruh butirnya.
+- **Dampak:** Routing | Controller | Frontend | Test
+- **Breaking Change:** Tidak untuk pengguna. Untuk kode: `Owner\SettingsController` **dihapus** dan diganti tiga controller di `app/Http/Controllers/Owner/Settings/`; nama rute `owner.settings.mcp-token.*` menjadi `owner.settings.integrations.mcp-token.*`. Path `/owner/settings` dan nama rute `owner.settings.index`/`.update` sengaja dipertahankan, jadi bookmark dan tautan yang sudah beredar tidak putus.
+- **Deskripsi:** Halaman "Profil Usaha" memuat lima urusan dengan tingkat risiko yang jauh berbeda di balik satu tombol simpan. Sekarang ia tiga halaman dengan tiga endpoint terpisah: **Profil & Merek** (nama, alamat, telepon, jenis usaha), **Cara Kerja Sistem** (kapabilitas modul, aturan kerja kasir, identitas pesanan), dan **Integrasi & Kredensial** (penyedia AI + kunci, token MCP).
+- **Alasan:** Review demo pemilik — "pada profile usaha dan setting usaha, pisahkan bersifat brand usaha, cara kerja sistem, sampai ke api key dll settingannya pisahkan semua". Kasusnya menguat sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31): satu permintaan `PATCH` bisa menulis identitas usaha, **dasar tarif bulan depan**, kapabilitas modul, dan kunci API penyedia AI sekaligus.
+
+- **Yang dipecah endpoint-nya, bukan aturan validasinya.** `business_type` dan `order_identity_mode` sudah memakai `sometimes|required` justru untuk keadaan ini, jadi tiap controller tinggal membawa potongan aturan miliknya. Tidak ada satu aturan validasi pun yang berubah maknanya.
+- **Pemisahannya jadi sifat rute, bukan kesepakatan yang dijaga kehati-hatian.** `$request->validate()` hanya mengembalikan kunci yang divalidasi, jadi field milik halaman lain yang ikut terkirim tidak tersimpan — bukan karena ada yang menyaringnya, melainkan karena endpoint itu tidak pernah tahu field itu ada. Tiga test mengunci arah ini satu per satu: Profil tidak bisa menulis kredensial/kapabilitas, Cara Kerja tidak bisa menulis kredensial/dasar tarif, Integrasi tidak bisa menulis kapabilitas/dasar tarif.
+- **Jenis usaha ditaruh di Profil & Merek, bukan di halaman tersendiri.** Ia memang keterangan usaha, dan memisahkannya hanya akan membuat orang mencarinya di tempat yang salah. Yang wajib ikut — dan sekarang ada — satu kalimat di sebelah kolomnya: mengubahnya ikut menentukan tarif periode berikutnya, dan tagihan yang sudah terbit tidak berubah. Kolom yang menggerakkan uang tidak boleh terlihat sama tak berbahayanya dengan kolom nomor telepon.
+- **Sakelar `ai_enabled` TIDAK ikut pindah ke halaman kredensial meski berkerabat.** Ia kapabilitas modul, tempatnya di Cara Kerja Sistem. Yang ikut ke halaman Integrasi hanya bacaannya, dipakai memasang peringatan terus terang: selama modulnya mati, apa pun yang disimpan di halaman itu belum dipakai. Tanpa itu owner akan menghabiskan waktu mencari kesalahan pada kuncinya.
+- **`isActive()` di sidebar ikut diperbaiki, dan ini bukan pekerjaan kosmetik.** `/owner/settings` kini jadi awalan `/owner/settings/operations`, sehingga `url.startsWith(href)` menyalakan induk DAN anaknya sekaligus — dan breadcrumb, yang mengambil kecocokan pertama, akan menyebut halaman yang salah. Daftar "href yang jadi induk" diturunkan dari sidebar itu sendiri, bukan ditulis tangan, supaya halaman bersarang berikutnya tidak mengulang bug yang sama diam-diam.
+- **`SettingsNav` ada karena sidebar menghilang di layar kecil.** Owner yang baru mengganti jenis usaha biasanya meneruskan ke halaman sebelahnya; di ponsel jalannya cuma lewat menu yang harus dibuka dulu.
+- **Tautan jalan keluar di `AiQuotaMeter` ikut dibetulkan.** Ia menawarkan BYOK lalu mengirim orang ke "Buka Pengaturan" — halaman yang sejak entri ini tidak lagi memuat kolom kuncinya. Sekarang ia menunjuk langsung ke halaman kredensial, dan labelnya berbunyi "Atur Kunci API".
+- **Satu test lama diganti pembandingnya, bukan dihapus.** `OrderIdentityTest` membuktikan aturan `sometimes` dengan mengirim `phone` dan memastikan mode identitas tidak balik ke `none`. Sejak telepon pindah ke endpoint lain, pengiriman itu tidak lagi membuktikan apa pun; pembandingnya diganti `ai_enabled`, yang MASIH satu endpoint dengan mode identitas.
+- **Yang sengaja TIDAK dikerjakan, dan alasannya:**
+  - **Unggah logo struk.** Usulan `[BL-039]` menyebutnya masuk Profil & Merek, tapi `logo` hari ini kolom mati — pencarian di seluruh `app/`, `resources/`, dan `routes/` hanya menemukannya di `$fillable` `Tenant`. Membangunnya berarti fitur baru, dan ia menabrak `[BL-076]` (berkas tenant belum punya jalan ke object storage). Ditahan sampai `[BL-076]` dijawab.
+  - **Nama usaha tetap `disabled`.** Membukanya menyeret `slug`, dan itu keputusan tersendiri yang tidak diminta entri ini.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/SettingsController.php` — **dihapus**, dipecah jadi tiga.
+  - `app/Http/Controllers/Owner/Settings/BusinessProfileController.php` — **baru.** `address`, `phone`, `business_type`.
+  - `app/Http/Controllers/Owner/Settings/SystemBehaviorController.php` — **baru.** Empat sakelar + `order_identity_mode`, beserta `featureWarnings`.
+  - `app/Http/Controllers/Owner/Settings/IntegrationController.php` — **baru.** Kredensial AI, snapshot kuota, dan token MCP.
+  - `routes/web.php` — tiga pasang `GET`/`PATCH` menggantikan satu pasang; rute token MCP pindah ke bawah `settings/integrations`.
+  - `resources/js/Pages/Owner/Settings/Index.vue` — tinggal Profil & Merek.
+  - `resources/js/Pages/Owner/Settings/Operations.vue`, `Integrations.vue` — **baru.**
+  - `resources/js/Components/SettingsNav.vue` — **baru.** Penunjuk arah antar ketiganya.
+  - `resources/js/Layouts/OwnerLayout.vue` — grup "Pengaturan" jadi empat tautan; ikon `cog` & `key` ditambahkan; `isActive()` diperbaiki untuk href bersarang.
+  - `resources/js/Components/AiQuotaMeter.vue` — tautan jalan keluar BYOK menunjuk ke halaman kredensial.
+  - `tests/Feature/Owner/SettingsSplitTest.php` — **baru.** 6 test yang mengunci pemisahannya.
+  - `tests/Feature/Owner/SettingsAiTest.php`, `SettingsMcpTest.php`, `tests/Feature/FeatureGatingTest.php`, `OrderIdentityTest.php`, `Platform/PricingDimensionTest.php`, `Upsell/UpsellEventTest.php` — diarahkan ulang ke endpoint yang sekarang memiliki field-nya.
+- **Cara memeriksanya.** Seluruh suite dijalankan: **909 test lulus (3.928 assertion)**. Ketiga halaman juga dibuka di peramban dengan sesi owner yang sudah berjalan — ketiganya merender, breadcrumb menyebut halaman yang benar (bukan induknya), dan satu putaran simpan sungguhan lewat formulir Integrasi terbukti mendarat di basis data lalu dikembalikan ke keadaan semula.
+- **Dampak ke `[BL-034]`:** halaman "Cara Kerja Sistem" inilah tempat preset fitur pendaftaran nanti bisa ditinjau ulang owner. Perlu dicatat untuk yang mengerjakannya: preset berlaku **sekali saat pendaftaran**, jadi halaman ini tidak boleh menampilkan "preset Anda: kafe" seolah bisa diterapkan ulang — owner yang sudah mematikan antrian dapur tidak boleh mendapatkannya kembali.
 
 ---
 

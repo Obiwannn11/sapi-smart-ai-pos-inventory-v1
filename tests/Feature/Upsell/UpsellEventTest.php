@@ -390,7 +390,7 @@ test('owner bisa menyalakan penawaran wajib dari pengaturan', function () {
     $owner = User::factory()->create(['tenant_id' => $this->tenant->id, 'role' => 'owner']);
 
     actingAs($owner)
-        ->patch('/owner/settings', ['upsell_mandatory' => true])
+        ->patch('/owner/settings/operations', ['upsell_mandatory' => true])
         ->assertSessionHas('success');
 
     expect($this->tenant->fresh()->upsell_mandatory)->toBeTrue();

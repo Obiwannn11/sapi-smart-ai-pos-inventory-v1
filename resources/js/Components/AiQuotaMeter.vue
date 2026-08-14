@@ -174,8 +174,11 @@ const bonusNote = computed(() => {
 
             <p v-if="escapeHatch" class="mt-1 leading-relaxed">
                 {{ escapeHatch }}
-                <Link href="/owner/settings" class="font-medium underline underline-offset-2 hover:no-underline">
-                    Buka Pengaturan
+                <!-- Langsung ke halaman kredensial, bukan ke pintu Pengaturan.
+                     Jalan keluar yang ditawarkan di sini adalah BYOK, dan sejak
+                     `[BL-039]` kolom kuncinya tidak lagi ada di halaman depan. -->
+                <Link href="/owner/settings/integrations" class="font-medium underline underline-offset-2 hover:no-underline">
+                    Atur Kunci API
                 </Link>
             </p>
         </div>
