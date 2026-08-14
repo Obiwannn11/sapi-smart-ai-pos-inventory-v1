@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | ADDITION | Langganan | Tenant Jalur Harga Tetap Akhirnya Bisa Melihat Kelasnya Sendiri (BL-041 butir b) |
 | 2026-08-14 | ADDITION | Langganan | Landing Menjelaskan Cara Tarif Dihitung — dan Berhenti Menjanjikan Penguncian yang Tidak Pernah Ada (BL-066) |
 | 2026-08-14 | ADDITION | Langganan | Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067) |
 | 2026-08-14 | ADDITION | Langganan | Halaman `/harga` Membacakan Kedua Jalur Tarif kepada Orang yang Belum Mendaftar (BL-041 butir c) |
@@ -176,6 +177,31 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Tenant Jalur Harga Tetap Akhirnya Bisa Melihat Kelasnya Sendiri (BL-041 butir b)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-041]` butir (b), butir terakhir entri itu. Commit ketujuh dan penutup jalan permukaan publik.
+- **Dampak:** Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak. Kunci payload baru; tidak ada yang berubah bentuk.
+- **Deskripsi:** Halaman `/langganan` kini menyebut kelas harga tenant jalur Harga Tetap beserta dasarnya — dan menyatakan terus terang bahwa kelas itu ditentukan tanpa melihat penjualannya.
+- **Alasan:** `bracket` hanya terisi bila `isSubsidized()`, sehingga tenant bayar-penuh tidak punya penjelasan apa pun mengapa tarifnya sekian. Mereka justru kelompok yang paling berhak atas penjelasan itu: mereka tidak membuka data apa pun, jadi angkanya tidak bisa mereka telusuri sendiri.
+
+- **Mesinnya ternyata sudah ada seluruhnya — yang kurang cuma jalan ke layar.** Sejak `[BL-015]`, `resolveFor()` mencocokkan SELURUH dimensi, bukan omzet saja; dan `DimensionRegistry::valueFor()` sudah memadamkan dimensi ber-consent bagi tenant yang tidak menyetujuinya. Artinya aturan berdimensi seat aktif atau tipe usaha **sudah** berlaku bagi tenant jalur Harga Tetap sejak lama, tanpa satu pun dari mereka bisa melihatnya. Yang ditambahkan karenanya bukan mesin baru melainkan satu pembaca (`PricingService::classificationFor()`) dan satu kartu.
+- **Batas privasinya ditegakkan DUA lapis, dan lapis kedua bukan berlebihan.** Lapis pertama sudah ada: dimensi ber-consent bernilai `null` bagi tenant yang tidak menyetujuinya. Lapis kedua ada di `classificationFor()` sendiri — `basis` hanya memuat dimensi yang `requires_consent`-nya `null`, disaring lewat `DimensionRegistry::consentFreeNames()`. Tanpa lapis kedua, metode ini akan membocorkan omzet begitu ia dipanggil untuk tenant yang **sudah** menyetujui: lapis pertama berhenti melindungi persis pada saat itu. Ada test yang menyetujui consent lebih dulu lalu memastikan omzet tetap tidak muncul di `basis` — bukan mengandalkan `null` yang kebetulan.
+- **Kunci `bracket` TIDAK dipakai ulang meski entrinya menulis "perluas `bracket`".** Bentuknya memuat `period` dan `revenue` yang tidak berlaku di jalur Harga Tetap, dan `Billing/Show.vue` membacanya sebagai "Dihitung dari omzet ...". Memaksakannya berarti kartu yang berbunyi "Dihitung dari omzet null", atau null-guard di setiap barisnya. Kunci barunya `classification`, dengan bentuknya sendiri.
+- **`classification` `null` untuk tenant jalur Harga Adaptif, dan itu disengaja.** Mereka sudah punya `subsidy.bracket` lengkap dengan omzet yang mendasarinya. Dua kartu yang menjawab pertanyaan sama dengan angka sama hanya membuat pembacanya bertanya mana yang benar — pola yang sama dengan `bracket` vs `estimate` yang sudah berlaku di halaman itu.
+- **`rule` dan `plan` dibedakan, tidak dilebur.** "Tarif Anda berlaku karena aturan X cocok" dan "tidak ada aturan yang cocok, jadi yang berlaku tarif paket" adalah dua jawaban berbeda atas pertanyaan yang sama. Yang kedua bukan kegagalan dan pantas disebut namanya — tanpa itu, tenant yang tarifnya memang datang dari paket akan melihat kartu kosong dan mengira sistemnya rusak.
+- **Nilai atribut diterjemahkan di server, bukan di Vue.** Peta `options` (`kuliner` → "Kuliner / F&B") tinggal di `config/pricing-dimensions.php`; menyalinnya ke frontend berarti dua daftar tipe usaha yang harus diingat untuk diubah bersama. Payload mengirim `display` yang sudah jadi, dan `null` bila nilainya memang sudah terbaca apa adanya.
+- **File Terdampak:**
+  - `app/Services/Pricing/DimensionRegistry.php` — `consentFreeNames()`, satu-satunya definisi "aman dibacakan kepada tenant jalur Harga Tetap".
+  - `app/Services/PricingService.php` — `classificationFor()`.
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — kunci `classification`, terisi hanya untuk jalur Harga Tetap.
+  - `resources/js/Pages/Billing/Show.vue` — kartu kelas harga, tepat di bawah tarif yang ia jelaskan.
+  - `tests/Feature/Subscription/FixedTrackClassificationTest.php` — **baru.** 7 test.
+- **Cara memeriksanya.** 496 test di `tests/Feature/Subscription`, `tests/Feature/Platform`, dan `tests/Feature/Public` lewat. Bentuk payload-nya dijaga dua test Inertia — terisi untuk jalur Harga Tetap, `null` untuk jalur Harga Adaptif. **Kartunya sendiri belum pernah dilihat di peramban**: `/langganan` ada di balik login, dan memasukkan kredensial bukan sesuatu yang saya lakukan. Yang membuktikannya berjalan adalah test payload dan build frontend yang lolos, bukan tangkapan layar.
+- **Yang TIDAK dikerjakan:** aturan tarif berdimensi seat/tipe usaha belum benar-benar ada di basis data mana pun — kartu ini akan berbunyi "tarif paket" sampai pemilik SaaS menerbitkan satu. Itu keputusan komersial, bukan pekerjaan kode, dan sengaja tidak ditebak di sini.
 
 ---
 

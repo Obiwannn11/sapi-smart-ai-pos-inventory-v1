@@ -30,6 +30,9 @@ const props = defineProps({
     // dijawab di halaman ini, kuota AI hanya di Pengaturan — dan tidak ada satu
     // pun layar yang menjawab "paket saya dapat apa saja".
     aiQuota: { type: Object, default: null },
+    // Kelas harga jalur Harga Tetap ([BL-041](b)). `null` untuk tenant jalur
+    // Harga Adaptif — mereka sudah punya `subsidy.bracket`.
+    classification: { type: Object, default: null },
 });
 
 /**
@@ -181,6 +184,9 @@ const trackIdentity = computed(() => {
 });
 
 /** Bar pemakaian kursi. Dibatasi 100% supaya kelebihan kursi tidak meluber. */
+/** Nilai satu dimensi dasar kelas, diformat menurut satuannya. */
+const formatBasisValue = (item) => item.display ?? (item.unit === 'currency' ? formatRupiah(item.value) : item.value);
+
 const seatPercent = computed(() => {
     const { seats, seats_used: used } = props.subscription;
     if (!seats) return 0;
@@ -429,6 +435,47 @@ const invoiceStatusLabels = {
                             <span class="text-muted-foreground font-normal">/bulan</span>
                         </dd>
                     </div>
+                    <!-- Kelas harga, tepat di bawah tarif yang ia jelaskan
+                         (`[BL-041]`(b)). Hanya muncul di jalur Harga Tetap:
+                         tenant Harga Adaptif sudah punya kartu kelompoknya
+                         sendiri, lengkap dengan omzet yang mendasarinya. -->
+                    <div v-if="classification" class="px-5 py-3.5">
+                        <div class="flex items-baseline justify-between gap-4">
+                            <dt class="text-sm text-muted-foreground">Kelas harga</dt>
+                            <dd class="text-sm font-medium text-foreground text-right">{{ classification.label }}</dd>
+                        </div>
+
+                        <!-- Dua sebab, dua kalimat. "Tarifnya cocok dengan
+                             sebuah aturan" dan "tidak ada aturan yang cocok,
+                             jadi berlaku tarif paket" adalah dua jawaban
+                             berbeda atas pertanyaan yang sama, dan meleburnya
+                             jadi satu kalimat akan salah pada separuh
+                             pembacanya. -->
+                        <p class="mt-1 text-xs text-muted-foreground leading-relaxed">
+                            <template v-if="classification.source === 'rule' && classification.basis.length">
+                                Berlaku karena
+                                <template v-for="(item, i) in classification.basis" :key="item.name">
+                                    <span v-if="i > 0"> dan </span>
+                                    <span class="text-foreground font-medium">{{ item.label.toLowerCase() }} {{ formatBasisValue(item) }}</span>
+                                </template>.
+                            </template>
+                            <template v-else-if="classification.source === 'rule'">
+                                Berlaku dari aturan tarif yang cocok untuk usaha Anda.
+                            </template>
+                            <template v-else>
+                                Tidak ada aturan tarif khusus yang cocok, jadi yang berlaku adalah tarif paket.
+                            </template>
+                        </p>
+
+                        <!-- Batas privasi, disebut terus terang. Tenant jalur
+                             Harga Tetap tidak pernah membuka data penjualannya,
+                             dan kartu ini membuktikannya: yang disebut hanya
+                             dimensi yang memang tidak menuntut persetujuan. -->
+                        <p class="mt-1.5 text-xs text-muted-foreground/80 leading-relaxed">
+                            Kelas ini ditentukan tanpa melihat penjualan Anda.
+                        </p>
+                    </div>
+
                     <div class="flex items-baseline justify-between px-5 py-3.5">
                         <dt class="text-sm text-muted-foreground">Pengguna tambahan</dt>
                         <dd class="text-sm font-medium text-foreground tabular-nums">

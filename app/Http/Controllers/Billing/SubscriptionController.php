@@ -150,6 +150,24 @@ class SubscriptionController extends Controller
                     ? null
                     : $estimator->estimateFor($tenant, $effectivePrice),
             ],
+            // Kelas harga bagi tenant jalur Harga Tetap (`[BL-041]`(b)).
+            // Sebelum ini hanya tenant Harga Adaptif yang bisa melihat kelasnya
+            // sendiri, sehingga tenant bayar-penuh tidak punya penjelasan apa
+            // pun mengapa tarifnya sekian.
+            //
+            // Diletakkan di luar `subsidy`, bukan menumpang `bracket` di
+            // dalamnya, karena dua alasan. Bentuknya berbeda — `bracket` memuat
+            // `period` dan `revenue` yang tidak berlaku di sini, dan halaman
+            // ini membacanya sebagai "Dihitung dari omzet ...". Dan artinya
+            // berbeda: yang satu keadaan jalur adaptif, yang satu justru
+            // keadaan tenant yang tidak membuka apa-apa.
+            //
+            // `null` untuk tenant adaptif: mereka sudah punya `bracket`, dan
+            // dua kartu yang menjawab pertanyaan yang sama dengan angka yang
+            // sama hanya membuat pembacanya bertanya mana yang benar.
+            'classification' => $subscription->isSubsidized()
+                ? null
+                : $pricing->classificationFor($tenant),
             'invoices' => $tenant->invoices()
                 ->latest('id')
                 ->take(12)

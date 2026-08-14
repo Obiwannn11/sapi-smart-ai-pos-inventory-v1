@@ -352,6 +352,78 @@ class PricingService
     }
 
     /**
+     * Kelas harga yang berlaku bagi tenant **tanpa menyentuh data ber-consent**.
+     *
+     * Menjawab `[BL-041]`(b): sampai sekarang hanya tenant jalur Harga Adaptif
+     * yang bisa melihat kelasnya sendiri, sehingga tenant bayar-penuh tidak
+     * punya penjelasan apa pun mengapa tarifnya sekian. Angkanya sudah lama
+     * ada — `resolveFor()` mencocokkan SELURUH dimensi sejak `[BL-015]` — yang
+     * tidak ada hanyalah jalan membacanya ke layar.
+     *
+     * **Batas privasinya ditegakkan dua lapis, dan keduanya perlu.** Lapis
+     * pertama sudah ada di `DimensionRegistry::valueFor()`: dimensi ber-consent
+     * bernilai `null` bagi tenant yang tidak menyetujuinya, jadi aturan yang
+     * menyebutnya tidak akan pernah cocok untuk mereka. Lapis kedua ada di
+     * sini: `basis` hanya memuat dimensi tanpa consent, sehingga metode ini
+     * tidak bisa membocorkan omzet **bahkan bila** kelak dipanggil untuk tenant
+     * yang sudah menyetujuinya. Mengandalkan lapis pertama saja berarti
+     * bergantung pada `null` yang kebetulan — dan yang kebetulan berubah saat
+     * seseorang menambahkan pemanggil baru.
+     *
+     * `null` ketika tak ada tarif sama sekali (`SOURCE_NONE`): tidak ada kelas
+     * yang jujur bisa disebutkan, dan menampilkan kartu kosong lebih buruk
+     * daripada tidak menampilkan apa-apa.
+     *
+     * @return array{source: string, label: string|null, price: float|null, basis: list<array{name: string, label: string, value: float|string, unit: string, display: string|null}>}|null
+     */
+    public function classificationFor(Tenant $tenant, ?Carbon $asOf = null): ?array
+    {
+        $resolved = $this->resolveFor($tenant, $asOf);
+
+        if ($resolved['source'] === self::SOURCE_NONE) {
+            return null;
+        }
+
+        $basis = [];
+
+        foreach ($this->dimensions->consentFreeNames() as $name) {
+            $definition = $this->dimensions->definition($name);
+            $value = $resolved['context'][$name] ?? null;
+
+            // Dimensi yang tak punya nilai dilewati, bukan dikirim bernilai
+            // null: baris "Tipe usaha: —" tidak menjelaskan apa pun, dan
+            // deretan baris kosong membuat kartunya terbaca sebagai rusak.
+            if ($value === null) {
+                continue;
+            }
+
+            $basis[] = [
+                'name' => $name,
+                'label' => $definition['label'],
+                'value' => $value,
+                'unit' => $definition['unit'],
+                // Nilai atribut diterjemahkan ke labelnya di sini, bukan di
+                // Vue: peta `options` tinggal di config, dan menyalinnya ke
+                // frontend berarti dua daftar tipe usaha yang harus diingat
+                // untuk diubah bersama. `null` berarti nilainya sudah bisa
+                // dibaca apa adanya dan tinggal diformat menurut `unit`.
+                'display' => $definition['options'][$value] ?? null,
+            ];
+        }
+
+        return [
+            // `rule` vs `plan` dibedakan dan tidak dilebur: tarif yang berlaku
+            // karena sebuah aturan cocok, dan tarif yang berlaku karena tak
+            // ada aturan yang cocok, adalah dua jawaban berbeda atas "kenapa
+            // tarif saya sekian". Yang kedua pantas disebut namanya.
+            'source' => $resolved['source'],
+            'label' => $resolved['label'],
+            'price' => $resolved['price'],
+            'basis' => $basis,
+        ];
+    }
+
+    /**
      * Bracket berjalan tenant beserta angka omset yang mendasarinya.
      *
      * Angka persisnya sengaja dipisahkan dari labelnya: pemanggil yang hanya

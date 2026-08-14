@@ -85,6 +85,25 @@ class DimensionRegistry
     }
 
     /**
+     * Dimensi yang nilainya boleh dihitung TANPA persetujuan apa pun.
+     *
+     * Berdiri sendiri, bukan `array_filter` di pemanggil, karena inilah satu-
+     * satunya definisi "aman dibacakan kepada tenant jalur Harga Tetap" — dan
+     * definisi yang disalin ke dua tempat cepat atau lambat berbeda. Menambah
+     * dimensi ber-consent baru otomatis tersaring di sini; menambah yang tanpa
+     * consent otomatis ikut.
+     *
+     * @return list<string>
+     */
+    public function consentFreeNames(): array
+    {
+        return array_values(array_filter(
+            $this->names(),
+            fn (string $dimension) => ($this->definition($dimension)['requires_consent'] ?? null) === null,
+        ));
+    }
+
+    /**
      * Seluruh nilai dimensi tenant, siap dicocokkan dengan syarat aturan.
      *
      * @return array<string, float|string|null>
