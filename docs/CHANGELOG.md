@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | HOTFIX | UI | Dua Paket Karangan di Landing Diganti Paket yang Benar-Benar Ditagihkan (BL-032 butir 2) |
 | 2026-08-14 | ADDITION | Langganan | Satu Pembaca Harga untuk Permukaan Tanpa Sesi, Sebelum Ada yang Membacanya (BL-041, BL-066, BL-067) |
 | 2026-08-14 | REFACTOR | Pengaturan | "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039) |
 | 2026-08-14 | ADDITION | Langganan | Nominal yang Menyimpang dari Aturan Wajib Beralasan, dan Alasannya Dibaca Tenant yang Ditagih (BL-057) |
@@ -172,6 +173,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Dua Paket Karangan di Landing Diganti Paket yang Benar-Benar Ditagihkan (BL-032 butir 2)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-032]` butir (2). Commit ketiga di jalan permukaan publik; pemakai pertama `PublicPricing` yang mendarat sejam sebelumnya.
+- **Dampak:** Controller | Frontend | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Bagian harga di landing memajang "Core POS Rp 149k" dan "Smart SAPI Rp 299k" — dua paket yang tidak pernah ada di sistem. Sekarang kartunya dibangun dari `plans` lewat `PublicPricing`, jadi yang dibaca calon klien adalah yang benar-benar akan ditagihkan.
+- **Alasan:** Halaman harga yang berbeda dari tagihan sungguhan adalah cacat terburuk yang bisa dimiliki halaman harga. Calon klien yang membaca "Rp 299k/bulan" lalu mendaftar akan mendapati tagihan yang sama sekali lain — hari ini Rp 0 selama dua bulan, lalu Rp 100.000.
+
+- **Yang dipajang sekarang adalah keempat paket aktif, bukan dua paket pilihan.** `free` Rp 0 · `paid-1` Rp 100.000 · `paid-2` Rp 150.000 · `paid-3` Rp 200.000, termurah lebih dulu. Paket nonaktif tersaring di `PublicPricing`, jadi paket yang berhenti dijual tidak akan diam-diam muncul kembali di halaman publik.
+- **Paket yang disorot dipilih oleh data, bukan oleh selera.** Sorotannya menempel pada `is_post_trial_target` — paket yang benar-benar dihuni tenant setelah masa gratisnya habis. Label lamanya "Paling Populer" diganti "Paling Banyak Dipakai", karena yang pertama adalah klaim tentang pasar yang tidak dimiliki siapa pun di proyek ini, sementara yang kedua adalah pernyataan tentang mekanisme yang memang benar.
+- **Daftar fitur per paket ikut hilang, dan itu disengaja.** Dua kartu lama memajang bullet fitur yang menempel pada paket karangan. Begitu paketnya datang dari `plans`, tidak ada satu pun sumber data yang menjawab "paket ini dapat fitur apa" — `plans.limits` memuat batas, bukan daftar kapabilitas. Menuliskannya kembali dengan tangan berarti mengulang kesalahan yang sama pada kolom yang berbeda. Isi paket yang benar-benar berbasis data (seat bawaan, kuota AI) datang lewat `[BL-067]`; daftar kapabilitasnya lewat `[BL-032]` butir (1), yang tetap terbuka atas keputusan pemilik.
+- **Dua CTA di bagian harga ikut dibetulkan ke `/register`; tiga sisanya sengaja tidak disentuh.** Barisnya memang ditulis ulang, dan menulis ulang sebuah tombol ke tujuan yang sudah diketahui salah tidak bisa dibenarkan. Tiga CTA lain di landing (hero, nav seluler, footer) masih menunjuk `/login` — di luar bagian yang dikerjakan entri ini, dan tetap tercatat di `[BL-032]`.
+- **Masa gratis disebut angkanya, dibaca dari config.** Kartu `free` menuliskan "{n} bulan pertama, lalu pindah ke paket berbayar" dengan `n` dari `subscription.trial_months`. Paket gratis tanpa keterangan itu terbaca sebagai gratis selamanya — lalu perpindahan paksa di bulan ketiga (`[BL-052]`) akan terbaca sebagai tagihan yang muncul entah dari mana.
+- **Tinggi kartu diratakan `items-stretch` + `mt-auto`, bukan paragraf kosong.** Versi pertama memakai `<p>&nbsp;</p>` sebagai pengganjal supaya tombolnya sejajar; itu dibuang setelah diperiksa di peramban bahwa `mt-auto` sudah melakukannya sendiri.
+- **File Terdampak:**
+  - `app/Http/Controllers/Public/LandingController.php` — `index()` menerima `PublicPricing` dan mengirim `snapshot()` ke view. Pint sekalian membuang `use Illuminate\Http\Request` yang memang sudah tidak terpakai sebelum perubahan ini.
+  - `resources/views/public/landing.blade.php` — blok `#pricing` (±78 baris) diganti perulangan `@foreach` atas `$pricing['plans']`.
+  - `tests/Feature/Public/LandingPricingTest.php` — **baru.** 6 test: paket nyata terpajang, dua paket karangan tidak ada lagi, paket gratis beserta lama masa gratisnya, harga yang berubah di basis data ikut berubah di halaman, paket nonaktif tersaring, dan tombolnya menuju pendaftaran.
+- **Cara memeriksanya.** 31 test di `tests/Feature/Public` lewat. Satu di antaranya mengubah `base_price` lalu memuat ulang halaman dan memastikan angka lamanya benar-benar hilang — itu inti butir (2), dan test yang hanya memeriksa "angkanya muncul" tidak akan menangkapnya. Halaman juga diperiksa di peramban pada 1280px: empat kolom, keempat kartu setinggi 335px, tombolnya sejajar di dasar, dan `paid-1` tersorot.
+- **Yang TIDAK dikerjakan:** `[BL-032]` butir (1) tulis-ulang daftar fitur dan butir (3) tangkapan layar & avatar ±600 KB tetap **Open**. Bagian harga juga belum menyebut seat maupun kuota AI — itu `[BL-067]`, dan belum menjelaskan cara tarif Adaptif dihitung — itu `[BL-066]`.
 
 ---
 

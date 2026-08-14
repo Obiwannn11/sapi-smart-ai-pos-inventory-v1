@@ -671,57 +671,53 @@
                 <p class="text-lg text-gray-600 font-medium leading-relaxed">Pilih paket yang sesuai dengan skala bisnis Anda. Tidak ada biaya tersembunyi.</p>
             </div>
 
-            <div class="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-                <!-- Basic -->
-                <div class="bg-gray-50 p-12 rounded-[3.5rem] border border-gray-100 flex flex-col hover:shadow-2xl transition-all reveal stagger-1">
-                    <h4 class="text-2xl font-black text-gray-900 mb-2">Core POS</h4>
-                    <p class="text-gray-500 font-bold mb-8 italic">Untuk operasional harian.</p>
-                    <div class="flex items-baseline gap-2 mb-10">
-                        <span class="text-5xl font-black text-gray-900">Rp 149k</span>
-                        <span class="text-gray-400 font-bold">/bulan</span>
-                    </div>
-                    <ul class="space-y-5 mb-12 flex-1 text-[15px] font-bold text-gray-600">
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-primary/5 text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            Transaksi Kasir & Multi-payment
-                        </li>
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-primary/5 text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            Manajemen Produk & Varian
-                        </li>
-                    </ul>
-                    <a href="/login" class="w-full py-5 bg-white border-2 border-gray-100 text-gray-900 rounded-[1.5rem] font-black text-center hover:bg-gray-50 transition-all">Pilih Paket</a>
-                </div>
+            {{--
+                Kartu paket dibangun dari `plans`, bukan diketik di sini. Yang
+                dipajang wajib sama dengan yang ditagihkan — halaman harga yang
+                berbeda dari tagihan sungguhan adalah cacat terburuk yang bisa
+                dimiliki halaman harga (`[BL-032]` butir 2, `[BL-041]`(c)).
 
-                <!-- Pro -->
-                <div class="bg-primary p-12 rounded-[3.5rem] flex flex-col shadow-2xl shadow-primary/20 transform md:-translate-y-4 reveal stagger-2">
-                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand text-white text-[10px] font-black uppercase mb-6 self-start tracking-wider">Paling Populer</div>
-                    <h4 class="text-2xl font-black text-white mb-2">Smart SAPI</h4>
-                    <p class="text-primary/40 font-bold mb-8 italic">Asisten AI Aktif.</p>
-                    <div class="flex items-baseline gap-2 mb-10">
-                        <span class="text-5xl font-black text-white">Rp 299k</span>
-                        <span class="text-primary/40 font-bold">/bulan</span>
+                Paket yang disorot adalah `is_post_trial_target` — paket yang
+                benar-benar dihuni tenant setelah masa gratisnya habis, bukan
+                paket yang dipilih karena terlihat paling menarik.
+            --}}
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto items-stretch">
+                @foreach ($pricing['plans'] as $plan)
+                    @php($highlighted = $plan['is_post_trial_target'])
+                    <div @class([
+                        'p-8 rounded-[2.5rem] flex flex-col transition-all reveal',
+                        'stagger-'.min($loop->iteration, 4),
+                        'bg-primary shadow-2xl shadow-primary/20 lg:-translate-y-4' => $highlighted,
+                        'bg-gray-50 border border-gray-100 hover:shadow-2xl' => ! $highlighted,
+                    ])>
+                        @if ($highlighted)
+                            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand text-white text-[10px] font-black uppercase mb-6 self-start tracking-wider">Paling Banyak Dipakai</div>
+                        @endif
+
+                        <h4 @class(['text-2xl font-black mb-2', 'text-white' => $highlighted, 'text-gray-900' => ! $highlighted])>{{ $plan['name'] }}</h4>
+
+                        <div class="flex items-baseline gap-2 mt-6 mb-4">
+                            @if ($plan['is_free'])
+                                <span @class(['text-4xl font-black', 'text-white' => $highlighted, 'text-gray-900' => ! $highlighted])>Gratis</span>
+                            @else
+                                <span @class(['text-4xl font-black', 'text-white' => $highlighted, 'text-gray-900' => ! $highlighted])>Rp {{ number_format($plan['price'], 0, ',', '.') }}</span>
+                                <span @class(['font-bold', 'text-primary/40' => $highlighted, 'text-gray-400' => ! $highlighted])>/bulan</span>
+                            @endif
+                        </div>
+
+                        @if ($plan['is_free'])
+                            <p @class(['text-sm font-bold', 'text-primary/40' => $highlighted, 'text-gray-500' => ! $highlighted])>
+                                {{ $pricing['trial_months'] }} bulan pertama, lalu pindah ke paket berbayar.
+                            </p>
+                        @endif
+
+                        <a href="{{ route('register') }}" @class([
+                            'w-full mt-auto py-4 rounded-[1.5rem] font-black text-center transition-all',
+                            'bg-white text-primary hover:bg-primary/5 shadow-xl' => $highlighted,
+                            'bg-white border-2 border-gray-100 text-gray-900 hover:bg-gray-50' => ! $highlighted,
+                        ])>Mulai Sekarang</a>
                     </div>
-                    <ul class="space-y-5 mb-12 flex-1 text-[15px] font-bold text-white">
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-white text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            Semua Fitur Core POS
-                        </li>
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-white text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            AI Prediksi Stok & Badge Helper
-                        </li>
-                    </ul>
-                    <a href="/login" class="w-full py-5 bg-white text-primary rounded-[1.5rem] font-black text-center hover:bg-primary/5 transition-all shadow-xl">Mulai Sekarang</a>
-                </div>
+                @endforeach
             </div>
         </div>
     </section>

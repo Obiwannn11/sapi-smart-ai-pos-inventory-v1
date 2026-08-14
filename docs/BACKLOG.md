@@ -512,17 +512,18 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
 ### [BL-032] Landing Page Tidak Lagi Menggambarkan Produk yang Sudah Jadi
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "landing perbaiki menyesuaikan sekarang", "perbaiki gambar2 di landing page"
-- **Status:** Open
+- **Status:** Open — **butir (2) SELESAI 2026-08-14**; butir (1) dan (3) tetap terbuka atas keputusan pemilik
 - **Prioritas:** High (ini permukaan pertama yang dilihat calon klien)
 - **Area Terdampak:**
-  - `resources/views/public/landing.blade.php:686-745` — bagian harga menuliskan dua paket "Core POS Rp 149k" dan "Smart SAPI Rp 299k" yang **tidak ada di sistem**
-  - `resources/views/public/landing.blade.php:132,180,716,742,1013` — seluruh CTA ("Daftar Gratis", "Pilih Paket", "Mulai Sekarang") menunjuk `/login`, padahal `/register` ada dan itulah tujuan yang dimaksud
+  - ~~`resources/views/public/landing.blade.php:686-745` — bagian harga menuliskan dua paket "Core POS Rp 149k" dan "Smart SAPI Rp 299k" yang **tidak ada di sistem**~~ — **beres 2026-08-14**, kartunya kini dibangun dari `plans` lewat `PublicPricing`
+  - `resources/views/public/landing.blade.php` — CTA di luar bagian harga ("Daftar Gratis", "Mulai Sekarang" di hero, nav seluler, dan footer) **masih** menunjuk `/login`, padahal `/register` ada dan itulah tujuan yang dimaksud. Tiga tempat tersisa; dua CTA di bagian harga sudah diperbaiki 2026-08-14 karena barisnya memang ditulis ulang saat itu
   - `public/avatar_andi.png`, `public/avatar_budi.png`, `public/avatar_santi.png` — masing-masing ±600 KB untuk dirender `w-12 h-12` (48 px); tiga berkas ini saja ±1,8 MB, lebih berat dari seluruh tangkapan layar digabung
   - `public/Dashboard-owner.png`, `POS-Interface.png`, `Reports-Daily.png`, `Stock-Management.png`, `Product-List.png` — tertanggal 25 Mei, sebelum topbar tagihan terbuka, papan antrian, dan saran jual ada
 - **Deskripsi:**
   Dihitung dari isi berkasnya, halaman ini tidak menyebut satu pun dari yang sudah dikirim sejak Mei: "open bill" 0 kali, "antrian" 0, "pesan mandiri/self-order" 0, "MCP" 0, "subsidi" 0, "modifier" 0, "sesi kas" 0. Yang tersisa hanya "offline" (1) dan "saran jual" (1). Sementara harga yang dipajang bukan sekadar usang — angkanya tidak pernah ada: paket bawaan sistem satu-satunya bernama `Dasar` dengan `base_price = 0` (`database/migrations/2026_07_24_181634_create_plans_table.php:38-47`), dan jalur subsidi memakai bracket Rp 10k–100k (`config/subscription.php:85-90`). Calon klien yang membaca "Rp 299k/bulan" lalu mendaftar akan mendapati tagihan yang sama sekali lain.
 - **Usulan Perbaikan:**
-  Tiga hal terpisah, boleh dikerjakan bertahap: (1) tulis ulang daftar fitur dari kapabilitas yang benar-benar ada; (2) tarik harga dari `pricing_rules`/`plans` alih-alih menuliskannya di HTML — lihat `[BL-041]`; (3) ambil ulang tangkapan layar dari seeder demo, dan turunkan avatar ke ±10 KB (WebP 96 px) karena ukuran sekarang tidak punya pembenaran apa pun.
+  Tiga hal terpisah, boleh dikerjakan bertahap: (1) tulis ulang daftar fitur dari kapabilitas yang benar-benar ada; ~~(2) tarik harga dari `pricing_rules`/`plans` alih-alih menuliskannya di HTML — lihat `[BL-041]`~~ **selesai 2026-08-14**; (3) ambil ulang tangkapan layar dari seeder demo, dan turunkan avatar ke ±10 KB (WebP 96 px) karena ukuran sekarang tidak punya pembenaran apa pun.
+- **Catatan 2026-08-14 — daftar fitur per paket ikut hilang saat butir (2) mendarat, dan itu disengaja.** Dua kartu lama memajang bullet fitur ("Transaksi Kasir & Multi-payment", "AI Prediksi Stok & Badge Helper") yang menempel pada paket karangan. Begitu paketnya datang dari `plans`, tidak ada satu pun sumber data yang menjawab "paket ini dapat fitur apa" — `plans.limits` hanya memuat batas, bukan daftar kapabilitas. Menuliskannya kembali dengan tangan berarti mengulang kesalahan yang sama pada kolom yang berbeda. Kartunya sekarang memajang nama, harga, dan tombol saja; isi paket yang benar-benar berbasis data (seat bawaan, kuota AI) datang lewat `[BL-067]`, dan daftar kapabilitasnya lewat butir (1) entri ini.
 
 ### [BL-034] Pendaftaran Belum Menentukan Paket/Fitur — Tipe Usaha Hanya Dipakai Harga
 - **Ditemukan:** 2026-07-31
