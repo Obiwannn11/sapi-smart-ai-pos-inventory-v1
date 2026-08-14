@@ -4,6 +4,7 @@ use App\Models\Invoice;
 use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\PlatformUser;
+use App\Models\PricingRule;
 use App\Models\Product;
 use App\Models\Subscription;
 use App\Models\Tenant;
@@ -103,6 +104,9 @@ test('tagihan bisa diterbitkan dan tercatat di jejak audit', function () {
         'period' => '2026-08',
         'amount' => 50000,
         'due_date' => '2026-08-10',
+        // Tenant ini tidak cocok dengan satu aturan harga pun, jadi nominalnya
+        // menyimpang menurut definisi dan alasannya wajib (`[BL-057]`(a)).
+        'amount_reason' => 'Belum ada bracket untuk tenant ini.',
     ])->assertSessionHas('success');
 
     $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
@@ -124,12 +128,151 @@ test('tagihan ganda untuk periode yang sama ditolak', function () {
         'period' => '2026-08',
         'amount' => 50000,
         'due_date' => '2026-08-10',
+        'amount_reason' => 'Belum ada bracket untuk tenant ini.',
     ];
 
     post('/platform/invoices', $payload);
     post('/platform/invoices', $payload)->assertSessionHas('error');
 
     expect(Invoice::where('tenant_id', $tenant->id)->count())->toBe(1);
+});
+
+// --- Alasan nominal khusus (`[BL-057]`(a)) ---
+
+/**
+ * Satu aturan tanpa syarat: ia cocok untuk tenant mana pun, sehingga test di
+ * bawah bisa menyatakan "mengikuti aturan" dan "menyimpang" hanya lewat nominal
+ * yang dikirim.
+ */
+function ruleMatchingEveryone(float $price = 10000): PricingRule
+{
+    return PricingRule::factory()->create(['price' => $price]);
+}
+
+test('nominal yang menyimpang dari aturan ditolak bila alasannya kosong', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 7500,
+        'due_date' => '2026-08-10',
+    ])->assertSessionHasErrors('amount_reason');
+
+    expect(Invoice::where('tenant_id', $tenant->id)->exists())->toBeFalse();
+});
+
+test('spasi saja bukan alasan', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 7500,
+        'due_date' => '2026-08-10',
+        'amount_reason' => '   ',
+    ])->assertSessionHasErrors('amount_reason');
+
+    expect(Invoice::where('tenant_id', $tenant->id)->exists())->toBeFalse();
+});
+
+test('nominal yang menyimpang diterima bersama alasannya, dan alasannya ikut ke jejak audit', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 7500,
+        'due_date' => '2026-08-10',
+        'amount_reason' => 'Potongan 25% tiga bulan pertama, kesepakatan 5 Agustus.',
+    ])->assertSessionHas('success');
+
+    $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
+    $log = PlatformAuditLog::where('action', 'invoices.create')->firstOrFail();
+
+    expect($invoice->amount_reason)->toBe('Potongan 25% tiga bulan pertama, kesepakatan 5 Agustus.')
+        // Aturannya TIDAK ditautkan: harganya tidak keluar dari sana.
+        ->and($invoice->pricing_rule_id)->toBeNull()
+        ->and($log->meta['follows_rule'])->toBeFalse()
+        ->and($log->meta['amount_reason'])->toBe('Potongan 25% tiga bulan pertama, kesepakatan 5 Agustus.');
+});
+
+test('nominal yang persis mengikuti aturan tidak dimintai alasan', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    $rule = ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 10000,
+        'due_date' => '2026-08-10',
+    ])->assertSessionHas('success');
+
+    expect(Invoice::where('tenant_id', $tenant->id)->firstOrFail()->pricing_rule_id)->toBe($rule->id);
+});
+
+test('alasan yang terlanjur diketik untuk nominal sesuai aturan tidak disimpan', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 10000,
+        'due_date' => '2026-08-10',
+        'amount_reason' => 'Terlanjur diketik lalu nominalnya dikembalikan.',
+    ])->assertSessionHas('success');
+
+    // Kalimat yang menjelaskan penyimpangan yang tidak terjadi hanya
+    // membingungkan tenant yang membacanya.
+    expect(Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount_reason)->toBeNull();
+});
+
+test('alasannya terlihat pemilik SaaS di rincian tenant', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 7500,
+        'due_date' => '2026-08-10',
+        'amount_reason' => 'Potongan pemulihan pascabanjir.',
+    ]);
+
+    get("/platform/tenants/{$tenant->id}")->assertInertia(fn (Assert $page) => $page
+        ->where('invoices.data.0.amount_reason', 'Potongan pemulihan pascabanjir.'));
+});
+
+test('alasannya ikut terbaca tenant di halaman langganannya sendiri', function () {
+    ['platformUser' => $platformUser, 'tenant' => $tenant] = platformBillingContext();
+    ruleMatchingEveryone(10000);
+
+    actingAs($platformUser, 'platform');
+    post('/platform/invoices', [
+        'tenant_id' => $tenant->id,
+        'period' => '2026-08',
+        'amount' => 7500,
+        'due_date' => '2026-08-10',
+        'amount_reason' => 'Potongan pemulihan pascabanjir.',
+    ]);
+
+    // Inilah butir (b): tagihan yang nominalnya berbeda dari daftar harga tanpa
+    // penjelasan adalah pertanyaan yang pasti datang. Yang ditulis pemilik SaaS
+    // di formulir tadi dibaca orang yang ditagih.
+    actingAs(User::where('tenant_id', $tenant->id)->where('role', 'owner')->firstOrFail());
+
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->where('invoices.0.amount_reason', 'Potongan pemulihan pascabanjir.'));
 });
 
 // --- Verifikasi ---

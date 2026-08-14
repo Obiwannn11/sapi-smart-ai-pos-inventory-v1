@@ -31,7 +31,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'tenant_id', 'subscription_id', 'period', 'kind', 'grants_seats',
-        'previous_seats', 'amount', 'pricing_rule_id', 'pricing_context', 'status', 'due_date',
+        'previous_seats', 'amount', 'pricing_rule_id', 'pricing_context', 'amount_reason', 'status', 'due_date',
         'proof_path', 'submitted_at', 'paid_at', 'verified_by', 'verified_at',
         'settled_via', 'rejection_reason',
     ];

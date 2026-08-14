@@ -840,6 +840,16 @@ const invoiceStatusLabels = {
                                 <p class="text-xs text-muted-foreground">
                                     {{ invoiceStatusLabels[invoice.status] }} · jatuh tempo {{ formatDate(invoice.due_date) }}
                                 </p>
+                                <!--
+                                    Kenapa nominalnya begini (`[BL-057]`(a)).
+                                    Bukan `text-destructive` seperti penolakan
+                                    bukti di bawahnya: ini keterangan, bukan
+                                    kabar buruk — sering kali justru potongan
+                                    harga.
+                                -->
+                                <p v-if="invoice.amount_reason" class="mt-1 text-xs text-muted-foreground">
+                                    {{ invoice.amount_reason }}
+                                </p>
                                 <p v-if="invoice.rejection_reason" class="mt-1 text-xs text-destructive">
                                     {{ invoice.rejection_reason }}
                                 </p>

@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -112,6 +113,10 @@ class InvoiceController extends Controller
             'period' => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
             'amount' => ['required', 'numeric', 'min:0'],
             'due_date' => ['required', 'date'],
+            // Wajibnya diputuskan di bawah, bukan di sini: syaratnya adalah
+            // "nominalnya menyimpang dari aturan", dan itu baru bisa dijawab
+            // setelah tenant dan aturan harganya di-resolve.
+            'amount_reason' => ['nullable', 'string', 'max:500'],
         ]);
 
         $subscription = Subscription::where('tenant_id', $validated['tenant_id'])->first();
@@ -148,6 +153,22 @@ class InvoiceController extends Controller
         $mengikutiAturan = $resolved['rule'] !== null
             && abs((float) $validated['amount'] - $resolved['price']) < 0.01;
 
+        // `[BL-057]`(a). Alasan diminta HANYA ketika nominalnya menyimpang —
+        // termasuk ketika tidak ada aturan yang cocok sama sekali, karena di
+        // situ pun angkanya adalah keputusan orang, bukan hasil aturan.
+        // Memaksa alasan untuk tagihan yang persis mengikuti aturan hanya
+        // melatih orang mengetik "sesuai aturan" tanpa membacanya.
+        //
+        // Dilempar sebagai ValidationException, bukan `back()->with('error')`:
+        // hanya bentuk ini yang menempelkan pesannya pada kolomnya di formulir.
+        // Pesan yang mendarat di toast akan hilang bersama toast-nya, dan yang
+        // ditinggalkannya adalah formulir yang menolak tanpa menunjuk apa pun.
+        if (! $mengikutiAturan && trim((string) ($validated['amount_reason'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'amount_reason' => 'Nominalnya berbeda dari tarif aturan, jadi alasannya wajib diisi. Tenant ikut membacanya.',
+            ]);
+        }
+
         $invoice = Invoice::create([
             'tenant_id' => $validated['tenant_id'],
             'subscription_id' => $subscription->id,
@@ -163,6 +184,10 @@ class InvoiceController extends Controller
             // pemilik SaaS menyimpang dari aturan, "keadaan tenant seperti apa
             // waktu itu" adalah pertanyaan yang paling mungkin ditanyakan.
             'pricing_context' => $resolved['context'],
+            // Null saat nominalnya mengikuti aturan, apa pun yang terlanjur
+            // diketik: alasan untuk harga yang tidak istimewa hanya jadi
+            // kalimat yang membingungkan pembacanya.
+            'amount_reason' => $mengikutiAturan ? null : trim((string) $validated['amount_reason']),
             'status' => Invoice::STATUS_UNPAID,
             'due_date' => $validated['due_date'],
         ]);
@@ -173,6 +198,9 @@ class InvoiceController extends Controller
             'amount' => (float) $invoice->amount,
             'pricing_rule' => $resolved['label'],
             'follows_rule' => $mengikutiAturan,
+            // Berdampingan dengan `follows_rule`, karena keduanya sepasang:
+            // yang satu menyatakan nominalnya menyimpang, yang lain kenapa.
+            'amount_reason' => $invoice->amount_reason,
         ]);
 
         return back()->with('success', 'Tagihan diterbitkan.');

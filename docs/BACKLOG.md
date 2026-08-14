@@ -185,25 +185,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-057] Harga Khusus per Tenant: Dropdown Mengunci ke Depan, Input Manual Sebulan Saja — Alasannya Belum Wajib
-- **Ditemukan:** 2026-08-07
-- **Sumber:** Keputusan pemilik 2026-08-07 — "bisa pilih berdasarkan paket yang ada (dropdown)... atau saya input manual dan paksa berikan komentar atau alasan"
-- **Status:** Open — **separuhnya ternyata sudah berdiri**
-- **Prioritas:** Medium
-- **Area Terdampak:**
-  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`: `amount` bebas dengan `min:0`, **tanpa kolom alasan**
-  - `app/Http/Controllers/Platform/InvoiceController.php` — jejak audit sudah mencatat `follows_rule`
-  - `app/Http/Controllers/Platform/SubscriptionController.php` — `updatePlan()`: dropdown paket, `reason` **sudah wajib**
-- **Deskripsi:**
-  Dua mekanisme yang diminta pemilik ternyata sebagian besar sudah ada, dan yang dulu terlihat sebagai cacat justru jadi fiturnya:
-  - **Dropdown paket = mengunci ke depan.** `changePlan()` + `PUT /platform/subscriptions/{id}/plan` sudah ada, `reason` sudah wajib, jejaknya sudah `SEVERITY_SENSITIVE`. **Tidak ada pekerjaan.**
-  - **Input manual = berlaku sebulan saja.** Penerbit manual sudah menerima nominal bebas, dan `issueDuePeriodInvoices()` **tidak pernah membaca `price_locked`** — jadi bulan berikutnya otomatis kembali ke harga aturan. Itu persis yang diminta. Lihat koreksi di `[BL-041]`.
-  Yang benar-benar belum ada tinggal satu: **kolom alasan wajib** pada penerbit manual, khususnya ketika nominalnya menyimpang dari aturan.
-- **Usulan Perbaikan:**
-  **(a)** Tambahkan `reason` di `Platform\InvoiceController::store()`, wajib **ketika `follows_rule` bernilai false** — memaksa alasan untuk tagihan yang persis mengikuti aturan hanya melatih orang mengetik "sesuai aturan" tanpa membacanya. Deteksinya sudah ada di controller, tinggal dipakai sebagai syarat validasi.
-  **(b)** Alasannya masuk `meta` jejak audit berdampingan dengan `follows_rule`, dan ikut terlihat di layar tagihan tenant — nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang.
-  **(c)** Jangan menambahkan kolom "harga khusus permanen" per tenant. Pemilik sudah memutuskan harga tetap datang dari paket; harga khusus yang berdiri sendiri berarti membuat paket bayangan yang tidak muncul di daftar mana pun. Bila suatu tenant memang perlu harga tetap yang lain, yang benar adalah **membuat paket baru** — ia auditable dan muncul di panel.
-
 ### [BL-072] Enam Commit Berturut-turut Tidak Bisa Boot — `git bisect` dan `git revert` Menyesatkan di Rentang Itu
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Percobaan menulis ulang riwayat jadi commit atomik; ditemukan karena commit hasil pecahannya gagal menjalankan tes dengan sebab yang bukan berasal dari pecahannya
@@ -990,6 +971,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
 | `BL-067` | Isi paket — berapa seat, berapa kuota AI — tidak terlihat sebelum orang mendaftar | 2026-08-14 (butir (a)–(e)) | `[ADDITION] Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067)` |
+| `BL-057` | Harga khusus per tenant: alasan wajib pada penerbit tagihan manual | 2026-08-14 (butir (a) dan (b); butir (c) memang tidak menuntut kode) | `[ADDITION] Nominal yang Menyimpang dari Aturan Wajib Beralasan, dan Alasannya Dibaca Tenant yang Ditagih (BL-057)` |
 | `BL-039` | "Profil Usaha" mencampur merek, aturan kerja, kapabilitas, dan kredensial | 2026-08-14 (seluruh butir; unggah logo struk ditahan menunggu `BL-076`) | `[REFACTOR] "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039)` |
 | `BL-038` | Halaman staf tidak menunjukkan modul efektif per orang | 2026-08-14 (seluruh butir + baris owner) | `[ADDITION] Halaman Staf Menjawab "Orang Ini Bisa Buka Apa Saja", dan Baris Owner Mengaku Melewati Seluruh Pemeriksaan (BL-038)` |
 | `BL-033` | Tiga permukaan publik belum satu keluarga — desain, aset, dan wordmark | 2026-08-14 | `[DECISION] Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033)` |

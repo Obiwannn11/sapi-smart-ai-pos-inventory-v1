@@ -32,6 +32,26 @@
   **(d)** Untuk kuota AI, sebutkan juga **apa yang terjadi saat habis** (analisis ditolak sampai besok) dan bahwa BYOK melepas batas itu. Batas yang tidak dijelaskan konsekuensinya akan dibaca sebagai batas keras yang memutus fitur.
   **(e)** **Jangan menjanjikan "tambah kuota AI" di landing sebelum `[BL-069]` ada.** Alur belinya belum berbentuk sama sekali — tidak ada kolom, tidak ada tagihan, tidak ada layar.
 
+### [BL-057] Harga Khusus per Tenant: Dropdown Mengunci ke Depan, Input Manual Sebulan Saja — Alasannya Belum Wajib
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Keputusan pemilik 2026-08-07 — "bisa pilih berdasarkan paket yang ada (dropdown)... atau saya input manual dan paksa berikan komentar atau alasan"
+- **Status:** **Selesai 2026-08-14** (butir (a) dan (b) terpasang; butir (c) adalah larangan dan memang tidak menuntut kode)
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`: `amount` bebas dengan `min:0`, **tanpa kolom alasan**
+  - `app/Http/Controllers/Platform/InvoiceController.php` — jejak audit sudah mencatat `follows_rule`
+  - `app/Http/Controllers/Platform/SubscriptionController.php` — `updatePlan()`: dropdown paket, `reason` **sudah wajib**
+- **Deskripsi:**
+  Dua mekanisme yang diminta pemilik ternyata sebagian besar sudah ada, dan yang dulu terlihat sebagai cacat justru jadi fiturnya:
+  - **Dropdown paket = mengunci ke depan.** `changePlan()` + `PUT /platform/subscriptions/{id}/plan` sudah ada, `reason` sudah wajib, jejaknya sudah `SEVERITY_SENSITIVE`. **Tidak ada pekerjaan.**
+  - **Input manual = berlaku sebulan saja.** Penerbit manual sudah menerima nominal bebas, dan `issueDuePeriodInvoices()` **tidak pernah membaca `price_locked`** — jadi bulan berikutnya otomatis kembali ke harga aturan. Itu persis yang diminta. Lihat koreksi di `[BL-041]`.
+  Yang benar-benar belum ada tinggal satu: **kolom alasan wajib** pada penerbit manual, khususnya ketika nominalnya menyimpang dari aturan.
+- **Usulan Perbaikan:**
+  **(a)** Tambahkan `reason` di `Platform\InvoiceController::store()`, wajib **ketika `follows_rule` bernilai false** — memaksa alasan untuk tagihan yang persis mengikuti aturan hanya melatih orang mengetik "sesuai aturan" tanpa membacanya. Deteksinya sudah ada di controller, tinggal dipakai sebagai syarat validasi.
+  **(b)** Alasannya masuk `meta` jejak audit berdampingan dengan `follows_rule`, dan ikut terlihat di layar tagihan tenant — nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang.
+  **(c)** Jangan menambahkan kolom "harga khusus permanen" per tenant. Pemilik sudah memutuskan harga tetap datang dari paket; harga khusus yang berdiri sendiri berarti membuat paket bayangan yang tidak muncul di daftar mana pun. Bila suatu tenant memang perlu harga tetap yang lain, yang benar adalah **membuat paket baru** — ia auditable dan muncul di panel.
+- **Catatan penutup:** butir (b) menuntut keputusan yang tidak tertulis di entri ini — jejak audit milik platform, jadi "ikut terlihat di layar tagihan tenant" berarti kolom basis data baru, bukan sekadar menampilkan sesuatu yang sudah tersimpan. Pemilik memilih **opsi A**: satu kolom `invoices.amount_reason` yang memang dibaca tenant, dengan formulirnya menyatakan itu terus terang saat alasannya diketik. Opsi B (alasan internal saja, tanpa migrasi) ditolak karena yang bertanya "kenapa tagihan saya beda" adalah tenant.
+
 ### [BL-039] "Profil Usaha" Mencampur Merek, Aturan Kerja, Kapabilitas, dan Kredensial
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "pada profile usaha dan setting usaha, pisahkan bersifat brand usaha, cara kerja sistem, sampai ke api key dll settingannya pisahkan semua"

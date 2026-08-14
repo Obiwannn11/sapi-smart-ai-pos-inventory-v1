@@ -33,6 +33,9 @@ class InvoiceResource extends JsonResource
             'grants_seats' => $this->grants_seats,
             'previous_seats' => $this->previous_seats,
             'amount' => (float) $this->amount,
+            // Kenapa nominalnya begini, bila ia menyimpang dari tarif aturan
+            // (`[BL-057]`(a)). Null untuk tagihan yang mengikuti aturan.
+            'amount_reason' => $this->amount_reason,
             'status' => $this->status,
             'due_date' => $this->due_date?->toDateString(),
             'has_proof' => $this->proof_path !== null,

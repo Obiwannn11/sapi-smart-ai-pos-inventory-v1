@@ -497,6 +497,9 @@ test('the platform can still type a subscription invoice for a month that has an
             'period' => $period,
             'amount' => 100000,
             'due_date' => now()->addWeek()->toDateString(),
+            // Tenant ini tidak cocok dengan aturan harga mana pun, jadi
+            // alasannya wajib (`[BL-057]`(a)).
+            'amount_reason' => 'Tagihan langganan yang sempat terhalang tagihan seat.',
         ])
         ->assertSessionHas('success');
 

@@ -159,6 +159,11 @@ class SubscriptionController extends Controller
                     'period' => $invoice->period,
                     'kind' => $invoice->kind,
                     'amount' => (float) $invoice->amount,
+                    // Terlihat tenant dengan sengaja (`[BL-057]`(a)): nominal
+                    // yang berbeda dari daftar harga tanpa penjelasan adalah
+                    // pertanyaan yang pasti datang, dan menjawabnya di layar
+                    // lebih murah daripada menjawabnya lewat percakapan.
+                    'amount_reason' => $invoice->amount_reason,
                     'status' => $invoice->status,
                     'due_date' => $invoice->due_date?->toDateString(),
                     'rejection_reason' => $invoice->rejection_reason,

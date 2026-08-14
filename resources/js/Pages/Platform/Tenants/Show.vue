@@ -164,10 +164,31 @@ const invoiceForm = useForm({
     period: new Date().toISOString().slice(0, 7),
     amount: '',
     due_date: '',
+    amount_reason: '',
 });
 
 const suggestion = ref(null);
 const suggestionState = ref('idle');
+
+// Cerminan `$mengikutiAturan` di `Platform\InvoiceController::store()`, dengan
+// ambang yang sama (0,01). Ia TIDAK menggantikan penjaga di server — ia hanya
+// membuat syaratnya terlihat sebelum tombol ditekan. Formulir yang baru
+// memberi tahu syaratnya lewat penolakan adalah formulir yang menyuruh orang
+// menebak.
+const followsRule = computed(() => {
+    if (!suggestion.value?.matched) {
+        return false;
+    }
+
+    const typed = Number.parseFloat(invoiceForm.amount);
+
+    return Number.isFinite(typed) && Math.abs(typed - suggestion.value.amount) < 0.01;
+});
+
+// Saat usulannya belum/gagal diambil, jawabannya "belum diketahui", bukan
+// "tidak wajib". Kolomnya tetap ditampilkan sebagai wajib supaya orangnya tidak
+// mengirim lalu ditolak — server tetap pemutus akhirnya.
+const reasonRequired = computed(() => suggestionState.value !== 'loading' && !followsRule.value);
 
 // Diisikan, bukan dipaksakan: nominalnya tetap bisa diketik ulang. Aturan yang
 // menyarankan lebih berguna daripada aturan yang memutuskan — harga yang turun
@@ -550,6 +571,13 @@ const revenueColumns = [
 
                     <td :class="[cellClass, 'text-right tabular-nums text-foreground']">
                         {{ formatRupiah(invoice.amount) }}
+                        <!--
+                            Hanya muncul untuk tagihan yang nominalnya menyimpang
+                            dari aturan — kolomnya null untuk sisanya.
+                        -->
+                        <p v-if="invoice.amount_reason" class="mt-1 text-xs font-normal text-muted-foreground text-right normal-case">
+                            {{ invoice.amount_reason }}
+                        </p>
                     </td>
 
                     <td :class="cellClass">
@@ -856,6 +884,30 @@ const revenueColumns = [
                         </span>
                         <span v-else-if="suggestionState === 'error'" class="text-amber-700">
                             Usulan tarif gagal diambil. Nominalnya tetap bisa diisi manual.
+                        </span>
+                    </template>
+                </FormField>
+
+                <FormField
+                    :label="reasonRequired ? 'Alasan nominal khusus *' : 'Alasan nominal khusus'"
+                    :error="invoiceForm.errors.amount_reason"
+                >
+                    <textarea
+                        v-model="invoiceForm.amount_reason"
+                        rows="2"
+                        placeholder="Mis. potongan 20% tiga bulan pertama, kesepakatan 5 Agustus."
+                        :class="inputClass"
+                    />
+
+                    <template #footnote>
+                        <span v-if="reasonRequired" class="text-amber-700">
+                            Nominalnya berbeda dari tarif aturan, jadi alasannya wajib.
+                            <span class="font-medium text-foreground">Tenant ikut membacanya</span> di halaman
+                            langganan mereka — tulis yang memang boleh mereka baca.
+                        </span>
+                        <span v-else>
+                            Nominalnya persis mengikuti tarif aturan, jadi alasannya tidak diperlukan dan tidak akan
+                            disimpan.
                         </span>
                     </template>
                 </FormField>
