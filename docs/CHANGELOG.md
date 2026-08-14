@@ -61,7 +61,9 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | ADDITION | Langganan | Satu Pembaca Harga untuk Permukaan Tanpa Sesi, Sebelum Ada yang Membacanya (BL-041, BL-066, BL-067) |
 | 2026-08-14 | REFACTOR | Pengaturan | "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039) |
+| 2026-08-14 | ADDITION | Langganan | Nominal yang Menyimpang dari Aturan Wajib Beralasan, dan Alasannya Dibaca Tenant yang Ditagih (BL-057) |
 | 2026-08-14 | ADDITION | RBAC | Halaman Staf Menjawab "Orang Ini Bisa Buka Apa Saja", dan Baris Owner Mengaku Melewati Seluruh Pemeriksaan (BL-038) |
 | 2026-08-14 | DECISION | UI | Tiga Permukaan Publik Jadi Satu Keluarga: `SAPI POS` Resmi, Palet Tunggal, dan Tailwind CDN Dilepas (BL-033) |
 | 2026-08-13 | ADDITION | AI | Kuota AI Berhenti Tinggal di `.env`: Kebijakan Berjangka Waktu, Promo, dan Tombol Mengembalikan Jatah Hari Ini (BL-047) |
@@ -173,6 +175,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 ---
 
+### [ADDITION] Satu Pembaca Harga untuk Permukaan Tanpa Sesi, Sebelum Ada yang Membacanya (BL-041, BL-066, BL-067)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — dasar bersama `[BL-041]`(c), `[BL-066]`(c), dan `[BL-067]`(a). Commit kedua di jalan permukaan publik, setelah `[BL-033]`.
+- **Dampak:** Service | Test
+- **Breaking Change:** Tidak. Belum ada satu pun pemanggil; tidak ada rute, controller, maupun layar yang berubah.
+- **Deskripsi:** `PublicPricing` membacakan paket aktif, tangga Harga Adaptif, ambangnya, dan syarat masa gratis serta perpindahan jalur — tanpa menyentuh tenant maupun sesi. Ia belum dipakai siapa pun; tiga commit berikutnya yang akan memakainya.
+- **Alasan:** Tiga entri backlog menuntut angka yang sama di tempat yang berbeda, dan ketiganya menulis syarat yang identik: angkanya ditarik dari `plans` dan `pricing_rules`, bukan diketik di HTML. `[BL-067]`(a) menyebut bahayanya paling jelas — "jangan dibuat sebagai tabel HTML ketiga yang bisa basi sendiri".
+
+- **Kelas ini mendarat tanpa pemanggil, dan itu disengaja.** Ia dasar bersama tiga entri; menempelkannya ke salah satu berarti dua entri berikutnya mewarisi bentuk yang dipilih untuk keperluan lain. Commit tersendiri juga membuat aturan bacanya bisa ditinjau sebagai aturan — bukan terselip di antara markup halaman harga.
+- **Tidak menyentuh tenant sama sekali, dan itu syarat berdirinya.** Ia dipanggil dari halaman tanpa sesi. Segala yang butuh tenant — bracket berjalan, perkiraan tarif, penilaian kelayakan — tetap di `PricingService` dan `AdaptiveEligibility` yang memang memegang tenantnya. Ada test yang menjaga batas ini, karena melanggarnya berarti halaman publik meledak bagi tamu atau, lebih buruk, membacakan data satu tenant kepada semua orang.
+- **Tangganya dipanggil, bukan diturunkan ulang.** `adaptiveLadder()` dan `adaptiveCeiling()` sudah ada sejak `[BL-055]` dan keduanya memang tidak menyentuh tenant. Halaman publik dan `/langganan/harga-adaptif` karenanya membaca fungsi yang sama — dua halaman yang menjelaskan tangga yang sama tidak boleh bisa berbeda.
+- **`ceiling` bernilai `null` berarti "tidak ada ambang", bukan "ambangnya nol".** Bedanya menentukan, dan arah gagalnya sudah diperingatkan `[BL-048]`: satu bracket yang lupa diberi batas atas membuat ambangnya hilang, dan halaman yang menukar keduanya akan memberi tahu **setiap** pengunjung bahwa omzetnya terlalu tinggi untuk Harga Adaptif. Dijaga test tersendiri.
+- **`ai_daily` bernilai `null` juga berarti "ikut bawaan platform", bukan nol.** Ini membawa naik pembedaan yang sudah dijaga `Plan::limit()`: paket yang tidak menyetel batas berbeda dari paket yang menyetel batas nol, dan yang kedua berarti paket itu sengaja tidak menjual AI. Meleburnya jadi satu membuat halaman publik memajang "0 analisis/hari" untuk paket yang sebenarnya dapat jatah. Angka bawaan platform sengaja **tidak** diambil dari `AiQuota` — pintunya (`dailyLimitFor()`) menuntut tenant, dan promo berjangka yang ikut terhitung di sana tidak layak dipajang di halaman publik sebagai kuota tetap.
+- **Hanya paket `is_active`.** Paket nonaktif adalah paket yang pemiliknya berhenti menjual; memajangnya mengundang pendaftaran ke sesuatu yang tidak ada tempatnya.
+- **Urutannya `base_price` lalu `id`.** Pemutus keduanya bukan hiasan: dua paket berharga sama tanpa pemutus akan berpindah-pindah urutan antar permintaan, dan tabel harga yang barisnya bergeser tiap muat terbaca sebagai halaman yang rusak.
+- **Angkanya mentah, pemformatan Rupiah tidak ikut.** Pembaca ini mengirim `float`; menuliskannya sebagai "Rp 100.000" di sini berarti memilih satu bentuk untuk semua pemakainya, termasuk yang belum ada.
+- **File Terdampak:**
+  - `app/Services/Pricing/PublicPricing.php` — **baru.** Satu metode publik, `snapshot()`, mengembalikan `plans`, `adaptive` (ladder + ceiling + nama paket penampungnya), `trial_months`, dan `track_switch_minimum_months`.
+  - `tests/Feature/Subscription/PublicPricingTest.php` — **baru.** 8 test: urutan & isi paket, paket nonaktif tersaring, `ai_daily` null vs nol, tangga & ambang dari `pricing_rules`, tangga tanpa ujung, paket penampung adaptif, syarat masa gratis/perpindahan, dan batas "tidak menyentuh tenant".
+- **Cara memeriksanya.** 270 test di `tests/Feature/Subscription` lewat. Test barunya mengosongkan `plans` dan `pricing_rules` lebih dulu lalu menyusun tangganya sendiri: yang diuji bentuk pembacanya, bukan isi benih migrasi yang bisa berubah kapan saja.
+- **Yang TIDAK dikerjakan:** belum ada halaman yang memakainya. `/harga` menyusul di `[BL-041]`(c), isi paket di `[BL-067]`, penjelasan cara tarif dihitung di `[BL-066]`.
+
+---
+
 ### [REFACTOR] "Profil Usaha" Pecah Jadi Tiga Halaman dan Tiga Endpoint — Satu Tombol Simpan Tidak Lagi Menulis Merek, Tarif, Modul, dan Kunci API Sekaligus (BL-039)
 - **Tanggal:** 2026-08-14
 - **Fase Terkait:** Di Luar Fase — `[BL-039]`, seluruh butirnya.
@@ -207,6 +233,38 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `tests/Feature/Owner/SettingsAiTest.php`, `SettingsMcpTest.php`, `tests/Feature/FeatureGatingTest.php`, `OrderIdentityTest.php`, `Platform/PricingDimensionTest.php`, `Upsell/UpsellEventTest.php` — diarahkan ulang ke endpoint yang sekarang memiliki field-nya.
 - **Cara memeriksanya.** Seluruh suite dijalankan: **909 test lulus (3.928 assertion)**. Ketiga halaman juga dibuka di peramban dengan sesi owner yang sudah berjalan — ketiganya merender, breadcrumb menyebut halaman yang benar (bukan induknya), dan satu putaran simpan sungguhan lewat formulir Integrasi terbukti mendarat di basis data lalu dikembalikan ke keadaan semula.
 - **Dampak ke `[BL-034]`:** halaman "Cara Kerja Sistem" inilah tempat preset fitur pendaftaran nanti bisa ditinjau ulang owner. Perlu dicatat untuk yang mengerjakannya: preset berlaku **sekali saat pendaftaran**, jadi halaman ini tidak boleh menampilkan "preset Anda: kafe" seolah bisa diterapkan ulang — owner yang sudah mematikan antrian dapur tidak boleh mendapatkannya kembali.
+
+---
+
+### [ADDITION] Nominal yang Menyimpang dari Aturan Wajib Beralasan, dan Alasannya Dibaca Tenant yang Ditagih (BL-057)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-057]` butir (a) dan (b); butir (c) memang tidak menuntut kode.
+- **Dampak:** Migration | Model | Controller | Frontend | Test
+- **Breaking Change:** Tidak untuk data yang sudah ada — kolomnya nullable dan tagihan lama tetap terbaca. **Ya untuk pemanggil penerbit manual:** `POST /platform/invoices` sekarang menolak nominal yang menyimpang dari tarif aturan bila `amount_reason` kosong.
+- **Deskripsi:** Penerbit tagihan manual di panel platform menerima nominal bebas tanpa pernah menanyakan kenapa. Sekarang ia menanyakannya — tapi hanya ketika nominalnya benar-benar menyimpang dari tarif aturan — dan jawabannya ikut terbaca tenant di halaman langganan mereka.
+- **Alasan:** Keputusan pemilik 2026-08-07 — "atau saya input manual dan paksa berikan komentar atau alasan". Dua mekanisme lain yang diminta keputusan itu ternyata sudah berdiri (dropdown paket sudah mewajibkan `reason`; nominal manual memang hanya berlaku sebulan karena penerbit otomatis tidak pernah membaca harga terkunci), jadi yang tersisa memang hanya kolom ini.
+
+- **Wajibnya bersyarat, dan syaratnya tidak bisa ditulis sebagai aturan validasi biasa.** `follows_rule` baru bisa dijawab setelah tenant dan aturan harganya di-resolve — dan itu terjadi jauh setelah `$request->validate()`. Karena itu pemeriksaannya jadi lapis kedua: validasi pertama menerima `amount_reason` sebagai `nullable`, lalu setelah `$mengikutiAturan` dihitung, `ValidationException::withMessages()` dilempar bila alasannya kosong. Bentuk itu dipilih, bukan `back()->with('error')`, karena hanya ia yang menempelkan pesannya pada kolomnya di formulir; pesan yang mendarat di toast hilang bersama toast-nya dan meninggalkan formulir yang menolak tanpa menunjuk apa pun.
+- **Alasan tidak diminta untuk tagihan yang mengikuti aturan — itu keputusan, bukan kelonggaran.** Memaksa alasan pada nominal yang persis sama dengan tarif aturan hanya melatih orang mengetik "sesuai aturan" tanpa membacanya, dan kolom yang selalu diisi basa-basi berhenti bermakna justru pada tagihan yang benar-benar istimewa. Deteksinya sudah ada di controller sejak `[BL-015]`; ia tinggal dipakai sebagai syarat.
+- **Tidak ada aturan yang cocok = menyimpang.** Bila tarifnya keluar dari paket penampung atau tidak ada sama sekali, `follows_rule` bernilai false dan alasannya wajib. Itu benar secara maksud: di situ angkanya adalah keputusan orang, bukan hasil aturan. Konsekuensinya nyata dan disengaja — empat tes lama yang menerbitkan tagihan menyimpang kini harus menyertakan alasan.
+- **Spasi bukan alasan.** Nilainya di-`trim()` sebelum diperiksa dan sebelum disimpan, jadi `'   '` ditolak sama seperti kolom kosong.
+- **Alasan untuk penyimpangan yang tidak terjadi tidak disimpan.** Bila nominalnya dikembalikan ke tarif aturan setelah alasannya terlanjur diketik, yang tersimpan `null`. Kalimat yang menjelaskan penyimpangan yang tidak ada hanya membingungkan tenant yang membacanya.
+- **Kolom baru, bukan menumpang `rejection_reason` — dan itu bukan kerapian belaka.** Keduanya kalimat bebas yang dibaca tenant, tapi menjawab pertanyaan berbeda pada saat berbeda: `rejection_reason` menjelaskan kenapa BUKTI BAYAR ditolak dan lahir setelah tagihan berjalan; `amount_reason` menjelaskan kenapa NOMINALNYA begini dan lahir bersama tagihannya. Satu tagihan bisa punya keduanya sekaligus — harga khusus yang buktinya kurang — dan satu kolom berarti yang kedua menimpa yang pertama.
+- **Terlihat tenant adalah keputusan yang diambil sadar (opsi A), bukan kelalaian daftar putih.** Alternatifnya — alasan internal yang hanya masuk jejak audit — lebih murah dan tidak butuh migrasi sama sekali. Yang membuatnya kalah: masalah yang dijawab entri ini justru "nominal yang berbeda dari daftar harga tanpa penjelasan adalah pertanyaan yang pasti datang", dan yang bertanya adalah tenant. Konsekuensinya ditanggung penulisnya, jadi formulirnya mengatakannya terus terang di footnote kolomnya: *"Tenant ikut membacanya — tulis yang memang boleh mereka baca."*
+- **Di layar tenant ia bukan `text-destructive`.** Penolakan bukti bayar tepat di bawahnya berwarna merah karena memang kabar buruk. Alasan nominal seringnya justru sebaliknya — potongan harga — jadi ia muted. Dua kalimat yang berdampingan dengan warna sama akan terbaca sama-sama sebagai masalah.
+- **Formulirnya menunjukkan syaratnya sebelum tombol ditekan.** `followsRule` di Vue mencerminkan perhitungan controller dengan ambang yang sama (0,01), memanfaatkan endpoint `/platform/invoices/suggestion` yang sudah dipanggil formulir itu. Ia **tidak** menggantikan penjaga server — hanya membuat labelnya berubah jadi "Alasan nominal khusus *" begitu angkanya menyimpang. Saat usulannya belum atau gagal diambil, jawabannya diperlakukan sebagai "belum diketahui" dan kolomnya ditampilkan wajib: lebih baik meminta sesuatu yang ternyata tak perlu daripada menolak setelah dikirim.
+- **File Terdampak:**
+  - `database/migrations/2026_08_13_192332_add_amount_reason_to_invoices_table.php` — **baru.** `invoices.amount_reason`, `string(500)` nullable, setelah `pricing_context`.
+  - `app/Models/Invoice.php` — `amount_reason` masuk `$fillable`.
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()` memvalidasi `amount_reason` sebagai nullable, mewajibkannya lewat `ValidationException` ketika `follows_rule` false, menyimpannya (di-`trim`, null bila mengikuti aturan), dan menaruhnya di `meta` jejak audit berdampingan dengan `follows_rule`.
+  - `app/Http/Resources/Platform/InvoiceResource.php` — `amount_reason` masuk daftar putih.
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — `amount_reason` ikut di peta tagihan sisi tenant.
+  - `resources/js/Pages/Platform/Tenants/Show.vue` — kolom alasan di formulir terbit tagihan dengan label & footnote yang berubah menurut `reasonRequired`; computed `followsRule`/`reasonRequired`; alasannya tampil di bawah nominal pada tabel riwayat tagihan.
+  - `resources/js/Pages/Billing/Show.vue` — alasannya tampil di baris tagihan tenant, muted, di atas `rejection_reason`.
+  - `tests/Feature/Platform/PlatformBillingTest.php` — 7 test baru (ditolak tanpa alasan, spasi bukan alasan, diterima + masuk jejak audit, nominal sesuai aturan tidak dimintai alasan, alasan basa-basi tidak disimpan, terlihat di panel platform, terbaca tenant di `/langganan`) + 2 test lama disesuaikan.
+  - `tests/Feature/Platform/PricingDimensionTest.php`, `tests/Feature/Subscription/AutoInvoiceTest.php` — masing-masing satu test lama disesuaikan: keduanya menerbitkan tagihan yang menyimpang dan kini menyertakan alasan.
+- **Cara memeriksanya.** 421 test di `tests/Feature/Platform` dan `tests/Feature/Subscription` lulus. Suite lengkap (916 test) juga dijalankan: satu kegagalan, dan bukan dari sini — `reset link requests are rate limited` menyeberangi batas menit `Limit::perMinute(3)` pada run yang memakan berjam-jam karena mesinnya terbebani; ia lulus saat dijalankan sendiri. Sisi Vue diverifikasi lewat `vite build`, **tidak** lewat peramban — kedua halaman ada di balik login, dan mengisi kata sandi bukan tindakan yang saya lakukan.
+- **Yang TIDAK dikerjakan:** butir (c) `[BL-057]` — kolom "harga khusus permanen" per tenant — memang tidak boleh ada, dan tetap tidak ada. Harga tetap datang dari paket; tenant yang perlu harga tetap lain seharusnya mendapat paket baru yang auditable dan muncul di panel.
 
 ---
 
