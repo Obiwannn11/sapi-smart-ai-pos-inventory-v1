@@ -10,6 +10,29 @@
 
 ## Daftar Entri
 
+### [BL-066] Cara Kerja Dynamic Pricing Tidak Terjelaskan di Satu Pun Permukaan Publik
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Saran pasca-peragaan — "perbaiki penjelasan dari sistem dynamic pricing lagi, masukkan dalam landing page cara kerjanya"
+- **Status:** **Selesai 2026-08-14** — butir (a), (c), (d), (e) dikerjakan utuh; butir (b) dikerjakan dua dari tiga (lihat catatan penutup).
+- **Prioritas:** **High sejak 2026-08-10** — `[BL-055]` sudah mendarat, jadi tenant kini benar-benar bisa mengajukan Adaptif sendiri. Halaman `/langganan/harga-adaptif` menjelaskannya kepada yang **sudah masuk**; yang belum ada adalah penjelasan bagi yang belum mendaftar
+- **Bergantung pada:** `[BL-032]` (landing sudah harus ditulis ulang) dan angka final `[BL-041]` — keduanya menyentuh bagian halaman yang sama
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php` — pencarian `dynamic|dinamis|adaptif|subsidi`: **nol hasil**. Bagian harga masih memajang dua paket karangan (lihat `[BL-032]`)
+  - `docs/SAPI-Pitch-Fitur-Unggulan_v1.0.md:90-127` — penjelasan yang benar dan lengkap **sudah ditulis**, tapi dokumen internal
+  - `config/docs.php:52-55` — halaman panduan `langganan` sudah terdaftar dengan ringkasan yang menyebut jalur Harga Adaptif
+  - `resources/docs/panduan/langganan.md` — isinya perlu diperiksa ulang terhadap keputusan 2026-08-07 (dua bulan gratis, tangga 90/75/50/25, ambang Rp 50 jt)
+  - `config/subscription.php` — bracket A–D beserta angkanya, sumber kebenaran yang harus dirujuk penjelasannya
+- **Deskripsi:**
+  Calon klien yang membuka landing page tidak menemukan satu kata pun tentang mekanisme yang justru jadi pembeda produk ini: tarif langganan yang mengikuti omzet, dihitung otomatis dari transaksi dan **bukan dilaporkan sendiri**, sebagai imbalan atas consent yang eksplisit. Penjelasannya sudah ada dan sudah bagus — tapi hidup di dokumen pitching internal, bukan di halaman yang dibaca orang.
+  Yang membuat ini lebih dari sekadar salinan-tempel: begitu `[BL-055]` mendarat, tenant mengajukan Adaptif **sendiri** sambil menyerahkan consent atas data penjualannya. Meminta orang menyetujui itu tanpa halaman publik yang menjelaskan apa yang dilihat, untuk apa, dan apa yang tidak dilihat — adalah cara tercepat membuat pengajuan itu ditolak atau, lebih buruk, disetujui tanpa dipahami.
+- **Usulan Perbaikan:**
+  **(a)** Satu bagian "Bagaimana harga Anda dihitung" di landing, tiga langkah dan bukan paragraf: omzet bulan lalu dihitung otomatis → jatuh ke salah satu bracket → tarif bulan itu. Sebutkan angkanya apa adanya (10k/25k/50k/75k, dan ≥ Rp 50 jt tidak layak) — tangga bracket itu **memang daftar harga sesungguhnya**, sesuai catatan 2026-08-07, jadi menyembunyikannya tidak ada gunanya.
+  **(b)** Tulis eksplisit apa yang **tidak** terjadi: platform tidak mengintip transaksi per item, tidak ada laporan mandiri yang bisa dicurangi, dan tarif yang sudah dibayar terkunci (`price_locked`). Tiga kalimat itu menjawab keberatan yang pasti muncul lebih baik daripada satu halaman fitur.
+  **(c)** **Angkanya ditarik dari `pricing_rules`, jangan diketik di HTML** — ini syarat yang sama dengan `[BL-032]`(2), dan alasannya sama: halaman harga yang berbeda dari tagihan sungguhan adalah cacat terburuk yang bisa dimiliki halaman harga.
+  **(d)** Perdalam `resources/docs/panduan/langganan.md` sebagai versi panjangnya, dan tautkan dari landing. Landing menjawab "kira-kira saya bayar berapa"; panduan menjawab "kalau omzet saya turun bulan depan, bagaimana".
+  **(e)** Periksa istilahnya konsisten. Dokumen internal memakai "Dynamic Pricing" (nama mesinnya), UI memakai "Harga Adaptif" vs "Harga Tetap" (nama jalurnya), dan `[BL-018]` memakai "harga dinamis" untuk hal yang sama sekali berbeda — diskon barang mendekati kedaluwarsa. **Jangan pakai "dynamic pricing" di permukaan tenant** sebelum tabrakan istilah itu diselesaikan.
+- **Catatan penutup 2026-08-14 — satu klaim di butir (b) DIBATALKAN karena tidak benar.** Butir itu meminta menuliskan "tarif yang sudah dibayar terkunci (`price_locked`)". Diperiksa terhadap kode: penerbit tagihan tidak pernah membaca `price_locked` — `issueDuePeriodInvoices()` selalu menghitung ulang lewat `PricingService::resolveFor()` (`SubscriptionService.php:486`), dan `price_locked` hanya dibaca untuk tampilan. `[BL-041]` sendiri sudah mengoreksi klaim *grandfathering* ini pada 2026-08-07; entri ini rupanya ditulis sebelum koreksi itu dan tidak ikut diperbarui. Menuliskannya di landing berarti menjanjikan yang tidak dilakukan sistem — tenant yang kelasnya naik bulan depan **akan** ditagih tarif kelas barunya. Yang ditulis sebagai gantinya adalah pernyataan yang benar: tagihan yang **sudah terbit** membekukan dasar perhitungannya di `invoices.pricing_context`, jadi ia tidak berubah surut. Ada test yang menjaga janji penguncian itu tidak masuk kembali.
+
 ### [BL-067] Isi Paket — Berapa Seat, Berapa Kuota AI — Tidak Terlihat Sebelum Orang Mendaftar
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "perbaiki juga include seats atau tambahan kuota akun"

@@ -762,6 +762,128 @@
         </div>
     </section>
 
+    {{--
+        "Bagaimana harga Anda dihitung" (`[BL-066]`).
+
+        Mekanisme inilah pembeda produk ini, dan sampai sekarang tidak satu kata
+        pun tentangnya ada di permukaan publik — penjelasan yang benar hidup di
+        dokumen pitching internal, bukan di halaman yang dibaca orang.
+
+        Angkanya dari `pricing_rules` lewat `PublicPricing`, tidak diketik di
+        sini (`[BL-066]`(c)). Istilah yang dipakai "Harga Adaptif", BUKAN
+        "dynamic pricing": nama itu bertabrakan dengan `[BL-018]` yang memakai
+        "harga dinamis" untuk diskon barang mendekati kedaluwarsa (`[BL-066]`(e)).
+    --}}
+    @if ($pricing['adaptive']['ladder'] !== [])
+        <section id="harga-adaptif" class="py-24 lg:py-32 bg-gray-50">
+            <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
+                <div class="text-center max-w-2xl mx-auto mb-16 reveal">
+                    <h2 class="text-primary font-black tracking-widest uppercase text-sm mb-4">Harga Adaptif</h2>
+                    <h3 class="text-4xl lg:text-5xl font-black text-gray-900 mb-6 leading-tight">Bagaimana Harga Anda Dihitung</h3>
+                    <p class="text-lg text-gray-600 font-medium leading-relaxed">
+                        Usaha yang omzetnya masih kecil tidak membayar seperti usaha yang sudah besar.
+                        Tarifnya mengikuti, dan begini urutannya.
+                    </p>
+                </div>
+
+                <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto mb-16">
+                    <div class="reveal stagger-1">
+                        <div class="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-lg mb-5">1</div>
+                        <h4 class="text-lg font-black text-gray-900 mb-2">Omzet bulan lalu dihitung</h4>
+                        <p class="text-[15px] text-gray-600 font-medium leading-relaxed">
+                            Sistem menjumlahkannya sendiri dari transaksi yang tercatat di aplikasi. Anda tidak mengisi laporan apa pun.
+                        </p>
+                    </div>
+                    <div class="reveal stagger-2">
+                        <div class="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-lg mb-5">2</div>
+                        <h4 class="text-lg font-black text-gray-900 mb-2">Angkanya jatuh ke satu kelas</h4>
+                        <p class="text-[15px] text-gray-600 font-medium leading-relaxed">
+                            Ada {{ count($pricing['adaptive']['ladder']) }} kelas, dan batas tiap kelas terbuka untuk dibaca — bukan penilaian yang ditentukan orang.
+                        </p>
+                    </div>
+                    <div class="reveal stagger-3">
+                        <div class="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-lg mb-5">3</div>
+                        <h4 class="text-lg font-black text-gray-900 mb-2">Tarif bulan itu mengikuti</h4>
+                        <p class="text-[15px] text-gray-600 font-medium leading-relaxed">
+                            Omzet turun, tarif ikut turun bulan berikutnya. Dihitung ulang tiap bulan, bukan sekali saat mendaftar.
+                        </p>
+                    </div>
+                </div>
+
+                {{-- Tangganya disebut angkanya apa adanya (`[BL-066]`(a)): ia
+                     memang daftar harga yang sesungguhnya, jadi menyembunyikannya
+                     tidak ada gunanya. --}}
+                <div class="max-w-3xl mx-auto bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden reveal">
+                    <div class="grid grid-cols-2 gap-px bg-gray-100">
+                        <div class="bg-white px-6 py-4 text-[11px] font-black uppercase tracking-widest text-gray-400">Omzet bulan lalu</div>
+                        <div class="bg-white px-6 py-4 text-[11px] font-black uppercase tracking-widest text-gray-400">Tarif bulan ini</div>
+                        @foreach ($pricing['adaptive']['ladder'] as $bracket)
+                            <div class="bg-white px-6 py-4 text-[15px] font-bold text-gray-600">
+                                @if ($bracket['min'] === null && $bracket['max'] === null)
+                                    Semua omzet
+                                @elseif ($bracket['min'] === null)
+                                    Di bawah Rp {{ number_format($bracket['max'], 0, ',', '.') }}
+                                @elseif ($bracket['max'] === null)
+                                    Rp {{ number_format($bracket['min'], 0, ',', '.') }} ke atas
+                                @else
+                                    Rp {{ number_format($bracket['min'], 0, ',', '.') }} – di bawah Rp {{ number_format($bracket['max'], 0, ',', '.') }}
+                                @endif
+                            </div>
+                            <div class="bg-white px-6 py-4 text-[15px] font-black text-gray-900">Rp {{ number_format($bracket['price'], 0, ',', '.') }}</div>
+                        @endforeach
+                    </div>
+                    @if ($pricing['adaptive']['ceiling'] !== null)
+                        <div class="px-6 py-4 bg-gray-50 text-[14px] font-bold text-gray-500 border-t border-gray-100">
+                            Di atas Rp {{ number_format($pricing['adaptive']['ceiling'], 0, ',', '.') }} per bulan, jalur yang berlaku adalah Harga Tetap.
+                        </div>
+                    @endif
+                </div>
+
+                {{--
+                    Apa yang TIDAK terjadi (`[BL-066]`(b)). Tiga kalimat ini
+                    menjawab keberatan yang pasti muncul lebih baik daripada satu
+                    halaman fitur.
+
+                    Butir ketiga yang diminta entrinya — "tarif yang sudah
+                    dibayar terkunci (`price_locked`)" — TIDAK ditulis, karena
+                    tidak benar. Penerbit tagihan tidak pernah membaca
+                    `price_locked`; `issueDuePeriodInvoices()` selalu menghitung
+                    ulang lewat `resolveFor()` (`SubscriptionService.php:486`),
+                    dan `[BL-041]` sendiri sudah mengoreksi klaim itu pada
+                    2026-08-07. Yang benar dan dipakai sebagai gantinya: tagihan
+                    yang SUDAH terbit membekukan dasar perhitungannya di
+                    `invoices.pricing_context`, jadi ia tidak berubah surut.
+                --}}
+                <div class="max-w-3xl mx-auto mt-12 grid sm:grid-cols-3 gap-6 reveal">
+                    <div class="bg-white rounded-[1.75rem] border border-gray-100 p-6">
+                        <p class="text-[15px] font-bold text-gray-900 mb-1.5">Isi transaksi tidak dilihat</p>
+                        <p class="text-[14px] text-gray-500 font-medium leading-relaxed">
+                            Yang tersimpan untuk penetapan tarif hanya dua angka per bulan: total omzet dan jumlah transaksi. Bukan barangnya, bukan pembelinya, bukan labanya.
+                        </p>
+                    </div>
+                    <div class="bg-white rounded-[1.75rem] border border-gray-100 p-6">
+                        <p class="text-[15px] font-bold text-gray-900 mb-1.5">Tidak ada laporan mandiri</p>
+                        <p class="text-[14px] text-gray-500 font-medium leading-relaxed">
+                            Angkanya dihitung sistem dari transaksi Anda sendiri. Tidak ada kolom yang bisa diisi terlalu rendah, dan tidak ada yang perlu Anda buktikan.
+                        </p>
+                    </div>
+                    <div class="bg-white rounded-[1.75rem] border border-gray-100 p-6">
+                        <p class="text-[15px] font-bold text-gray-900 mb-1.5">Tagihan terbit tidak berubah surut</p>
+                        <p class="text-[14px] text-gray-500 font-medium leading-relaxed">
+                            Dasar perhitungan setiap tagihan dibekukan saat ia terbit. Aturan tarif yang berubah kemudian hanya berlaku ke depan.
+                        </p>
+                    </div>
+                </div>
+
+                <p class="text-center mt-12 reveal">
+                    <a href="{{ route('docs.show', ['track' => 'panduan', 'page' => 'langganan']) }}" class="font-black text-primary hover:underline">
+                        Selengkapnya: panduan langganan &amp; harga &rarr;
+                    </a>
+                </p>
+            </div>
+        </section>
+    @endif
+
     <!-- Testimonials Section -->
     <section class="py-24 lg:py-32 bg-gray-50 overflow-hidden">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">

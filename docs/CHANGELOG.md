@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-14 | ADDITION | Langganan | Landing Menjelaskan Cara Tarif Dihitung — dan Berhenti Menjanjikan Penguncian yang Tidak Pernah Ada (BL-066) |
 | 2026-08-14 | ADDITION | Langganan | Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067) |
 | 2026-08-14 | ADDITION | Langganan | Halaman `/harga` Membacakan Kedua Jalur Tarif kepada Orang yang Belum Mendaftar (BL-041 butir c) |
 | 2026-08-14 | HOTFIX | UI | Dua Paket Karangan di Landing Diganti Paket yang Benar-Benar Ditagihkan (BL-032 butir 2) |
@@ -175,6 +176,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Landing Menjelaskan Cara Tarif Dihitung — dan Berhenti Menjanjikan Penguncian yang Tidak Pernah Ada (BL-066)
+- **Tanggal:** 2026-08-14
+- **Fase Terkait:** Di Luar Fase — `[BL-066]` butir (a), (c), (d), (e) utuh; butir (b) dua dari tiga, satu klaimnya dibatalkan karena tidak benar. Commit keenam di jalan permukaan publik.
+- **Dampak:** Frontend | Dokumentasi | Test
+- **Breaking Change:** Tidak.
+- **Deskripsi:** Landing dapat bagian "Bagaimana Harga Anda Dihitung" — tiga langkah, tangga kelas dengan angkanya, ambang kelayakan, dan tiga hal yang **tidak** dilakukan platform. Panduan langganan diperdalam jadi versi panjangnya dan ditautkan dari sana.
+- **Alasan:** Mekanisme inilah pembeda produk ini, dan sampai kemarin tidak satu kata pun tentangnya ada di permukaan publik. Penjelasan yang benar sudah lama ada — di dokumen pitching internal, bukan di halaman yang dibaca orang. Sejak `[BL-055]` tenant mengajukan Harga Adaptif **sendiri** sambil menyerahkan consent atas data penjualannya; meminta orang menyetujui itu tanpa halaman publik yang menjelaskannya adalah cara tercepat membuat pengajuan itu ditolak, atau lebih buruk, disetujui tanpa dipahami.
+
+- **Satu dari tiga kalimat yang diminta butir (b) TIDAK ditulis, karena tidak benar — dan ini temuan paling penting dari commit ini.** Butir itu meminta menuliskan "tarif yang sudah dibayar terkunci (`price_locked`)". Diperiksa terhadap kode sebelum ditulis: penerbit tagihan **tidak pernah** membaca `price_locked`. `issueDuePeriodInvoices()` selalu menghitung ulang lewat `PricingService::resolveFor()` (`SubscriptionService.php:486`); `price_locked` hanya dibaca untuk tampilan layar (`Subscription::effectivePrice()`, `AccountOverview`). `[BL-041]` sudah mengoreksi klaim *grandfathering* ini pada 2026-08-07 — entri `[BL-066]` rupanya ditulis sebelum koreksi itu dan tidak ikut diperbarui. Menuliskannya di landing berarti menjanjikan yang tidak dilakukan sistem: tenant yang kelasnya naik bulan depan **akan** ditagih tarif kelas barunya.
+- **Yang ditulis sebagai gantinya benar dan bisa diperiksa:** tagihan yang **sudah terbit** membekukan dasar perhitungannya di `invoices.pricing_context`, jadi ia tidak berubah surut, dan aturan tarif baru hanya berlaku ke depan. Ada test yang menjaga janji penguncian itu tidak masuk kembali lewat penyuntingan berikutnya.
+- **Dua kalimat lain di butir (b) diperiksa dan ternyata benar.** "Platform tidak mengintip transaksi per item": `tenant_monthly_metrics` hanya menyimpan `revenue` dan `transaction_count` per bulan — tidak ada kolom lain, dan `MonthlyRevenueResolver` membaca **hanya** dari tabel ringkasan itu, tidak pernah dari `transactions`. "Tidak ada laporan mandiri yang bisa dicurangi": angkanya ditulis job `ComputeTenantMonthlyRevenue`, tidak ada satu pun kolom yang diisi tenant.
+- **Istilahnya "Harga Adaptif" di mana-mana, dan "dynamic pricing" tidak muncul sama sekali (`[BL-066]`(e)).** Tabrakan istilah yang diperingatkan entrinya nyata: `[BL-018]` memakai "harga dinamis" untuk diskon barang mendekati kedaluwarsa — hal yang sama sekali berbeda. Ada test yang menyapu `/` dan `/harga` untuk ketiga variannya.
+- **Angkanya dari `pricing_rules`, dan test-nya membuktikan itu bukan kebetulan.** Satu test mengubah harga sebuah bracket lalu memuat ulang landing dan memastikan angka lamanya benar-benar hilang. Halaman yang menjelaskan mekanisme dengan angka yang berbeda dari mesinnya lebih buruk daripada halaman yang diam.
+- **Tanpa satu pun aturan tarif, seluruh bagian ini hilang.** Penjelasan tentang tangga yang tidak ada hanya menjanjikan jalur yang tidak bisa diambil siapa pun.
+- **Panduan langganan diperdalam — dan tiga fakta usang di dalamnya ikut dibetulkan.** `[BL-066]`(d) meminta memperdalamnya sebagai versi panjang, dan entrinya sendiri menandai isinya "perlu diperiksa ulang terhadap keputusan 2026-08-07". Yang ditemukan: (1) masa coba tertulis "30 hari pertama", padahal `trial_months` = **2 bulan**; (2) masa tenggang digambarkan memutus penyimpanan transaksi sejak hari pertama, padahal sejak `[BL-054]` ia bertingkat dan kasir baru berhenti di sepertiga terakhir; (3) istilahnya masih "jalur normal"/"jalur subsidi UMKM", yang sudah diganti sejak 2026-07-31. Ketiganya dibetulkan, dengan satu baris yang menyebut istilah lamanya supaya pembaca yang mengingatnya tidak tersesat. Klaim "harga yang Anda setujui terkunci" di bagian "Tarif berubah?" juga dibetulkan dengan alasan yang sama seperti di atas.
+- **File Terdampak:**
+  - `resources/views/public/landing.blade.php` — bagian `#harga-adaptif`: tiga langkah, tangga kelas dari `pricing_rules`, ambang, tiga kartu "yang tidak terjadi", dan tautan ke panduan.
+  - `resources/docs/panduan/langganan.md` — tiga bagian baru (cara tarif dihitung, arah turun-naiknya, ambang), istilah disatukan, dan tiga fakta usang dibetulkan.
+  - `tests/Feature/Public/AdaptivePricingExplainerTest.php` — **baru.** 12 test.
+- **Cara memeriksanya.** 60 test di `tests/Feature/Public` lewat. Landing juga dibuka di peramban: tangga terbaca 10k/25k/50k/75k dengan ambang Rp 50 jt — sama dengan keputusan pemilik 2026-08-07 — dan pada 417px ketiga grid-nya menumpuk jadi satu kolom tanpa halaman menggeser ke samping.
+- **Yang TIDAK dikerjakan:** tabrakan istilah dengan `[BL-018]` belum **diselesaikan**, hanya dihindari — permukaan publik konsisten memakai "Harga Adaptif", tapi keputusan nama untuk diskon kedaluwarsa masih menggantung. Tersisa satu entri di jalan ini: `[BL-041]` butir (b).
 
 ---
 
