@@ -109,6 +109,11 @@ class DashboardController extends Controller
                 'trial_ends_at' => $subscription->trial_ends_at?->toDateString(),
                 'period_ends_at' => $subscription->current_period_end?->toDateString(),
                 'suspends_at' => $this->subscriptions->suspensionDateFor($tenant)?->toDateString(),
+                // Momen pilihan jalur di akhir masa gratis (`[BL-044]`(c)).
+                // `null` di luar jendelanya, dan itu yang membuat kartunya
+                // tidak berubah jadi pengumuman permanen — sesuatu yang selalu
+                // ada di layar berhenti dibaca jauh sebelum harinya tiba.
+                'trial_choice' => $this->subscriptions->trialChoice($tenant),
                 'outstanding' => $outstanding === null ? null : [
                     'amount' => (float) $outstanding->amount,
                     'due_date' => $outstanding->due_date?->toDateString(),

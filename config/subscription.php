@@ -74,6 +74,19 @@ return [
     'invoice_lead_days' => 7,
 
     /**
+     * Berapa hari sebelum masa gratis habis tenant disodori pilihan jalurnya.
+     *
+     * **Wajib lebih besar dari `invoice_lead_days`,** dan itu seluruh alasan
+     * angka ini ada. Tagihan berbayar pertama terbit H-7 dan nominalnya
+     * dibekukan di sana; pilihan yang baru disodorkan di hari yang sama tiba
+     * setelah keputusannya sudah diambilkan — tenant memilih Harga Adaptif lalu
+     * tetap menerima tagihan harga penuh, dan keringanannya baru berlaku sebulan
+     * kemudian. Selisih tujuh hari di sini adalah waktu untuk memutuskan
+     * sebelum angkanya mengeras.
+     */
+    'trial_choice_lead_days' => 14,
+
+    /**
      * Umur minimum tenant terbengkalai sebelum boleh dipangkas, dalam hari.
      *
      * "Terbengkalai" bermakna sempit dan sengaja: pemiliknya tidak pernah

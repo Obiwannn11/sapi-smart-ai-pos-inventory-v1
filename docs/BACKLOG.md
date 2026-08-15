@@ -58,7 +58,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-01** — `[BL-043]`–`[BL-047]` berasal dari catatan menjalankan panel platform, dan sudah **diverifikasi terhadap kode**. Empat dari lima bukan "belum ada sama sekali" melainkan **setengah jadi**: gerbang hanya-baca sudah menegakkan dirinya tapi tak terlihat (`[BL-045]`), CRUD paket sudah ada tapi tak ada yang membacanya (`[BL-046]`), kuota AI sudah ada tapi tinggal di `.env` (`[BL-047]`), dan siklus hidup langganan sudah berpindah keadaan tapi tak pernah menerbitkan tagihan (`[BL-044]`). Hanya `[BL-043]` yang murni cacat. **Koreksi terhadap catatan 2026-07-31 (kedua) di atas:** butir (1) di sana — "pemisahan login platform vs login tenant sudah utuh" — benar untuk *guard, broker, dan pengalihan tamu*, tapi **tidak** untuk pengalihan **setelah** berhasil masuk; lihat `[BL-043]`.
 >
-> Urutan yang disarankan: ~~`[BL-043]` (cacat, berdiri sendiri, kecil)~~ → ~~`[BL-030]` (mumpung `invoices` masih kosong)~~ → `[BL-041]`(a) menetapkan angka → ~~`[BL-044]`~~ (butir b saja; butir c menunggu `[BL-048]`) → ~~`[BL-046]`~~ → ~~`[BL-047]`~~ (selesai 2026-08-13) → ~~`[BL-045]`~~. Yang dicoret selesai 2026-08-05 s.d. 2026-08-13. **Yang tersisa di jalur ini seluruhnya menunggu keputusan angka Anda**, bukan pekerjaan kode: `[BL-041]`(a) tarif Premium, dan `[BL-048]` ambang omset Adaptif.
+> Urutan yang disarankan: ~~`[BL-043]` (cacat, berdiri sendiri, kecil)~~ → ~~`[BL-030]` (mumpung `invoices` masih kosong)~~ → `[BL-041]`(a) menetapkan angka → ~~`[BL-044]`~~ (butir b 2026-08-06, butir c 2026-08-15 — **tertutup**) → ~~`[BL-046]`~~ → ~~`[BL-047]`~~ (selesai 2026-08-13) → ~~`[BL-045]`~~. Yang dicoret selesai 2026-08-05 s.d. 2026-08-15. **Seluruh jalur ini kini tertutup:** `[BL-041]`(a) terjawab 2026-08-07 dan `[BL-048]` ditutup `[BL-055]` pada 2026-08-10.
 
 > **Keputusan pemilik 2026-08-01 (struktur tarif)** — Rp 100k ditetapkan sebagai **puncak bracket Harga Adaptif**, sejajar dengan harga Premium; tenant beromset tinggi tidak lagi berhak atas Adaptif dan hanya bisa Premium; kelayakan Adaptif ditentukan pemilik SaaS. Rinciannya di blok "Keputusan pemilik" pada `[BL-041]`. Dampaknya menyebar ke tiga entri: `[BL-044]` (pertanyaan tarifnya terjawab), `[BL-046]` (Premium dapat pembeda kedua, dan jalur pindah paket berubah dari nyaman jadi wajib), dan satu entri baru **`[BL-048]`** — pagar kelayakan jalur Adaptif, yang ternyata **menabrak gerbang privasi**: menilai kelayakan masuk butuh data omset yang baru boleh dikumpulkan setelah masuk. Baca `[BL-048]` sebelum menyentuh `canSwitchTrack()`.
 >
@@ -98,6 +98,25 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 > Urutan yang disarankan, termurah dulu: `[BL-067]` (keterlihatan seat/kuota) → `[BL-066]` (penjelasan Dynamic Pricing di landing) → `[BL-065]` (PPN, menunggu keputusan bentuk) → `[BL-068]` (cabang, paling akhir). Tiga yang paling murah — `[BL-062]` (kuota AI), `[BL-063]` (rekap bulanan), dan `[BL-064]` (grafik garis) — selesai 2026-08-13; ketiganya memang tidak menyentuh uang sama sekali.
 
 > **Catatan pemilik 2026-08-13 (penyisiran backlog)** — pemilik menanyakan empat fitur yang dikiranya mungkin terlewat dicatat; seluruhnya sudah **diperiksa terhadap kode**, dan hasilnya dua sudah tercatat, dua memang terlewat. **Sudah ada:** offline + printer Bluetooth + lapisan native adalah `[BL-016]` (Capacitor ada di sana sebagai opsi 2, dan lingkupnya sudah dikunci Android saja), sedangkan upsell dari sinyal stok sudah **selesai** lewat `[BL-017]`/`[BL-025]` — sisanya hanya bundling berdiskon yang menunggu `[BL-018]`. **Benar-benar terlewat:** upsell yang **ditargetkan manual oleh owner** — tiga strategi yang ada semuanya menurunkan saran dari data dan tidak ada satu pun tempat bagi owner menuliskan targetnya sendiri — jadi `[BL-074]`; dan **foto bukti pembayaran non-tunai**, yang nol kode (`transaction_payments` hanya punya `reference_code`), jadi `[BL-075]`. Satu hal yang mudah menyesatkan dan sudah ditulis di dalam `[BL-075]`: `invoices.proof_path` yang sudah ada itu bukti tenant membayar langganan SaaS, **bukan** bukti pelanggan membayar di kasir. `[BL-076]` lahir dari keputusan pemilik di hari yang sama — penyimpanan `[BL-075]` untuk sementara di disk server, dan pemindahannya ke object storage dicatat terpisah supaya "sementara" tidak diam-diam jadi permanen.
+
+### [BL-079] `business_type` Masih Boleh Kosong Padahal Ia Sudah Jadi Dimensi Harga
+- **Ditemukan:** 2026-08-15 (butir (d) `[BL-071]`, sengaja dipisahkan)
+- **Sumber:** Butir (d) entri `[BL-071]` — "tinjau juga apakah `business_type` masih layak `nullable` sekarang setelah ia jadi dimensi harga sungguhan"
+- **Status:** Open
+- **Prioritas:** Low — tidak ada tagihan yang salah karenanya: yang kosong jatuh ke bawaan netral, bukan ke `null`, dan pemiliknya bisa memperbaikinya sendiri dari Pengaturan
+- **Area Terdampak:**
+  - `app/Http/Controllers/Auth/AuthController.php` — `register()`: `business_type` divalidasi `nullable`, dan yang kosong diisi `Tenant::BUSINESS_TYPE_DEFAULT`
+  - `resources/js/Pages/Auth/Register.vue` — labelnya berbunyi "(opsional)", dengan pilihan "Belum ditentukan"
+  - `config/pricing-dimensions.php` — `business_type` salah satu dimensi yang boleh jadi syarat aturan harga
+  - `app/Services/Pricing/BusinessTypeResolver.php` — pencocokannya saat aturan harga dinilai
+- **Deskripsi:**
+  Waktu kolom ini dibuat, jawabannya boleh "belum jelas" karena tidak ada yang bergantung padanya. Sejak `pricing_rules` bisa bersyarat jenis usaha, tenant yang membiarkannya kosong dinilai sebagai jenis bawaan — dan itu jawaban yang **ditebakkan untuknya**, bukan yang ia pilih. Selama belum ada aturan harga yang benar-benar memakai dimensi ini, akibatnya nol; begitu ada, sebagian tenant masuk kelompok tarif karena kolom yang tak pernah mereka isi.
+- **Yang perlu diputuskan sebelum dikerjakan:**
+  1. **Wajibkan, atau biarkan opsional dengan bawaan yang terang-terangan.** Mewajibkan berarti menambah satu pertanyaan berjawab-wajib di alur pendaftaran, dan itu menaikkan gesekan pendaftaran demi hal yang bisa diperbaiki belakangan dari Pengaturan.
+  2. **Nasib tenant yang sudah terlanjur berbawaan.** Mewajibkan di formulir tidak menyentuh yang sudah ada; kalau jawabannya penting, ia butuh permintaan susulan di aplikasi, bukan migrasi yang menebak.
+- **Usulan Perbaikan:**
+  **(a)** Jangan dikerjakan sebelum ada aturan harga yang benar-benar bersyarat `business_type` — sebelum itu ia menambah gesekan tanpa menukar apa pun.
+  **(b)** Bila dikerjakan, sebutkan **kenapa** ditanyakan tepat di formulirnya ("dipakai menentukan tarif"), jangan sekadar mencabut label "(opsional)". Pertanyaan wajib tanpa alasan yang terbaca justru ditebak-tebak jawabannya.
 
 ### [BL-078] Testimoni di Landing Berdiri di Atas Nama dan Potret yang Tidak Bisa Dipertanggungjawabkan
 - **Ditemukan:** 2026-08-14
@@ -139,34 +158,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(c) Aset statis diselesaikan di waktu build, bukan dengan disiplin manusia.** Satu plugin Vite pengonversi gambar menutup celahnya permanen; menambahkannya berarti mengubah dependensi, jadi butuh persetujuan lebih dulu.
   **(d) Yang sengaja TIDAK diusulkan:** AVIF, `srcset` multi-lebar, dan rendition ketiga. WEBP 800/200 sudah memadai untuk kisi POS dan kartu produk; menambah format berarti menambah cabang penyajian di `MediaController` demi keuntungan yang belum ada yang mengeluhkan ketiadaannya.
 - **Catatan:** `QUALITY`, `MAIN_SIZE`, dan `THUMB_SIZE` adalah konstanta kelas (`ImageService.php:33-37`), bukan konfigurasi — sama seperti `DISK` pada `[BL-076]`(a). Bila suatu saat ketiganya perlu berbeda per lingkungan, kerjakan bersama entri itu, jangan sendiri-sendiri.
-
-### [BL-044] Trial Habis Tanpa Ada yang Menerbitkan Tagihan — Bulan Kedua Tidak Pernah Menagih
-- **Ditemukan:** 2026-08-01
-- **Sumber:** Catatan pemilik — "tambahan status jika akun masih gratis, untuk bulan pertama tetapkan full gratis, tapi jika sudah masuk bulan kedua wajib melakukan ajukan subsidi atau kena tagihan biaya normal yaitu 100 k"
-- **Status:** Open — **butir (b) SELESAI 2026-08-06**; sisa butir (c), **penghalangnya sudah hilang 2026-08-10**: `[BL-048]` ditutup oleh `[BL-055]`, jadi pagar kelayakan yang ditunggu butir (c) kini ada dan bisa ditanyakan lewat `SubscriptionService::adaptiveVerdict()` — tenant yang layak melihat dua jalur, yang tidak layak melihat satu, dan keduanya berikut alasannya
-- **Prioritas:** Medium (turun dari High: tagihan sudah terbit sendiri, yang tersisa adalah momen pilihan jalurnya)
-- **Area Terdampak:**
-  - `config/subscription.php:26` — `trial_days = 30`; `:28` — `grace_days = 30`
-  - `app/Services/SubscriptionService.php:81-96` — `startTrial()`: `current_period_end = trial_ends_at`
-  - `app/Services/SubscriptionService.php:333-384` — `advanceLifecycle()`: memindahkan **status**, tidak menerbitkan tagihan apa pun
-  - `app/Console/Commands/AdvanceSubscriptionLifecycle.php` — satu-satunya perintah terjadwal untuk langganan
-  - `app/Http/Controllers/Platform/InvoiceController.php:136` — **satu-satunya** `Invoice::create` untuk tagihan bulanan, dipicu manual oleh pemilik SaaS
-  - `app/Services/SubscriptionService.php:220` — `Invoice::create` yang kedua, khusus `KIND_UPGRADE` (tambah seat), bukan tagihan periode
-- **Deskripsi:**
-  Yang diminta catatan sudah **separuh** ada. "Bulan pertama gratis" sudah benar apa adanya: `trial_days = 30` dan tenant baru lahir di `STATUS_TRIAL` (`Tenant.php:75`). Yang tidak ada adalah bulan keduanya. `advanceLifecycle()` memindahkan tenant `trial → grace` begitu periodenya lewat, dan `grace → suspended` 30 hari kemudian — tapi di sepanjang jalan itu **tidak ada satu pun tagihan yang terbit**. Tenant tidak pernah diberi tahu berapa yang harus dibayar; ia hanya menemukan aplikasinya berubah jadi hanya-baca. Satu-satunya jalan tagihan bulanan lahir hari ini adalah pemilik SaaS mengetiknya sendiri di `/platform/invoices` untuk tiap tenant, tiap bulan.
-  Konsekuensi kedua: catatan menyebut "wajib ajukan subsidi **atau** kena tagihan normal", yang mengandaikan tenant pernah **ditanya**. Hari ini tidak ada percabangan itu. Jalur harga sudah dipilih saat pendaftaran (selalu `normal`, `SubscriptionService.php:88`) dan pindah jalur hanya terjadi bila tenant sendiri membuka halaman Langganan dan menyetujui dokumen subsidi — tidak ada momen di akhir trial yang menyodorkan dua pilihan itu.
-- **Keadaan data per 2026-08-01 (query, bukan dugaan):** 2 tenant, `invoices` **kosong**, paket satu-satunya `Dasar` dengan `base_price = 0.00`. Jadi bahkan bila penerbit otomatis dipasang hari ini, nominal yang terbit adalah nol.
-- **Usulan Perbaikan:**
-  Berurutan. **(a)** ~~Tetapkan angkanya lebih dulu~~ — **terjawab 2026-08-01: Rp 100k adalah puncak bracket Harga Adaptif, bukan tarif dasar Harga Tetap.** Akibatnya untuk entri ini: kalimat catatan "wajib ajukan subsidi **atau** kena tagihan normal" ternyata **bukan dua pilihan bebas**. Jalur Adaptif kini berpagar kelayakan (`[BL-048]`), jadi yang disodorkan di akhir trial berbeda per tenant — tenant yang layak melihat dua pilihan, yang tidak layak hanya melihat satu. Butir (c) di bawah harus dibaca ulang dengan itu. Angka jalur Harga Tetap/Premium sendiri masih menunggu `[BL-041]`(a). **(b)** Perluas `advanceLifecycle()` (atau perintah terjadwal berdampingan) agar menerbitkan `Invoice` `KIND_SUBSCRIPTION` untuk periode berikutnya **sebelum** memindahkan tenant ke `grace`, memakai `PricingService::resolveFor()` yang sudah dipakai `InvoiceController` — supaya tagihan otomatis dan tagihan manual lahir dari resolver yang sama, bukan dua perhitungan yang akan bercabang. Jaga idempotensinya: `InvoiceController:114-118` sudah menolak periode ganda, dan penerbit otomatis harus tunduk pada penjaga yang sama. **(c)** Baru setelah itu tambahkan momen pilihan di akhir trial (mis. peringatan H-7 di dashboard yang menawarkan dua jalur), karena tanpa (b) pilihan itu tidak bermuara ke tagihan apa pun.
-  ~~**Kerjakan `[BL-030]` sebelum (b).**~~ — **selesai 2026-08-05, jendelanya terpakai.**
-- **Pemutakhiran 2026-08-06 — butir (b) SELESAI.** Lihat entri CHANGELOG *"Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b)"*. Yang sekarang berjalan:
-  - `SubscriptionService::issueDuePeriodInvoices()` — dipanggil `advanceLifecycle()` **sebelum** perpindahan status, jadi urutannya tidak bersandar pada dua baris jadwal yang kebetulan berurutan. Tagihan terbit `invoice_lead_days` (7) hari sebelum periode habis, jatuh tempo di hari periodenya habis.
-  - Nominalnya dari `PricingService::resolveFor()`, dan `pricingAsOf()` pindah ke service supaya penerbit otomatis & manual tidak bisa memakai titik waktu penetapan harga yang berbeda. Penjaga periode-ganda yang sama dipakai ulang, jadi tagihan yang sudah diketik pemilik SaaS tidak pernah ditimpa.
-  - **Keputusan pemilik 2026-08-06:** tenant yang tak bisa ditagih **tetap** menempuh masa tenggang dan penangguhan. Tarif Rp 0 dilaporkan sebagai peringatan perintah; tarif `null` (Adaptif tanpa bracket & tanpa paket penampung) dicatat sebagai kejadian sensitif `invoices.unpriced`.
-  - Keadaan nyata per 2026-08-06 (query): kedua tenant berperiode `2026-08-24`, jadi penerbitan pertamanya jatuh **2026-08-17**. `Kopi Nusantara` (Adaptif, jatuh ke paket penampung `Premium 1`) akan ditagih **Rp 100.000**; `Kopi Story` (Harga Tetap, paket `Dasar`) resolve ke **Rp 0** dan tidak akan ditagih apa pun — ia akan turun ke masa tenggang 2026-08-25. Itu bukan cacat kode, itu `[BL-041]`(a) yang belum diputuskan, dan sekarang angkanya terlihat di keluaran perintah.
-  - **Sisa yang belum: butir (c).** Ditunda atas keputusan pemilik 2026-08-06 karena menawarkan dua jalur menuntut pagar kelayakan `[BL-048]` yang belum ada — menyodorkan pilihan yang sistem belum bisa tolak persis yang keputusan 2026-08-01 tutup. Kartu langganan di dashboard (`[BL-040]`) sudah menampilkan tagihan terbuka, jadi tenant tetap tahu berapa yang harus dibayar.
-  - ~~**Yang perlu ditinjau ulang saat (c) atau tunggakan disentuh:** `renewPeriod()` memakai aturan "tunggakan tidak ditumpuk" (`[BL-030]`).~~ — **ditinjau 2026-08-07, aturannya tetap.** Tiap periode TIDAK punya tagihannya sendiri: `current_period_end` tidak pernah maju selama tenant belum membayar, jadi kunci `Y-m` periodenya membeku dan penjaga periode-ganda menolak penerbitan sesudahnya. Satu pelanggaran = satu tagihan, satu pembayaran = satu periode; keduanya bertemu, bukan bertabrakan. Dipatok test *"a lapse only ever produces one invoice, and one payment clears it"*. Syarat yang mematahkannya dicatat di `[BL-051]`.
-  - **Ditemukan saat meninjaunya (sudah diperbaiki 2026-08-07):** tenant yang turun ke masa tenggang **tanpa pernah ditagih** — tarifnya masih Rp 0 atau `null` saat periodenya habis — dikecualikan penerbit selamanya, jadi menetapkan tarifnya besok tidak menerbitkan apa pun. Itu persis nasib yang menunggu `Kopi Story` pada 2026-08-25. Lihat entri CHANGELOG *"Masa Tenggang Ikut Ditagih, dan Aturan Tunggakan Bertahan Setelah Ditinjau"*.
 
 ### [BL-051] Tenant yang Sudah Ditangguhkan Tidak Punya Tagihan untuk Dibayar
 - **Ditemukan:** 2026-08-07 (saat meninjau `renewPeriod()` × `[BL-044]`)
@@ -433,36 +424,6 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
 
 ---
 
-### [BL-071] Alur Pendaftaran Tidak Pernah Ikut Berubah — Orang Menandatangani Masa Gratis yang Berakhir dengan Tagihan Tanpa Diberi Tahu
-- **Ditemukan:** 2026-08-08 (saat menutup `[BL-052]`)
-- **Sumber:** Permintaan pemilik 2026-08-08 — "saya mau simpan proses pendaftaran dengan alur yang baru juga mengingat banyak yang sudah berubah"
-- **Status:** Open
-- **Prioritas:** High — bukan soal tampilan. Sejak `[BL-052]` masa gratis **berakhir dengan perpindahan ke paket berbayar**, dan orang yang mendaftar hari ini tidak diberi tahu itu di layar mana pun sebelum ia menekan "Daftar"
-- **Area Terdampak:**
-  - `app/Http/Controllers/Auth/AuthController.php` — `register()`: memvalidasi lima field, membuat tenant, memanggil `startTrial()`, selesai. Tidak ada satu pun kalimat soal panjang masa gratis, tarif sesudahnya, atau paket tujuannya
-  - `resources/js/Pages/Auth/Register.vue` — **tidak memuat satu pun kata** "gratis", "coba", "bulan", "paket", "harga", atau "Rp" (dicek 2026-08-08)
-  - `app/Services/SubscriptionService.php` — `startTrial()`: satu-satunya tempat masa gratis dibuka; `trial_months` = 2 hanya hidup di config
-  - `app/Models/Plan.php` — `postTrialTarget()`: paket tujuannya sudah bisa ditanyakan, tinggal tak ada yang menanyakannya di halaman daftar
-  - `app/Http/Controllers/Billing/ConsentController.php` — persetujuan jalur harga hidup TERPISAH dari pendaftaran, di `/langganan/persetujuan`
-- **Deskripsi:**
-  Alur pendaftarannya ditulis ketika paket `free` masih tier termurah yang bisa dihuni selamanya. Sejak keputusan pemilik 2026-08-07 dan penutupan `[BL-052]`, ia bukan itu lagi: masa gratis dua bulan, lalu tenant **dipindahkan otomatis** ke paket berbayar, dan tagihan pertamanya terbit tujuh hari sebelum masa gratisnya habis.
-  Halaman langganan sudah mengatakan itu (`post_trial_plan`) — tapi baru **setelah** orang punya akun. Di titik keputusan yang sebenarnya, yaitu halaman daftar, tidak ada apa pun. Yang mendaftar hari ini menerima "Daftar Gratis" dari landing, mengisi lima kolom, dan baru mengetahui ada tarif menunggunya ketika ia membuka halaman langganan atas kemauannya sendiri. Sebagian tidak akan membukanya sampai tagihan pertamanya datang.
-- **Kenapa ini bukan pekerjaan menyalin kalimat:**
-  1. **Angkanya tidak boleh di-*hardcode*.** `trial_months` ada di config dan paket tujuannya penanda di `plans` yang bisa dipindah pemilik SaaS dari panel — keduanya justru dibuat begitu supaya tidak menuntut deploy. Halaman daftar yang menulis "2 bulan, lalu Rp 100.000" sebagai teks mati akan berbohong pada hari salah satunya diubah. Ia harus membaca `Plan::postTrialTarget()` dan `SubscriptionService::trialMonths()`, sama seperti `SubscriptionController` sudah melakukannya.
-  2. **Keadaan "belum ada paket tujuan" harus punya jawaban.** Panel bisa saja belum menandai paket mana pun. Halaman daftar tidak boleh menampilkan kalimat setengah jadi, dan juga tidak boleh diam-diam menjanjikan gratis selamanya.
-  3. **Hubungannya dengan persetujuan belum diputuskan.** Persetujuan jalur harga hari ini terpisah dan menyusul setelah akun jadi. Apakah pemberitahuan masa gratis cukup sebagai pemberitahuan, atau ia harus jadi kotak centang yang tercatat seperti `TenantConsent` — itu keputusan, bukan detail implementasi.
-- **Yang harus diputuskan pemilik sebelum dikerjakan:**
-  1. **Seberapa keras pemberitahuannya**: kalimat informatif di bawah tombol, atau kotak centang wajib yang tidak bisa dilewati.
-  2. **Apakah calon tenant memilih paket tujuannya saat mendaftar**, atau semua masuk lewat satu paket bawaan dan bisa pindah belakangan. Ini bersinggungan dengan `[BL-067]` (isi paket tidak terlihat sebelum orang mendaftar) — sebaiknya dijawab sekali untuk keduanya.
-  3. **Apakah "Daftar Gratis" di landing masih kalimat yang benar.** Ia tidak salah — dua bulan memang gratis — tapi ia menyembunyikan bagian yang paling menentukan.
-- **Usulan Perbaikan:**
-  **(a)** Kerjakan **setelah** ketiga keputusan di atas dijawab; kalau tidak, yang dihasilkan cuma kalimat yang harus ditulis ulang.
-  **(b)** Apa pun bentuknya, sumber angkanya `SubscriptionService::trialMonths()` + `Plan::postTrialTarget()`, dikirim sebagai prop dari `showRegister()`. Jangan menyalin angka ke Vue.
-  **(c)** Satu test yang mengunci ini: ubah paket tujuan lewat panel, lalu pastikan halaman daftar ikut menyebut paket yang baru. Tanpa itu, penanda yang bisa dipindah dari panel akan kembali jadi teks mati pada penulisan ulang berikutnya.
-  **(d)** Tinjau juga apakah `business_type` masih layak `nullable` sekarang setelah ia jadi dimensi harga sungguhan — di luar lingkup entri ini kalau ternyata besar, tapi ia ada di formulir yang sama.
-
----
-
 ### [BL-070] Membeli Seat di Tengah Periode Gratis Sampai Periode Habis — Prorata Ditunda, Bukan Ditolak
 - **Ditemukan:** 2026-08-08 (sisa `[BL-053]` butir (b)(2), sengaja dipisahkan untuk dipikirkan ulang)
 - **Sumber:** Keputusan pemilik 2026-08-08 — "gratis sisa periode", dipilih sadar sebagai yang paling sederhana, bukan sebagai yang paling adil
@@ -551,52 +512,6 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
   Setiap peragaan, tangkapan layar landing, dan pengujian manual memakai tenant kafe yang sama. Bentuk usaha yang justru jadi sasaran utama — gerai makanan cepat saji di acara, dengan antrian panjang dan katalog pendek bersaus — belum pernah dicoba di aplikasi ini. Perbedaannya bukan kosmetik: katalog pendek dengan banyak modifier saus, transaksi cepat beruntun, dan nomor antrian sebagai penanda utama akan menekan bagian sistem yang berbeda dari katalog kafe yang panjang.
 - **Usulan Perbaikan:**
   Seeder studi kasus kedua dengan pola yang sama seperti `CafeStudyCaseSeeder` (tenant + owner + kasir + katalog + modifier + transaksi contoh): katalog ±8 produk gorengan/ayam, satu grup modifier saus wajib pilih satu, antrian dapur menyala, dan bila `[BL-035]` sudah diputuskan, mode bazar aktif. Berguna sekaligus sebagai bahan tangkapan layar baru untuk `[BL-032]`.
-
-### [BL-037] Perpindahan Halaman Hanya Ditandai Progress Bar — Belum Ada Skeleton
-- **Ditemukan:** 2026-07-31
-- **Sumber:** Review demo pemilik — "render skeleton, hilangkan progress bar yang mengganggu dan keliatan aplikasi lambat loading, terutama di kasir dan owner dashboard"
-- **Status:** In Progress — **komponen kerangka selesai dan terpasang di 4 halaman (2026-08-13)**; sisa halamannya dilacak di tabel "Pelacakan Penerapan" di bawah
-- **Prioritas:** Medium (tidak ada yang rusak, tapi ini yang membuat aplikasi terasa lambat)
-- **Area Terdampak:**
-  - `resources/js/app.js:16-18` — `progress: { color: 'var(--primary)' }`, bar bawaan Inertia dan satu-satunya penanda perpindahan halaman
-  - `app/Http/Controllers/Cashier/POSController.php:30,62` — `index()` merender seluruh katalog, metode bayar, dan tagihan terbuka secara eager; `Inertia::defer()` hanya dipakai di `history()` (baris 257, 264)
-  - `app/Http/Controllers/Owner/DashboardController.php:75` — metrik, tren harian, badge, dan transaksi terakhir semuanya eager dalam satu respons
-  - Hanya dua berkas di seluruh `resources/js` yang punya kerangka pemuatan: `Components/TransactionEditModal.vue` dan `Pages/Owner/AiAnalysis/Index.vue`
-- **Deskripsi:**
-  Karena semua prop dihitung sebelum respons dikirim, halaman tidak muncul sama sekali sampai kueri paling lambat selesai — dan selama itu satu-satunya umpan balik adalah garis tipis di puncak layar. Dua halaman terberatnya justru yang paling sering dibuka. Pedoman Inertia v2 di `CLAUDE.md` sudah menyebut pasangan yang benar untuk ini: deferred props disertai kerangka beranimasi.
-- **Usulan Perbaikan:**
-  Pindahkan bagian yang tidak dibutuhkan pada cat pertama ke `Inertia::defer()` — di POS: katalog produk dan metode pembayaran; di dashboard: tren harian, badge, dan transaksi terakhir (metrik hari ini tetap eager karena itulah isi utama layarnya). Bungkus tiap bagian dengan `<WhenVisible>`/`<Deferred>` dan kerangka `animate-pulse` yang **menempati ruang yang sama** dengan isi aslinya, supaya tidak ada lompatan tata letak saat data tiba. Baru setelah itu progress bar layak dikecilkan atau dimatikan — mematikannya lebih dulu justru menghilangkan satu-satunya penanda yang ada sekarang.
-
-- **Pemutakhiran 2026-08-13 — komponennya sudah ada, dan itu yang mengubah sisa pekerjaan ini jadi pekerjaan mekanis.**
-  Delapan komponen di `resources/js/Components/Skeleton/` menggantikan rencana "kerangka `animate-pulse` per halaman": `Skeleton.vue` (primitif, satu-satunya tempat warna/radius/denyut didefinisikan), `SkeletonText`, `SkeletonPanel`, `SkeletonCard`, `SkeletonGrid`, `SkeletonTable`, `SkeletonList`, `SkeletonChart`. Aturan pemakaiannya dicatat di **`DESIGN.md` §6 "Loading States (Skeletons)"** — termasuk Aturan Ruang yang Sama, Aturan Pasangan (satu kerangka = satu `Inertia::defer()`, tidak boleh sebelah saja), dan larangan menulis blok `animate-pulse` lepas di dalam halaman. Tanpa catatan itu, kerangka berikutnya akan lahir sebagai dialek kedua.
-  Metode bayar di POS **tidak** ikut ditunda seperti usulan awal: kueri-nya satu baris pendek, dan kasir bisa menekan Bayar sebelum permintaan lanjutan sampai. Yang ditunda di sana katalog produk dan indeks upsell — keduanya dalam satu grup, karena `useCatalogCache` menyimpan katalog beserta sarannya dalam satu snapshot offline.
-  Satu jebakan yang ikut ditambal di `POS.vue`: panen snapshot offline dulu berjalan `onMounted`. Dengan katalog yang ditunda, saat itu propnya masih `undefined` — dan menyimpan saat itu akan **menimpa snapshot yang masih bagus dengan katalog kosong**. Panennya sekarang menunggu propnya datang (`watch` + penjaga `Array.isArray`).
-  Ringkasan `Owner/Reports/Daily` juga ikut berubah cara hitungnya: dulu ia menjumlahkan koleksi yang sudah dimuat, sekarang agregat `SUM`/`COUNT` — sebab koleksinya sudah tidak ada lagi di respons pertama. Angkanya sama, dan sekarang ada tesnya.
-  Progress bar di `app.js` **belum** disentuh, sesuai catatan di atas: ia masih satu-satunya penanda untuk halaman yang belum punya kerangka. Ia baru layak dikecilkan atau dimatikan setelah tabel di bawah ini habis.
-
-- **Pelacakan Penerapan** (kolom "Prop yang ditunda" adalah pekerjaan sisi server yang harus ikut; kerangka tanpa `defer` tidak akan pernah tampil)
-
-| Halaman | Prop yang ditunda | Kerangka | Prioritas | Status |
-|---|---|---|---|---|
-| `Cashier/POS` | `products`, `upsell` | `SkeletonGrid` + `SkeletonCard media` | High | **Selesai 2026-08-13** |
-| `Owner/Dashboard` | `dailyTrend`, `recentTransactions`, `badges` (grup terpisah) | `SkeletonPanel` + `SkeletonChart` / `SkeletonList` / `SkeletonGrid` | High | **Selesai 2026-08-13** |
-| `Owner/Reports/Daily` | `transactions`, `paymentSummary`, `topProducts` | `SkeletonPanel` + `SkeletonTable` / `SkeletonList` | High | **Selesai 2026-08-13** |
-| `Owner/Transactions/Index` | `transactions` (paginated) | `SkeletonTable` | High | **Selesai 2026-08-13** |
-| `Cashier/TransactionHistory` | `transactions` belum ditunda; `products` + `paymentMethods` **sudah** ditunda tapi kerangkanya masih buatan sendiri di `TransactionEditModal.vue:193` | `SkeletonTable` untuk daftarnya, plus migrasi kerangka modal ke `SkeletonText` | High | Open |
-| `Owner/Products/Index` | daftar produk beserta varian dan stoknya | `SkeletonTable` | High | Open |
-| `Owner/Reports/Monthly` | `dailySeries`, rekap metode bayar, produk terlaris | `SkeletonPanel` + `SkeletonTable`; `SkeletonChart` untuk `TrendChart` — grafiknya sudah terpasang sejak `[BL-064]` selesai 2026-08-13 | Medium | Open |
-| `Owner/Stock/Index` | daftar stok per varian | `SkeletonTable` | Medium | Open |
-| `Owner/Stock/Movements`, `Owner/Stock/History` | daftar mutasi | `SkeletonTable` | Medium | Open |
-| `Owner/Reports/Upsell` | rincian per saran | `SkeletonPanel` + `SkeletonTable` | Medium | Open |
-| `Owner/CashDrawers/Index` | daftar sesi kas | `SkeletonTable` | Medium | Open |
-| `Owner/OfflineReview/Index` | daftar transaksi offline gagal | `SkeletonList` | Medium | Open |
-| `Owner/AiAnalysis/Index` | sudah punya kerangka sendiri di `Index.vue:324` — migrasikan ke komponen bersama | `SkeletonText` / `SkeletonPanel` | Medium | Open |
-| `Owner/Transactions/Detail` | `products` + `paymentMethods` sudah ditunda; kerangkanya ikut milik `TransactionEditModal` | migrasi kerangka modal | Medium | Open |
-| `Cashier/Queue` | daftar pesanan dapur (perhatikan polling: kerangka hanya untuk pemuatan pertama, bukan tiap poll) | `SkeletonList` | Medium | Open |
-| `Platform/Dashboard`, `Platform/Tenants/Index`, `Platform/Subscriptions/Index`, `Platform/AuditLogs/Index` | daftar dan agregat konsol platform | `SkeletonTable` | Medium | Open |
-| Daftar master pendek: `Owner/Categories/Index`, `Owner/Modifiers/Index`, `Owner/PaymentMethods/Index`, `Owner/Staff/Index`, `Owner/Roles/Index` | daftarnya | `SkeletonTable` / `SkeletonList` | Low | Open |
-
-  **Yang sengaja TIDAK masuk daftar:** halaman autentikasi (`Auth/*`), halaman formulir (`Owner/Products/Form`, `Owner/Settings/Index`), halaman tagihan bertahap (`Billing/*`), dan halaman galat (`Errors/*`). Semuanya ringan, propnya kecil, dan kerangka di sana hanya menambah satu kedipan sebelum isi yang sebetulnya sudah siap. Menerapkan kerangka ke seluruh 48 halaman bukan tujuan entri ini.
 
 ### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
 - **Ditemukan:** 2026-07-31
@@ -934,6 +849,9 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-037` | Perpindahan halaman hanya ditandai progress bar — belum ada skeleton | 2026-08-13 (komponen + 4 halaman pertama), 2026-08-15 (sisa tabel pelacakan + bilah kemajuan) | `[ADDITION] Halaman Menunjukkan Bentuknya Sebelum Datanya Sampai (BL-037)` |
+| `BL-044` | Trial habis tanpa ada yang menerbitkan tagihan — bulan kedua tidak pernah menagih | 2026-08-01 (butir (a)), 2026-08-06 (butir (b)), 2026-08-15 (butir (c)) | `[ADDITION] Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b)` + `[ADDITION] Masa Coba Berakhir dengan Pertanyaan, Bukan dengan Tagihan (BL-044 butir c)` |
+| `BL-071` | Alur pendaftaran tidak pernah ikut berubah — orang menandatangani masa gratis yang berakhir dengan tagihan tanpa diberi tahu | 2026-08-15 (butir (a)–(c); butir (d) dipisah jadi `[BL-079]`) | `[ADDITION] Halaman Daftar Menyebut Masa Gratis yang Berakhir dengan Tagihan (BL-071)` |
 | `BL-041` | Tarif belum ditetapkan, dan halaman harga publik belum dinamis | 2026-08-07 (butir (a)), 2026-08-14 (butir (b) dan (c)) | `[ADDITION] Halaman /harga Membacakan Kedua Jalur Tarif kepada Orang yang Belum Mendaftar (BL-041 butir c)` + `[ADDITION] Tenant Jalur Harga Tetap Akhirnya Bisa Melihat Kelasnya Sendiri (BL-041 butir b)` |
 | `BL-066` | Cara kerja Harga Adaptif tidak terjelaskan di satu pun permukaan publik | 2026-08-14 (butir (a)–(e); butir (b) butir ketiga dibatalkan karena klaimnya tidak benar) | `[ADDITION] Landing Menjelaskan Cara Tarif Dihitung — dan Berhenti Menjanjikan Penguncian yang Tidak Pernah Ada (BL-066)` |
 | `BL-067` | Isi paket — berapa seat, berapa kuota AI — tidak terlihat sebelum orang mendaftar | 2026-08-14 (butir (a)–(e)) | `[ADDITION] Isi Paket Terlihat Sebelum Orang Mendaftar, dan Berhenti Terpecah Dua di Dalam Aplikasi (BL-067)` |

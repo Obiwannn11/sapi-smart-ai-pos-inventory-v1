@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
-use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\TenantConsent;
 use App\Services\Ai\AiQuota;
@@ -84,7 +83,7 @@ class SubscriptionController extends Controller
                 // sudah menyebut namanya sendiri, dan kalimat "akan pindah ke
                 // Paid 1" di halaman tenant yang SUDAH di Paid 1 hanya
                 // membingungkan.
-                'post_trial_plan' => $this->postTrialPlanFor($subscription),
+                'post_trial_plan' => $subscriptions->postTrialPlanFor($subscription),
                 'current_period_end' => $subscription->current_period_end?->toDateString(),
                 // Tanggal penangguhan dihitung dan DITAMPILKAN, bukan disimpan
                 // diam-diam. Tenant di masa tenggang berhak tahu persis kapan
@@ -146,9 +145,14 @@ class SubscriptionController extends Controller
                 //
                 // Dihitung on-the-fly dan tidak pernah disimpan; lihat docblock
                 // SubsidyEstimator untuk batasnya terhadap gerbang privasi.
+                // Dibandingkan terhadap tarif yang benar-benar bersaing, bukan
+                // terhadap Rp 0 yang dibayar tenant masa coba (`[BL-044]`(c)).
+                // Sebelum ini setiap tenant masa coba dijawab "Harga Tetap
+                // masih lebih menguntungkan" — dibandingkan dengan gratis,
+                // memang selalu.
                 'estimate' => $subscription->isSubsidized()
                     ? null
-                    : $estimator->estimateFor($tenant, $effectivePrice),
+                    : $estimator->estimateFor($tenant, $subscriptions->comparisonPriceFor($subscription)),
             ],
             // Kelas harga bagi tenant jalur Harga Tetap (`[BL-041]`(b)).
             // Sebelum ini hanya tenant Harga Adaptif yang bisa melihat kelasnya
@@ -224,37 +228,5 @@ class SubscriptionController extends Controller
                 'is_simulated' => $gateways->isSimulated($configuredDriver),
             ],
         ]);
-    }
-
-    /**
-     * Nama dan tarif paket tujuan setelah masa gratis, bila memang akan ada
-     * perpindahan.
-     *
-     * `null` untuk tiga keadaan yang sama-sama berarti "tak ada yang perlu
-     * diumumkan": tenant tidak sedang di paket gratis, langganannya tak punya
-     * tanggal akhir masa gratis, atau pemilik SaaS belum menunjuk paket tujuan
-     * mana pun. Yang terakhir sengaja tidak berbunyi apa-apa di sisi tenant —
-     * salah setel platform bukan kabar yang berguna baginya; yang menagihnya
-     * adalah peringatan di `/platform/pricing-rules` dan keluaran
-     * `subscriptions:advance-lifecycle`.
-     *
-     * @return array{name: string, base_price: float}|null
-     */
-    protected function postTrialPlanFor(Subscription $subscription): ?array
-    {
-        if ($subscription->trial_ends_at === null || $subscription->plan->slug !== Plan::SLUG_DEFAULT) {
-            return null;
-        }
-
-        $target = Plan::postTrialTarget();
-
-        if ($target === null || $target->slug === Plan::SLUG_DEFAULT) {
-            return null;
-        }
-
-        return [
-            'name' => $target->name,
-            'base_price' => (float) $target->base_price,
-        ];
     }
 }

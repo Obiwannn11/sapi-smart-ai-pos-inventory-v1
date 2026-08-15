@@ -121,6 +121,88 @@ const trialDaysLeft = computed(() =>
     props.subscription?.status === 'trial' ? daysUntil(props.subscription.trial_ends_at) : null,
 );
 
+/** Bulan kalender polos ('2026-07') — dirakit komponennya sendiri, sama alasannya. */
+const formatMonth = (value) => {
+    if (!value) return null;
+    const [year, month] = value.split('-').map(Number);
+    return new Date(year, month - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+};
+
+/**
+ * Momen pilihan jalur di akhir masa coba (`[BL-044]`(c)).
+ *
+ * Server yang memutuskan kapan ia muncul dan jalur mana yang terbuka — halaman
+ * ini hanya merangkai kalimatnya. Kelayakan yang dihitung ulang di sisi klien
+ * akan menawarkan pintu yang ditolak server begitu ambangnya digeser, dan
+ * tenant menemukannya hanya setelah menekan tombolnya.
+ */
+const trialChoice = computed(() => props.subscription?.trial_choice ?? null);
+
+/**
+ * Kapan angkanya mengeras. Tagihan pertama terbit tujuh hari sebelum masa coba
+ * habis dan tidak pernah diterbitkan dua kali, jadi pilihan yang diambil
+ * sesudahnya berlaku pada tagihan BERIKUTNYA. Dikatakan apa adanya di kedua
+ * sisi tanggal itu — tenant yang mengira keringanannya berlaku bulan ini akan
+ * membaca tagihannya sebagai kesalahan sistem.
+ */
+const trialChoiceNote = computed(() => {
+    const choice = trialChoice.value;
+    if (!choice) return null;
+
+    return choice.first_invoice_issued
+        ? `Tagihan pertama sudah terbit pada ${formatCalendarDate(choice.first_invoice_at)}. Pindah jalur sekarang tetap bisa, tapi berlakunya pada tagihan berikutnya — bukan yang sedang berjalan.`
+        : `Masa coba berakhir ${formatCalendarDate(choice.trial_ends_at)}, dan tagihan pertama terbit ${formatCalendarDate(choice.first_invoice_at)}. Pilihan yang diambil sebelum tanggal itu langsung berlaku pada tagihan pertama.`;
+});
+
+/** Tarif perkiraan jalur Adaptif, atau null bila belum bisa dihitung. */
+const adaptivePrice = computed(() => {
+    const estimate = trialChoice.value?.adaptive?.estimate;
+    if (!estimate || estimate.transaction_count === 0 || estimate.price === null) return null;
+    return estimate.price;
+});
+
+/** Satu kalimat penjelas di bawah tarif Adaptif. */
+const adaptiveNote = computed(() => {
+    const estimate = trialChoice.value?.adaptive?.estimate;
+    if (!estimate) return null;
+
+    const month = formatMonth(estimate.period);
+
+    // Nol penjualan BUKAN omzet nol. Membiarkannya jatuh ke kelompok termurah
+    // akan menjanjikan tarif yang tidak seorang pun bisa penuhi janjinya.
+    if (estimate.transaction_count === 0) {
+        return `Belum ada penjualan tercatat sepanjang ${month}, jadi tarifnya belum bisa diperkirakan. Jalurnya tetap terbuka untuk diajukan.`;
+    }
+
+    if (estimate.price === null) {
+        return `Omzet Anda ${formatCurrency(estimate.revenue)} pada ${month}, tapi belum ada kelompok tarif yang cocok untuknya.`;
+    }
+
+    return estimate.is_cheaper
+        ? `Perkiraan dari omzet ${formatCurrency(estimate.revenue)} pada ${month} — ${formatCurrency(estimate.current_price - estimate.price)} lebih murah, dengan syarat data omzet Anda dibuka kepada kami.`
+        : `Perkiraan dari omzet ${formatCurrency(estimate.revenue)} pada ${month} — tidak lebih murah daripada Harga Tetap, jadi pindah jalur belum menguntungkan Anda.`;
+});
+
+/**
+ * Kenapa jalur Adaptif tertutup. Kalimatnya sengaja sejalan dengan halaman
+ * `/langganan`: dua jawaban berbeda atas pertanyaan yang sama membuat tenant
+ * bertanya mana yang benar.
+ */
+const adaptiveBlocked = computed(() => {
+    const adaptive = trialChoice.value?.adaptive;
+    if (!adaptive || adaptive.eligible) return null;
+
+    if (adaptive.reason === 'above_ceiling') {
+        return `Omzet Anda ${formatCurrency(adaptive.revenue)} — di atas batas ${formatCurrency(adaptive.ceiling)} untuk keringanan. Jalur yang berlaku bagi Anda adalah paket berbayar penuh.`;
+    }
+
+    if (adaptive.reason === 'cooldown') {
+        return `Perpindahan jalur berikutnya baru bisa diajukan mulai ${formatCalendarDate(adaptive.available_at)}.`;
+    }
+
+    return 'Anda sudah berada di jalur Harga Adaptif — tidak ada yang perlu diajukan.';
+});
+
 const invoiceStatusLabels = {
     unpaid: 'Belum dibayar',
     awaiting_verification: 'Menunggu diperiksa',
@@ -163,6 +245,61 @@ const invoiceStatusLabels = {
                 <Link href="/langganan" class="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap">
                     Kelola Langganan →
                 </Link>
+            </div>
+
+            <!-- Momen pilihan jalur di akhir masa coba (BL-044(c)). Kedua jalur
+                 berdampingan berikut angkanya: peringatan yang hanya berkata
+                 "masa coba Anda akan habis" memberi tahu tanpa memberi jalan. -->
+            <div
+                v-if="trialChoice"
+                class="mt-4 pt-4 border-t"
+                :class="billingTone.divider"
+            >
+                <p class="text-sm font-semibold text-gray-900">Pilih jalur harga Anda</p>
+                <p class="mt-1 text-xs" :class="billingTone.body">{{ trialChoiceNote }}</p>
+
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                    <!-- Jalur yang berlaku sendiri bila tenant tidak memilih apa
+                         pun. Disebut lebih dulu justru karena itu: pilihan diam
+                         tetap sebuah pilihan, dan tenant berhak tahu isinya. -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-3">
+                        <p class="text-xs font-semibold text-gray-700">Harga Tetap</p>
+                        <p class="mt-0.5 text-sm font-semibold text-gray-900 tabular-nums">
+                            {{ formatCurrency(trialChoice.fixed.base_price) }}<span class="text-xs font-normal text-gray-500">/bulan</span>
+                        </p>
+                        <p class="mt-1 text-xs text-gray-500">
+                            Paket {{ trialChoice.fixed.name }}. Berlaku sendiri bila Anda tidak memilih apa pun, dan data penjualan Anda tetap tertutup.
+                        </p>
+                    </div>
+
+                    <div
+                        v-if="trialChoice.adaptive.eligible"
+                        class="rounded-lg border border-emerald-200 bg-emerald-50 p-3"
+                    >
+                        <p class="text-xs font-semibold text-emerald-800">Harga Adaptif</p>
+                        <p class="mt-0.5 text-sm font-semibold text-emerald-900 tabular-nums">
+                            <template v-if="adaptivePrice !== null">
+                                {{ formatCurrency(adaptivePrice) }}<span class="text-xs font-normal text-emerald-700">/bulan</span>
+                            </template>
+                            <template v-else>Belum bisa diperkirakan</template>
+                        </p>
+                        <p class="mt-1 text-xs text-emerald-700">{{ adaptiveNote }}</p>
+                        <Link
+                            href="/langganan/harga-adaptif"
+                            class="mt-2 inline-block text-xs font-medium text-emerald-800 hover:text-emerald-900"
+                        >
+                            Lihat &amp; ajukan Harga Adaptif →
+                        </Link>
+                    </div>
+
+                    <!-- Jalur tertutup tetap ditampilkan, berikut sebabnya.
+                         Menghilangkannya membuat tenant mengira ia tidak pernah
+                         ditawari, lalu menanyakannya lewat dukungan. -->
+                    <div v-else class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <p class="text-xs font-semibold text-gray-700">Harga Adaptif tidak tersedia</p>
+                        <p class="mt-1 text-xs text-gray-500">{{ adaptiveBlocked }}</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Tagihan berjalan. Absen berarti tidak ada yang perlu dibayar —

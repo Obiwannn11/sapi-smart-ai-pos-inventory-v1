@@ -10,6 +10,7 @@ use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
 use App\Services\Pricing\AdaptiveEligibility;
+use App\Services\Pricing\SubsidyEstimator;
 use Illuminate\Support\Carbon;
 
 class SubscriptionService
@@ -17,6 +18,7 @@ class SubscriptionService
     public function __construct(
         private readonly PricingService $pricing,
         private readonly AdaptiveEligibility $eligibility,
+        private readonly SubsidyEstimator $estimator,
     ) {}
 
     /**
@@ -57,6 +59,14 @@ class SubscriptionService
     public static function invoiceLeadDays(): int
     {
         return (int) config('subscription.invoice_lead_days');
+    }
+
+    /**
+     * Berapa hari sebelum masa gratis habis pilihan jalur mulai disodorkan.
+     */
+    public static function trialChoiceLeadDays(): int
+    {
+        return (int) config('subscription.trial_choice_lead_days');
     }
 
     /**
@@ -799,6 +809,151 @@ class SubscriptionService
         return $this->eligibility->isAboveCeiling($tenant)
             ? $verdict(AdaptiveEligibility::REASON_ABOVE_CEILING, $revenue)
             : $verdict(AdaptiveEligibility::REASON_ELIGIBLE, $revenue);
+    }
+
+    /**
+     * Paket dan tarif yang menunggu tenant begitu masa gratisnya habis —
+     * `[BL-052]`(c).
+     *
+     * `null` untuk tiga keadaan yang sama-sama berarti "tak ada yang perlu
+     * diumumkan": tenant tidak sedang di paket gratis, langganannya tak punya
+     * tanggal akhir masa gratis, atau pemilik SaaS belum menunjuk paket tujuan
+     * mana pun. Yang terakhir sengaja tidak berbunyi apa-apa di sisi tenant —
+     * salah setel platform bukan kabar yang berguna baginya; yang menagihnya
+     * adalah peringatan di `/platform/pricing-rules` dan keluaran
+     * `subscriptions:advance-lifecycle`.
+     *
+     * **Angkanya `base_price` paket tujuan, bukan `PricingService::resolveFor()`.**
+     * Tenant masa coba masih duduk di paket gratis, jadi resolver menjawab tarif
+     * paket ITU — Rp 0 — dan menjanjikannya sebagai harga bulan depan berarti
+     * berbohong tepat pada layar yang meminta tenant memutuskan. Yang berlaku
+     * baginya nanti adalah tarif paket yang akan ia huni, dan itulah yang
+     * disebut di sini.
+     *
+     * Tinggal di service, bukan di controller, karena tiga layar menanyakannya:
+     * halaman langganan, pilihan akhir masa coba di dashboard, dan pembanding
+     * tarif jalur Adaptif. Tiga salinan pasti bercabang pada hari pertama
+     * salah satunya diperbaiki.
+     *
+     * @return array{name: string, base_price: float}|null
+     */
+    public function postTrialPlanFor(Subscription $subscription): ?array
+    {
+        $subscription->loadMissing('plan');
+
+        if ($subscription->trial_ends_at === null || $subscription->plan->slug !== Plan::SLUG_DEFAULT) {
+            return null;
+        }
+
+        $target = Plan::postTrialTarget();
+
+        if ($target === null || $target->slug === Plan::SLUG_DEFAULT) {
+            return null;
+        }
+
+        return [
+            'name' => $target->name,
+            'base_price' => (float) $target->base_price,
+        ];
+    }
+
+    /**
+     * Tarif yang dipakai sebagai PEMBANDING saat menawarkan Harga Adaptif.
+     *
+     * Bukan selalu tarif yang berlaku hari ini. Tenant masa coba membayar Rp 0,
+     * dan membandingkan tawaran keringanan terhadap nol membuat setiap tawaran
+     * terbaca "tidak lebih murah" — pada justru satu-satunya kelompok yang
+     * sedang diminta memilih jalurnya. Yang dibandingkan seharusnya dua angka
+     * yang benar-benar bersaing: tarif Harga Tetap yang menunggunya, dan tarif
+     * Adaptif yang ditawarkan sebagai gantinya.
+     */
+    public function comparisonPriceFor(Subscription $subscription): float
+    {
+        return $this->postTrialPlanFor($subscription)['base_price']
+            ?? $subscription->effectivePrice();
+    }
+
+    /**
+     * Momen pilihan jalur di akhir masa gratis — `[BL-044]`(c).
+     *
+     * `null` bila tidak ada yang perlu diputuskan sekarang; sebuah ringkasan
+     * kedua jalur bila ada. Yang membuatnya sebuah PILIHAN dan bukan sekadar
+     * peringatan: kedua jalurnya disebut berdampingan berikut angkanya, dan
+     * jalur yang tertutup menyebutkan sebabnya alih-alih menghilang.
+     *
+     * **Tenant yang tidak layak tetap melihat kartunya, dengan satu jalur.**
+     * Menyembunyikannya berarti tenant beromzet tinggi tidak pernah diberi tahu
+     * bahwa masa gratisnya berujung tagihan — dan itu persis kabar yang paling
+     * perlu ia dengar. Kelayakannya ditanyakan ke `adaptiveVerdict()`, bukan
+     * diperiksa ulang di sini; menyodorkan pilihan yang sistem tidak bisa tolak
+     * adalah keadaan yang keputusan pemilik 2026-08-01 tutup.
+     *
+     * **Jendelanya dibuka lebih awal daripada penerbitan tagihan.** Lihat
+     * `trial_choice_lead_days`: pilihan yang tiba bersamaan dengan tagihan
+     * pertama bukan pilihan.
+     *
+     * @return array{
+     *     trial_ends_at: string,
+     *     first_invoice_at: string,
+     *     first_invoice_issued: bool,
+     *     fixed: array{name: string, base_price: float},
+     *     adaptive: array{eligible: bool, reason: string, ceiling: float|null, revenue: float|null, available_at: string|null, estimate: array|null}
+     * }|null
+     */
+    public function trialChoice(Tenant $tenant): ?array
+    {
+        if ($tenant->status !== Tenant::STATUS_TRIAL) {
+            return null;
+        }
+
+        $subscription = $this->ensureFor($tenant);
+        $fixed = $this->postTrialPlanFor($subscription);
+
+        // Tanpa paket tujuan tak ada jalur untuk ditawarkan, dan menyebut
+        // "masa coba Anda akan habis" tanpa bisa menyebutkan menjadi apa hanya
+        // menakuti tanpa memberi jalan. Salah setelnya ditagih ke pemilik SaaS
+        // lewat `graduateExpiredTrials()`, bukan ke tenant.
+        if ($fixed === null) {
+            return null;
+        }
+
+        $trialEndsAt = $subscription->trial_ends_at->copy()->startOfDay();
+        $hariIni = now()->startOfDay();
+
+        if ($hariIni->lt($trialEndsAt->copy()->subDays(self::trialChoiceLeadDays()))) {
+            return null;
+        }
+
+        $verdict = $this->adaptiveVerdict($tenant);
+        $firstInvoiceAt = $trialEndsAt->copy()->subDays(self::invoiceLeadDays());
+
+        return [
+            'trial_ends_at' => $trialEndsAt->toDateString(),
+            'first_invoice_at' => $firstInvoiceAt->toDateString(),
+            // Pilihan yang diambil SESUDAH tagihan pertama terbit tidak lagi
+            // mengubah nominalnya — `issueDuePeriodInvoices()` menolak
+            // menerbitkan periode yang sama dua kali, dan itu memang penjaga
+            // yang benar. Yang salah adalah membiarkan tenant mengira
+            // keringanannya berlaku bulan ini. Dikirim sebagai keadaan, bukan
+            // dipendam: kalimat di layar berubah, tawarannya tidak.
+            'first_invoice_issued' => $hariIni->gte($firstInvoiceAt),
+            'fixed' => $fixed,
+            'adaptive' => [
+                'eligible' => $verdict['eligible'],
+                'reason' => $verdict['reason'],
+                'ceiling' => $verdict['ceiling'],
+                'revenue' => $verdict['revenue'],
+                'available_at' => $verdict['available_at'],
+                // Dihitung HANYA bila jalurnya memang terbuka. Perkiraan tarif
+                // untuk tenant yang tidak boleh mengajukannya bukan informasi,
+                // melainkan tawaran yang akan ditolak — dan ia menyeret satu
+                // agregat penjualan ke tiap pemuatan dashboard tanpa ada yang
+                // membacanya.
+                'estimate' => $verdict['eligible']
+                    ? $this->estimator->estimateFor($tenant, $this->comparisonPriceFor($subscription))
+                    : null,
+            ],
+        ];
     }
 
     /**

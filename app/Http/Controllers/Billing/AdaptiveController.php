@@ -86,9 +86,12 @@ class AdaptiveController extends Controller
             'bracket' => $subscription->isSubsidized()
                 ? $pricing->currentBracketFor($tenant)
                 : null,
+            // Pembandingnya tarif yang benar-benar bersaing, bukan Rp 0 yang
+            // dibayar tenant masa coba (`[BL-044]`(c)) — lihat
+            // `SubscriptionService::comparisonPriceFor()`.
             'estimate' => $subscription->isSubsidized()
                 ? null
-                : $estimator->estimateFor($tenant, $effectivePrice),
+                : $estimator->estimateFor($tenant, $subscriptions->comparisonPriceFor($subscription)),
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_SUBSIDIZED),
                 'current_version' => $consents->currentVersion(TenantConsent::TYPE_SUBSIDIZED),
