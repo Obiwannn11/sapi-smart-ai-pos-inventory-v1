@@ -76,3 +76,34 @@ test('tombol paket menuju pendaftaran, bukan halaman masuk', function () {
     expect($section)->toContain(route('register'))
         ->and($section)->not->toContain('href="/login"');
 });
+
+test('CTA landing menyebut lama masa gratis, bukan sekadar "gratis"', function () {
+    // `[BL-071]`(3): "Daftar Gratis" tidak salah, tapi ia menyembunyikan bagian
+    // yang paling menentukan — masa itu berakhir dengan perpindahan ke paket
+    // berbayar. Angkanya dari config, jadi mengubah kebijakan tidak menuntut
+    // menyunting Blade.
+    config(['subscription.trial_months' => 3]);
+    Plan::factory()->create(['slug' => 'free', 'name' => 'Free', 'base_price' => 0]);
+
+    get('/')
+        ->assertStatus(200)
+        ->assertSee('Coba Gratis 3 Bulan')
+        ->assertDontSee('Daftar Gratis');
+});
+
+test('CTA pendaftaran di luar bagian harga juga menuju pendaftaran', function () {
+    // Sisa `[BL-032]`: tiga CTA di hero, nav seluler, dan footer masih menunjuk
+    // `/login`. Yang boleh tetap ke sana hanyalah tombol yang memang berbunyi
+    // "Login"/"Masuk".
+    Plan::factory()->create(['slug' => 'free', 'name' => 'Free', 'base_price' => 0]);
+
+    $html = get('/')->assertStatus(200)->getContent();
+
+    preg_match_all('/<a[^>]+href="\/login"[^>]*>(.*?)<\/a>/s', $html, $matches);
+
+    expect($matches[1])->not->toBeEmpty();
+
+    foreach ($matches[1] as $label) {
+        expect(trim(strip_tags($label)))->toBeIn(['Login', 'Masuk']);
+    }
+});

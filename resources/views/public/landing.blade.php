@@ -137,8 +137,16 @@
             <a @click="open = false" href="#demo" class="block text-lg font-black text-gray-900 hover:text-primary">Demo</a>
             <a @click="open = false" href="#pricing" class="block text-lg font-black text-gray-900 hover:text-primary">Harga</a>
             <a @click="open = false" href="{{ route('docs.index') }}" class="block text-lg font-black text-gray-900 hover:text-primary">Dokumentasi</a>
-            <div class="pt-4 border-t border-gray-100">
-                <a @click="open = false" href="/login" class="block w-full bg-primary text-white text-center py-4 rounded-2xl font-black shadow-xl shadow-primary/10">Login / Daftar Gratis</a>
+            <div class="pt-4 border-t border-gray-100 space-y-3">
+                {{--
+                    Dulu satu tombol "Login / Daftar Gratis" yang menuju
+                    `/login` saja. Dipecah dua karena keduanya memang dua
+                    tujuan, dan labelnya menyebut lama masa gratisnya
+                    (`[BL-071]`) alih-alih "gratis" yang menyembunyikan bahwa
+                    ia berakhir.
+                --}}
+                <a @click="open = false" href="{{ route('register') }}" class="block w-full bg-primary text-white text-center py-4 rounded-2xl font-black shadow-xl shadow-primary/10">Coba Gratis {{ $pricing['trial_months'] }} Bulan</a>
+                <a @click="open = false" href="/login" class="block w-full text-center py-3 text-gray-900 font-black">Masuk</a>
             </div>
         </div>
     </nav>
@@ -158,8 +166,15 @@
                         SAPI bukan sekadar aplikasi kasir biasa. SAPI bisa memprediksi stok Anda, menganalisis pola penjualan, dan memberikan Anda saran aksi nyata secara otomatis.
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4 sm:gap-5">
-                        <a href="/login" class="px-8 sm:px-10 py-4 sm:py-5 bg-primary text-white rounded-[1.2rem] sm:rounded-[1.5rem] font-extrabold text-base sm:text-lg hover:bg-primary/90 shadow-2xl shadow-primary/20 transition-all transform hover:-translate-y-1 text-center">
-                            Daftar Gratis
+                        {{--
+                            "Daftar Gratis" tidak salah — dua bulan memang
+                            gratis — tapi ia menyembunyikan bagian yang paling
+                            menentukan: masa itu berakhir dengan perpindahan ke
+                            paket berbayar. Lamanya dibacakan dari config lewat
+                            `PublicPricing`, tidak diketik di sini (`[BL-071]`).
+                        --}}
+                        <a href="{{ route('register') }}" class="px-8 sm:px-10 py-4 sm:py-5 bg-primary text-white rounded-[1.2rem] sm:rounded-[1.5rem] font-extrabold text-base sm:text-lg hover:bg-primary/90 shadow-2xl shadow-primary/20 transition-all transform hover:-translate-y-1 text-center">
+                            Coba Gratis {{ $pricing['trial_months'] }} Bulan
                         </a>
                         <a href="#fitur" class="px-8 sm:px-10 py-4 sm:py-5 bg-white text-gray-900 border-2 border-gray-100 rounded-[1.2rem] sm:rounded-[1.5rem] font-extrabold text-base sm:text-lg hover:border-gray-200 transition-all text-center">
                             Lihat Fitur
@@ -327,7 +342,7 @@
                         </li>
                     </ul>
                     <div class="mt-12 text-center md:text-left">
-                        <a href="/login" class="inline-block px-8 py-4 bg-white text-primary rounded-2xl font-black hover:bg-primary/5 transition-all">Ganti ke SAPI Sekarang</a>
+                        <a href="{{ route('register') }}" class="inline-block px-8 py-4 bg-white text-primary rounded-2xl font-black hover:bg-primary/5 transition-all">Ganti ke SAPI Sekarang</a>
                     </div>
                 </div>
             </div>
@@ -1160,9 +1175,9 @@
 
                 <div class="relative z-10">
                     <h3 class="text-3xl lg:text-5xl font-black text-white mb-6">Siap Membuat Bisnis Anda Lebih Pintar?</h3>
-                    <p class="text-white/70 font-medium text-lg mb-10 max-w-xl mx-auto">Mulai gratis hari ini. Tidak perlu kartu kredit.</p>
+                    <p class="text-white/70 font-medium text-lg mb-10 max-w-xl mx-auto">{{ $pricing['trial_months'] }} bulan pertama gratis, lalu lanjut ke paket berbayar. Tidak perlu kartu kredit.</p>
                     <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                        <a href="/login" class="px-12 py-5 bg-white text-primary rounded-[1.5rem] font-black text-lg hover:bg-gray-50 transition shadow-2xl transform hover:-translate-y-1">Daftar Sekarang</a>
+                        <a href="{{ route('register') }}" class="px-12 py-5 bg-white text-primary rounded-[1.5rem] font-black text-lg hover:bg-gray-50 transition shadow-2xl transform hover:-translate-y-1">Coba Gratis {{ $pricing['trial_months'] }} Bulan</a>
                         <a href="#demo" class="px-12 py-5 bg-white/10 text-white border-2 border-white/30 rounded-[1.5rem] font-black text-lg hover:bg-white/20 transition transform hover:-translate-y-1">Lihat Demo</a>
                     </div>
                 </div>
