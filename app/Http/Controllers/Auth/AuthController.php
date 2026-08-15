@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Pricing\PublicPricing;
 use App\Services\SignupGuardService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
@@ -21,12 +22,20 @@ class AuthController extends Controller
         return Inertia::render('Auth/Login');
     }
 
-    public function showRegister()
+    public function showRegister(PublicPricing $pricing)
     {
         return Inertia::render('Auth/Register', [
             // Pilihannya datang dari katalog dimensi harga — satu daftar untuk
             // form ini, panel platform, dan penyusunan aturan harga.
             'businessTypes' => config('pricing-dimensions.business_type.options', []),
+            // Masa gratis berakhir dengan perpindahan ke paket berbayar
+            // (`[BL-052]`), dan sampai `[BL-071]` itu tidak disebut di satu pun
+            // layar sebelum orang menekan "Daftar". Angkanya dibacakan dari
+            // config dan `plans` lewat pembaca yang sama dengan halaman harga
+            // publik — panjang masa gratis dan penanda paket tujuan keduanya
+            // bisa diubah tanpa deploy, jadi menyalinnya ke Vue berarti halaman
+            // ini akan berbohong pada hari salah satunya digeser.
+            'trial' => $pricing->trialNotice(),
         ]);
     }
 

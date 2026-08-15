@@ -1,9 +1,55 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useForm, Head, Link } from '@inertiajs/vue3';
 
-defineProps({
+const props = defineProps({
     businessTypes: { type: Object, default: () => ({}) },
+    /**
+     * Masa gratis apa adanya dari server: lama, jarak terbit tagihan pertama,
+     * dan paket tujuan sesudahnya (`null` bila memang tak ada perpindahan).
+     * Tidak ada satu angka pun yang boleh ditulis ulang di berkas ini — lihat
+     * `PublicPricing::trialNotice()`.
+     */
+    trial: {
+        type: Object,
+        default: () => ({ months: 0, invoice_lead_days: 0, post_trial_plan: null }),
+    },
+});
+
+const formatRupiah = (value) =>
+    new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+    }).format(value);
+
+/**
+ * Kalimat pemberitahuannya disusun di sini, bukan di template, supaya kedua
+ * keadaannya terbaca berdampingan.
+ *
+ * Tanpa paket tujuan, halaman ini tetap TIDAK BOLEH diam: yang mendaftar hari
+ * ini tetap menandatangani masa gratis yang berakhir, dan kalimat yang hanya
+ * berbunyi "gratis" akan terbaca sebagai gratis selamanya.
+ */
+const trialNotice = computed(() => {
+    const bulan = props.trial.months;
+    const target = props.trial.post_trial_plan;
+
+    if (!target) {
+        return {
+            headline: `Gratis ${bulan} bulan pertama`,
+            body: 'Ini masa coba, bukan paket gratis selamanya. Tanggal berakhirnya '
+                + 'tercantum di halaman Langganan begitu akun Anda jadi.',
+        };
+    }
+
+    return {
+        headline: `Gratis ${bulan} bulan pertama`,
+        body: `Setelah itu akun Anda otomatis berlanjut ke paket ${target.name}, `
+            + `${formatRupiah(target.price)}/bulan. Tagihan pertamanya terbit `
+            + `${props.trial.invoice_lead_days} hari sebelum masa gratis berakhir, `
+            + 'jadi Anda tahu angkanya sebelum jatuh tempo.',
+    };
 });
 
 const form = useForm({
@@ -340,11 +386,25 @@ const submit = () => {
                         </p>
                     </div>
 
+                    <!--
+                        Pemberitahuan masa gratis — sengaja di sini, tepat di
+                        atas tombolnya, karena inilah titik keputusannya
+                        (`[BL-071]`).
+                    -->
+                    <div
+                        class="mt-7 rounded-lg border border-border bg-muted/40 px-4 py-3"
+                    >
+                        <p class="text-sm font-medium text-foreground">{{ trialNotice.headline }}</p>
+                        <p class="mt-1 text-xs text-muted-foreground leading-relaxed">
+                            {{ trialNotice.body }}
+                        </p>
+                    </div>
+
                     <!-- Submit -->
                     <button
                         type="submit"
                         :disabled="form.processing"
-                        class="w-full mt-7 flex items-center justify-center gap-2
+                        class="w-full mt-4 flex items-center justify-center gap-2
                                px-4 py-2.5 bg-primary text-primary-foreground
                                text-sm font-semibold rounded-lg
                                hover:bg-primary/90 active:bg-primary/80

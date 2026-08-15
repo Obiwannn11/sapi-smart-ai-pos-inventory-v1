@@ -60,6 +60,40 @@ class PublicPricing
     }
 
     /**
+     * Yang harus diketahui orang SEBELUM ia menekan "Daftar": berapa lama masa
+     * gratisnya, ke paket mana akunnya berpindah sesudahnya, dan berapa
+     * tarifnya (`[BL-071]`).
+     *
+     * `post_trial_plan` bernilai `null` untuk dua keadaan yang berakibat sama —
+     * pemilik SaaS belum menunjuk paket tujuan, atau yang ditunjuk justru paket
+     * gratis itu sendiri. Keduanya persis yang ditolak
+     * `SubscriptionService::graduateExpiredTrials()`, jadi tidak akan ada
+     * perpindahan yang bisa diumumkan. Halaman daftar harus diam soal paket
+     * tujuan dalam keadaan itu; yang TIDAK boleh ia lakukan adalah menyimpulkan
+     * darinya bahwa masa gratisnya tak berujung.
+     *
+     * @return array{months: int, invoice_lead_days: int, post_trial_plan: array{name: string, price: float}|null}
+     */
+    public function trialNotice(): array
+    {
+        $target = Plan::postTrialTarget();
+        $pindah = $target !== null && $target->slug !== Plan::SLUG_DEFAULT;
+
+        return [
+            'months' => SubscriptionService::trialMonths(),
+            // Disebut karena inilah yang membuat tagihan pertama tiba sebagai
+            // pemberitahuan, bukan kejutan — dan angkanya kebijakan yang bisa
+            // berubah, sama seperti panjang masa gratisnya.
+            'invoice_lead_days' => (int) config('subscription.invoice_lead_days'),
+            'post_trial_plan' => $pindah ? [
+                'name' => $target->name,
+                // Angka mentah; pemformatan Rupiah milik lapisan tampilan.
+                'price' => (float) $target->base_price,
+            ] : null,
+        ];
+    }
+
+    /**
      * Paket yang benar-benar dijual, termurah lebih dulu.
      *
      * Hanya `is_active`. Paket nonaktif adalah paket yang pemiliknya berhenti
