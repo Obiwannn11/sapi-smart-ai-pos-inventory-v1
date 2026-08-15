@@ -62,6 +62,15 @@ class BusinessProfileController extends Controller
             'business_type' => ['sometimes', 'required', Rule::in(array_keys(config('pricing-dimensions.business_type.options', [])))],
         ]);
 
+        // Sengaja TIDAK menerapkan ulang preset kapabilitas jenis usaha
+        // (`config/business-presets.php`, `[BL-034]`). Preset itu nilai awal
+        // yang berlaku sekali saat pendaftaran; di sini ia akan jadi kejutan.
+        // Pemilik yang sudah mematikan antrian dapur lalu membetulkan jenis
+        // usahanya dari "lainnya" ke "kuliner" sedang memperbaiki keterangan
+        // tokonya, bukan meminta modulnya dinyalakan kembali — dan menyalakannya
+        // diam-diam berarti layar dapur muncul lagi tanpa ada yang menekan apa
+        // pun. Kapabilitas diubah di "Cara Kerja Sistem", oleh orang yang tahu
+        // ia sedang mengubahnya.
         auth()->user()->tenant->update($validated);
 
         return back()->with('success', 'Profil usaha berhasil disimpan.');

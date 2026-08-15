@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\BusinessPresetService;
 use App\Services\Pricing\PublicPricing;
 use App\Services\SignupGuardService;
 use App\Services\SubscriptionService;
@@ -22,7 +23,7 @@ class AuthController extends Controller
         return Inertia::render('Auth/Login');
     }
 
-    public function showRegister(PublicPricing $pricing)
+    public function showRegister(PublicPricing $pricing, BusinessPresetService $presets)
     {
         return Inertia::render('Auth/Register', [
             // Pilihannya datang dari katalog dimensi harga — satu daftar untuk
@@ -36,10 +37,20 @@ class AuthController extends Controller
             // bisa diubah tanpa deploy, jadi menyalinnya ke Vue berarti halaman
             // ini akan berbohong pada hari salah satunya digeser.
             'trial' => $pricing->trialNotice(),
+            // Kapabilitas awal yang ditentukan jenis usaha (`[BL-034]`).
+            // Katalog dan PETA UTUHNYA dikirim, bukan preset untuk satu jenis
+            // usaha saja: daftar centangnya harus ikut berubah begitu pilihan
+            // jenis usaha diganti, dan menunggu jawaban server untuk itu berarti
+            // formulir yang berkedip di tengah pengisian.
+            'featureCatalog' => $presets->catalog(),
+            'featurePresets' => $presets->presets(),
+            // Keadaan awal daftar centang, untuk pendaftar yang belum menyentuh
+            // pilihan jenis usaha sama sekali.
+            'defaultFeatures' => $presets->featuresFor(null),
         ]);
     }
 
-    public function register(Request $request, SubscriptionService $subscriptions, SignupGuardService $signupGuard)
+    public function register(Request $request, SubscriptionService $subscriptions, SignupGuardService $signupGuard, BusinessPresetService $presets)
     {
         $validated = $request->validate([
             'business_name' => 'required|string|max:255',
@@ -53,9 +64,18 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
+            // Hasil AKHIR daftar centang, bukan nama presetnya (`[BL-034]`).
+            // Bedanya penting: preset cuma mengisi centangnya di layar, dan
+            // pendaftar boleh melepas centang mana pun sebelum lanjut —
+            // mengirim nama preset berarti pilihan itu diam-diam dibuang di
+            // server. `sometimes` supaya klien yang tak mengirimnya sama sekali
+            // (uji lama, permintaan langsung) jatuh ke preset, bukan ke tenant
+            // tanpa satu pun kapabilitas.
+            'features' => 'sometimes|array',
+            'features.*' => Rule::in($presets->featureNames()),
         ]);
 
-        $user = DB::transaction(function () use ($validated, $subscriptions) {
+        $user = DB::transaction(function () use ($validated, $subscriptions, $presets) {
             $slug = Str::slug($validated['business_name']);
             $baseSlug = $slug;
             $suffix = 1;
@@ -65,14 +85,32 @@ class AuthController extends Controller
                 $suffix++;
             }
 
+            // Kunci ini bisa TIDAK ADA sama sekali, bukan sekadar kosong:
+            // aturan `nullable` membuat field yang tak dikirim hilang dari
+            // hasil validasi.
+            $businessType = ($validated['business_type'] ?? null) ?: Tenant::BUSINESS_TYPE_DEFAULT;
+
+            // Daftar KOSONG tetap dihormati — pendaftar yang melepas semua
+            // centang memang meminta aplikasi paling polos, dan itu pilihan yang
+            // sah. Karena itu pemeriksaannya `array_key_exists`, bukan `?:`
+            // yang akan menganggap `[]` sebagai "tidak dijawab" lalu
+            // mengembalikan preset yang baru saja ia tolak.
+            $features = array_key_exists('features', $validated)
+                ? $validated['features']
+                : $presets->featuresFor($businessType);
+
             $tenant = Tenant::create([
                 'name' => $validated['business_name'],
-                // Kunci ini bisa TIDAK ADA sama sekali, bukan sekadar kosong:
-                // aturan `nullable` membuat field yang tak dikirim hilang dari
-                // hasil validasi.
-                'business_type' => ($validated['business_type'] ?? null) ?: Tenant::BUSINESS_TYPE_DEFAULT,
+                'business_type' => $businessType,
                 'slug' => $slug,
                 'status' => Tenant::STATUS_TRIAL,
+                // Inilah satu-satunya tempat preset diterapkan. Ia nilai AWAL,
+                // bukan ikatan: jenis usaha bisa diubah kapan saja dari
+                // Pengaturan, dan mengubahnya sengaja TIDAK menerapkan ulang
+                // preset ini — pemilik yang sudah mematikan antrian dapur tidak
+                // boleh mendapatkannya kembali hanya karena ia membetulkan jenis
+                // usahanya (`[BL-034]`).
+                ...$presets->columnsFor($features),
             ]);
 
             // Masa coba dibuka di transaksi yang sama dengan pendaftarannya.

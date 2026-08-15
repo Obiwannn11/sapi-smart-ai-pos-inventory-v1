@@ -10,6 +10,36 @@
 
 ## Daftar Entri
 
+### [BL-034] Pendaftaran Belum Menentukan Paket/Fitur — Tipe Usaha Hanya Dipakai Harga
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "perbaiki dan kasih jelas alur pendaftaran, ... pakai paket kategori, misal bazar maka aktif itu cuma kasir dan stock biasa, kalau cafe maka akan aktif open bill dll"
+- **Status:** **Selesai 2026-08-15** — mekanisme presetnya utuh untuk keempat jenis usaha yang ada; preset `bazar` sengaja tidak ikut, ia menunggu `[BL-035]` dan masuk kelak sebagai satu baris config
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Http/Controllers/Auth/AuthController.php:35-47` — pendaftaran hanya meminta `business_name`, `business_type`, `name`, `email`, `password`
+  - `config/pricing-dimensions.php:83-95` — pilihan `business_type` hanya `kuliner`/`retail`/`jasa`/`lainnya`, dan resolvernya (`BusinessTypeResolver`) hanya dipakai mencocokkan aturan harga
+  - `app/Models/Tenant.php:94-102` — `hasFeature()` membaca `kitchen_queue_enabled`, `self_order_enabled`, `ai_enabled`; tidak satu pun disentuh saat registrasi
+  - `app/Http/Controllers/Owner/SettingsController.php:122-125` — satu-satunya tempat ketiganya bisa dinyalakan, setelah tenant terlanjur jadi
+  - `app/Models/Tenant.php:60-68` — `$attributes` memasang bawaan ketiganya: `kitchen_queue` mati, `self_order` mati, `ai` menyala. Inilah keadaan yang diterima **setiap** tenant baru hari ini, apa pun jenis usahanya
+- **Deskripsi:**
+  Tipe usaha sudah ditanyakan di formulir daftar, tapi jawabannya tidak mengubah apa pun selain penetapan harga. Warung bazar dan kafe mendarat di aplikasi yang persis sama: antrian dapur mati, pesan mandiri mati, AI mati — lalu harus menemukan sendiri "Profil Usaha" untuk menyalakannya. Akibatnya pengguna baru menilai produk dari keadaan paling kosongnya.
+- **Usulan Perbaikan:**
+  Setelah nama usaha diisi, tampilkan pilihan **preset kategori** yang menyetel `*_enabled` sekaligus (mis. `kafe` → antrian dapur + open bill; `bazar` → kasir + stok saja; `retail` → stok + varian), dengan daftar centang yang tetap bisa diubah manual sebelum lanjut. Presetnya sebaiknya tinggal di config sebagai peta `business_type → daftar fitur`, bukan `if` di controller, supaya menambah kategori tidak berarti menyentuh alur pendaftaran.
+- **Koreksi 2026-08-01 — batas yang dulu ditulis di sini sudah dicabut.** Entri ini semula menutup dengan "`business_type` sengaja tidak bisa diedit dari Settings, jadi preset fitur boleh diubah belakangan tapi tipe usahanya tidak". **Itu tidak berlaku lagi:** sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31, `docs/CHANGELOG.md`), jenis usaha justru diubah dari Owner → Pengaturan (`SettingsController.php:118`, `sometimes|required`), dan panel platform hanya membacanya. Yang menjaga tagihan tetap bisa dijelaskan bukan larangan mengedit, melainkan `effective_from` pada aturan harga + `invoices.pricing_context` yang membekukan keadaan tenant saat tagihan terbit.
+  Konsekuensinya untuk entri ini: **keduanya kini bisa diedit belakangan**, jadi presetnya harus dibaca sebagai *nilai awal*, bukan sebagai ikatan. Yang perlu dijaga: mengubah jenis usaha dari Pengaturan **tidak boleh menerapkan ulang preset fiturnya diam-diam** — owner yang sudah mematikan antrian dapur tidak boleh mendapatkannya kembali hanya karena ia membetulkan jenis usahanya. Preset berlaku sekali, saat pendaftaran.
+- **Bergantung pada `[BL-035]`** untuk isi preset `bazar`; preset lain (`kafe`, `retail`, `jasa`) sudah bisa disusun dari kapabilitas yang ada sekarang.
+- **Catatan penutup 2026-08-15 — apa yang benar-benar dikerjakan, dan apa yang tidak.**
+  Yang dibangun persis seperti usulan di atas: peta `business_type → daftar fitur` di `config/business-presets.php`, dibaca satu kelas (`BusinessPresetService`), dengan daftar centang di formulir daftar yang tetap bisa diubah sebelum lanjut. `kuliner` menyalakan antrian dapur; `retail`, `jasa`, dan `lainnya` tidak.
+  **Tiga hal yang ditemukan saat mengerjakannya, dan tidak satu pun tertulis di usulan awal:**
+  1. **Yang dikirim formulir harus hasil centangnya, bukan nama presetnya.** Mengirim `business_type` lalu membiarkan server menyimpulkan fiturnya membuat daftar centang itu jadi hiasan — pendaftar yang melepas satu centang tetap mendapatkannya, dan tidak ada tempat kekeliruan itu terlihat.
+  2. **Daftar kosong tidak boleh jatuh ke preset.** `ai_enabled` bawaannya **menyala** di kolom database, jadi memperlakukan `[]` sebagai "tidak dijawab" berarti pendaftar yang melepas semua centang tetap mendapat AI yang baru saja ia tolak. Karena itu pemeriksaannya `array_key_exists`, dan penerapannya selalu menyebut setiap kolom, bukan hanya yang menyala.
+  3. **`self_order` tidak masuk preset mana pun.** Menyalakannya membuka tautan pemesanan yang bisa diakses siapa saja; menyimpulkan itu dari "orang ini memilih Kuliner" adalah kesimpulan yang tidak dibayar datanya.
+  **Yang sengaja tidak ikut:** `upsell_mandatory` dan `order_identity_mode`. Keduanya duduk di halaman Pengaturan yang sama dan gampang terbawa, tapi keduanya aturan kerja — tidak menggerbangi rute apa pun — jadi menebaknya dari jenis usaha berarti menebak cara orang bekerja, bukan modul apa yang ia butuhkan.
+  **Batas dari "Koreksi 2026-08-01" di atas ditegakkan dengan tes, bukan dengan niat:** `BusinessProfileController` tidak menyentuh satu pun kolom `*_enabled`, dan ada tes yang gagal bila seseorang menambahkannya.
+  Lihat `[ADDITION] Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034)` di `docs/CHANGELOG.md`.
+
+---
+
 ### [BL-037] Perpindahan Halaman Hanya Ditandai Progress Bar — Belum Ada Skeleton
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "render skeleton, hilangkan progress bar yang mengganggu dan keliatan aplikasi lambat loading, terutama di kasir dan owner dashboard"

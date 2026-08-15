@@ -1,9 +1,19 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useForm, Head, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
     businessTypes: { type: Object, default: () => ({}) },
+    /**
+     * Kapabilitas yang bisa dinyalakan dari sini, satu baris per fitur:
+     * `{ name, label, description }`. Datang dari server supaya menambah fitur
+     * tidak berarti menyunting berkas ini.
+     */
+    featureCatalog: { type: Array, default: () => [] },
+    /** Peta `jenis usaha → daftar nama fitur`. */
+    featurePresets: { type: Object, default: () => ({}) },
+    /** Centang awal, sebelum jenis usaha apa pun dipilih. */
+    defaultFeatures: { type: Array, default: () => [] },
     /**
      * Masa gratis apa adanya dari server: lama, jarak terbit tagihan pertama,
      * dan paket tujuan sesudahnya (`null` bila memang tak ada perpindahan).
@@ -55,11 +65,36 @@ const trialNotice = computed(() => {
 const form = useForm({
     business_name: '',
     business_type: '',
+    // Yang dikirim adalah HASIL AKHIR centangnya, bukan nama presetnya. Preset
+    // hanya mengisi daftar ini; apa pun yang tersisa saat tombol ditekan itulah
+    // yang didapat tenant.
+    features: [...props.defaultFeatures],
     name: '',
     email: '',
     password: '',
     password_confirmation: '',
 });
+
+/**
+ * Ganti jenis usaha, ganti isi centangnya — termasuk menimpa centang yang sudah
+ * disentuh sendiri.
+ *
+ * Alternatifnya, "berhenti menerapkan preset begitu pengguna menyentuh daftar",
+ * mengejutkan ke arah yang lebih buruk: orang yang salah pilih "Retail" lalu
+ * membetulkannya jadi "Kuliner" akan mendapat daftar retail yang tidak pernah
+ * ia minta, tanpa petunjuk apa pun bahwa pilihan barunya diabaikan. Menimpa itu
+ * terlihat: daftarnya berubah di depan mata, dan masih bisa disunting lagi.
+ * Tidak ada yang tersimpan sampai formulirnya dikirim.
+ */
+watch(() => form.business_type, (businessType) => {
+    form.features = [...(props.featurePresets[businessType] ?? props.defaultFeatures)];
+});
+
+const toggleFeature = (name) => {
+    form.features = form.features.includes(name)
+        ? form.features.filter((feature) => feature !== name)
+        : [...form.features, name];
+};
 
 const showPassword = ref(false);
 
@@ -204,6 +239,54 @@ const submit = () => {
                             {{ form.errors.business_type }}
                         </p>
                     </div>
+
+                    <!-- Fitur awal — diisi preset jenis usaha, tetap bisa diubah -->
+                    <fieldset v-if="featureCatalog.length" class="mt-5">
+                        <legend class="block text-sm font-medium text-foreground mb-1.5">
+                            Fitur yang Menyala
+                        </legend>
+                        <p class="text-xs text-muted-foreground leading-relaxed mb-2.5">
+                            Disesuaikan dengan jenis usaha Anda. Ubah sesuka Anda sekarang, atau
+                            nanti lewat Pengaturan &rarr; Cara Kerja Sistem.
+                        </p>
+
+                        <div class="border border-border rounded-lg divide-y divide-border overflow-hidden">
+                            <label
+                                v-for="feature in featureCatalog"
+                                :key="feature.name"
+                                :for="`register-feature-${feature.name}`"
+                                class="flex items-start gap-3 p-3 bg-card cursor-pointer
+                                       transition-colors duration-150 hover:bg-muted/40"
+                            >
+                                <input
+                                    :id="`register-feature-${feature.name}`"
+                                    type="checkbox"
+                                    :value="feature.name"
+                                    :checked="form.features.includes(feature.name)"
+                                    class="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-border
+                                           text-primary focus:outline-none focus:ring-2 focus:ring-ring
+                                           focus:ring-offset-1"
+                                    @change="toggleFeature(feature.name)"
+                                />
+                                <span class="min-w-0">
+                                    <span class="block text-sm text-foreground leading-snug">
+                                        {{ feature.label }}
+                                    </span>
+                                    <span class="block text-xs text-muted-foreground leading-relaxed mt-0.5">
+                                        {{ feature.description }}
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <p
+                            v-if="form.errors.features"
+                            role="alert"
+                            class="mt-1.5 text-xs text-destructive"
+                        >
+                            {{ form.errors.features }}
+                        </p>
+                    </fieldset>
 
                     <!-- Owner Name -->
                     <div class="mt-5">

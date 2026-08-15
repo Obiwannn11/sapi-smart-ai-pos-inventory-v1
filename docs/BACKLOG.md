@@ -468,25 +468,6 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
 - **Testimoni tidak ikut dibersihkan, dan itu keputusan yang disengaja.** Tiga kutipan bernama di atas potret stok kemungkinan karangan juga, tapi menghapusnya keputusan pemasaran pemilik, bukan konsekuensi teknis. Dipisah jadi `[BL-078]`.
 - **Kenapa tangkapan layarnya belum diambil (2026-08-14).** Bukan karena aksesnya kurang — pemilik sudah login dan `/owner/dashboard` terbukti termuat. Tiga permukaan yang bisa memotret sedang tidak bisa dipakai bersamaan: server `chrome-devtools` (satu-satunya yang bisa menulis berkas gambar) terputus; panel Browser dalam-aplikasi memuat halaman tapi tidak menggambar piksel apa pun sehingga screenshot selalu timeout, dan alat itu memang tidak bisa menulis berkas; `computer-use` bisa menulis berkas tapi jendela aplikasinya tidak tampak di monitor utama; ekstensi Claude in Chrome tidak tersambung. **Yang sengaja TIDAK ditempuh:** membaca profil Chrome pemilik untuk mengambil cookie sesi, dan menambahkan rute login tembus khusus lingkungan lokal — keduanya menyelesaikan masalah ini dan keduanya meninggalkan lubang yang tidak sebanding dengan lima gambar. Pemilik akan mengambilnya sendiri; sisanya (konversi WebP lewat GD, penyamaan lebar, pemasangan rujukan, uji) tinggal dikerjakan setelah berkasnya ada.
 
-### [BL-034] Pendaftaran Belum Menentukan Paket/Fitur — Tipe Usaha Hanya Dipakai Harga
-- **Ditemukan:** 2026-07-31
-- **Sumber:** Review demo pemilik — "perbaiki dan kasih jelas alur pendaftaran, ... pakai paket kategori, misal bazar maka aktif itu cuma kasir dan stock biasa, kalau cafe maka akan aktif open bill dll"
-- **Status:** Open
-- **Prioritas:** High
-- **Area Terdampak:**
-  - `app/Http/Controllers/Auth/AuthController.php:35-47` — pendaftaran hanya meminta `business_name`, `business_type`, `name`, `email`, `password`
-  - `config/pricing-dimensions.php:83-95` — pilihan `business_type` hanya `kuliner`/`retail`/`jasa`/`lainnya`, dan resolvernya (`BusinessTypeResolver`) hanya dipakai mencocokkan aturan harga
-  - `app/Models/Tenant.php:94-102` — `hasFeature()` membaca `kitchen_queue_enabled`, `self_order_enabled`, `ai_enabled`; tidak satu pun disentuh saat registrasi
-  - `app/Http/Controllers/Owner/SettingsController.php:122-125` — satu-satunya tempat ketiganya bisa dinyalakan, setelah tenant terlanjur jadi
-  - `app/Models/Tenant.php:60-68` — `$attributes` memasang bawaan ketiganya: `kitchen_queue` mati, `self_order` mati, `ai` menyala. Inilah keadaan yang diterima **setiap** tenant baru hari ini, apa pun jenis usahanya
-- **Deskripsi:**
-  Tipe usaha sudah ditanyakan di formulir daftar, tapi jawabannya tidak mengubah apa pun selain penetapan harga. Warung bazar dan kafe mendarat di aplikasi yang persis sama: antrian dapur mati, pesan mandiri mati, AI mati — lalu harus menemukan sendiri "Profil Usaha" untuk menyalakannya. Akibatnya pengguna baru menilai produk dari keadaan paling kosongnya.
-- **Usulan Perbaikan:**
-  Setelah nama usaha diisi, tampilkan pilihan **preset kategori** yang menyetel `*_enabled` sekaligus (mis. `kafe` → antrian dapur + open bill; `bazar` → kasir + stok saja; `retail` → stok + varian), dengan daftar centang yang tetap bisa diubah manual sebelum lanjut. Presetnya sebaiknya tinggal di config sebagai peta `business_type → daftar fitur`, bukan `if` di controller, supaya menambah kategori tidak berarti menyentuh alur pendaftaran.
-- **Koreksi 2026-08-01 — batas yang dulu ditulis di sini sudah dicabut.** Entri ini semula menutup dengan "`business_type` sengaja tidak bisa diedit dari Settings, jadi preset fitur boleh diubah belakangan tapi tipe usahanya tidak". **Itu tidak berlaku lagi:** sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31, `docs/CHANGELOG.md`), jenis usaha justru diubah dari Owner → Pengaturan (`SettingsController.php:118`, `sometimes|required`), dan panel platform hanya membacanya. Yang menjaga tagihan tetap bisa dijelaskan bukan larangan mengedit, melainkan `effective_from` pada aturan harga + `invoices.pricing_context` yang membekukan keadaan tenant saat tagihan terbit.
-  Konsekuensinya untuk entri ini: **keduanya kini bisa diedit belakangan**, jadi presetnya harus dibaca sebagai *nilai awal*, bukan sebagai ikatan. Yang perlu dijaga: mengubah jenis usaha dari Pengaturan **tidak boleh menerapkan ulang preset fiturnya diam-diam** — owner yang sudah mematikan antrian dapur tidak boleh mendapatkannya kembali hanya karena ia membetulkan jenis usahanya. Preset berlaku sekali, saat pendaftaran.
-- **Bergantung pada `[BL-035]`** untuk isi preset `bazar`; preset lain (`kafe`, `retail`, `jasa`) sudah bisa disusun dari kapabilitas yang ada sekarang.
-
 ### [BL-035] "Mode Bazar" Belum Ada Wujudnya di Kode — Perlu Definisi Lebih Dulu
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "mode bazar atau tenant khusus untuk jualan di cfd, event, dll"
@@ -499,6 +480,8 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
   Tidak ada kolom, flag, konfigurasi, maupun rencana tertulis untuk mode bazar. Yang belum terjawab bukan soal teknis melainkan soal produk: **apa yang berubah** saat mode ini aktif? Kandidat yang masuk akal dari catatan pemilik — tagihan terbuka dimatikan (jualan selalu lunas di tempat), nomor antrian ditonjolkan, stok disederhanakan jadi hitungan terpakai/sisa per hari acara, dan penekanan pada operasi offline. Ada juga pertanyaan yang bersinggungan dengan `[BL-031]`: kalau tidak ada open bill, umur tagihan tidak perlu diputuskan untuk mode ini.
 - **Usulan Perbaikan:**
   Putuskan dulu daftar perbedaannya, lalu wujudkan sebagai capability flag lewat `Tenant::hasFeature()` seperti `kitchen_queue` — bukan sebagai `business_type` baru, karena `business_type` milik penetapan harga dan membeku per tagihan. Sesudah itu barulah `[BL-034]` bisa menawarkan preset "bazar" yang berarti sesuatu, dan `[BL-036]` bisa memperagakannya.
+
+- **Pemutakhiran 2026-08-15 — tempat mendaratnya sudah ada, tinggal keputusannya.** `[BL-034]` selesai tanpa menunggu entri ini: mekanisme presetnya utuh dan berjalan untuk keempat jenis usaha yang ada. Yang berubah untuk entri ini adalah biaya menyelesaikannya. Dulu "mode bazar" berarti memutuskan definisinya **dan** membangun jalan agar ia sampai ke tenant baru. Sekarang jalannya sudah ada: `config/business-presets.php` memetakan jenis usaha ke daftar kapabilitas, dan pendaftar melihatnya sebagai daftar centang yang bisa ia ubah. Begitu daftar perbedaan mode bazar diputuskan dan diwujudkan sebagai flag di `Tenant::hasFeature()`, menyalakannya untuk tenant bazar baru adalah **satu baris tambahan di config** — bukan penyuntingan alur pendaftaran. Yang tersisa di entri ini murni pertanyaan produk, persis seperti judulnya bilang.
 
 ### [BL-036] Belum Ada Studi Kasus Demo Kedua — Semua Peragaan Bertumpu pada Satu Kafe
 - **Ditemukan:** 2026-07-31
@@ -849,6 +832,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-034` | Pendaftaran belum menentukan paket/fitur — tipe usaha hanya dipakai harga | 2026-08-15 (mekanismenya utuh untuk keempat jenis usaha; preset `bazar` menunggu `[BL-035]` dan masuk sebagai satu baris config) | `[ADDITION] Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034)` |
 | `BL-037` | Perpindahan halaman hanya ditandai progress bar — belum ada skeleton | 2026-08-13 (komponen + 4 halaman pertama), 2026-08-15 (sisa tabel pelacakan + bilah kemajuan) | `[ADDITION] Halaman Menunjukkan Bentuknya Sebelum Datanya Sampai (BL-037)` |
 | `BL-044` | Trial habis tanpa ada yang menerbitkan tagihan — bulan kedua tidak pernah menagih | 2026-08-01 (butir (a)), 2026-08-06 (butir (b)), 2026-08-15 (butir (c)) | `[ADDITION] Tagihan Periode Terbit Sendiri Sebelum Aksesnya Menyempit (BL-044 butir b)` + `[ADDITION] Masa Coba Berakhir dengan Pertanyaan, Bukan dengan Tagihan (BL-044 butir c)` |
 | `BL-071` | Alur pendaftaran tidak pernah ikut berubah — orang menandatangani masa gratis yang berakhir dengan tagihan tanpa diberi tahu | 2026-08-15 (butir (a)–(c); butir (d) dipisah jadi `[BL-079]`) | `[ADDITION] Halaman Daftar Menyebut Masa Gratis yang Berakhir dengan Tagihan (BL-071)` |

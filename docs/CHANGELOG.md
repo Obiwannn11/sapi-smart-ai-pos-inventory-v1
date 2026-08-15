@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-15 | ADDITION | Pendaftaran | Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034) |
 | 2026-08-15 | ADDITION | UI | Halaman Menunjukkan Bentuknya Sebelum Datanya Sampai (BL-037) |
 | 2026-08-15 | ADDITION | Langganan | Masa Coba Berakhir dengan Pertanyaan, Bukan dengan Tagihan (BL-044 butir c) |
 | 2026-08-15 | ADDITION | Pendaftaran | Halaman Daftar Menyebut Masa Gratis yang Berakhir dengan Tagihan (BL-071) |
@@ -182,6 +183,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034)
+- **Tanggal:** 2026-08-15
+- **Fase Terkait:** Di Luar Fase — `[BL-034]`
+- **Dampak:** Config | Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak. Tenant yang sudah ada tidak disentuh — preset hanya berlaku pada pendaftaran baru.
+- **Deskripsi:** Jawaban "Jenis Usaha" di formulir daftar kini menyetel kapabilitas awal tenant, bukan cuma dasar penetapan harga. Mendaftar sebagai Kuliner menyalakan antrian dapur; Retail dan Jasa tidak. Petanya tinggal di `config/business-presets.php`, dan pendaftar melihat hasilnya sebagai daftar centang yang bisa ia ubah sebelum menekan Daftar.
+- **Alasan:** Pemilik memintanya begini: "pakai paket kategori, misal bazar maka aktif itu cuma kasir dan stock biasa, kalau cafe maka akan aktif open bill dll". Sebelum entri ini, warung dan kafe mendarat di aplikasi yang **persis sama** — antrian dapur mati, pesan mandiri mati — lalu harus menemukan sendiri halaman Pengaturan untuk menyalakannya. Akibatnya pengguna baru menilai produk dari keadaan paling kosongnya, dan pertanyaan yang sudah kita ajukan di formulir tidak dipakai untuk apa pun yang ia rasakan.
+
+- **Yang dikirim formulir adalah HASIL centangnya, bukan nama presetnya.** Ini keputusan yang menentukan bentuk seluruh sisanya. Mengirim `business_type` lalu membiarkan server menyimpulkan fiturnya akan membuat daftar centang di layar jadi hiasan: pendaftar yang melepas "Antrian dapur" tetap mendapatkannya, dan tidak ada satu pun tempat di mana kekeliruan itu terlihat. Karena yang dikirim daftar akhirnya, preset tidak pernah jadi kata terakhir — ia cuma mengisi keadaan awal.
+- **Daftar kosong dihormati, dan itu butuh `array_key_exists`, bukan `?:`.** Pendaftar yang melepas semua centang memang meminta aplikasi paling polos. Kalau `[]` diperlakukan sebagai "tidak dijawab" lalu jatuh ke preset, ia akan tetap mendapat Analisis AI yang baru saja ia tolak — `ai_enabled` bawaannya **menyala** di kolom database. Karena alasan yang sama `columnsFor()` selalu menyebut SETIAP kolom, bukan hanya yang menyala: kolom yang tidak disebut diam-diam mengambil bawaan `$attributes`.
+- **Preset berlaku SEKALI, saat pendaftaran — dan itu ditegakkan, bukan cuma diniatkan.** Sejak `[DECISION] Jenis Usaha Berpindah ke Pemilik Toko` (2026-07-31), jenis usaha bisa diubah kapan saja dari Pengaturan. Mengubahnya sengaja **tidak** menerapkan ulang preset: pemilik yang sudah mematikan antrian dapur lalu membetulkan jenis usahanya dari "lainnya" ke "kuliner" sedang memperbaiki keterangan tokonya, bukan meminta layar dapur muncul kembali. `BusinessProfileController` tidak menyentuh satu pun kolom `*_enabled`, dan ada tesnya yang gagal bila seseorang menambahkannya.
+- **`self_order` tidak menyala di preset mana pun, dan itu bukan kelalaian.** Menyalakannya membuka tautan pemesanan yang bisa diakses siapa saja. Menyimpulkan dari "orang ini memilih Kuliner" bahwa ia ingin katalognya publik adalah kesimpulan yang tidak dibayar oleh datanya. Itu keputusan yang harus diambil pemiliknya sendiri, sadar bahwa ia mengambilnya.
+- **Preset `bazar` belum ada di sini, dan entri ini tidak berpura-pura punya.** Permintaan pemilik menyebut bazar lebih dulu daripada kafe, tapi mode bazar belum punya wujud apa pun di kode — `[BL-035]` masih menunggu keputusan tentang **apa yang berubah** saat ia aktif. Menambahkan preset `bazar` yang mencentang fitur-fitur yang sudah ada hari ini akan mengulang persis kesalahan yang `[BL-032]` butir 1 baru saja bersihkan dari landing: menyebut sesuatu seolah ada wujudnya. Begitu `[BL-035]` diputuskan, bazar masuk sebagai **satu baris tambahan** di config — bukan sebagai perubahan alur pendaftaran. Di situlah nilai peta ini.
+- **Menimpa centang yang sudah disentuh, saat jenis usaha diganti.** Alternatifnya — "berhenti menerapkan preset begitu pengguna menyentuh daftarnya" — mengejutkan ke arah yang lebih buruk: orang yang salah pilih "Retail" lalu membetulkannya jadi "Kuliner" akan mendapat daftar retail yang tidak pernah ia minta, tanpa petunjuk bahwa pilihan barunya diabaikan. Menimpa itu terlihat — daftarnya berubah di depan mata dan masih bisa disunting lagi.
+- **Yang sengaja TIDAK ikut jadi preset:** `upsell_mandatory` dan `order_identity_mode`. Keduanya ada di halaman Pengaturan yang sama dan gampang ikut terbawa, tapi keduanya **aturan kerja**, bukan kapabilitas modul — tidak menggerbangi satu rute pun, dan `upsell_mandatory` bahkan bisa menahan tombol bayar. Menebaknya dari jenis usaha berarti menebak cara orang bekerja, bukan modul apa yang ia butuhkan.
+- **Satu tes menjaga config-nya jujur.** `setiap jenis usaha punya preset, dan setiap fitur preset dikenali Tenant` memeriksa tiga hal yang semuanya gagal dalam diam bila salah: jenis usaha tanpa baris preset (mendarat tanpa kapabilitas apa pun), nama fitur yang salah ketik (`hasFeature()` menjawab `false` tanpa keluhan — centangnya menyala di layar lalu tidak menggerbangi apa-apa), dan kolom yang tidak `$fillable` (`Tenant::create()` membuangnya diam-diam).
+- **Berkas:** `config/business-presets.php` (baru) · `app/Services/BusinessPresetService.php` (baru) · `app/Http/Controllers/Auth/AuthController.php` · `app/Http/Controllers/Owner/Settings/BusinessProfileController.php` (komentar penjaga) · `resources/js/Pages/Auth/Register.vue` · `tests/Feature/Auth/BusinessPresetTest.php` (baru, 10 tes)
 
 ---
 
