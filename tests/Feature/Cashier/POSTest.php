@@ -507,9 +507,13 @@ test('history is limited to the cashier open drawer session', function () {
     get('/cashier/transactions')
         ->assertInertia(fn ($page) => $page
             ->component('Cashier/TransactionHistory')
-            ->where('transactions.data.0.id', $thisShift->id)
-            ->count('transactions.data', 1)
+            // Cakupannya eager, daftarnya ditunda ([BL-037]).
             ->where('scope.can_filter_date', false)
+            ->missing('transactions')
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->where('transactions.data.0.id', $thisShift->id)
+                ->count('transactions.data', 1)
+            )
         );
 
     expect($lastWeek->exists)->toBeTrue();
@@ -534,8 +538,10 @@ test('history falls back to today when the cashier has no open drawer', function
 
     get('/cashier/transactions')
         ->assertInertia(fn ($page) => $page
-            ->count('transactions.data', 1)
-            ->where('transactions.data.0.id', $today->id)
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->count('transactions.data', 1)
+                ->where('transactions.data.0.id', $today->id)
+            )
         );
 });
 
@@ -561,8 +567,10 @@ test('cashier cannot widen the history with a date parameter', function () {
     // sekadar disembunyikan tombolnya di UI.
     get('/cashier/transactions?date='.now()->subWeek()->toDateString())
         ->assertInertia(fn ($page) => $page
-            ->count('transactions.data', 0)
             ->where('filters.date', null)
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->count('transactions.data', 0)
+            )
         );
 });
 
@@ -581,9 +589,11 @@ test('owner may still pick a date on the cashier history', function () {
 
     get('/cashier/transactions?date='.now()->subWeek()->toDateString())
         ->assertInertia(fn ($page) => $page
-            ->count('transactions.data', 1)
-            ->where('transactions.data.0.id', $old->id)
             ->where('scope.can_filter_date', true)
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->count('transactions.data', 1)
+                ->where('transactions.data.0.id', $old->id)
+            )
         );
 });
 

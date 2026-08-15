@@ -48,33 +48,52 @@ class SubscriptionController extends Controller
 
         $filter = $request->string('status')->toString();
 
-        $subscriptions = Subscription::query()
-            ->with(['tenant:id,name,slug,status', 'plan:id,name'])
-            ->join('tenants', 'tenants.id', '=', 'subscriptions.tenant_id')
-            ->when($filter !== '', fn ($query) => $query->where('tenants.status', $filter))
-            ->orderBy('tenants.name')
-            ->select('subscriptions.*')
-            ->paginate(25)
-            ->withQueryString();
-
         PlatformAuditLog::recordRoutine('subscriptions.index');
 
-        // Dihitung SEBELUM resource dirakit, dan urutannya bukan selera:
-        // `JsonResource::collection()` mengganti isi paginator dengan resource,
-        // sehingga apa pun yang menyentuh modelnya setelah itu menerima
-        // pembungkusnya, bukan model yang diharapkan.
-        $rows = $subscriptions->getCollection();
-        $tenantIds = $rows->pluck('tenant_id')->all();
+        // Satu daftar, empat prop ([BL-037]). Daftar langganan dan ketiga peta
+        // pendampingnya diturunkan dari halaman baris yang sama, jadi keempatnya
+        // ditunda dalam satu grup dan berbagi satu hasil yang dihitung sekali —
+        // empat closure yang masing-masing mengulang kuerinya akan membuat
+        // penundaan ini justru lebih mahal daripada tidak menunda sama sekali.
+        $daftar = null;
+        $resolveDaftar = function () use (&$daftar, $filter, $bolehTagihan, $bolehOmzet, $pricing): array {
+            if ($daftar !== null) {
+                return $daftar;
+            }
 
-        $seatUsage = $this->seatUsageFor($tenantIds);
-        $billing = $bolehTagihan ? $this->billingFor($tenantIds) : [];
-        // Kelompok harga (LABEL, bukan rupiah) hanya dihitung bila pengguna
-        // memang berizin melihat data omzet. Untuk yang tidak, kuncinya kosong
-        // sama sekali — bukan terisi lalu disembunyikan di Vue.
-        $brackets = $bolehOmzet ? $this->bracketsFor($rows, $pricing) : [];
+            $subscriptions = Subscription::query()
+                ->with(['tenant:id,name,slug,status', 'plan:id,name'])
+                ->join('tenants', 'tenants.id', '=', 'subscriptions.tenant_id')
+                ->when($filter !== '', fn ($query) => $query->where('tenants.status', $filter))
+                ->orderBy('tenants.name')
+                ->select('subscriptions.*')
+                ->paginate(25)
+                ->withQueryString();
+
+            // Dihitung SEBELUM resource dirakit, dan urutannya bukan selera:
+            // `JsonResource::collection()` mengganti isi paginator dengan resource,
+            // sehingga apa pun yang menyentuh modelnya setelah itu menerima
+            // pembungkusnya, bukan model yang diharapkan.
+            $rows = $subscriptions->getCollection();
+            $tenantIds = $rows->pluck('tenant_id')->all();
+
+            $seatUsage = $this->seatUsageFor($tenantIds);
+            $billing = $bolehTagihan ? $this->billingFor($tenantIds) : [];
+            // Kelompok harga (LABEL, bukan rupiah) hanya dihitung bila pengguna
+            // memang berizin melihat data omzet. Untuk yang tidak, kuncinya kosong
+            // sama sekali — bukan terisi lalu disembunyikan di Vue.
+            $brackets = $bolehOmzet ? $this->bracketsFor($rows, $pricing) : [];
+
+            return $daftar = [
+                'subscriptions' => SubscriptionResource::collection($subscriptions),
+                'seat_usage' => $seatUsage,
+                'billing' => $billing,
+                'brackets' => $brackets,
+            ];
+        };
 
         return Inertia::render('Platform/Subscriptions/Index', [
-            'subscriptions' => SubscriptionResource::collection($subscriptions),
+            'subscriptions' => Inertia::defer(fn () => $resolveDaftar()['subscriptions'], 'daftar'),
             'filters' => ['status' => $filter],
             'statuses' => [
                 Tenant::STATUS_TRIAL,
@@ -86,10 +105,12 @@ class SubscriptionController extends Controller
             // untuk halaman ini saja dan tidak termasuk bentuk sebuah langganan
             // — menaruhnya di daftar putih resource akan membuatnya ikut terbawa
             // ke tempat yang tak pernah memintanya.
-            'seat_usage' => $seatUsage,
-            'billing' => $billing,
+            'seat_usage' => Inertia::defer(fn () => $resolveDaftar()['seat_usage'], 'daftar'),
+            'billing' => Inertia::defer(fn () => $resolveDaftar()['billing'], 'daftar'),
+            // Ringkasan tagihan tetap eager: dua cacah pendek, dan justru
+            // inilah angka yang dicari saat halaman ini dibuka.
             'summary' => $bolehTagihan ? $this->billingSummary() : null,
-            'brackets' => $brackets,
+            'brackets' => Inertia::defer(fn () => $resolveDaftar()['brackets'], 'daftar'),
             'can' => [
                 'subscriptions' => $viewer->hasModule('subscriptions'),
                 'payments' => $bolehTagihan,

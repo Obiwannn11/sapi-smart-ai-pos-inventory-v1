@@ -1,15 +1,18 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { useForm, Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, useForm, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import ProductImage from '@/Components/ProductImage.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    products: Array,
+    // Ditunda ([BL-037]) — null selama katalognya masih dalam perjalanan.
+    products: { type: Array, default: null },
     categories: Array,
 });
 
@@ -30,7 +33,7 @@ const statusOptions = [
 ];
 
 const filteredProducts = computed(() => {
-    let items = props.products;
+    let items = props.products ?? [];
     if (filterCategory.value) {
         items = items.filter(p =>
             filterCategory.value === 'none'
@@ -88,7 +91,8 @@ const formatCurrency = (val) => {
         <div class="flex items-center justify-between mb-6">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Produk</h1>
-                <p class="text-sm text-gray-500 mt-1">{{ filteredProducts.length }} produk ditemukan</p>
+                <p v-if="products" class="text-sm text-gray-500 mt-1">{{ filteredProducts.length }} produk ditemukan</p>
+                <p v-else class="text-sm text-gray-500 mt-1">Memuat produk…</p>
             </div>
             <Link
                 href="/owner/products/create"
@@ -116,7 +120,21 @@ const formatCurrency = (val) => {
             />
         </div>
 
-        <!-- Product Grid -->
+        <!-- Product Grid. Ditunda ([BL-037]): kerangkanya memakai grid dan
+             kartu bergambar yang sama supaya kartu tidak melompat saat
+             katalognya sampai. -->
+        <Deferred data="products">
+            <template #fallback>
+                <SkeletonGrid
+                    :count="8"
+                    columns="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                    gap="gap-4"
+                    label="Memuat daftar produk…"
+                >
+                    <SkeletonCard media :lines="2" footer padding="p-4" />
+                </SkeletonGrid>
+            </template>
+
         <div v-if="filteredProducts.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <div
                 v-for="product in filteredProducts"
@@ -197,6 +215,7 @@ const formatCurrency = (val) => {
                 Tambah produk pertama
             </Link>
         </div>
+        </Deferred>
     </div>
 
     <!-- Delete confirm -->

@@ -22,36 +22,40 @@ class StaffController extends Controller
         $tenant = $request->user()->tenant;
         $subscription = $this->subscriptions->ensureFor($tenant);
 
-        // `roles.permissions` ikut dimuat karena `modulePermissions()` menanyakan
-        // tiap modul lewat Gate. Tanpa ini setiap pertanyaan menarik relasinya
-        // sendiri: tujuh kueri per orang, dikali jumlah staf.
-        $staff = User::where('tenant_id', $tenant->id)
-            ->where('role', 'cashier')
-            ->with('roles.permissions')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (User $user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'is_active' => $user->is_active,
-                'roles' => $user->getRoleNames(),
-                // Pertanyaan "orang ini bisa membuka apa saja" sudah dijawab
-                // server sejak lama; yang belum ada hanya tempat menampilkannya.
-                // Dikirim mentah (nama modul), labelnya diambil dari katalog di
-                // bawah supaya tidak ada daftar label kedua yang harus dijaga.
-                'modules' => $user->modulePermissions(),
-            ]);
-
         return Inertia::render('Owner/Staff/Index', [
-            'staff' => $staff,
+            // Ditunda ([BL-037]) bersama baris pemilik: keduanya satu tabel,
+            // jadi keduanya satu grup — separuh tabel yang datang lebih dulu
+            // hanya akan menggeser separuh sisanya beberapa saat kemudian.
+            //
+            // `roles.permissions` ikut dimuat karena `modulePermissions()`
+            // menanyakan tiap modul lewat Gate. Tanpa ini setiap pertanyaan
+            // menarik relasinya sendiri: tujuh kueri per orang, dikali jumlah
+            // staf — dan itulah yang membuat daftar ini pantas ditunda.
+            'staff' => Inertia::defer(fn () => User::where('tenant_id', $tenant->id)
+                ->where('role', 'cashier')
+                ->with('roles.permissions')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'is_active' => $user->is_active,
+                    'roles' => $user->getRoleNames(),
+                    // Pertanyaan "orang ini bisa membuka apa saja" sudah dijawab
+                    // server sejak lama; yang belum ada hanya tempat
+                    // menampilkannya. Dikirim mentah (nama modul), labelnya
+                    // diambil dari katalog di bawah supaya tidak ada daftar
+                    // label kedua yang harus dijaga.
+                    'modules' => $user->modulePermissions(),
+                ]), 'tabel'),
             // Owner ikut berbaris meski ia bukan staf dan tidak memakan seat.
             // Justru dialah satu-satunya akun yang aksesnya TIDAK berasal dari
             // role — ia melewati seluruh pemeriksaan (`Gate::before`) — dan
             // tanpa barisnya itu jadi satu-satunya fakta akses yang tak pernah
             // terlihat di layar mana pun. Akibat praktisnya: mencabut modul dari
             // role owner tidak mengubah apa-apa, dan tak ada yang memberi tahu.
-            'owners' => $this->ownerRows($tenant->id),
+            'owners' => Inertia::defer(fn () => $this->ownerRows($tenant->id), 'tabel'),
             'roles' => Role::where('tenant_id', $tenant->id)->orderBy('name')->pluck('name'),
             // Katalog label modul, bentuknya sama dengan yang dipakai halaman
             // Role. Sumbernya satu: `config/rbac.php`.

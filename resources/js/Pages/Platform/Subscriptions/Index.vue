@@ -1,12 +1,13 @@
 <script setup>
 import { computed } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 import PageHeader from '@/Components/Platform/PageHeader.vue';
 import DataTable from '@/Components/Platform/DataTable.vue';
 import StatCard from '@/Components/Platform/StatCard.vue';
 import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import Notice from '@/Components/Platform/Notice.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import {
     formatRupiah,
     formatDate,
@@ -15,13 +16,15 @@ import {
 } from '@/support/platform';
 
 const props = defineProps({
-    subscriptions: { type: Object, required: true },
+    // Empat prop pertama ditunda satu grup ([BL-037]): daftarnya beserta tiga
+    // peta pendampingnya lahir dari halaman baris yang sama.
+    subscriptions: { type: Object, default: null },
     filters: { type: Object, required: true },
     statuses: { type: Array, required: true },
-    seat_usage: { type: Object, required: true },
-    billing: { type: Object, required: true },
+    seat_usage: { type: Object, default: () => ({}) },
+    billing: { type: Object, default: () => ({}) },
     summary: { type: Object, default: null },
-    brackets: { type: Object, required: true },
+    brackets: { type: Object, default: () => ({}) },
     can: { type: Object, required: true },
 });
 
@@ -93,6 +96,15 @@ const billingOf = (row) => props.billing[row.tenant?.id] ?? null;
                 {{ TENANT_STATUS[status]?.label ?? status }}
             </button>
         </div>
+
+        <!-- Ditunda ([BL-037]): tombol saringan status di atas sudah bisa
+             ditekan, dan kerangka ini muncul lagi tiap saringannya berganti. -->
+        <Deferred :data="['subscriptions', 'seat_usage', 'billing', 'brackets']">
+            <template #fallback>
+                <div class="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                    <SkeletonTable :rows="8" :columns="columns.length" label="Memuat daftar langganan…" />
+                </div>
+            </template>
 
         <DataTable
             v-slot="{ cellClass }"
@@ -185,6 +197,7 @@ const billingOf = (row) => props.billing[row.tenant?.id] ?? null;
                 v-html="link.label"
             />
         </div>
+        </Deferred>
 
         <Notice class="mt-6 max-w-2xl">
             Semua angka di halaman ini adalah keterangan komersial — paket, tarif, batas pengguna, tagihan. Tidak satu

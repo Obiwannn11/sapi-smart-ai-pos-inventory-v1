@@ -1,13 +1,19 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 
 const props = defineProps({
-    queue: { type: Array, default: () => [] },
+    // Ditunda ([BL-037]) — null hanya pada pemuatan pertama. Penyegaran
+    // berkala memakai permintaan parsial yang menyebut prop ini, jadi papan
+    // lama tetap terpasang sampai papan baru datang: kerangkanya tidak muncul
+    // lagi di setiap poll.
+    queue: { type: Array, default: null },
 });
 
 const { isOnline } = useOnlineStatus();
@@ -173,6 +179,18 @@ const onConfirm = () => {
                 </span>
             </div>
 
+            <Deferred data="queue">
+                <template #fallback>
+                    <SkeletonGrid
+                        :count="3"
+                        columns="grid-cols-1"
+                        gap="gap-3"
+                        label="Memuat papan pesanan…"
+                    >
+                        <SkeletonCard icon :lines="3" footer padding="p-4" />
+                    </SkeletonGrid>
+                </template>
+
             <!-- Papan kosong -->
             <div v-if="queue.length === 0" class="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
                 <p class="text-base font-medium text-gray-900">Belum ada pesanan</p>
@@ -290,6 +308,7 @@ const onConfirm = () => {
                     </div>
                 </article>
             </div>
+            </Deferred>
         </main>
 
         <ConfirmDialog

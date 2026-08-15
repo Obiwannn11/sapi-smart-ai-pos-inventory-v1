@@ -1,13 +1,16 @@
 <script setup>
-import { router, Head, Link } from '@inertiajs/vue3';
+import { Deferred, router, Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 defineProps({
-    transactions: Object,
+    // Ditunda ([BL-037]) — null selama daftar transaksinya masih dimuat.
+    transactions: { type: Object, default: null },
     negativeVariants: { type: Array, default: () => [] },
 });
 
@@ -87,7 +90,15 @@ const resolve = (transaction) => {
             </div>
         </div>
 
-        <!-- Transaction list -->
+        <!-- Transaction list. Ditunda ([BL-037]): varian bernilai minus di
+             atas sudah bisa ditindaklanjuti sambil daftar ini dimuat. -->
+        <Deferred data="transactions">
+            <template #fallback>
+                <SkeletonPanel flush label="Memuat transaksi offline yang perlu koreksi…">
+                    <SkeletonList :rows="4" :leading="false" row-class="p-4" />
+                </SkeletonPanel>
+            </template>
+
         <div class="rounded-lg border border-border bg-card">
             <div v-if="transactions.data.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
                 <svg class="mb-3 h-10 w-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -165,5 +176,6 @@ const resolve = (transaction) => {
                 v-html="link.label"
             />
         </div>
+        </Deferred>
     </div>
 </template>

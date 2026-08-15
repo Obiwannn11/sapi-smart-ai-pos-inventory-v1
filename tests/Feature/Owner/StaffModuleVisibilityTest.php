@@ -63,10 +63,13 @@ test('each staff row carries the modules that person can actually open', functio
 
     actingAs($owner);
 
+    // Tabelnya ditunda ([BL-037]) — barisnya datang di permintaan kedua.
     get('/owner/staff')->assertInertia(fn (Assert $page) => $page
-        ->where('staff.0.name', 'Ani')
-        ->where('staff.0.roles.0', 'Supervisor')
-        ->where('staff.0.modules', ['pos', 'reports']));
+        ->missing('staff')
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('staff.0.name', 'Ani')
+            ->where('staff.0.roles.0', 'Supervisor')
+            ->where('staff.0.modules', ['pos', 'reports'])));
 });
 
 test('a staff member without any role gets an empty module list, not a full one', function () {
@@ -76,8 +79,9 @@ test('a staff member without any role gets an empty module list, not a full one'
     actingAs($owner);
 
     get('/owner/staff')->assertInertia(fn (Assert $page) => $page
-        ->where('staff.0.name', 'Budi')
-        ->where('staff.0.modules', []));
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('staff.0.name', 'Budi')
+            ->where('staff.0.modules', [])));
 });
 
 test('revoking a module from the role changes what the page reports', function () {
@@ -91,7 +95,8 @@ test('revoking a module from the role changes what the page reports', function (
     actingAs($owner);
 
     get('/owner/staff')->assertInertia(fn (Assert $page) => $page
-        ->where('staff.0.modules', ['pos']));
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('staff.0.modules', ['pos'])));
 });
 
 // ── Baris owner ──────────────────────────────────────────────────────────────
@@ -102,9 +107,10 @@ test('the owner appears on the page as a row of their own', function () {
     actingAs($owner);
 
     get('/owner/staff')->assertInertia(fn (Assert $page) => $page
-        ->has('owners', 1)
-        ->where('owners.0.id', $owner->id)
-        ->where('owners.0.email', $owner->email));
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->has('owners', 1)
+            ->where('owners.0.id', $owner->id)
+            ->where('owners.0.email', $owner->email)));
 });
 
 test('the owner row says bypass, not a list of every module', function () {
@@ -121,7 +127,8 @@ test('the owner row says bypass, not a list of every module', function () {
     actingAs($owner);
 
     get('/owner/staff')->assertInertia(fn (Assert $page) => $page
-        ->where('owners.0.modules', ['*']));
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('owners.0.modules', ['*'])));
 });
 
 test('a second owner of the same business is listed too', function () {
@@ -130,7 +137,8 @@ test('a second owner of the same business is listed too', function () {
 
     actingAs($owner);
 
-    get('/owner/staff')->assertInertia(fn (Assert $page) => $page->has('owners', 2));
+    get('/owner/staff')->assertInertia(fn (Assert $page) => $page
+        ->loadDeferredProps(fn (Assert $reload) => $reload->has('owners', 2)));
 });
 
 test('owners of another tenant never leak into the list', function () {
@@ -140,8 +148,9 @@ test('owners of another tenant never leak into the list', function () {
     actingAs($owner);
 
     get('/owner/staff')->assertInertia(fn (Assert $page) => $page
-        ->has('owners', 1)
-        ->where('owners.0.id', $owner->id));
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->has('owners', 1)
+            ->where('owners.0.id', $owner->id)));
 
     expect($otherOwner->tenant_id)->not->toBe($owner->tenant_id);
 });

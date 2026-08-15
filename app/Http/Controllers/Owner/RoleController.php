@@ -16,20 +16,20 @@ class RoleController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
 
-        $roles = Role::with('permissions:id,name')
-            ->where('tenant_id', $tenantId)
-            ->withCount('users')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (Role $role) => [
-                'id' => $role->id,
-                'name' => $role->name,
-                'modules' => $role->permissions->pluck('name'),
-                'users_count' => $role->users_count,
-            ]);
-
         return Inertia::render('Owner/Roles/Index', [
-            'roles' => $roles,
+            // Ditunda ([BL-037]): daftarnya menyusul sementara tombol tambah dan
+            // formulirnya sudah bisa dipakai sejak cat pertama.
+            'roles' => Inertia::defer(fn () => Role::with('permissions:id,name')
+                ->where('tenant_id', $tenantId)
+                ->withCount('users')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (Role $role) => [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'modules' => $role->permissions->pluck('name'),
+                    'users_count' => $role->users_count,
+                ])),
             'modules' => collect(config('rbac.modules'))->map(fn ($meta, $name) => [
                 'name' => $name,
                 'label' => $meta['label'],

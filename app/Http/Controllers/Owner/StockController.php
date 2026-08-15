@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\RestockRequest;
 use App\Http\Requests\AdjustStockRequest;
+use App\Http\Requests\RestockRequest;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
@@ -25,13 +25,15 @@ class StockController extends Controller
      */
     public function index(): Response
     {
-        $products = Product::with([
-            'variants' => fn($q) => $q->select('id', 'product_id', 'name', 'sku', 'stock', 'expiry_date'),
-            'category:id,name',
-        ])->get();
-
         return Inertia::render('Owner/Stock/Index', [
-            'products' => $products,
+            // Ditunda ([BL-037]): seluruh katalog beserta varian dan stoknya
+            // adalah satu-satunya isi halaman ini, dan tidak ada tindakan yang
+            // bisa dimulai sebelum barisnya terlihat — jadi yang dijaga di sini
+            // bukan interaksi, melainkan bentuk halaman yang muncul lebih awal.
+            'products' => Inertia::defer(fn () => Product::with([
+                'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'sku', 'stock', 'expiry_date'),
+                'category:id,name',
+            ])->get()),
         ]);
     }
 
@@ -71,6 +73,7 @@ class StockController extends Controller
             );
 
             $direction = $request->qty > 0 ? "+{$request->qty}" : "{$request->qty}";
+
             return back()->with('success', "Adjustment {$variant->name}: {$direction} berhasil.");
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
@@ -84,15 +87,16 @@ class StockController extends Controller
     {
         $this->authorizeVariant($variant);
 
-        $movements = StockMovement::where('product_variant_id', $variant->id)
-            ->latest('created_at')
-            ->paginate(50);
-
         $variant->load('product:id,name');
 
         return Inertia::render('Owner/Stock/History', [
+            // Varian dan stok berjalannya tetap eager: itulah judul halaman
+            // ini. Riwayat mutasinya ditunda ([BL-037]) — 50 baris yang hanya
+            // dibaca, dan tidak dipakai untuk apa pun di kepala halaman.
             'variant' => $variant,
-            'movements' => $movements,
+            'movements' => Inertia::defer(fn () => StockMovement::where('product_variant_id', $variant->id)
+                ->latest('created_at')
+                ->paginate(50)),
         ]);
     }
 
@@ -118,16 +122,15 @@ class StockController extends Controller
 
         // Filter by product
         if ($request->filled('product_id')) {
-            $query->whereHas('variant', fn($q) => $q->where('product_id', $request->product_id));
+            $query->whereHas('variant', fn ($q) => $q->where('product_id', $request->product_id));
         }
 
-        $movements = $query->latest('created_at')->paginate(50)->withQueryString();
-
-        $products = Product::select('id', 'name')->get();
-
         return Inertia::render('Owner/Stock/Movements', [
-            'movements' => $movements,
-            'products' => $products,
+            // Ditunda ([BL-037]): daftar mutasi bisa panjang dan tiap barisnya
+            // menarik varian beserta produknya. Daftar produk untuk penyaring
+            // tetap eager supaya filternya bisa dipakai sambil menunggu.
+            'movements' => Inertia::defer(fn () => $query->latest('created_at')->paginate(50)->withQueryString()),
+            'products' => Product::select('id', 'name')->get(),
             'filters' => $request->only(['type', 'date_from', 'date_to', 'product_id']),
         ]);
     }

@@ -1,18 +1,21 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import DatePicker from '@/Components/DatePicker.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     filters: Object,
     summary: Object,
-    byType: Array,
-    bySurface: Array,
-    topSuggestions: Array,
+    // Ditunda ([BL-037]) — null selama rinciannya masih dimuat.
+    byType: { type: Array, default: null },
+    bySurface: { type: Array, default: null },
+    topSuggestions: { type: Array, default: null },
 });
 
 const from = ref(props.filters.from);
@@ -112,6 +115,20 @@ const applyFilter = () => {
         </div>
 
         <template v-else>
+            <!-- Rincian ditunda ([BL-037]): ringkasan di atas sudah terbaca,
+                 ketiga tabel ini menyusul dalam dua permintaan. -->
+            <Deferred :data="['byType', 'bySurface']">
+                <template #fallback>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <SkeletonPanel flush label="Memuat rekap per jenis saran…">
+                            <SkeletonTable :rows="4" :columns="4" />
+                        </SkeletonPanel>
+                        <SkeletonPanel flush label="Memuat rekap per permukaan…">
+                            <SkeletonTable :rows="4" :columns="4" />
+                        </SkeletonPanel>
+                    </div>
+                </template>
+
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-5 py-3 border-b border-gray-100">
@@ -178,6 +195,15 @@ const applyFilter = () => {
                 </div>
             </div>
 
+            </Deferred>
+
+            <Deferred data="topSuggestions">
+                <template #fallback>
+                    <SkeletonPanel flush label="Memuat saran yang paling sering muncul…">
+                        <SkeletonTable :rows="6" :columns="5" />
+                    </SkeletonPanel>
+                </template>
+
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="px-5 py-3 border-b border-gray-100">
                     <h2 class="text-sm font-semibold text-gray-800">Saran Paling Sering Muncul</h2>
@@ -208,6 +234,7 @@ const applyFilter = () => {
                     </tbody>
                 </table>
             </div>
+            </Deferred>
         </template>
     </div>
 </template>

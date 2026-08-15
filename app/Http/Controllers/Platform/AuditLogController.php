@@ -27,7 +27,7 @@ class AuditLogController extends Controller
             'to' => ['nullable', 'date'],
         ]);
 
-        $logs = PlatformAuditLog::query()
+        $resolveLogs = fn () => PlatformAuditLog::query()
             ->with('platformUser:id,name')
             ->when($filters['action'] ?? null, fn ($query, $action) => $query->where('action', $action))
             ->when($filters['severity'] ?? null, fn ($query, $severity) => $query->where('severity', $severity))
@@ -54,7 +54,9 @@ class AuditLogController extends Controller
         PlatformAuditLog::recordRoutine('audit_logs.index');
 
         return Inertia::render('Platform/AuditLogs/Index', [
-            'logs' => $logs,
+            // Ditunda ([BL-037]): 50 baris jejak beserta akun pelakunya, dan
+            // keempat penyaring di atasnya sudah bisa dipakai tanpa menunggu.
+            'logs' => Inertia::defer($resolveLogs),
             'filters' => $filters,
             // Daftar aksi diambil dari data yang benar-benar ada, bukan katalog
             // statis: aksi baru muncul di filter tanpa perlu didaftarkan.

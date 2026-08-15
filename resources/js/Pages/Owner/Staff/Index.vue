@@ -1,14 +1,16 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { Deferred, useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    staff: Array,
+    // Ditunda satu grup ([BL-037]) — keduanya isi tabel yang sama.
+    staff: { type: Array, default: null },
     owners: { type: Array, default: () => [] },
     roles: Array,
     modules: { type: Array, default: () => [] },
@@ -217,8 +219,14 @@ const toggleActive = (member) => {
             </Transition>
         </Teleport>
 
-        <!-- Table -->
+        <!-- Table. Ditunda ([BL-037]) — kerangkanya memakai jumlah kolom
+             yang sama supaya lebar kolom tidak berubah saat barisnya tiba. -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred :data="['staff', 'owners']">
+                <template #fallback>
+                    <SkeletonTable :rows="6" :columns="4" label="Memuat daftar staf…" />
+                </template>
+
             <table class="w-full">
                 <thead>
                     <tr class="bg-gray-50 border-b border-gray-200">
@@ -343,6 +351,7 @@ const toggleActive = (member) => {
                     </tr>
                 </tbody>
             </table>
+            </Deferred>
         </div>
     </div>
 

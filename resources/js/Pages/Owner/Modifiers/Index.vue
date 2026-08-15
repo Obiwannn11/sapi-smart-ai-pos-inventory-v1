@@ -1,14 +1,17 @@
 <script setup>
 import { ref, nextTick } from 'vue';
-import { useForm, Head, router } from '@inertiajs/vue3';
+import { Deferred, useForm, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import Accordion from '@/Components/Accordion.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    modifierGroups: Array,
+    // Ditunda ([BL-037]) — null selama daftar grupnya masih dimuat.
+    modifierGroups: { type: Array, default: null },
 });
 
 // --- Form State ---
@@ -277,7 +280,20 @@ const onExtraPriceBlur = (i, event) => {
             </Transition>
         </Teleport>
 
-        <!-- Card Grid -->
+        <!-- Card Grid. Ditunda ([BL-037]) — grid dan jarak kartunya disalin
+             apa adanya supaya kartunya tidak bergeser saat data tiba. -->
+        <Deferred data="modifierGroups">
+            <template #fallback>
+                <SkeletonGrid
+                    :count="4"
+                    columns="grid-cols-1 lg:grid-cols-2"
+                    gap="gap-5"
+                    label="Memuat grup modifier…"
+                >
+                    <SkeletonCard :lines="3" footer padding="p-5" />
+                </SkeletonGrid>
+            </template>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div
                 v-for="group in modifierGroups"
@@ -425,6 +441,7 @@ const onExtraPriceBlur = (i, event) => {
                 </button>
             </div>
         </div>
+        </Deferred>
     </div>
 
     <!-- Delete confirm -->

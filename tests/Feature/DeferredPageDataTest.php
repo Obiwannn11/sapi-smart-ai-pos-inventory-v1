@@ -174,3 +174,106 @@ test('riwayat transaksi mengirim filter dulu, tabelnya menyusul', function () {
         )
     );
 });
+
+/**
+ * Gelombang kedua ([BL-037], 2026-08-15): sisa tabel di halaman pelacakan.
+ *
+ * Yang diperiksa tetap sama — pembagian eager/tertunda — tapi untuk halaman
+ * yang isinya memang cuma satu daftar, pembagian itu punya bentuk yang
+ * berulang: propnya hilang di cat pertama, dan ada setelah permintaan
+ * lanjutan. Satu test berdataset lebih jujur daripada dua belas test kembar,
+ * karena barisnya yang bertambah saat halaman berikutnya menyusul.
+ */
+test('halaman berisi satu daftar menunda daftarnya', function (string $url, string $component, string $prop) {
+    actingAs($this->owner);
+
+    get($url)->assertInertia(fn (Assert $page) => $page
+        ->component($component)
+        ->missing($prop)
+        ->loadDeferredProps(fn (Assert $reload) => $reload->has($prop))
+    );
+})->with([
+    'kategori' => ['/owner/categories', 'Owner/Categories/Index', 'categories'],
+    'modifier' => ['/owner/modifiers', 'Owner/Modifiers/Index', 'modifierGroups'],
+    'metode bayar' => ['/owner/payment-methods', 'Owner/PaymentMethods/Index', 'paymentMethods'],
+    'role' => ['/owner/roles', 'Owner/Roles/Index', 'roles'],
+    'stok' => ['/owner/stock', 'Owner/Stock/Index', 'products'],
+    'mutasi stok' => ['/owner/stock/movements', 'Owner/Stock/Movements', 'movements'],
+    'sesi kas' => ['/owner/cash-drawers', 'Owner/CashDrawers/Index', 'cashDrawers'],
+    'tinjauan offline' => ['/owner/offline-review', 'Owner/OfflineReview/Index', 'transactions'],
+]);
+
+test('halaman produk mengirim penyaringnya dulu, katalognya menyusul', function () {
+    $product = Product::factory()->create(['tenant_id' => $this->tenant->id]);
+    ProductVariant::factory()->create(['product_id' => $product->id]);
+
+    actingAs($this->owner);
+
+    get('/owner/products')->assertInertia(fn (Assert $page) => $page
+        ->component('Owner/Products/Index')
+        // Kategori tetap eager: penyaring yang ikut menunggu membuat layar ini
+        // kosong seluruhnya, bukan sebagian.
+        ->has('categories')
+        ->missing('products')
+        ->loadDeferredProps(fn (Assert $reload) => $reload->has('products', 1))
+    );
+});
+
+test('rekap bulanan mengirim ringkasan dan tren dulu, dua rekapnya menyusul', function () {
+    Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'total_amount' => 40000,
+        'occurred_at' => '2026-05-12 09:00:00',
+    ]);
+
+    actingAs($this->owner);
+
+    get('/owner/reports/monthly?month=2026-05')->assertInertia(fn (Assert $page) => $page
+        ->component('Owner/Reports/Monthly')
+        ->where('summary.total_revenue', 40000)
+        // Deret harian TIDAK ikut ditunda: ringkasan di atas diturunkan
+        // darinya, jadi kuerinya sudah jalan untuk cat pertama. Menundanya
+        // hanya membuat grafiknya berkedip untuk data yang sudah ada.
+        ->has('dailySeries')
+        ->missing('paymentSummary')
+        ->missing('topProducts')
+        ->loadDeferredProps('rekap', fn (Assert $reload) => $reload
+            ->has('paymentSummary')
+            ->has('topProducts')
+        )
+    );
+});
+
+test('laporan upsell mengirim ringkasan dulu, tiga rinciannya menyusul', function () {
+    actingAs($this->owner);
+
+    get('/owner/reports/upsell')->assertInertia(fn (Assert $page) => $page
+        ->component('Owner/Reports/Upsell')
+        ->has('summary')
+        ->missing('byType')
+        ->missing('bySurface')
+        ->missing('topSuggestions')
+        ->loadDeferredProps(['rekap', 'default'], fn (Assert $reload) => $reload
+            ->has('byType')
+            ->has('bySurface')
+            ->has('topSuggestions')
+        )
+    );
+});
+
+test('riwayat stok satu varian mengirim varian dulu, mutasinya menyusul', function () {
+    $product = Product::factory()->create(['tenant_id' => $this->tenant->id]);
+    $variant = ProductVariant::factory()->create(['product_id' => $product->id]);
+
+    actingAs($this->owner);
+
+    get("/owner/stock/{$variant->id}/history")->assertInertia(fn (Assert $page) => $page
+        ->component('Owner/Stock/History')
+        // Judul halamannya — nama varian dan stok berjalannya — tidak boleh
+        // ikut menunggu riwayatnya.
+        ->where('variant.id', $variant->id)
+        ->missing('movements')
+        ->loadDeferredProps(fn (Assert $reload) => $reload->has('movements.data'))
+    );
+});

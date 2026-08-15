@@ -1,13 +1,15 @@
 <script setup>
 import { ref } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { Deferred, useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    roles: Array,
+    // Ditunda ([BL-037]) — null selama daftarnya masih dimuat.
+    roles: { type: Array, default: null },
     // [{ name, label, sensitive }]
     modules: Array,
 });
@@ -183,8 +185,14 @@ const cancelDelete = () => { deleteTarget.value = null; };
             </Transition>
         </Teleport>
 
-        <!-- Table -->
+        <!-- Table. Ditunda ([BL-037]) — kerangkanya memakai jumlah kolom
+             yang sama supaya lebar kolom tidak berubah saat barisnya tiba. -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred data="roles">
+                <template #fallback>
+                    <SkeletonTable :rows="6" :columns="4" label="Memuat daftar role…" />
+                </template>
+
             <table class="w-full">
                 <thead>
                     <tr class="bg-gray-50 border-b border-gray-200">
@@ -235,6 +243,7 @@ const cancelDelete = () => { deleteTarget.value = null; };
                     </tr>
                 </tbody>
             </table>
+            </Deferred>
         </div>
     </div>
 

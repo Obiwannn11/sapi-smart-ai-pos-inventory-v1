@@ -22,14 +22,16 @@ class ProductController extends Controller
 
     public function index(): Response
     {
-        // URL gambar tidak ditempel di sini: Product meng-append image_url dan
-        // image_thumb_url sendiri, jadi setiap permukaan mendapatkannya.
-        $products = Product::with(['category:id,name', 'variants:id,product_id,name,price,stock'])
-            ->latest()
-            ->get();
-
         return Inertia::render('Owner/Products/Index', [
-            'products' => $products,
+            // Ditunda ([BL-037]): katalog lengkap beserta varian dan stoknya
+            // adalah bagian terberat halaman ini, sementara tombol "Tambah
+            // Produk" dan kedua penyaringnya sudah bisa dipakai tanpanya.
+            //
+            // URL gambar tidak ditempel di sini: Product meng-append image_url
+            // dan image_thumb_url sendiri, jadi setiap permukaan mendapatkannya.
+            'products' => Inertia::defer(fn () => Product::with(['category:id,name', 'variants:id,product_id,name,price,stock'])
+                ->latest()
+                ->get()),
             'categories' => Category::select('id', 'name')->get(),
         ]);
     }

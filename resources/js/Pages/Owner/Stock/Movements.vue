@@ -1,13 +1,15 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    movements: Object,
+    // Ditunda ([BL-037]) — null selama daftar mutasinya masih dimuat.
+    movements: { type: Object, default: null },
     products: Array,
     filters: Object,
 });
@@ -176,7 +178,15 @@ const qtyClass = (qty) => {
             </div>
         </div>
 
-        <!-- Movements Table -->
+        <!-- Movements Table. Ditunda ([BL-037]): filternya sudah bisa dipakai,
+             dan kerangka ini muncul lagi setiap filter diubah. -->
+        <Deferred data="movements">
+            <template #fallback>
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <SkeletonTable :rows="8" :columns="6" label="Memuat riwayat pergerakan stok…" />
+                </div>
+            </template>
+
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <table v-if="movements.data.length > 0" class="w-full">
                 <thead>
@@ -243,5 +253,6 @@ const qtyClass = (qty) => {
                 />
             </div>
         </div>
+        </Deferred>
     </div>
 </template>

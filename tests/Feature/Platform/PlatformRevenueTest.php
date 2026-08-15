@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\TenantConsent;
 use App\Models\TenantMonthlyMetric;
 use App\Models\User;
+use Inertia\Support\Header;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -47,6 +48,23 @@ function makePlatformRevenueContext(): array
     ];
 }
 
+/**
+ * Permintaan parsial yang membawa daftar langganan beserta kelompok harganya.
+ *
+ * Daftarnya ditunda ([BL-037]), jadi respons pertamanya tidak memuat satu pun
+ * baris — dan mencari angka omzet di respons yang memang kosong tidak
+ * membuktikan apa-apa.
+ */
+function subscriptionListPayload(PlatformUser $platformUser): string
+{
+    return actingAs($platformUser, 'platform')
+        ->get('/platform/subscriptions', [
+            Header::PARTIAL_COMPONENT => 'Platform/Subscriptions/Index',
+            Header::PARTIAL_ONLY => 'subscriptions,brackets',
+        ])
+        ->getContent();
+}
+
 // --- Daftar: kelompok saja, bukan angka ---
 
 test('daftar langganan menampilkan kelompok harga tanpa angka rupiahnya', function () {
@@ -54,13 +72,22 @@ test('daftar langganan menampilkan kelompok harga tanpa angka rupiahnya', functi
 
     $response = actingAs($platformUser, 'platform')->get('/platform/subscriptions');
 
+    // Kelompok harganya ikut daftar yang ditunda ([BL-037]); izinnya tetap
+    // eager karena ialah yang menentukan bentuk halamannya.
     $response->assertInertia(fn (Assert $page) => $page
-        ->where("brackets.{$tenant->id}", 'B')
-        ->where('can.revenue', true));
+        ->where('can.revenue', true)
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where("brackets.{$tenant->id}", 'B')));
 
     // Angka omzetnya tidak boleh ikut terkirim ke daftar — bedanya halus tapi
     // nyata antara membuka data saat dibutuhkan dan membukanya terus-menerus.
-    expect($response->getContent())->not->toContain('3500000');
+    // Diperiksa pada permintaan yang benar-benar membawa daftarnya — dan
+    // nama tenantnya dipastikan ikut, supaya permintaan yang salah alamat
+    // tidak lulus hanya karena isinya kosong.
+    $daftar = subscriptionListPayload($platformUser);
+
+    expect($daftar)->toContain('Kopi Story')
+        ->not->toContain('3500000');
 });
 
 test('pengguna tanpa izin omzet tidak menerima kelompok harga sama sekali', function () {
@@ -74,8 +101,9 @@ test('pengguna tanpa izin omzet tidak menerima kelompok harga sama sekali', func
         ->assertStatus(200)
         ->assertInertia(fn (Assert $page) => $page
             ->where('can.revenue', false)
-            // Bukan ada tapi kosong — kuncinya memang tidak berisi apa pun.
-            ->where('brackets', []));
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                // Bukan ada tapi kosong — kuncinya memang tidak berisi apa pun.
+                ->where('brackets', [])));
 
     expect($berizin->hasModule('revenue_data'))->toBeTrue();
 });

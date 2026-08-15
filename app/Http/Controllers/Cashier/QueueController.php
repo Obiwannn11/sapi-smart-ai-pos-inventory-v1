@@ -18,10 +18,17 @@ class QueueController extends Controller
     public function index(): Response
     {
         return Inertia::render('Cashier/Queue', [
+            // Ditunda ([BL-037]): papan beserta item tiap pesanannya menyusul,
+            // supaya rangka halaman dan peringatan offline muncul lebih dulu.
+            // Polling papan memakai `router.reload({ only: ['queue'] })` —
+            // permintaan parsial yang menyebut propnya tetap menyelesaikan
+            // prop yang ditunda, jadi kerangkanya hanya tampil di pemuatan
+            // pertama dan tidak berkedip tiap tujuh detik.
+            //
             // resolve(): papan tidak dipaginasi, jadi pembungkus `data` bawaan
             // resource collection hanya menambah satu lapis tanpa guna di sisi
             // Vue — dan membuat `queue` terbaca sebagai objek, bukan daftar.
-            'queue' => QueueCardResource::collection($this->board())->resolve(),
+            'queue' => Inertia::defer(fn () => QueueCardResource::collection($this->board())->resolve()),
         ]);
     }
 

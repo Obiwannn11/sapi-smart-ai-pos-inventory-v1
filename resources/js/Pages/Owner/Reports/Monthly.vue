@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import MonthPicker from '@/Components/MonthPicker.vue';
 import TrendChart from '@/Components/TrendChart.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -15,8 +17,9 @@ const props = defineProps({
     summary: Object,
     comparison: Object,
     dailySeries: Array,
-    paymentSummary: Array,
-    topProducts: Array,
+    // Ditunda ([BL-037]) — null sampai kedua rekapnya sampai.
+    paymentSummary: { type: Array, default: null },
+    topProducts: { type: Array, default: null },
 });
 
 const selectedMonth = ref(props.month);
@@ -64,7 +67,7 @@ const revenueDelta = computed(() => formatDelta(props.comparison.revenue_delta_p
 const transactionsDelta = computed(() => formatDelta(props.comparison.transactions_delta_pct));
 
 const paymentTotal = computed(() =>
-    props.paymentSummary.reduce((sum, pm) => sum + Number(pm.total), 0)
+    (props.paymentSummary ?? []).reduce((sum, pm) => sum + Number(pm.total), 0)
 );
 
 const paymentShare = (amount) => {
@@ -203,7 +206,15 @@ const paymentTypeLabel = (type) => {
             </div>
         </div>
 
-        <!-- Rekap per metode pembayaran -->
+        <!-- Rekap per metode pembayaran. Ditunda ([BL-037]) bersama produk
+             terlaris: keduanya menyisir sebulan penuh. -->
+        <Deferred data="paymentSummary">
+            <template #fallback>
+                <SkeletonPanel label="Memuat rekap metode pembayaran…">
+                    <SkeletonTable :rows="4" :columns="4" :header="false" />
+                </SkeletonPanel>
+            </template>
+
         <div v-if="paymentSummary.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <h3 class="text-sm font-semibold text-gray-700 mb-3">Rekap per Metode Pembayaran</h3>
             <div class="overflow-x-auto">
@@ -239,7 +250,16 @@ const paymentTypeLabel = (type) => {
             </div>
         </div>
 
+        </Deferred>
+
         <!-- Produk terlaris -->
+        <Deferred data="topProducts">
+            <template #fallback>
+                <SkeletonPanel label="Memuat produk terlaris…">
+                    <SkeletonTable :rows="6" :columns="4" :header="false" />
+                </SkeletonPanel>
+            </template>
+
         <div v-if="topProducts.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <h3 class="text-sm font-semibold text-gray-700 mb-3">Top 10 Produk Terlaris Bulan Ini</h3>
             <div class="overflow-x-auto">
@@ -263,6 +283,8 @@ const paymentTypeLabel = (type) => {
                 </table>
             </div>
         </div>
+
+        </Deferred>
 
         <!-- Tren harian: bentuk bulannya, sebelum angkanya dibaca satu per satu -->
         <TrendChart

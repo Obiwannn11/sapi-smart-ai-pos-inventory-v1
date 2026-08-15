@@ -160,8 +160,11 @@ test('staff page role list and assigned roles are scoped to the tenant', functio
     actingAs($ownerA)
         ->get('/owner/staff')
         ->assertInertia(fn (Assert $page) => $page
+            // Daftar role tetap eager (dipakai formulir tambah staf); barisnya
+            // sendiri ditunda ([BL-037]).
             ->where('roles', fn ($roles) => collect($roles)->contains('Gudang A') && ! collect($roles)->contains('Rahasia B'))
-            ->where('staff', fn ($staff) => collect($staff)->firstWhere('id', $cashierA->id)['roles'] === ['Gudang A']));
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('staff', fn ($staff) => collect($staff)->firstWhere('id', $cashierA->id)['roles'] === ['Gudang A'])));
 });
 
 test('non-owner cannot access staff management', function () {

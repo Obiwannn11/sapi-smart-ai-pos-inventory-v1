@@ -7,6 +7,7 @@ import SelectDropdown from '@/Components/SelectDropdown.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import Button from '@/Components/Button.vue';
 import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
+import SkeletonText from '@/Components/Skeleton/SkeletonText.vue';
 import { useAiQuota } from '@/composables/useAiQuota';
 
 defineOptions({ layout: OwnerLayout });
@@ -337,7 +338,12 @@ const selectAnalysis = (analysis) => {
             </div>
 
             <!-- Processing / pending skeleton -->
-            <div v-if="displayed.status === 'pending' || displayed.status === 'processing'" class="space-y-3">
+            <div
+                v-if="displayed.status === 'pending' || displayed.status === 'processing'"
+                class="space-y-3"
+                role="status"
+                aria-busy="true"
+            >
                 <div class="flex items-center gap-2 text-sm text-blue-600">
                     <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -345,12 +351,11 @@ const selectAnalysis = (analysis) => {
                     </svg>
                     Memproses analisis…
                 </div>
-                <div class="space-y-2 animate-pulse">
-                    <div class="h-3 bg-gray-100 rounded w-3/4"></div>
-                    <div class="h-3 bg-gray-100 rounded w-full"></div>
-                    <div class="h-3 bg-gray-100 rounded w-5/6"></div>
-                    <div class="h-3 bg-gray-100 rounded w-2/3"></div>
-                </div>
+                <!-- Kerangka teks memakai komponen bersama ([BL-037]); bukan
+                     blok animate-pulse sendiri. Yang ditunggu di sini pekerjaan
+                     antrean, bukan prop Inertia — tapi bahasa pemuatannya tetap
+                     satu. -->
+                <SkeletonText :lines="4" line-class="h-3" last-width="w-2/3" />
             </div>
 
             <!-- Failed -->

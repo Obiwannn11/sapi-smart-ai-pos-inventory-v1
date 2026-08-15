@@ -1,12 +1,14 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Deferred, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     variant: Object,
-    movements: Object,
+    // Ditunda ([BL-037]) — null selama riwayat mutasinya masih dimuat.
+    movements: { type: Object, default: null },
 });
 
 const formatDate = (date) => {
@@ -66,7 +68,15 @@ const qtyClass = (qty) => {
             </p>
         </div>
 
-        <!-- Movements Table -->
+        <!-- Movements Table. Ditunda ([BL-037]): varian dan stok berjalannya
+             sudah terbaca di kepala halaman sementara riwayatnya menyusul. -->
+        <Deferred data="movements">
+            <template #fallback>
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <SkeletonTable :rows="8" :columns="5" label="Memuat riwayat stok varian ini…" />
+                </div>
+            </template>
+
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <table v-if="movements.data.length > 0" class="w-full">
                 <thead>
@@ -131,5 +141,6 @@ const qtyClass = (qty) => {
                 />
             </div>
         </div>
+        </Deferred>
     </div>
 </template>

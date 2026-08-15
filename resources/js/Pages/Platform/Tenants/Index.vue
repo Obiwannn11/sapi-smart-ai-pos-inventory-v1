@@ -1,14 +1,16 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Deferred, Head, Link } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 import PageHeader from '@/Components/Platform/PageHeader.vue';
 import DataTable from '@/Components/Platform/DataTable.vue';
 import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import Notice from '@/Components/Platform/Notice.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import { TENANT_STATUS } from '@/support/platform';
 
 defineProps({
-    tenants: { type: Object, required: true },
+    // Ditunda ([BL-037]) — null selama daftar tenantnya masih dimuat.
+    tenants: { type: Object, default: null },
 });
 
 // Yang tersisa hanyalah kolom yang membedakan satu baris dari baris lain.
@@ -34,6 +36,13 @@ const statusOf = (value) => TENANT_STATUS[value] ?? { label: value ?? '—', ton
             title="Daftar Tenant"
             description="Siapa saja yang memakai layanan ini. Panel ini sengaja tidak menampilkan data operasional klien — transaksi, produk, stok, maupun laporan."
         />
+
+        <Deferred data="tenants">
+            <template #fallback>
+                <div class="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                    <SkeletonTable :rows="8" :columns="columns.length" label="Memuat daftar tenant…" />
+                </div>
+            </template>
 
         <DataTable
             v-slot="{ cellClass }"
@@ -86,6 +95,7 @@ const statusOf = (value) => TENANT_STATUS[value] ?? { label: value ?? '—', ton
                 </td>
             </tr>
         </DataTable>
+        </Deferred>
 
         <Notice class="mt-6 max-w-2xl">
             Jenis usaha, jumlah akun, riwayat tagihan, dan kapabilitas kasir tiap tenant ada di halaman rinciannya.

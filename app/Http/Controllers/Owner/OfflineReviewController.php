@@ -21,21 +21,28 @@ class OfflineReviewController extends Controller
      */
     public function index(): Response
     {
-        $transactions = Transaction::where('sync_status', Transaction::SYNC_NEEDS_REVIEW)
-            ->with(['items.modifiers', 'payments.paymentMethod', 'user:id,name'])
-            ->orderByDesc('occurred_at')
-            ->paginate(20);
-
-        $transactions->getCollection()->transform(function (Transaction $tx) {
-            $tx->review_reasons = $this->explainReasons($tx);
-
-            return $tx;
-        });
-
         return Inertia::render('Owner/OfflineReview/Index', [
-            'transactions' => $transactions,
+            // Ditunda ([BL-037]): daftar ini paling mahal di halaman — tiap
+            // baris menarik item, modifier, dan pembayarannya, lalu alasan
+            // penandaannya direkonstruksi satu per satu terhadap katalog.
+            'transactions' => Inertia::defer(function () {
+                $transactions = Transaction::where('sync_status', Transaction::SYNC_NEEDS_REVIEW)
+                    ->with(['items.modifiers', 'payments.paymentMethod', 'user:id,name'])
+                    ->orderByDesc('occurred_at')
+                    ->paginate(20);
+
+                $transactions->getCollection()->transform(function (Transaction $tx) {
+                    $tx->review_reasons = $this->explainReasons($tx);
+
+                    return $tx;
+                });
+
+                return $transactions;
+            }),
             // Varian yang stoknya minus — akar masalah paling umum, dan yang
-            // paling perlu tindakan (opname fisik lalu adjust).
+            // paling perlu tindakan (opname fisik lalu adjust). Tetap eager:
+            // satu kueri pendek, dan inilah tindakan yang bisa dimulai owner
+            // sambil daftar di bawahnya masih dimuat.
             'negativeVariants' => $this->negativeStockVariants(),
         ]);
     }

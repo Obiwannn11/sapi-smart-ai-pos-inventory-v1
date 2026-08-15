@@ -92,7 +92,12 @@ test('papan terbuka saat mode antrian hidup', function () {
 
     get('/cashier/queue')
         ->assertStatus(200)
-        ->assertInertia(fn ($page) => $page->component('Cashier/Queue')->has('queue'));
+        // Papan ditunda ([BL-037]) — kerangkanya yang muncul lebih dulu.
+        ->assertInertia(fn ($page) => $page
+            ->component('Cashier/Queue')
+            ->missing('queue')
+            ->loadDeferredProps(fn ($reload) => $reload->has('queue'))
+        );
 });
 
 test('papan hanya menampilkan pesanan tenant sendiri', function () {
@@ -111,8 +116,10 @@ test('papan hanya menampilkan pesanan tenant sendiri', function () {
     actingAs($this->cashier);
 
     get('/cashier/queue')->assertInertia(fn ($page) => $page
-        ->has('queue', 1)
-        ->where('queue.0.id', $mine->id)
+        ->loadDeferredProps(fn ($reload) => $reload
+            ->has('queue', 1)
+            ->where('queue.0.id', $mine->id)
+        )
     );
 });
 
@@ -132,9 +139,11 @@ test('papan menggabungkan pesanan kasir dan self order', function () {
     actingAs($this->cashier);
 
     get('/cashier/queue')->assertInertia(fn ($page) => $page
-        ->has('queue', 2)
-        ->where('queue.0.source', Transaction::SOURCE_POS)
-        ->where('queue.1.source', Transaction::SOURCE_SELF_ORDER)
+        ->loadDeferredProps(fn ($reload) => $reload
+            ->has('queue', 2)
+            ->where('queue.0.source', Transaction::SOURCE_POS)
+            ->where('queue.1.source', Transaction::SOURCE_SELF_ORDER)
+        )
     );
 });
 
@@ -212,8 +221,10 @@ test('open bill saat mode antrian hidup masuk papan dan ditandai belum bayar', f
         ->and($transaction->status)->toBe(Transaction::STATUS_PENDING);
 
     get('/cashier/queue')->assertInertia(fn ($page) => $page
-        ->where('queue.0.is_paid', false)
-        ->where('queue.0.amount_due', 20000)
+        ->loadDeferredProps(fn ($reload) => $reload
+            ->where('queue.0.is_paid', false)
+            ->where('queue.0.amount_due', 20000)
+        )
     );
 });
 
@@ -232,7 +243,9 @@ test('pelunasan open bill tidak mengubah status masak', function () {
     expect($transaction->fresh()->status)->toBe(Transaction::STATUS_COMPLETED)
         ->and($transaction->fresh()->fulfillment_status)->toBe(Transaction::FULFILLMENT_WAITING);
 
-    get('/cashier/queue')->assertInertia(fn ($page) => $page->where('queue.0.is_paid', true));
+    get('/cashier/queue')->assertInertia(fn ($page) => $page
+        ->loadDeferredProps(fn ($reload) => $reload->where('queue.0.is_paid', true))
+    );
 });
 
 test('transaksi offline tidak masuk papan', function () {
@@ -355,8 +368,10 @@ test('dahulukan menaruh kartu di puncak papan', function () {
     post("/cashier/queue/{$last->id}/move-to-top");
 
     get('/cashier/queue')->assertInertia(fn ($page) => $page
-        ->where('queue.0.id', $last->id)
-        ->where('queue.1.id', $first->id)
+        ->loadDeferredProps(fn ($reload) => $reload
+            ->where('queue.0.id', $last->id)
+            ->where('queue.1.id', $first->id)
+        )
     );
 });
 
@@ -374,7 +389,9 @@ test('void mengeluarkan pesanan dari papan', function () {
     expect($card->fresh()->fulfillment_status)->toBeNull();
 
     actingAs($this->cashier);
-    get('/cashier/queue')->assertInertia(fn ($page) => $page->has('queue', 0));
+    get('/cashier/queue')->assertInertia(fn ($page) => $page
+        ->loadDeferredProps(fn ($reload) => $reload->has('queue', 0))
+    );
 });
 
 test('pesanan kemarin tidak muncul di papan hari ini', function () {
@@ -389,7 +406,9 @@ test('pesanan kemarin tidak muncul di papan hari ini', function () {
     // Tanpa batas hari, pesanan `ready` yang terlupakan saat tutup lapak akan
     // berdampingan dengan pesanan hari ini — dan nomornya bertabrakan karena
     // nomor antrian reset harian.
-    get('/cashier/queue')->assertInertia(fn ($page) => $page->has('queue', 0));
+    get('/cashier/queue')->assertInertia(fn ($page) => $page
+        ->loadDeferredProps(fn ($reload) => $reload->has('queue', 0))
+    );
 });
 
 test('migrasi backfill membersihkan timbunan lama tanpa menyentuh pesanan hari ini', function () {

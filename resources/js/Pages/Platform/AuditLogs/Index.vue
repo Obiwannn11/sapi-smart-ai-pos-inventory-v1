@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { Deferred, Head, router, Link } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 import PageHeader from '@/Components/Platform/PageHeader.vue';
 import DataTable from '@/Components/Platform/DataTable.vue';
@@ -8,9 +8,11 @@ import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import FormField from '@/Components/Platform/FormField.vue';
 import Button from '@/Components/Button.vue';
 import { inputClass } from '@/support/platform';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 const props = defineProps({
-    logs: { type: Object, required: true },
+    // Ditunda ([BL-037]) — null selama jejaknya masih dimuat.
+    logs: { type: Object, default: null },
     filters: { type: Object, required: true },
     actions: { type: Array, required: true },
     retention: { type: Object, required: true },
@@ -93,6 +95,16 @@ const severity = (value) =>
             </div>
         </div>
 
+        <!-- Ditunda ([BL-037]): penyaringnya bekerja dengan permintaan baru
+             tiap kali diubah, jadi kerangka ini juga penanda bahwa isi tabel
+             sedang diganti. -->
+        <Deferred data="logs">
+            <template #fallback>
+                <div class="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                    <SkeletonTable :rows="10" :columns="columns.length" label="Memuat jejak audit…" />
+                </div>
+            </template>
+
         <DataTable
             v-slot="{ cellClass }"
             :columns="columns"
@@ -133,5 +145,6 @@ const severity = (value) =>
                 v-html="link.label"
             />
         </div>
+        </Deferred>
     </PlatformLayout>
 </template>

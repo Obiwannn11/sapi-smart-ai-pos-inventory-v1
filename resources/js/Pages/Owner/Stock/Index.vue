@@ -1,21 +1,25 @@
 <script setup>
-import { ref, computed } from 'vue';
-import { useForm, Head, Link } from '@inertiajs/vue3';
+import { ref, computed, watch } from 'vue';
+import { Deferred, useForm, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    products: Array,
+    // Ditunda ([BL-037]) — null selama katalog stoknya masih dimuat.
+    products: { type: Array, default: null },
 });
 
 // --- Search & Filter ---
 const search = ref('');
 
 const filteredProducts = computed(() => {
-    if (!search.value) return props.products;
+    const products = props.products ?? [];
+    if (!search.value) return products;
     const q = search.value.toLowerCase();
-    return props.products.filter(p =>
+    return products.filter(p =>
         p.name.toLowerCase().includes(q) ||
         p.variants?.some(v => v.name.toLowerCase().includes(q) || (v.sku && v.sku.toLowerCase().includes(q)))
     );
@@ -34,11 +38,13 @@ const toggleExpand = (productId) => {
 
 const isExpanded = (productId) => expandedIds.value.has(productId);
 
-// Expand all by default
+// Expand all by default. Katalognya ditunda ([BL-037]), jadi saat setup
+// berjalan propnya masih null — pembukaan barisnya menunggu sampai datang.
 const expandAll = () => {
-    props.products.forEach(p => expandedIds.value.add(p.id));
+    (props.products ?? []).forEach(p => expandedIds.value.add(p.id));
 };
 expandAll();
+watch(() => props.products, expandAll);
 
 // --- Modals ---
 const showRestockModal = ref(false);
@@ -146,7 +152,20 @@ const formatDate = (date) => {
             />
         </div>
 
-        <!-- Product List -->
+        <!-- Product List. Ditunda ([BL-037]) — kerangkanya sekadar
+             menyediakan tumpukan kartu setinggi baris produk yang tertutup. -->
+        <Deferred data="products">
+            <template #fallback>
+                <SkeletonGrid
+                    :count="5"
+                    columns="grid-cols-1"
+                    gap="gap-3"
+                    label="Memuat daftar stok…"
+                >
+                    <SkeletonCard :lines="2" padding="p-5" />
+                </SkeletonGrid>
+            </template>
+
         <div v-if="filteredProducts.length > 0" class="space-y-3">
             <div
                 v-for="product in filteredProducts"
@@ -289,6 +308,7 @@ const formatDate = (date) => {
                 {{ search ? 'Tidak ada produk yang cocok' : 'Belum ada produk' }}
             </p>
         </div>
+        </Deferred>
     </div>
 
     <!-- Restock Modal -->

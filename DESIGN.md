@@ -303,7 +303,7 @@ All skeletons live in `resources/js/Components/Skeleton/` and are built from one
 
 **The Announced-Loading Rule.** Grey blocks say nothing to a screen reader, so every loading region carries `role="status"` with an Indonesian `sr-only` label ("Memuat transaksi terbaru…") and the blocks themselves are `aria-hidden`. Never leave a loading region silent — and never announce it twice: the **outermost** skeleton owns the label. `SkeletonPanel` always announces; the composed blocks announce only when they are given a `label`, which is why one nested inside a panel is passed none.
 
-**The Progress Bar Rule.** The Inertia progress bar in `resources/js/app.js` stays until every page in the `[BL-037]` tracking table has its skeleton. It is the only signal the pages without one have; removing it first would take away the only feedback that exists rather than replacing it.
+**The Progress Bar Rule.** The Inertia progress bar in `resources/js/app.js` is no longer the app's loading language — but it is not switched off either. Every page in the `[BL-037]` tracking table now answers a navigation with its own shape, so the bar's `delay: 500` means it simply never gets to appear on those. What it still covers is the two cases a skeleton structurally cannot: **form submissions** (a POST or PUT has no deferred prop, so there is nowhere for a skeleton to stand) and **connections slow enough that even the first, light response is late**. Do not delete it to "finish" the skeleton work; deleting it removes feedback from the pages that were deliberately left out of the table — auth, forms, billing steps, error screens — and from every save button in the app.
 
 ## 7. Do's and Don'ts
 

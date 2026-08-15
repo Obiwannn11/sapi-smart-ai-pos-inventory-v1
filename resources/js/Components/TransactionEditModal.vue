@@ -4,6 +4,7 @@ import { router, usePage } from '@inertiajs/vue3';
 import Modal from '@/Components/Modal.vue';
 import ModifierModal from '@/Components/ModifierModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
+import SkeletonText from '@/Components/Skeleton/SkeletonText.vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -189,12 +190,11 @@ const submit = () => {
 
 <template>
     <Modal :show="show" title="Edit Transaksi" max-width="max-w-2xl" @close="$emit('close')">
-        <div v-if="!products" class="py-10 text-center text-sm text-gray-400">
-            <div class="animate-pulse space-y-2">
-                <div class="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
-                <div class="h-4 bg-gray-200 rounded w-1/3 mx-auto"></div>
-            </div>
-            <p class="mt-3">Memuat katalog…</p>
+        <!-- Katalog edit ditunda di server ([BL-037]); kerangkanya memakai
+             komponen bersama, bukan blok animate-pulse sendiri. -->
+        <div v-if="!products" class="py-10" role="status" aria-busy="true">
+            <SkeletonText :lines="2" line-class="h-4" last-width="w-2/3" class="mx-auto max-w-xs" />
+            <p class="mt-3 text-center text-sm text-gray-400">Memuat katalog…</p>
         </div>
 
         <div v-else class="space-y-5">

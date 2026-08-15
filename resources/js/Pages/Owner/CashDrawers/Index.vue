@@ -1,11 +1,13 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Deferred, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    cashDrawers: Object, // paginated
+    // Ditunda ([BL-037]) — null selama daftar sesi kasnya masih dimuat.
+    cashDrawers: { type: Object, default: null }, // paginated
 });
 
 const formatCurrency = (value) => {
@@ -34,6 +36,11 @@ const formatDateTime = (datetime) => {
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred data="cashDrawers">
+                <template #fallback>
+                    <SkeletonTable :rows="8" :columns="8" label="Memuat riwayat sesi kas…" />
+                </template>
+
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50">
@@ -106,6 +113,7 @@ const formatDateTime = (datetime) => {
                     />
                 </div>
             </div>
+            </Deferred>
         </div>
     </div>
 </template>

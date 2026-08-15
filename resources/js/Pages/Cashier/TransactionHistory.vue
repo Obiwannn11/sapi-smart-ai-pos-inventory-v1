@@ -1,5 +1,5 @@
 <script setup>
-import { router, Head } from '@inertiajs/vue3';
+import { Deferred, router, Head } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
@@ -7,9 +7,11 @@ import CashierTopbar from '@/Components/CashierTopbar.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import DatePicker from '@/Components/DatePicker.vue';
 import TransactionEditModal from '@/Components/TransactionEditModal.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 
 const props = defineProps({
-    transactions: Object,
+    transactions: { type: Object, default: null },
     filters: Object,
     // Batas daftar yang sedang berlaku. Kasir dibatasi ke sesi kas berjalan
     // dan tidak boleh menyetel tanggal sendiri — lihat [BL-027].
@@ -147,7 +149,21 @@ const openEdit = (transaction) => {
                 </div>
             </div>
 
-            <!-- Transaction List -->
+            <!-- Transaction List. Ditunda ([BL-037]): kerangka kartu ini juga
+                 yang muncul kembali setiap filter diubah, jadi ada tanda bahwa
+                 isi daftarnya sedang diganti. -->
+            <Deferred data="transactions">
+                <template #fallback>
+                    <SkeletonGrid
+                        :count="4"
+                        columns="grid-cols-1"
+                        gap="gap-3"
+                        label="Memuat riwayat transaksi…"
+                    >
+                        <SkeletonCard :lines="3" footer padding="p-4" />
+                    </SkeletonGrid>
+                </template>
+
             <div class="space-y-3">
                 <div
                     v-for="tx in transactions.data"
@@ -256,6 +272,7 @@ const openEdit = (transaction) => {
                     <span v-else class="px-3 py-1.5 text-sm text-gray-300" v-html="link.label" />
                 </template>
             </div>
+            </Deferred>
         </main>
 
         <!-- Receipt Modal -->

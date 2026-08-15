@@ -244,18 +244,24 @@ class POSController extends Controller
             $query->whereEffectiveDate(now()->toDateString());
         }
 
-        $transactions = $query->paginate(20)->withQueryString();
-
-        // Tandai transaksi mana yang boleh diedit oleh user ini.
-        // Owner: semua completed. Kasir: completed dalam shift laci terbuka miliknya.
-        $transactions->getCollection()->transform(function (Transaction $tx) use ($user, $openDrawer) {
-            $tx->can_edit = $this->canEditTransaction($tx, $user, $openDrawer);
-
-            return $tx;
-        });
-
         return Inertia::render('Cashier/TransactionHistory', [
-            'transactions' => $transactions,
+            // Ditunda ([BL-037]): filter, cakupan, dan tombolnya sudah bisa
+            // dipakai sementara satu halaman transaksi beserta item dan
+            // pembayarannya masih dimuat. Baris riwayat hanya dibaca, tidak
+            // ada yang bisa dikerjakan kasir sebelum daftarnya sampai.
+            'transactions' => Inertia::defer(function () use ($query, $user, $openDrawer) {
+                $transactions = $query->paginate(20)->withQueryString();
+
+                // Tandai transaksi mana yang boleh diedit oleh user ini.
+                // Owner: semua completed. Kasir: completed dalam shift laci terbuka miliknya.
+                $transactions->getCollection()->transform(function (Transaction $tx) use ($user, $openDrawer) {
+                    $tx->can_edit = $this->canEditTransaction($tx, $user, $openDrawer);
+
+                    return $tx;
+                });
+
+                return $transactions;
+            }),
             'filters' => [
                 'status' => $request->input('status'),
                 'date' => $manualDate,

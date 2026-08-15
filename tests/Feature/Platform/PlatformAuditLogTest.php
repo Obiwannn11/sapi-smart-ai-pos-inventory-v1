@@ -90,9 +90,12 @@ test('logs can be filtered by severity', function () {
     get('/platform/tenants'); // routine
     PlatformAuditLog::record('pricing_rules.update'); // sensitive
 
+    // Jejaknya ditunda ([BL-037]) — penyaringnya eager, barisnya menyusul.
     get('/platform/audit-logs?severity=sensitive')
         ->assertInertia(fn (Assert $page) => $page
-            ->where('logs.data', fn ($logs) => collect($logs)->every(fn ($log) => $log['severity'] === 'sensitive')));
+            ->missing('logs')
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('logs.data', fn ($logs) => collect($logs)->every(fn ($log) => $log['severity'] === 'sensitive'))));
 });
 
 test('logs can be filtered by action', function () {
@@ -103,8 +106,9 @@ test('logs can be filtered by action', function () {
 
     get('/platform/audit-logs?action=pricing_rules.update')
         ->assertInertia(fn (Assert $page) => $page
-            ->where('logs.data', fn ($logs) => count($logs) === 1
-                && $logs[0]['action'] === 'pricing_rules.update'));
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('logs.data', fn ($logs) => count($logs) === 1
+                    && $logs[0]['action'] === 'pricing_rules.update')));
 });
 
 // ── Jejak bertahan meski akunnya dihapus ─────────────────────────────────────
@@ -120,9 +124,10 @@ test('an entry survives deletion of the account that made it', function () {
     actingAs($owner, 'platform');
     get('/platform/audit-logs')
         ->assertInertia(fn (Assert $page) => $page
-            ->where('logs.data', fn ($logs) => collect($logs)->contains(
-                fn ($log) => $log['action'] === 'pricing_rules.update' && $log['actor'] === 'Akun telah dihapus'
-            )));
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('logs.data', fn ($logs) => collect($logs)->contains(
+                    fn ($log) => $log['action'] === 'pricing_rules.update' && $log['actor'] === 'Akun telah dihapus'
+                ))));
 });
 
 // ── Pemangkasan ──────────────────────────────────────────────────────────────

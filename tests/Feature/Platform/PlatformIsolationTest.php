@@ -5,9 +5,28 @@ use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use Inertia\Support\Header;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
+
+/**
+ * Permintaan parsial yang membawa prop tertunda daftar tenant ([BL-037]).
+ *
+ * Sejak daftarnya ditunda, respons pertama `/platform/tenants` tidak lagi
+ * memuat satu pun baris — dan memeriksa kebocoran di respons yang memang
+ * kosong tidak membuktikan apa pun. Pemeriksaannya pindah ke sini, ke
+ * permintaan yang benar-benar membawa datanya.
+ */
+function tenantListPayload(PlatformUser $platformUser): string
+{
+    return actingAs($platformUser, 'platform')
+        ->get('/platform/tenants', [
+            Header::PARTIAL_COMPONENT => 'Platform/Tenants/Index',
+            Header::PARTIAL_ONLY => 'tenants',
+        ])
+        ->getContent();
+}
 
 /**
  * Pertahanan lapis kedua, melengkapi PlatformArchTest.
@@ -57,12 +76,17 @@ test('tenant list exposes only whitelisted administrative fields', function () {
     actingAs($platformUser, 'platform')
         ->get('/platform/tenants')
         ->assertInertia(fn (Assert $page) => $page
-            ->has('tenants.data', 2)
-            ->has('tenants.data.0', fn (Assert $tenant) => $tenant
-                // Daftar putih: persis field ini, tidak lebih. Kalau suatu saat
-                // ada kolom baru yang bocor lewat resource, test ini merah.
-                ->hasAll(['id', 'name', 'slug', 'registered_at', 'user_count', 'owner'])
-                ->etc()
+            // Daftarnya ditunda ([BL-037]); daftar putihnya diperiksa di
+            // permintaan lanjutan yang membawa barisnya.
+            ->missing('tenants')
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->has('tenants.data', 2)
+                ->has('tenants.data.0', fn (Assert $tenant) => $tenant
+                    // Daftar putih: persis field ini, tidak lebih. Kalau suatu saat
+                    // ada kolom baru yang bocor lewat resource, test ini merah.
+                    ->hasAll(['id', 'name', 'slug', 'registered_at', 'user_count', 'owner'])
+                    ->etc()
+                )
             )
         );
 });
@@ -70,7 +94,12 @@ test('tenant list exposes only whitelisted administrative fields', function () {
 test('no operational data of any tenant leaks into the platform payload', function () {
     ['platformUser' => $platformUser] = platformIsolationContext();
 
-    $body = actingAs($platformUser, 'platform')->get('/platform/tenants')->getContent();
+    $body = tenantListPayload($platformUser);
+
+    // Penjaga bagi penjaganya: pastikan respons yang diperiksa memang membawa
+    // daftarnya. Tanpa baris ini, permintaan parsial yang salah alamat akan
+    // lulus dengan sempurna justru karena isinya kosong.
+    expect($body)->toContain('Kopi Story');
 
     // Apa pun jalurnya — relasi, eager load, query mentah — jejak data
     // operasional tidak boleh muncul di respons.

@@ -134,9 +134,20 @@ class ReportController extends Controller
                 'revenue_delta_pct' => $this->deltaPercent($summary['total_revenue'], $previousTotals['total_revenue']),
                 'transactions_delta_pct' => $this->deltaPercent($summary['total_transactions'], $previousTotals['total_transactions']),
             ],
+            // Deret harian tetap eager meski [BL-037] mengusulkan sebaliknya:
+            // ringkasan di atas diturunkan DARI deret ini, jadi kuerinya sudah
+            // terlanjur jalan untuk cat pertama. Menundanya hanya memindahkan
+            // 31 baris kecil ke permintaan kedua tanpa mempercepat apa pun —
+            // dan grafiknya lalu berkedip untuk data yang sudah ada di tangan.
             'dailySeries' => $dailySeries,
-            'paymentSummary' => $this->paymentSummaryFor($month),
-            'topProducts' => $this->topProductsFor($month),
+
+            // --- Bagian yang ditunda ([BL-037]) ---
+            // Dua rekap inilah yang benar-benar mahal di layar ini: keduanya
+            // menyisir seluruh pembayaran dan item transaksi sebulan penuh.
+            // Satu grup, karena keduanya sama-sama tabel di bawah lipatan dan
+            // tidak ada gunanya sampai bergiliran.
+            'paymentSummary' => Inertia::defer(fn () => $this->paymentSummaryFor($month), 'rekap'),
+            'topProducts' => Inertia::defer(fn () => $this->topProductsFor($month), 'rekap'),
         ]);
     }
 
@@ -509,16 +520,21 @@ class ReportController extends Controller
                 'offer_rate' => $offered > 0 ? round($accepted / $offered * 100, 1) : 0,
                 'extra_revenue' => $extraRevenue,
             ],
-            'byType' => $this->upsellBreakdown($scoped(), 'type'),
-            'bySurface' => $this->upsellBreakdown($scoped(), 'surface'),
-            'topSuggestions' => $scoped()
+            // --- Bagian yang ditunda ([BL-037]) ---
+            // Ringkasan di atas sudah menjawab pertanyaan utama halaman ini;
+            // ketiga rincian di bawahnya hanya dibaca ketika angka ringkasannya
+            // memancing pertanyaan lanjutan. Dua rekap bersebelahan dijadikan
+            // satu grup supaya keduanya muncul bersamaan, bukan bergiliran.
+            'byType' => Inertia::defer(fn () => $this->upsellBreakdown($scoped(), 'type'), 'rekap'),
+            'bySurface' => Inertia::defer(fn () => $this->upsellBreakdown($scoped(), 'surface'), 'rekap'),
+            'topSuggestions' => Inertia::defer(fn () => $scoped()
                 ->selectRaw('label, type, COUNT(*) as shown')
                 ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as accepted', [UpsellEvent::STATUS_ACCEPTED])
                 ->selectRaw('SUM(extra_amount) as extra_revenue')
                 ->groupBy('label', 'type')
                 ->orderByDesc('shown')
                 ->take(15)
-                ->get(),
+                ->get()),
         ]);
     }
 
@@ -544,12 +560,13 @@ class ReportController extends Controller
      */
     public function cashDrawers(Request $request): Response
     {
-        $cashDrawers = CashDrawer::with('user:id,name')
-            ->latest('opened_at')
-            ->paginate(25);
-
         return Inertia::render('Owner/CashDrawers/Index', [
-            'cashDrawers' => $cashDrawers,
+            // Ditunda ([BL-037]): satu halaman sesi kas beserta kasirnya, dan
+            // tidak ada apa pun di layar ini yang bisa dikerjakan sebelum
+            // barisnya sampai.
+            'cashDrawers' => Inertia::defer(fn () => CashDrawer::with('user:id,name')
+                ->latest('opened_at')
+                ->paginate(25)),
         ]);
     }
 }

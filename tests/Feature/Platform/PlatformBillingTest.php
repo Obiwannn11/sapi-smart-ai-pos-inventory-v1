@@ -54,13 +54,18 @@ test('halaman langganan menampilkan keterangan komersial saja', function () {
         ->assertStatus(200)
         ->assertInertia(fn (Assert $page) => $page
             ->component('Platform/Subscriptions/Index')
-            ->has('subscriptions.data', 1)
-            ->has('subscriptions.data.0', fn (Assert $row) => $row
-                ->hasAll([
-                    'id', 'tenant', 'plan_name', 'pricing_track', 'seats',
-                    'seat_high_water', 'price_locked', 'trial_ends_at', 'current_period_end',
-                ])
-                ->etc()
+            // Daftarnya ditunda ([BL-037]) — daftar putih fieldnya diperiksa
+            // pada permintaan lanjutan, tempat barisnya benar-benar dikirim.
+            ->missing('subscriptions')
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->has('subscriptions.data', 1)
+                ->has('subscriptions.data.0', fn (Assert $row) => $row
+                    ->hasAll([
+                        'id', 'tenant', 'plan_name', 'pricing_track', 'seats',
+                        'seat_high_water', 'price_locked', 'trial_ends_at', 'current_period_end',
+                    ])
+                    ->etc()
+                )
             )
         );
 });
