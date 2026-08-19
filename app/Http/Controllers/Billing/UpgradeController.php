@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Services\ProofFileService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class UpgradeController extends Controller
 {
     public function __construct(
         private readonly SubscriptionService $subscriptions,
+        private readonly ProofFileService $proofFiles,
     ) {}
 
     /**
@@ -120,7 +122,17 @@ class UpgradeController extends Controller
         // Disk privat, bukan `public`: bukti transfer memuat nama dan nomor
         // rekening. Pemilik SaaS membukanya lewat rute yang digerbang izinnya
         // sendiri, bukan lewat URL yang bisa ditebak siapa saja.
-        $path = $request->file('proof')->store('proofs', 'local');
+        //
+        // Lewat ProofFileService, bukan ->store() mentah: tangkapan layar
+        // m-banking 4 MB dulu mendarat di disk apa adanya. Yang PDF tetap
+        // disalin utuh — percabangannya ada di dalam service itu.
+        $previous = $invoice->proof_path;
+
+        $path = $this->proofFiles->store($request->file('proof'), 'proofs');
+
+        // Unggah ulang menggantikan bukti sebelumnya; menyimpan keduanya berarti
+        // menumpuk berkas yang tidak akan pernah dibuka lagi.
+        $this->proofFiles->delete($previous);
 
         $invoice->update([
             'proof_path' => $path,

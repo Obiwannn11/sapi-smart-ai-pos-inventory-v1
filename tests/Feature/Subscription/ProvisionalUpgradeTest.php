@@ -499,3 +499,63 @@ test('pemilik saas bisa membuka bukti transfernya dan aksesnya tercatat', functi
 
     expect(App\Models\PlatformAuditLog::where('action', 'invoices.proof.view')->exists())->toBeTrue();
 });
+
+// --- Normalisasi berkas bukti (`[BL-077]` butir b) ---
+
+test('bukti berupa gambar dinormalkan jadi WEBP, bukan disimpan mentah', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext();
+
+    $invoice = Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+    ]);
+
+    actingAs($owner);
+    post("/langganan/tagihan/{$invoice->id}/bukti", [
+        'proof' => UploadedFile::fake()->image('bukti.jpg', 2400, 1600),
+    ])->assertSessionHas('success');
+
+    $path = $invoice->fresh()->proof_path;
+
+    expect($path)->toEndWith('.webp');
+    Storage::disk('local')->assertExists($path);
+});
+
+test('bukti berupa PDF disimpan apa adanya — melewatkannya ke encoder WEBP akan merusaknya', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext();
+
+    $invoice = Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+    ]);
+
+    actingAs($owner);
+    post("/langganan/tagihan/{$invoice->id}/bukti", [
+        'proof' => UploadedFile::fake()->create('bukti.pdf', 120, 'application/pdf'),
+    ])->assertSessionHas('success');
+
+    $path = $invoice->fresh()->proof_path;
+
+    expect($path)->toEndWith('.pdf');
+    Storage::disk('local')->assertExists($path);
+});
+
+test('mengunggah ulang bukti menghapus berkas sebelumnya', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'subscription' => $subscription] = makeUpgradeContext();
+
+    $invoice = Invoice::factory()->create([
+        'tenant_id' => $tenant->id,
+        'subscription_id' => $subscription->id,
+    ]);
+
+    actingAs($owner);
+    uploadProof($invoice);
+    $pertama = $invoice->fresh()->proof_path;
+
+    uploadProof($invoice);
+    $kedua = $invoice->fresh()->proof_path;
+
+    expect($kedua)->not->toBe($pertama);
+    Storage::disk('local')->assertMissing($pertama);
+    Storage::disk('local')->assertExists($kedua);
+});

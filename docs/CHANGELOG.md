@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-19 | ADDITION | Unggahan | Gambar Dikecilkan di Perangkat Sebelum Diunggah, dan Bukti Transfer Berhenti Mendarat Mentah (BL-077 butir a & b) |
 | 2026-08-15 | ADDITION | Pendaftaran | Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034) |
 | 2026-08-15 | ADDITION | UI | Halaman Menunjukkan Bentuknya Sebelum Datanya Sampai (BL-037) |
 | 2026-08-15 | ADDITION | Langganan | Masa Coba Berakhir dengan Pertanyaan, Bukan dengan Tagihan (BL-044 butir c) |
@@ -183,6 +184,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Gambar Dikecilkan di Perangkat Sebelum Diunggah, dan Bukti Transfer Berhenti Mendarat Mentah (BL-077 butir a & b)
+- **Tanggal:** 2026-08-19
+- **Fase Terkait:** Di Luar Fase — `[BL-077]` butir (a) dan (b). Butir (c) tidak dikerjakan; alasannya di bawah.
+- **Dampak:** Frontend | Service | Controller | Test
+- **Breaking Change:** Tidak. Berkas yang sudah tersimpan tidak disentuh, dan kolom `invoices.proof_path` tetap bentuk yang sama — hanya isinya yang kini bisa berakhiran `.webp`.
+- **Deskripsi:** Composable `useImageCompressor` mengecilkan dan mengonversi gambar ke WEBP **di peramban**, sebelum satu byte pun menyeberangi jaringan; `ImageUpload` (formulir produk) sudah memakainya. Di sisi server, `ProofFileService` baru menormalkan bukti transfer langganan yang selama ini disimpan apa adanya — dengan PDF tetap disalin utuh.
+- **Alasan:** Pertanyaan pemilik — "apakah ada auto compress resize dan convert ke webp untuk gambar" — ternyata berjawab "ada, tapi hanya untuk foto produk". `ImageService` sudah melakukan ketiganya dengan benar, tapi ia baru bekerja **setelah** berkasnya sampai, dan dua jalur lain tidak menyentuhnya sama sekali. Butir (a) dikerjakan lebih dulu bukan karena paling mudah, melainkan karena ia prasyarat `[BL-075]`: begitu foto bukti bayar masuk outbox IndexedDB, "dikecilkan di server" tidak menolong apa-apa — tidak ada server yang bisa dihubungi.
+
+- **Kompresi tidak pernah boleh menggagalkan unggahan, dan itu membentuk seluruh modulnya.** Setiap jalur gagal di `useImageCompressor` — peramban tanpa `createImageBitmap`, berkas yang tak bisa didekode, `canvas.toBlob` yang mengembalikan `null` karena WEBP tak didukung — berakhir dengan **mengembalikan berkas aslinya**, bukan melempar error. Penghematan yang berubah jadi syarat sah adalah penghematan yang suatu hari akan membuat owner tidak bisa menyimpan produknya sama sekali, di peramban yang tidak pernah kita uji.
+- **Hasil yang lebih besar dibuang.** Tangkapan layar PNG kecil dan gambar yang sudah WEBP kerap **membengkak** setelah dikodekan ulang. Bila `blob.size >= file.size`, yang dipakai tetap yang asli — kalau tidak, fitur bernama "kompresi" akan diam-diam menambah beban di sebagian kasus.
+- **Urutan validasi di `ImageUpload` dibalik, dan itu memperbaiki penolakan yang keliru.** Dulu: tipe → ukuran → terima. Foto 8 MB dari kamera ponsel ditolak mentah-mentah padahal setelah dikecilkan ia beberapa ratus kilobyte. Sekarang: tipe → **kompresi** → ukuran, diperiksa atas hasilnya. Yang ditolak jadi gambar yang benar-benar tak bisa dikecilkan, bukan gambar yang belum dicoba.
+- **GIF beranimasi tidak disentuh.** Menggambarnya ke canvas menyisakan satu frame diam — itu bukan versi lebih kecil dari berkas yang sama, itu berkas lain.
+- **`ProofFileService` berdiri sendiri, dan `ImageService` sengaja tidak diutak-atik.** Kontrak `ImageService` tegas: produk, **persegi**, dua rendition, disk privat. Dua di antaranya salah untuk bukti bayar. Tangkapan layar e-wallet itu tinggi dan sempit, dan `cover(800,800)` memotong tepat bagian yang jadi alasan foto itu diambil — nominal dan kode referensinya; di kelas baru gambar dimuat **ke dalam** kotak lewat `scaleDown()`, rasio dijaga, tidak pernah dipotong, tidak pernah diperbesar. Dan bukti bayar bisa berupa PDF, yang tidak bisa dilewatkan ke encoder WEBP sama sekali.
+- **Percabangan gambar-vs-PDF ada di dalam service, bukan di pemanggil.** `[BL-075]` akan jadi pemanggil kedua, dan aturan "PDF disalin apa adanya" yang ditulis dua kali adalah aturan yang suatu saat akan berbeda di satu tempat.
+- **Unggah ulang menghapus berkas sebelumnya.** Tombolnya berlabel "Unggah ulang bukti" dan memang dipakai — tanpa penghapusan, tiap percobaan meninggalkan berkas yatim di disk yang tidak akan pernah dibuka lagi, di disk yang `[BL-076]` sudah tandai sebagai masalah.
+- **Butir (c) — plugin Vite untuk aset statis — tidak dikerjakan, dan bukan karena terlewat.** Ia menuntut penambahan dependensi, yang butuh persetujuan lebih dulu. Lima tangkapan layar landing yang masih PNG ditangani lewat `[BL-032]` butir (3) sebagai konversi sekali jalan; celah "berkas berat berikutnya masuk dengan cara yang sama" masih terbuka dan tetap tercatat di `[BL-077]`.
+- **`Billing/Show.vue` sengaja tidak ikut disentuh.** Pemilih berkas bukti transfer di sana belum memakai composable-nya karena berkas itu sedang punya perubahan lain yang belum di-commit (pencabutan tombol simulasi, `[BL-061]`); menumpanginya berarti mencampur dua pekerjaan dalam satu commit. Sisi servernya sudah menormalkan berkasnya, jadi yang tertinggal hanya penghematan bandwidth, bukan penghematan disk.
+- **Tidak ada test JS, dan itu keadaan proyek, bukan pilihan entri ini.** Belum ada test runner sisi peramban di `package.json`; menambahkannya adalah penambahan dependensi. Yang bisa diuji programatik — seluruh butir (b) — diuji: WEBP untuk gambar, `.pdf` apa adanya untuk PDF, dan penghapusan berkas lama saat unggah ulang. Sisi peramban diverifikasi lewat `npm run build` dan pratinjau.
+- **Berkas:** `resources/js/composables/useImageCompressor.js` (baru) · `resources/js/Components/ImageUpload.vue` · `app/Services/ProofFileService.php` (baru) · `app/Http/Controllers/Billing/UpgradeController.php` · `tests/Feature/Subscription/ProvisionalUpgradeTest.php` (+3 tes)
 
 ---
 

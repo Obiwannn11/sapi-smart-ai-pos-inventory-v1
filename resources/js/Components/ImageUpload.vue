@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
+import { useImageCompressor } from '@/composables/useImageCompressor';
 
 const props = defineProps({
     modelValue: { type: [File, null], default: null },
@@ -13,6 +14,22 @@ const preview = ref(props.currentImage);
 const dragActive = ref(false);
 const fileInput = ref(null);
 const validationError = ref(null);
+const compressing = ref(false);
+const originalSize = ref(null);
+const preparedSize = ref(null);
+
+const formatBytes = (bytes) => bytes >= 1024 * 1024
+    ? (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+    : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+
+/** Hanya ditampilkan bila kompresinya benar-benar menghemat sesuatu. */
+const savedLabel = computed(() => {
+    if (!originalSize.value || !preparedSize.value || preparedSize.value >= originalSize.value) {
+        return null;
+    }
+
+    return `${formatBytes(originalSize.value)} → ${formatBytes(preparedSize.value)}`;
+});
 
 // True when the preview comes from a freshly picked file (not the saved image).
 const hasNewFile = computed(() => !!props.modelValue);
@@ -23,34 +40,47 @@ watch(() => props.currentImage, (val) => {
     }
 });
 
-const handleFile = (file) => {
+const { compress } = useImageCompressor();
+
+/**
+ * Urutannya disengaja: TIPE divalidasi dulu, lalu dikompresi, dan UKURAN
+ * diperiksa terakhir — atas hasil kompresinya, bukan atas berkas aslinya.
+ * Foto 8 MB dari kamera ponsel dulu ditolak mentah-mentah padahal setelah
+ * dikecilkan ia hanya beberapa ratus kilobyte; yang ditolak seharusnya gambar
+ * yang benar-benar tak bisa dikecilkan, bukan gambar yang belum dicoba.
+ */
+const handleFile = async (file) => {
     if (!file) {
         return;
     }
 
     validationError.value = null;
 
-    // Validate type
     const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     if (!allowed.includes(file.type)) {
         validationError.value = 'Format tidak didukung. Gunakan JPG, PNG, atau WEBP.';
         return;
     }
 
-    // Validate size (5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    compressing.value = true;
+    const prepared = await compress(file).finally(() => { compressing.value = false; });
+
+    if (prepared.size > 5 * 1024 * 1024) {
         validationError.value = 'Ukuran gambar maksimal 5 MB.';
         return;
     }
 
-    emit('update:modelValue', file);
+    originalSize.value = file.size;
+    preparedSize.value = prepared.size;
+
+    emit('update:modelValue', prepared);
 
     // Create preview
     const reader = new FileReader();
     reader.onload = (e) => {
         preview.value = e.target.result;
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(prepared);
 };
 
 const onFileChange = (e) => {
@@ -65,6 +95,8 @@ const onDrop = (e) => {
 const removeImage = () => {
     preview.value = null;
     validationError.value = null;
+    originalSize.value = null;
+    preparedSize.value = null;
     emit('update:modelValue', null);
     if (fileInput.value) {
         fileInput.value.value = '';
@@ -125,11 +157,14 @@ const openPicker = () => {
                     >
                         {{ hasNewFile ? 'Gambar baru dipilih' : 'Gambar saat ini' }}
                     </span>
+                    <span v-if="hasNewFile && savedLabel" class="ml-1.5 text-[11px] text-gray-500">
+                        dikecilkan {{ savedLabel }}
+                    </span>
                     <p class="text-sm text-gray-600 mt-1.5">
                         Tarik &amp; lepas gambar baru di sini, atau
                         <span class="text-primary font-medium">klik untuk mengganti</span>.
                     </p>
-                    <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP. Maks 5 MB — otomatis dipotong persegi 800&times;800 WEBP.</p>
+                    <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP. Otomatis dikecilkan di perangkat, lalu dipotong persegi 800&times;800 WEBP.</p>
                 </div>
             </div>
 
@@ -143,10 +178,11 @@ const openPicker = () => {
                 <p class="text-sm text-gray-600 mt-3">
                     <span class="text-primary font-medium">Klik untuk unggah</span> atau tarik &amp; lepas
                 </p>
-                <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP. Maks 5 MB.</p>
+                <p class="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP. Foto besar dikecilkan sendiri sebelum diunggah.</p>
             </div>
         </div>
 
+        <p v-if="compressing" class="mt-1.5 text-xs text-gray-500">Mengecilkan gambar…</p>
         <p v-if="error || validationError" class="mt-1.5 text-xs text-red-600">{{ error || validationError }}</p>
     </div>
 </template>
