@@ -55,10 +55,25 @@ const flatModifiers = computed(() => {
     return result;
 });
 
+/**
+ * Harga yang benar-benar akan ditagih ([BL-018]).
+ *
+ * `effective_price` dihitung SERVER dan ikut di props katalog. Menghitungnya
+ * ulang di sini berarti rumus diskon — pendalaman seiring tanggal, jepitan
+ * lantai margin, pembulatan ke atas — punya tempat kedua yang perlahan
+ * menyimpang dari yang pertama.
+ *
+ * Fallback ke `price` bukan basa-basi: snapshot katalog offline yang dipanen
+ * sebelum [BL-018] mendarat tidak punya kolom ini.
+ */
+const effectivePrice = (variant) => Number(variant?.effective_price ?? variant?.price ?? 0);
+
+const isDiscounted = (variant) => effectivePrice(variant) < Number(variant?.price ?? 0);
+
 // Total price preview
 const previewPrice = computed(() => {
     if (!selectedVariant.value) return 0;
-    let price = Number(selectedVariant.value.price);
+    let price = effectivePrice(selectedVariant.value);
     price += flatModifiers.value.reduce((sum, m) => sum + m.extra_price, 0);
     return price;
 });
@@ -96,7 +111,7 @@ const confirm = () => {
     emit('confirm', {
         variant_id: selectedVariant.value.id,
         variant_name: `${props.product.name} - ${selectedVariant.value.name}`,
-        unit_price: Number(selectedVariant.value.price),
+        unit_price: effectivePrice(selectedVariant.value),
         qty: 1,
         modifiers: flatModifiers.value,
     });
@@ -166,7 +181,16 @@ const close = () => {
                                             <span v-else class="ml-2 text-xs text-gray-400">Stok: {{ variant.stock }}</span>
                                         </div>
                                     </div>
-                                    <span class="text-sm font-semibold text-gray-700">{{ formatCurrency(variant.price) }}</span>
+                                    <span class="text-sm font-semibold text-gray-700">
+                                        <!-- Harga coret DAN harga bayar: potongan yang
+                                             tidak terlihat tidak pernah jadi alasan
+                                             orang membeli. -->
+                                        <template v-if="isDiscounted(variant)">
+                                            <span class="text-xs font-normal text-gray-400 line-through mr-1">{{ formatCurrency(variant.price) }}</span>
+                                            <span class="text-success">{{ formatCurrency(effectivePrice(variant)) }}</span>
+                                        </template>
+                                        <template v-else>{{ formatCurrency(variant.price) }}</template>
+                                    </span>
                                 </label>
                             </div>
                         </div>

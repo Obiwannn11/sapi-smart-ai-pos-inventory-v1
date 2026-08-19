@@ -19,6 +19,7 @@ const form = useForm({
     payment_proof_enabled: props.features.payment_proof_enabled,
     upsell_mandatory:      props.features.upsell_mandatory,
     order_identity_mode:   props.features.order_identity_mode ?? 'none',
+    min_margin_percent:    props.features.min_margin_percent ?? 10,
 });
 
 // Peringatan hanya relevan saat owner sedang MEMATIKAN fitur yang masih punya
@@ -135,6 +136,41 @@ const submit = () => {
                             </span>
                         </div>
                     </div>
+                </div>
+
+                <!-- Lantai margin ([BL-018]) -->
+                <div class="pt-5 border-t border-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900">Batas Untung Minimum</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Lantai harga tiap barang, dihitung dari harga modalnya. Aturan diskon tidak akan pernah menurunkan harga di bawah lantai ini.
+                    </p>
+
+                    <div class="flex items-center gap-3">
+                        <div class="relative w-32">
+                            <input
+                                v-model.number="form.min_margin_percent"
+                                type="number"
+                                min="0"
+                                max="90"
+                                step="0.5"
+                                class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                            />
+                            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
+                        </div>
+                        <p class="text-xs text-gray-500">
+                            Barang bermodal Rp 10.000 punya lantai
+                            <strong>Rp {{ Math.ceil(10000 * (1 + (form.min_margin_percent || 0) / 100) / 500) * 500 }}</strong>.
+                        </p>
+                    </div>
+
+                    <p v-if="form.errors.min_margin_percent" class="mt-1.5 text-xs text-destructive">
+                        {{ form.errors.min_margin_percent }}
+                    </p>
+
+                    <p class="mt-3 text-xs text-gray-500 leading-relaxed">
+                        Hanya <strong>Anda</strong> yang bisa menjual di bawah lantai ini, dan setiap kali wajib menyertakan alasan yang ikut tercatat pada penjualannya.
+                        Kasir tidak punya jalan ke sana sama sekali.
+                    </p>
                 </div>
 
                 <!-- Aturan Kerja Kasir -->

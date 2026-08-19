@@ -93,7 +93,64 @@ class ReportController extends Controller
                 ->orderByDesc('total_qty')
                 ->take(10)
                 ->get(), 'rekap'),
+
+            // Potongan harga hari itu ([BL-018]).
+            'discountSummary' => Inertia::defer(fn () => $this->discountSummary($date), 'rekap'),
         ]);
+    }
+
+    /**
+     * Berapa yang dipotong hari itu, dan berapa yang benar-benar DIKORBANKAN.
+     *
+     * Dua angka, dan memisahkannya adalah permintaan eksplisit `[BL-018]`:
+     *
+     *   `discounted` — seluruh potongan, termasuk yang tetap di atas lantai
+     *     margin. Ini "berapa yang kita korbankan untuk menghabiskan stok".
+     *   `below_floor` — bagian yang dijual DI BAWAH lantai untung, yang tiap
+     *     barisnya butuh persetujuan owner dan alasan tertulis.
+     *
+     * Angka kedua yang paling ingin dilihat owner, dan tanpa pemisahan ini ia
+     * tenggelam di dalam angka pertama — sebuah penjualan rugi terlihat persis
+     * seperti diskon 5% yang sehat.
+     *
+     * `discount_amount` adalah potongan PER UNIT, jadi ia dikali `qty`.
+     *
+     * @return array<string, mixed>
+     */
+    private function discountSummary(string $date): array
+    {
+        $scoped = fn () => TransactionItem::query()
+            ->whereHas('transaction', function ($q) use ($date) {
+                $q->where('status', Transaction::STATUS_COMPLETED)
+                    ->whereEffectiveDate($date);
+            })
+            ->where('discount_amount', '>', 0);
+
+        $totalGiven = (float) (clone $scoped())->selectRaw('SUM(discount_amount * qty) as total')->value('total');
+
+        $belowFloor = (clone $scoped())->whereNotNull('below_floor_approved_by');
+
+        return [
+            'total_given' => $totalGiven,
+            'items_discounted' => (clone $scoped())->count(),
+            'below_floor_total' => (float) (clone $belowFloor)->selectRaw('SUM(discount_amount * qty) as total')->value('total'),
+            'below_floor_items' => (clone $belowFloor)->count(),
+            // Barisnya sendiri, supaya owner bisa melihat APA yang dijual rugi
+            // dan dengan alasan apa — bukan cuma jumlahnya.
+            'below_floor_lines' => (clone $belowFloor)
+                ->with('belowFloorApprover:id,name')
+                ->get(['id', 'variant_name', 'qty', 'unit_price', 'original_unit_price', 'discount_amount', 'discount_reason', 'margin_floor_at_sale', 'below_floor_approved_by'])
+                ->map(fn (TransactionItem $item) => [
+                    'variant_name' => $item->variant_name,
+                    'qty' => $item->qty,
+                    'unit_price' => (float) $item->unit_price,
+                    'original_unit_price' => (float) $item->original_unit_price,
+                    'floor' => (float) $item->margin_floor_at_sale,
+                    'reason' => $item->discount_reason,
+                    'approved_by' => $item->belowFloorApprover?->name,
+                ])
+                ->all(),
+        ];
     }
 
     /**

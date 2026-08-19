@@ -10,9 +10,12 @@ use App\Models\CashDrawer;
 use App\Models\Category;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Services\DiscountService;
 use App\Services\TransactionService;
 use App\Services\Upsell\UpsellIndexBuilder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +29,7 @@ class POSController extends Controller
     public function __construct(
         private TransactionService $transactionService,
         private UpsellIndexBuilder $upsellIndexBuilder,
+        private DiscountService $discounts,
     ) {}
 
     public function index(): Response|RedirectResponse
@@ -76,18 +80,56 @@ class POSController extends Controller
             // Satu grup, bukan dua: indeks upsell ikut disimpan useCatalogCache
             // bersama katalognya, jadi keduanya harus sampai bersamaan supaya
             // snapshot offline tidak pernah menyimpan katalog tanpa sarannya.
-            'products' => Inertia::defer(fn () => Product::where('is_active', true)
-                ->with([
-                    'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'stock'),
-                    'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
-                    'category:id,name',
-                ])
-                ->get()),
+            'products' => Inertia::defer(fn () => $this->catalogWithDiscounts($user->tenant)),
             // Indeks saran upsell ikut props, bukan endpoint tersendiri: dengan
             // begitu ia ikut ter-snapshot useCatalogCache dan tetap hidup saat
             // perangkat offline — lihat PHASE-UPSELL §Tahap C.
             'upsell' => Inertia::defer(fn () => $this->upsellIndexBuilder->build($user->tenant)),
         ]);
+    }
+
+    /**
+     * Katalog POS, dengan harga berdiskon yang berlaku hari ini ([BL-018]).
+     *
+     * **Harga efektifnya HARUS ikut ke klien, bukan hanya dihitung di server.**
+     * Checkout menghitung ulang harganya sendiri dan mengabaikan angka kiriman
+     * klien — jadi kalau layar kasir menampilkan harga katalog sementara server
+     * memotongnya, pelanggan akan dimintai satu angka lalu ditagih angka lain.
+     * Kasir tidak punya cara menjelaskan selisih itu, dan angka di struk tidak
+     * akan cocok dengan yang barusan ia sebutkan.
+     *
+     * `expiry_date` ikut diambil karena potongan `near_expiry` mendalam seiring
+     * tanggalnya, jadi ia bagian dari perhitungan harganya — bukan sekadar
+     * keterangan.
+     */
+    private function catalogWithDiscounts(Tenant $tenant): Collection
+    {
+        $products = Product::where('is_active', true)
+            ->with([
+                'variants' => fn ($q) => $q->select('id', 'product_id', 'name', 'price', 'cost_price', 'stock', 'expiry_date'),
+                'modifierGroups.modifiers:id,modifier_group_id,name,extra_price',
+                'category:id,name',
+            ])
+            ->get();
+
+        $variants = $products->flatMap->variants;
+
+        // Satu kueri untuk seluruh katalog, bukan satu per varian: ini jalur
+        // terpanas aplikasi dan ia sudah berat tanpa N+1 tambahan.
+        $rules = $this->discounts->rulesFor($tenant, $variants->pluck('id')->all());
+
+        foreach ($variants as $variant) {
+            $pricing = $this->discounts->priceFor($variant, $tenant, $rules->get($variant->id));
+
+            // `price` sengaja TIDAK ditimpa. Layar kasir perlu menunjukkan
+            // keduanya — harga coret dan harga bayar — karena potongan yang
+            // tidak terlihat tidak pernah jadi alasan orang membeli.
+            $variant->setAttribute('effective_price', $pricing['price']);
+            $variant->setAttribute('discount_amount', $pricing['discount']);
+            $variant->setAttribute('discount_reason', $pricing['rule']?->reason);
+        }
+
+        return $products;
     }
 
     public function store(StoreTransactionRequest $request): RedirectResponse

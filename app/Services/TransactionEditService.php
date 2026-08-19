@@ -83,9 +83,21 @@ class TransactionEditService
             }
 
             // 4. Rebuild items + modifiers (hapus lama, buat snapshot baru dari DB)
+            //
+            // Harga berdiskon DISELAMATKAN menyeberangi pembangunan ulang ini
+            // ([BL-018] poin 7). Baris item dihapus lalu dibuat lagi dari
+            // kiriman client, dan client edit hanya mengirim varian dan qty —
+            // jadi tanpa penyelamatan di bawah, transaksi yang terjual
+            // berdiskon lalu diedit karena alasan lain akan DIAM-DIAM NAIK
+            // KEMBALI ke harga katalog. Riwayat berubah sendiri, tanpa galat,
+            // tanpa jejak: persis jenis kesalahan yang paling sulit disadari.
+            $priceMemory = $transaction->items
+                ->filter(fn ($item) => (float) $item->discount_amount > 0)
+                ->keyBy('product_variant_id');
+
             $transaction->items()->each(fn ($i) => $i->modifiers()->delete());
             $transaction->items()->delete();
-            $totalAmount = $this->rebuildItems($transaction, $data['items']);
+            $totalAmount = $this->rebuildItems($transaction, $data['items'], $priceMemory);
 
             // 5. Rebuild payments + recompute change
             //
@@ -194,12 +206,24 @@ class TransactionEditService
      *
      * @param  array<int, array{variant_id: int, qty: int, notes?: ?string, modifiers?: array<int, array{id: int}>}>  $items
      */
-    private function rebuildItems(Transaction $transaction, array $items): float
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\TransactionItem>  $priceMemory
+     *                                                                                         Baris berdiskon SEBELUM edit, dipetakan per varian. Lihat alasannya di
+     *                                                                                         pemanggilnya.
+     */
+    private function rebuildItems(Transaction $transaction, array $items, $priceMemory = null): float
     {
         $total = 0;
+        $priceMemory ??= collect();
+
         foreach ($items as $line) {
             $variant = ProductVariant::withTrashed()->findOrFail($line['variant_id']);
-            $unitPrice = $variant->price;
+
+            $remembered = $priceMemory->get($variant->id);
+
+            // Harga yang diingat menang atas harga katalog. Yang TIDAK ikut
+            // diingat: qty dan subtotal — keduanya memang sedang diedit.
+            $unitPrice = $remembered?->unit_price ?? $variant->price;
             $subtotal = $unitPrice * $line['qty'];
 
             $resolved = [];
@@ -218,6 +242,17 @@ class TransactionEditService
                 'unit_price' => $unitPrice,
                 'subtotal' => $subtotal,
                 'notes' => $line['notes'] ?? null,
+                // Seluruh konteks potongannya ikut, termasuk siapa yang
+                // menyetujui penembusan lantai. Menyimpan harganya tapi
+                // membuang persetujuannya akan membuat baris itu terlihat
+                // seperti diskon biasa di laporan.
+                'original_unit_price' => $remembered?->original_unit_price,
+                'discount_amount' => $remembered?->discount_amount ?? 0,
+                'discount_rule_id' => $remembered?->discount_rule_id,
+                'discount_reason' => $remembered?->discount_reason,
+                'cost_price_at_sale' => $remembered?->cost_price_at_sale,
+                'margin_floor_at_sale' => $remembered?->margin_floor_at_sale,
+                'below_floor_approved_by' => $remembered?->below_floor_approved_by,
             ]);
             foreach ($resolved as $m) {
                 $txItem->modifiers()->create([

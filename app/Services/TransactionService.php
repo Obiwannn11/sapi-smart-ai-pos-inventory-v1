@@ -6,6 +6,7 @@ use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
+use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\UpsellEvent;
 use App\Models\User;
@@ -23,6 +24,7 @@ class TransactionService
         private UpsellEventRecorder $upsellEventRecorder,
         private QueueNumberAllocator $queueNumberAllocator,
         private PaymentProofService $paymentProofs,
+        private DiscountService $discounts,
     ) {}
 
     /**
@@ -444,6 +446,9 @@ class TransactionService
     {
         $totalAmount = 0;
 
+        $tenant = $transaction->tenant ?? Tenant::find($transaction->tenant_id);
+        $user = Auth::user();
+
         foreach ($items as $item) {
             // Lock row variant untuk mencegah race condition
             $variant = ProductVariant::lockForUpdate()->find($item['variant_id']);
@@ -456,8 +461,12 @@ class TransactionService
                 );
             }
 
-            // Use authoritative DB price, NOT client-supplied price
-            $unitPrice = $variant->price;
+            // Harga tetap datang dari SERVER, tidak pernah dari klien — yang
+            // berubah sejak [BL-018] hanyalah bahwa "harga server" kini bisa
+            // berarti harga berdiskon, bukan selalu harga katalog.
+            $pricing = $this->resolveItemPrice($variant, $item, $tenant, $user);
+
+            $unitPrice = $pricing['price'];
             $subtotal = ($unitPrice * $item['qty']);
 
             // Hitung total modifier extra price per item from DB
@@ -487,6 +496,7 @@ class TransactionService
                 'unit_price' => $unitPrice,                 // SNAPSHOT from DB
                 'subtotal' => $subtotal,
                 'notes' => $item['notes'] ?? null,     // Catatan per item
+                ...$pricing['columns'],
             ]);
 
             // Simpan modifier snapshots (from DB values)
@@ -507,6 +517,126 @@ class TransactionService
         }
 
         return $totalAmount;
+    }
+
+    /**
+     * Harga satu baris beserta seluruh jejak potongannya ([BL-018]).
+     *
+     * TIGA JALUR, dan urutannya menentukan siapa boleh melakukan apa:
+     *
+     *   1. TANPA POTONGAN — harga katalog. Jalur mayoritas penjualan.
+     *   2. ATURAN DISKON yang owner setujui. Sistem memberlakukannya sendiri;
+     *      ia tidak pernah bisa turun di bawah lantai margin, karena
+     *      DiscountService menjepitnya di sana.
+     *   3. PENEMBUSAN LANTAI oleh owner, dengan alasan tertulis. Ini
+     *      satu-satunya jalan ke bawah lantai, dan ia selalu tindakan manusia
+     *      yang disengaja — tidak pernah hasil rumus (keputusan pemilik
+     *      2026-07-29).
+     *
+     * Wewenang jalur (3) MILIK OWNER SAJA, dan ditegakkan DI SINI — di sisi
+     * server, bukan dengan menyembunyikan tombolnya. Kasir tidak bisa
+     * menembus lantai sama sekali: bukan "bisa tapi dicatat", melainkan tidak
+     * tersedia. Dipilih begitu karena menaikkan izin belakangan jauh lebih
+     * mudah daripada menariknya kembali dari kasir yang sudah terbiasa.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array{price: float, columns: array<string, mixed>}
+     */
+    private function resolveItemPrice(ProductVariant $variant, array $item, ?Tenant $tenant, ?User $user): array
+    {
+        $catalog = (float) $variant->price;
+
+        if (! $tenant) {
+            return ['price' => $catalog, 'columns' => []];
+        }
+
+        $floor = $this->discounts->floorFor($variant, $tenant);
+
+        // Harga modal dan lantai DIBEKUKAN bersama barisnya. Tanpa keduanya,
+        // "seberapa dalam tembusnya" dan "apakah ini tetap untung" tidak bisa
+        // dihitung ulang setelah harga modal berubah — dan harga modal pasti
+        // berubah.
+        $base = [
+            'original_unit_price' => $catalog,
+            'cost_price_at_sale' => $variant->cost_price,
+            'margin_floor_at_sale' => $floor,
+        ];
+
+        $override = $item['override_unit_price'] ?? null;
+
+        if ($override !== null) {
+            $override = $this->discounts->roundUp((float) $override);
+
+            // Penjaga server. Kasir yang mengirim request sendiri tetap
+            // ditolak di sini, bukan hanya di layar.
+            if (! $user || ! $user->isOwner()) {
+                throw new \Exception('Hanya pemilik yang bisa menetapkan harga di bawah lantai margin.');
+            }
+
+            $reason = trim((string) ($item['discount_reason'] ?? ''));
+
+            if ($reason === '') {
+                throw new \Exception('Harga khusus wajib disertai alasan.');
+            }
+
+            if ($override > $catalog) {
+                throw new \Exception('Harga khusus tidak boleh di atas harga katalog.');
+            }
+
+            return [
+                'price' => $override,
+                'columns' => [
+                    ...$base,
+                    'discount_amount' => round($catalog - $override, 2),
+                    'discount_reason' => $reason,
+                    // Diisi HANYA saat benar-benar menembus lantai. NULL-nya
+                    // inilah yang memisahkan "diskon biasa" dari "yang
+                    // benar-benar dikorbankan" di laporan.
+                    'below_floor_approved_by' => $this->discounts->belowFloor($variant, $tenant, $override)
+                        ? $user->id
+                        : null,
+                ],
+            ];
+        }
+
+        $pricing = $this->discounts->priceFor($variant, $tenant);
+
+        if ($pricing['rule'] === null) {
+            return ['price' => $catalog, 'columns' => $base];
+        }
+
+        return [
+            'price' => $pricing['price'],
+            'columns' => [
+                ...$base,
+                'discount_amount' => $pricing['discount'],
+                'discount_rule_id' => $pricing['rule']->id,
+                // Alasan aturannya DISALIN ke barisnya, bukan cuma dirujuk:
+                // aturan bisa disunting atau dihapus, dan laporan bulan lalu
+                // harus tetap bisa menjelaskan dirinya sendiri.
+                'discount_reason' => $pricing['rule']->reason,
+            ],
+        ];
+    }
+
+    /**
+     * Apakah harga yang dibayar offline cocok dengan salah satu harga yang sah
+     * hari ini — katalog atau berdiskon ([BL-018] poin 7)?
+     */
+    private function matchesAnyValidPrice(ProductVariant $variant, ?Tenant $tenant, float $paid): bool
+    {
+        if ($this->amountsMatch((float) $variant->price, $paid)) {
+            return true;
+        }
+
+        if (! $tenant) {
+            return false;
+        }
+
+        return $this->amountsMatch(
+            $this->discounts->priceFor($variant, $tenant)['price'],
+            $paid,
+        );
     }
 
     /**
@@ -682,6 +812,8 @@ class TransactionService
      */
     private function processOfflineItems(Transaction $transaction, array $items, int $tenantId): array
     {
+        $tenant = Tenant::find($tenantId);
+
         $totalAmount = 0;
         $needsReview = false;
 
@@ -722,7 +854,19 @@ class TransactionService
                 $needsReview = true;
             }
 
-            if (! $this->amountsMatch((float) $variant->price, $unitPrice)) {
+            // Harga berdiskon yang SAH bukan anomali ([BL-018] poin 7).
+            //
+            // Sebelum entri ini, satu-satunya harga yang dianggap benar adalah
+            // harga katalog — sehingga setiap penjualan berdiskon offline akan
+            // membanjiri needs_review, dan sinyal yang dibangun untuk menangkap
+            // anomali sungguhan jadi berisik lalu berhenti dipercaya.
+            //
+            // Yang dibandingkan sekarang adalah harga katalog DAN harga
+            // berdiskon yang berlaku. Keduanya sah; apa pun di luar itu tetap
+            // ditandai, termasuk harga yang lebih murah dari yang mana pun —
+            // sebuah snapshot katalog yang basi persis terlihat begitu, dan
+            // memang harus sampai ke meja owner.
+            if (! $this->matchesAnyValidPrice($variant, $tenant, $unitPrice)) {
                 $needsReview = true;
             }
 

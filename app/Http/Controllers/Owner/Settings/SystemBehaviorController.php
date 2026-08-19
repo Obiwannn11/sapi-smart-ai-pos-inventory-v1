@@ -49,6 +49,11 @@ class SystemBehaviorController extends Controller
                 // ini cara outlet mengenali pesanannya. Ikut di sini karena
                 // tempatnya sama di mata owner ([BL-026]).
                 'order_identity_mode' => $tenant->order_identity_mode,
+                // Bukan kapabilitas dan bukan aturan kerja, melainkan ANGKA
+                // KEBIJAKAN ([BL-018]): lantai harga tiap varian dihitung
+                // `cost_price × (1 + margin/100)`, dan rumus diskon tidak
+                // pernah boleh turun di bawahnya.
+                'min_margin_percent' => (float) $tenant->min_margin_percent,
             ],
             'orderIdentityModes' => Tenant::orderIdentityModes(),
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
@@ -71,6 +76,10 @@ class SystemBehaviorController extends Controller
             'ai_enabled' => 'boolean',
             'payment_proof_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
+            // Batas atas 90%: lantai yang menuntut margin lebih tinggi dari
+            // itu membuat fitur diskonnya tidak pernah bisa menawarkan apa pun,
+            // dan owner akan menyimpulkan ia rusak.
+            'min_margin_percent' => ['sometimes', 'numeric', 'min:0', 'max:90'],
             // `sometimes` dengan alasan yang sama seperti `business_type` di
             // halaman Profil: field yang tidak dikirim berarti "jangan sentuh",
             // bukan "kembalikan ke none".

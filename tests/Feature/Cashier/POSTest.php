@@ -284,6 +284,14 @@ test('checkout with modifiers includes modifier extra price', function () {
  * kiriman klien. Perangkat yang memakai katalog offline basi mengirim harga
  * lama, lolos validasi, lalu checkout menghitung ulang dari harga DB — dan
  * dulu tetap menyelesaikannya sebagai `completed` dengan kurang bayar.
+ *
+ * **Lapisan yang menolaknya berpindah pada 2026-08-19 (`[BL-018]`).** Dulu
+ * validasi menjumlahkan `items.*.unit_price` kiriman KLIEN, jadi payload ini
+ * lolos ke service dan ditolak di sana sebagai galat flash. Sekarang validasi
+ * menghitung totalnya dari harga SERVER, jadi ia gugur satu lapis lebih awal —
+ * sebelum satu baris pun ditulis — dan berbunyi sebagai galat pada `payments`.
+ * Yang diuji tetap sama: harga basi dari klien tidak pernah bisa menurunkan
+ * jumlah yang harus dibayar.
  */
 test('checkout rejects payment that is short against DB prices, not client prices', function () {
     ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
@@ -315,7 +323,7 @@ test('checkout rejects payment that is short against DB prices, not client price
                 'amount' => 25000,
             ],
         ],
-    ])->assertSessionHas('error');
+    ])->assertSessionHasErrors('payments');
 
     expect(Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->count())->toBe(0);
 });

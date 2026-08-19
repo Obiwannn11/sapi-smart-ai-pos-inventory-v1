@@ -226,6 +226,20 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::get('/dashboard', [\App\Http\Controllers\Owner\DashboardController::class, 'index'])
             ->name('dashboard');
 
+        // Aturan diskon buatan owner ([BL-018]). Owner-eksklusif dengan
+        // alasan yang sama seperti aturan saran jual di bawah, hanya lebih
+        // tegas: ini keputusan HARGA.
+        Route::get('discount-rules', [\App\Http\Controllers\Owner\DiscountRuleController::class, 'index'])
+            ->name('discount-rules.index');
+        Route::post('discount-rules', [\App\Http\Controllers\Owner\DiscountRuleController::class, 'store'])
+            ->name('discount-rules.store');
+        Route::put('discount-rules/{discountRule}', [\App\Http\Controllers\Owner\DiscountRuleController::class, 'update'])
+            ->name('discount-rules.update');
+        Route::post('discount-rules/{discountRule}/toggle', [\App\Http\Controllers\Owner\DiscountRuleController::class, 'toggle'])
+            ->name('discount-rules.toggle');
+        Route::delete('discount-rules/{discountRule}', [\App\Http\Controllers\Owner\DiscountRuleController::class, 'destroy'])
+            ->name('discount-rules.destroy');
+
         // Aturan saran jual buatan owner ([BL-074]).
         //
         // Owner-eksklusif, bukan modul RBAC baru: memilih barang mana yang

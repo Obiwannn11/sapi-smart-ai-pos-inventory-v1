@@ -287,7 +287,10 @@ const selectProduct = (product) => {
         addToCart({
             variant_id: variant.id,
             variant_name: `${product.name} - ${variant.name}`,
-            unit_price: Number(variant.price),
+            // Harga BERDISKON bila ada ([BL-018]). Server menghitung ulang
+            // harganya sendiri saat checkout, jadi layar yang memakai harga
+            // katalog akan menyebut satu angka lalu menagih angka lain.
+            unit_price: Number(variant.effective_price ?? variant.price),
             qty: 1,
             modifiers: [],
             notes: '',
@@ -532,7 +535,74 @@ const cartToItems = () => cart.value.map(item => ({
         extra_price: m.extra_price,
     })),
     notes: item.notes || null,
+    // Harga khusus owner ([BL-018]). Server memeriksa ulang wewenang DAN
+    // alasannya — yang dikirim di sini hanya niatnya.
+    override_unit_price: item.override_unit_price ?? null,
+    discount_reason: item.discount_reason ?? null,
 }));
+
+// --- Harga khusus di bawah lantai untung ([BL-018]) ---
+
+/**
+ * Hanya owner. Kasir tidak diberi jalan sama sekali — bukan "bisa tapi
+ * dicatat", melainkan tidak tersedia. Ditegakkan lagi di server; ini sekadar
+ * agar tombolnya tidak menggoda orang yang akan ditolak.
+ */
+const isOwner = computed(() => inertiaPage.props.auth?.user?.role === 'owner');
+
+const overrideTarget = ref(null);
+const overridePrice = ref('');
+const overrideReason = ref('');
+
+const openOverride = (idx) => {
+    const line = cart.value[idx];
+
+    overrideTarget.value = idx;
+    overridePrice.value = String(line.override_unit_price ?? line.unit_price ?? '');
+    overrideReason.value = line.discount_reason ?? '';
+};
+
+const closeOverride = () => {
+    overrideTarget.value = null;
+    overridePrice.value = '';
+    overrideReason.value = '';
+};
+
+const overrideValid = computed(() =>
+    Number(overridePrice.value) > 0 && overrideReason.value.trim().length > 0
+);
+
+const applyOverride = () => {
+    if (!overrideValid.value || overrideTarget.value === null) return;
+
+    const line = cart.value[overrideTarget.value];
+
+    // Dibulatkan KE ATAS ke kelipatan 500, sama seperti server — kalau tidak,
+    // total di layar meleset dari total yang ditagih.
+    const price = Math.ceil(Number(overridePrice.value) / 500) * 500;
+
+    line.override_unit_price = price;
+    line.discount_reason = overrideReason.value.trim();
+    line.unit_price = price;
+
+    closeOverride();
+};
+
+const clearOverride = (idx) => {
+    const line = cart.value[idx];
+
+    line.override_unit_price = null;
+    line.discount_reason = null;
+
+    // Kembali ke harga efektif katalog — yang bisa saja tetap berdiskon.
+    const variant = catalogProducts.value
+        .flatMap((product) => product.variants || [])
+        .find((v) => v.id === line.variant_id);
+
+    if (variant) {
+        line.unit_price = Number(variant.effective_price ?? variant.price);
+    }
+};
 
 /**
  * Save a sale the server cannot be told about right now.
@@ -948,15 +1018,37 @@ onUnmounted(stopResizeCart);
                 <!-- Cart Items -->
                 <div class="flex-1 overflow-y-auto p-3 space-y-2">
                     <template v-if="cart.length > 0">
-                        <CartItem
-                            v-for="(item, idx) in cart"
-                            :key="`${item.variant_id}-${idx}`"
-                            :item="item"
-                            :index="idx"
-                            @update-qty="updateCartQty"
-                            @update-notes="updateCartNotes"
-                            @remove="removeCartItem"
-                        />
+                        <div v-for="(item, idx) in cart" :key="`${item.variant_id}-${idx}`">
+                            <CartItem
+                                :item="item"
+                                :index="idx"
+                                @update-qty="updateCartQty"
+                                @update-notes="updateCartNotes"
+                                @remove="removeCartItem"
+                            />
+
+                            <!-- Harga khusus ([BL-018]). Hanya owner yang punya
+                                 jalan ke bawah lantai untung, dan alasannya
+                                 wajib. -->
+                            <div v-if="isOwner" class="px-3 pb-2 -mt-1">
+                                <button
+                                    v-if="!item.override_unit_price"
+                                    type="button"
+                                    class="text-[11px] font-medium text-primary hover:text-primary/80"
+                                    @click="openOverride(idx)"
+                                >
+                                    Harga khusus
+                                </button>
+                                <div v-else class="flex items-center gap-2 text-[11px]">
+                                    <span class="text-amber-700">
+                                        Harga khusus — “{{ item.discount_reason }}”
+                                    </span>
+                                    <button type="button" class="text-gray-400 hover:text-gray-600" @click="clearOverride(idx)">
+                                        batalkan
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </template>
                     <div v-else class="flex flex-col items-center justify-center h-full text-gray-300">
                         <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -989,6 +1081,14 @@ onUnmounted(stopResizeCart);
                         </svg>
                         <span class="text-xs text-amber-800">{{ checkoutBlockedReason }}</span>
                     </div>
+
+                    <!-- Batasnya ditunjukkan apa adanya, bukan dibiarkan jadi
+                         jalan buntu ([BL-018]). Kasir yang menemukan barang
+                         hampir kedaluwarsa saat owner tidak di tempat perlu
+                         tahu apa yang bisa dan tidak bisa ia lakukan. -->
+                    <p v-if="!isOwner && cart.length > 0" class="text-[11px] text-gray-400">
+                        Diskon yang sudah disetujui pemilik berlaku otomatis. Harga di bawah batas untung hanya bisa ditetapkan pemilik.
+                    </p>
 
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-600">Total</span>
@@ -1026,6 +1126,61 @@ onUnmounted(stopResizeCart);
             @close="showModifierModal = false"
             @confirm="addToCart"
         />
+
+        <!-- Harga khusus ([BL-018]) -->
+        <Teleport to="body">
+            <div v-if="overrideTarget !== null" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/50" @click="closeOverride" />
+                <div class="relative bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
+                    <h3 class="text-lg font-semibold text-gray-900">Harga Khusus</h3>
+                    <p class="mt-1 text-xs text-gray-500 leading-relaxed">
+                        Berlaku untuk penjualan ini saja. Harga dan alasannya ikut tercatat pada barisnya, dan muncul terpisah di laporan bila di bawah batas untung.
+                    </p>
+
+                    <div class="mt-4 space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Harga per item</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
+                                <input
+                                    v-model="overridePrice"
+                                    type="number"
+                                    min="0"
+                                    step="500"
+                                    class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Alasan *</label>
+                            <input
+                                v-model="overrideReason"
+                                type="text"
+                                maxlength="200"
+                                placeholder="Contoh: kemasan rusak, daripada dibuang"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                            />
+                            <p class="mt-1 text-xs text-gray-500">Wajib — tanpa alasan, penjualannya ditolak server.</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 flex gap-3">
+                        <button type="button" class="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50" @click="closeOverride">
+                            Batal
+                        </button>
+                        <button
+                            type="button"
+                            :disabled="!overrideValid"
+                            class="flex-1 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-40"
+                            @click="applyOverride"
+                        >
+                            Terapkan
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
 
         <PaymentModal
             :show="showPaymentModal"

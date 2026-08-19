@@ -48,6 +48,7 @@ const iconPaths = {
     receipt:
         'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z',
     cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
+    tag: 'M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 10V5a2 2 0 012-2z',
     'credit-card':
         'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
     'office-building': [
@@ -127,6 +128,7 @@ const sidebarGroups = [
             { name: 'Laporan Bulanan', href: '/owner/reports/monthly', icon: 'trending-up', perm: 'reports' },
             { name: 'Saran Jual', href: '/owner/reports/upsell', icon: 'sparkles', perm: 'reports' },
             { name: 'Aturan Saran Jual', href: '/owner/upsell-rules', icon: 'adjustments', ownerOnly: true },
+            { name: 'Aturan Diskon', href: '/owner/discount-rules', icon: 'tag', ownerOnly: true },
             { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt', perm: 'reports' },
             { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash', perm: 'reports' },
             { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive', ownerOnly: true },

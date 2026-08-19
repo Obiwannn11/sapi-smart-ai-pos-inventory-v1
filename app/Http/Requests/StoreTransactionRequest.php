@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\UpsellEvent;
+use App\Services\DiscountService;
 use App\Services\PaymentProofService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -50,6 +52,13 @@ class StoreTransactionRequest extends FormRequest
             'items.*.modifiers.*.name' => 'required|string|max:255',
             'items.*.modifiers.*.extra_price' => 'required|numeric|min:0',
             'items.*.notes' => 'nullable|string|max:500',
+
+            // Harga khusus di bawah lantai margin ([BL-018]). Hanya owner, dan
+            // itu ditegakkan di TransactionService — bukan di sini, karena
+            // kegagalan wewenang harus berbunyi sebagai penolakan yang jelas,
+            // bukan sebagai galat validasi bentuk.
+            'items.*.override_unit_price' => 'nullable|numeric|min:0',
+            'items.*.discount_reason' => 'nullable|string|max:200',
 
             // Payments (nullable for open bill)
             'payments' => 'nullable|array|min:1',
@@ -136,19 +145,9 @@ class StoreTransactionRequest extends FormRequest
                 return;
             }
 
-            $totalBelanja = 0;
-            foreach ($this->input('items', []) as $item) {
-                $itemTotal = ($item['unit_price'] ?? 0) * ($item['qty'] ?? 0);
-                if (! empty($item['modifiers'])) {
-                    $modifierExtra = collect($item['modifiers'])->sum('extra_price');
-                    $itemTotal += $modifierExtra * ($item['qty'] ?? 0);
-                }
-                $totalBelanja += $itemTotal;
-            }
-
             $totalBayar = collect($this->input('payments', []))->sum('amount');
 
-            if ($totalBayar < $totalBelanja) {
+            if ($totalBayar < $this->expectedTotal()) {
                 $validator->errors()->add('payments', 'Total pembayaran kurang dari total belanja.');
             }
 
@@ -178,5 +177,64 @@ class StoreTransactionRequest extends FormRequest
         foreach ($missing as $index => $message) {
             $validator->errors()->add("payments.{$index}.proof_token", $message);
         }
+    }
+
+    /**
+     * Total belanja menurut SERVER, bukan menurut angka kiriman klien.
+     *
+     * Dulu dijumlahkan dari `items.*.unit_price` apa adanya, dan itu salah
+     * dalam DUA arah:
+     *
+     *   Ia tidak menjaga apa pun. Klien yang mengirim `unit_price` kecil ikut
+     *   menurunkan ambang yang harus ia bayar — penjaga yang bisa dilunakkan
+     *   oleh pihak yang sedang dijaga.
+     *
+     *   Dan sejak `[BL-018]`, ia menolak yang sah: server memotong harganya,
+     *   klien mengirim harga katalog, dan penjualan berdiskon yang dibayar PAS
+     *   terbaca sebagai kurang bayar.
+     *
+     * Harga khusus owner ikut diperhitungkan supaya ambangnya cocok dengan yang
+     * benar-benar akan ditagih; WEWENANGNYA sendiri diperiksa
+     * TransactionService, yang menolak dengan pesan yang bisa dibaca kasir.
+     */
+    private function expectedTotal(): float
+    {
+        $items = $this->input('items', []);
+
+        $variants = ProductVariant::whereIn('id', collect($items)->pluck('variant_id')->filter())
+            ->get()
+            ->keyBy('id');
+
+        $tenant = Auth::user()?->tenant;
+        $discounts = app(DiscountService::class);
+
+        $total = 0.0;
+
+        foreach ($items as $item) {
+            $variant = $variants->get($item['variant_id'] ?? null);
+            $qty = (int) ($item['qty'] ?? 0);
+
+            if (! $variant || $qty < 1) {
+                continue;
+            }
+
+            $unitPrice = $tenant
+                ? $discounts->priceFor($variant, $tenant)['price']
+                : (float) $variant->price;
+
+            if (($item['override_unit_price'] ?? null) !== null) {
+                $unitPrice = $discounts->roundUp((float) $item['override_unit_price']);
+            }
+
+            $itemTotal = $unitPrice * $qty;
+
+            if (! empty($item['modifiers'])) {
+                $itemTotal += collect($item['modifiers'])->sum('extra_price') * $qty;
+            }
+
+            $total += $itemTotal;
+        }
+
+        return $total;
     }
 }
