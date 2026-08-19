@@ -10,7 +10,8 @@ use RuntimeException;
  *
  * Dua tugas, dan yang kedua justru alasan kelas ini ada. Driver tiruan bisa
  * melunasi tagihan tanpa uang berpindah — persis lubang yang `provisional_blocked`
- * dan `canSimulate()` dibangun untuk menutup. Karena itu ia tidak sekadar
+ * dibangun untuk menutup. Sejak `[BL-061]` mencabut tombol peragaan satu klik,
+ * gerbang di kelas inilah SATU-SATUNYA yang menjaganya. Karena itu ia tidak sekadar
  * "sebaiknya tidak dipakai di produksi": ia GAGAL DI-RESOLVE di sana, keras,
  * sebelum satu baris pun jalan.
  *

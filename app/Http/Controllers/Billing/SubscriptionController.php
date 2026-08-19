@@ -7,7 +7,6 @@ use App\Models\Subscription;
 use App\Models\TenantConsent;
 use App\Services\Ai\AiQuota;
 use App\Services\Billing\Gateways\PaymentGatewayManager;
-use App\Services\Billing\InvoiceSettlement;
 use App\Services\ConsentService;
 use App\Services\Pricing\SubsidyEstimator;
 use App\Services\PricingService;
@@ -32,7 +31,6 @@ class SubscriptionController extends Controller
         ConsentService $consents,
         PricingService $pricing,
         SubsidyEstimator $estimator,
-        InvoiceSettlement $settlement,
         PaymentGatewayManager $gateways,
         AiQuota $quota,
     ): Response {
@@ -211,12 +209,6 @@ class SubscriptionController extends Controller
                     ? $subscription->scheduled_extra_seats
                     : null,
                 'release_at' => $subscription->seat_release_at?->toDateString(),
-            ],
-            // Peragaan (`[BL-045]`). `false` di produksi dan untuk tenant biasa,
-            // sehingga panelnya tidak pernah dirender sama sekali di sana —
-            // bukan sekadar disembunyikan CSS.
-            'simulation' => [
-                'enabled' => $settlement->canSimulate($tenant),
             ],
             // Payment gateway (`[BL-059]`). Ditanyakan lewat manager, BUKAN
             // dengan me-resolve drivernya: driver tiruan melempar exception di

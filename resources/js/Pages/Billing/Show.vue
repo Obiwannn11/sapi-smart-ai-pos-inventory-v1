@@ -18,9 +18,6 @@ const props = defineProps({
     subsidy: { type: Object, required: true },
     invoices: { type: Array, required: true },
     upgrade: { type: Object, required: true },
-    // Peragaan ([BL-045]). Server mengirim `enabled: false` untuk tenant biasa
-    // dan di produksi, jadi panelnya tidak pernah ada di sana.
-    simulation: { type: Object, default: () => ({ enabled: false }) },
     // Payment gateway ([BL-059]). `is_simulated` menandai driver tiruan, dan
     // halaman ini menyebutnya terus terang — tombol bayar yang terlihat
     // sungguhan padahal tiruan adalah cara termudah membuat orang mengira
@@ -344,21 +341,6 @@ const submitProof = () => {
         preserveScroll: true,
         forceFormData: true,
         onSuccess: () => { proofTarget.value = null; },
-    });
-};
-
-// --- Pelunasan peragaan ([BL-045]) ---
-// Tidak ada konfirmasi: tombolnya hanya ada di tenant peragaan di luar
-// produksi, dan dialog konfirmasi di tengah demo justru merusak hal yang
-// sedang diperagakan — bahwa membayar langsung memulihkan akses.
-const simulatingId = ref(null);
-const simulateForm = useForm({});
-
-const simulatePayment = (invoice) => {
-    simulatingId.value = invoice.id;
-    simulateForm.post(`/langganan/tagihan/${invoice.id}/simulasi-bayar`, {
-        preserveScroll: true,
-        onFinish: () => { simulatingId.value = null; },
     });
 };
 
@@ -927,22 +909,6 @@ const invoiceStatusLabels = {
                                     @click="openProof(invoice)"
                                 >
                                     {{ invoice.has_proof ? 'Unggah ulang bukti' : 'Unggah bukti transfer' }}
-                                </button>
-
-                                <!--
-                                    Peragaan saja. Dibedakan tegas dari tombol
-                                    di atasnya — garis putus-putus dan kata
-                                    "peragaan" di badannya — supaya tidak pernah
-                                    tertukar dengan pembayaran sungguhan saat
-                                    dipakai di depan calon klien.
-                                -->
-                                <button
-                                    v-if="simulation.enabled && tenant.is_owner && invoice.status !== 'paid'"
-                                    class="mt-1.5 block w-full rounded-md border border-dashed border-warning/60 px-2 py-1 text-xs font-medium text-warning-foreground hover:bg-warning/10 disabled:opacity-50"
-                                    :disabled="simulatingId === invoice.id"
-                                    @click="simulatePayment(invoice)"
-                                >
-                                    {{ simulatingId === invoice.id ? 'Memproses…' : 'Simulasikan pembayaran' }}
                                 </button>
                             </div>
                         </div>

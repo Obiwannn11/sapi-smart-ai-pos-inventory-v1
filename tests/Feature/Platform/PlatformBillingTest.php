@@ -10,6 +10,7 @@ use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\Billing\InvoiceSettlement;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -296,6 +297,12 @@ test('menerima pembayaran mengaktifkan tenant dan mengunci harganya', function (
 
     expect($invoice->fresh()->status)->toBe(Invoice::STATUS_PAID)
         ->and($invoice->fresh()->verified_by)->toBe($platformUser->id)
+        // Pindahan dari `SimulatedPaymentTest` yang dihapus `[BL-061]`: berkas
+        // itu ikut menjaga bahwa jalur pemilik SaaS menandai asalnya sendiri,
+        // dan pertanggungan itu tidak boleh ikut hilang bersama tombol
+        // peragaannya. `settled_via` adalah satu-satunya yang membedakan
+        // pelunasan berbukti dari pelunasan tanpa bukti di riwayat tagihan.
+        ->and($invoice->fresh()->settled_via)->toBe(InvoiceSettlement::SOURCE_PLATFORM_VERIFY)
         ->and($tenant->fresh()->status)->toBe(Tenant::STATUS_ACTIVE)
         // Harga dikunci dari nominal yang dibayar, bukan dibaca ulang dari
         // tabel tarif — mengubah tarif besok tidak menyentuh kesepakatan ini.

@@ -46,7 +46,15 @@ class InvoiceSettlement
     /** Pemilik SaaS memeriksa bukti transfer di panel platform. */
     public const SOURCE_PLATFORM_VERIFY = 'platform_verify';
 
-    /** Tombol peragaan; hanya hidup untuk tenant demo di luar produksi. */
+    /**
+     * PENINGGALAN — tombol peragaan satu klik, dicabut `[BL-061]` 2026-08-19.
+     *
+     * Nilainya sengaja dipertahankan meski tidak ada lagi yang menulisnya:
+     * `settled_via` beberapa tagihan lama sudah berisi `simulation`, dan
+     * konstanta yang hilang membuat riwayat itu tak lagi terbaca dari kode.
+     * Jangan dipakai untuk jalur baru — pelunasan tanpa uang sungguhan kini
+     * hanya lewat `SOURCE_GATEWAY_FAKE`, yaitu lewat webhook.
+     */
     public const SOURCE_SIMULATION = 'simulation';
 
     /** Nominalnya nol — tidak ada yang perlu ditransfer, apalagi dibuktikan. */
@@ -181,20 +189,5 @@ class InvoiceSettlement
         $this->settle($invoice, self::SOURCE_ZERO_AMOUNT);
 
         return true;
-    }
-
-    /**
-     * Boleh tenant ini melunasi tagihannya sendiri lewat tombol peragaan?
-     *
-     * DUA syarat, dan keduanya wajib. Penanda `is_demo` saja tidak cukup: ia
-     * ikut terbawa kalau basis data peragaan pernah disalin ke produksi, dan
-     * satu salah setel akan membuka jalur yang melunasi tagihan tanpa bukti
-     * apa pun — persis lubang yang `provisional_blocked` dibangun untuk
-     * menutup. Syarat lingkungan membuat jalur itu tidak pernah ADA di
-     * produksi, bukan sekadar sulit dicapai.
-     */
-    public function canSimulate(Tenant $tenant): bool
-    {
-        return $tenant->is_demo && ! app()->environment('production');
     }
 }
