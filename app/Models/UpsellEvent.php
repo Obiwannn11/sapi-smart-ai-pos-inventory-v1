@@ -23,6 +23,16 @@ class UpsellEvent extends Model
 
     public const TYPE_UPSIZE = 'upsize';
 
+    /**
+     * Saran yang berasal dari aturan tertulis owner, bukan dari data ([BL-074]).
+     *
+     * Ia jenis tersendiri dan bukan formalitas: laporan konversi memisahkan
+     * angka per jenis, jadi inilah satu-satunya cara owner bisa tahu apakah
+     * tebakannya sendiri mengalahkan tebakan mesin. Tanpa ini, aturan manual
+     * jadi fitur yang tidak pernah bisa dievaluasi.
+     */
+    public const TYPE_MANUAL = 'manual';
+
     public const SURFACE_POS = 'pos';
 
     public const SURFACE_SELF_ORDER = 'self_order';
@@ -50,6 +60,9 @@ class UpsellEvent extends Model
 
     public const REASON_PRICE_STEP = 'price_step';
 
+    /** Aturan yang ditulis owner sendiri ([BL-074]). */
+    public const REASON_OWNER_RULE = 'owner_rule';
+
     protected $fillable = [
         'tenant_id', 'transaction_id', 'type', 'surface', 'status', 'reason',
         'trigger_variant_id', 'suggested_variant_id', 'suggested_modifier_id',
@@ -68,7 +81,7 @@ class UpsellEvent extends Model
      */
     public static function types(): array
     {
-        return [self::TYPE_ATTACH, self::TYPE_PRESSED_STOCK, self::TYPE_UPSIZE];
+        return [self::TYPE_ATTACH, self::TYPE_PRESSED_STOCK, self::TYPE_UPSIZE, self::TYPE_MANUAL];
     }
 
     /**
@@ -101,6 +114,7 @@ class UpsellEvent extends Model
             self::REASON_NEAR_EXPIRY,
             self::REASON_DEAD_STOCK,
             self::REASON_PRICE_STEP,
+            self::REASON_OWNER_RULE,
         ];
     }
 

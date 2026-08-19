@@ -1,0 +1,391 @@
+<script setup>
+/**
+ * Aturan Saran Jual — tempat owner menuliskan targetnya sendiri ([BL-074]).
+ *
+ * Halaman ini menjawab satu keluhan yang tepat: seluruh saran jual hari ini
+ * DITEMUKAN MESIN — ko-okurensi modifier, barang tertekan stok, naik ukuran
+ * berdasarkan selisih harga. Orang yang paling tahu barangnya sendiri belum
+ * punya satu pun tempat untuk mengatakan "bulan ini dorong kopi susu botol".
+ *
+ * Dua bentuk aturan, dan bedanya sengaja dijelaskan di layar, bukan hanya di
+ * kode: aturan BERPEMICU muncul saat barang tertentu masuk keranjang; aturan
+ * TANPA PEMICU muncul di setiap penjualan. Owner memilih di antara keduanya
+ * dengan satu dropdown, bukan dengan memahami dua konsep.
+ */
+import { ref, computed } from 'vue';
+import { Deferred, useForm, Head } from '@inertiajs/vue3';
+import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
+
+defineOptions({ layout: OwnerLayout });
+
+const props = defineProps({
+    // Ditunda ([BL-037]) — null selama daftarnya masih dimuat.
+    rules: { type: Array, default: null },
+    variants: { type: Array, default: null },
+});
+
+const variantOptions = computed(() =>
+    (props.variants ?? []).map((variant) => ({
+        value: variant.id,
+        label: variant.stock > 0 ? variant.label : `${variant.label} (stok habis)`,
+    }))
+);
+
+const triggerOptions = computed(() => [
+    { value: '', label: 'Setiap penjualan (tanpa pemicu)' },
+    ...variantOptions.value,
+]);
+
+const formatRupiah = (value) => 'Rp ' + Number(value ?? 0).toLocaleString('id-ID');
+
+const variantLabel = (variant) => {
+    if (!variant) return '—';
+
+    return variant.product ? `${variant.product.name} - ${variant.name}` : variant.name;
+};
+
+/** Kenapa sebuah aturan tidak muncul di kasir hari ini, atau null bila muncul. */
+const dormantReason = (rule) => {
+    if (!rule.is_active) return 'Dimatikan';
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (rule.starts_on && rule.starts_on.slice(0, 10) > today) {
+        return 'Belum mulai';
+    }
+    if (rule.ends_on && rule.ends_on.slice(0, 10) < today) {
+        return 'Sudah berakhir';
+    }
+    // Penjaga kandidat berlaku tanpa pengecualian, termasuk untuk aturan yang
+    // owner tulis sendiri. Menampilkannya di sini mencegah kesimpulan "fiturnya
+    // rusak" saat yang sebenarnya terjadi adalah stoknya nol.
+    if (rule.suggested_variant && rule.suggested_variant.stock <= 0) {
+        return 'Stok barangnya habis';
+    }
+
+    return null;
+};
+
+// --- Form ---
+const showForm = ref(false);
+const editingId = ref(null);
+
+const form = useForm({
+    trigger_variant_id: '',
+    suggested_variant_id: '',
+    note: '',
+    starts_on: '',
+    ends_on: '',
+    priority: 0,
+    is_active: true,
+});
+
+const openCreate = () => {
+    form.reset();
+    form.clearErrors();
+    editingId.value = null;
+    showForm.value = true;
+};
+
+const openEdit = (rule) => {
+    form.trigger_variant_id = rule.trigger_variant_id ?? '';
+    form.suggested_variant_id = rule.suggested_variant_id;
+    form.note = rule.note ?? '';
+    form.starts_on = rule.starts_on ? rule.starts_on.slice(0, 10) : '';
+    form.ends_on = rule.ends_on ? rule.ends_on.slice(0, 10) : '';
+    form.priority = rule.priority;
+    form.is_active = rule.is_active;
+    form.clearErrors();
+    editingId.value = rule.id;
+    showForm.value = true;
+};
+
+const closeForm = () => {
+    showForm.value = false;
+    editingId.value = null;
+    form.reset();
+    form.clearErrors();
+};
+
+const submit = () => {
+    const options = { preserveScroll: true, onSuccess: () => closeForm() };
+
+    if (editingId.value) {
+        form.put(`/owner/upsell-rules/${editingId.value}`, options);
+    } else {
+        form.post('/owner/upsell-rules', options);
+    }
+};
+
+// --- Nyalakan / matikan ---
+const toggleForm = useForm({});
+
+const toggle = (rule) => {
+    toggleForm.post(`/owner/upsell-rules/${rule.id}/toggle`, { preserveScroll: true });
+};
+
+// --- Hapus ---
+const deleteTarget = ref(null);
+const deleteForm = useForm({});
+
+const doDelete = () => {
+    if (!deleteTarget.value) return;
+
+    deleteForm.delete(`/owner/upsell-rules/${deleteTarget.value.id}`, {
+        preserveScroll: true,
+        onSuccess: () => { deleteTarget.value = null; },
+    });
+};
+</script>
+
+<template>
+    <Head title="Aturan Saran Jual" />
+
+    <div class="max-w-5xl mx-auto">
+        <!-- Header -->
+        <div class="flex items-start justify-between mb-6 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Aturan Saran Jual</h1>
+                <p class="text-sm text-gray-500 mt-1">
+                    Saran yang <strong>Anda</strong> tentukan sendiri, di samping saran yang ditemukan sistem dari data penjualan.
+                    Aturan di sini selalu tampil lebih dulu.
+                </p>
+            </div>
+            <button
+                @click="openCreate"
+                class="shrink-0 inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring transition-colors"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Tambah Aturan
+            </button>
+        </div>
+
+        <!-- Batas yang tidak bisa ditembus aturan manual. Ditulis di sini supaya
+             owner tidak menyimpulkan fiturnya rusak saat sarannya tidak muncul. -->
+        <div class="mb-5 flex gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
+            <svg class="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>
+                Aturan tetap tunduk pada penjaga barang: barang yang <strong>stoknya habis, sudah kedaluwarsa, atau produknya nonaktif</strong>
+                tidak akan disarankan walaupun tertulis di sini. Kasir juga menampilkan paling banyak
+                <strong>3 saran</strong> per penjualan, dan aturan Anda mengisi slotnya lebih dulu.
+            </span>
+        </div>
+
+        <!-- Modal Form -->
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition-opacity duration-200"
+                enter-from-class="opacity-0"
+                enter-to-class="opacity-100"
+                leave-active-class="transition-opacity duration-200"
+                leave-from-class="opacity-100"
+                leave-to-class="opacity-0"
+            >
+                <div v-if="showForm" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div class="absolute inset-0 bg-black/50" @click="closeForm" />
+                    <div class="relative bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                            {{ editingId ? 'Edit Aturan' : 'Tambah Aturan' }}
+                        </h3>
+
+                        <form @submit.prevent="submit" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Kapan saran ini muncul</label>
+                                <SelectDropdown
+                                    v-model="form.trigger_variant_id"
+                                    :options="triggerOptions"
+                                    placeholder="Setiap penjualan (tanpa pemicu)"
+                                    searchable
+                                    :error="form.errors.trigger_variant_id"
+                                />
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Pilih satu barang agar saran hanya muncul saat barang itu masuk keranjang,
+                                    atau biarkan "setiap penjualan" untuk mendorong sesuatu sepanjang periode.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Barang yang disarankan *</label>
+                                <SelectDropdown
+                                    v-model="form.suggested_variant_id"
+                                    :options="variantOptions"
+                                    placeholder="Pilih barang"
+                                    searchable
+                                    :error="form.errors.suggested_variant_id"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Catatan untuk kasir</label>
+                                <input
+                                    v-model="form.note"
+                                    type="text"
+                                    maxlength="120"
+                                    placeholder="Contoh: Promo bulan ini, stok baru datang"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                />
+                                <p v-if="form.errors.note" class="mt-1 text-xs text-destructive">{{ form.errors.note }}</p>
+                                <p v-else class="mt-1 text-xs text-gray-500">
+                                    Tampil apa adanya di layar kasir. Kosongkan bila tidak perlu.
+                                </p>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mulai</label>
+                                    <input
+                                        v-model="form.starts_on"
+                                        type="date"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Berakhir</label>
+                                    <input
+                                        v-model="form.ends_on"
+                                        type="date"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                    />
+                                    <p v-if="form.errors.ends_on" class="mt-1 text-xs text-destructive">{{ form.errors.ends_on }}</p>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-500 -mt-2">
+                                Boleh disetel dari jauh hari — aturan baru muncul di kasir pada tanggal mulainya.
+                                Kosongkan keduanya agar berlaku terus sampai dimatikan.
+                            </p>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Urutan</label>
+                                <input
+                                    v-model.number="form.priority"
+                                    type="number"
+                                    min="0"
+                                    max="999"
+                                    class="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                />
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Angka lebih besar tampil lebih dulu — hanya berpengaruh sesama aturan Anda sendiri.
+                                </p>
+                            </div>
+
+                            <label class="flex items-center gap-3">
+                                <input v-model="form.is_active" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                                <span class="text-sm font-medium text-gray-700">Aktif</span>
+                            </label>
+
+                            <div class="flex gap-3 pt-2">
+                                <button type="button" @click="closeForm" class="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
+                                    Batal
+                                </button>
+                                <button type="submit" :disabled="form.processing" class="flex-1 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50">
+                                    {{ form.processing ? 'Menyimpan…' : 'Simpan' }}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
+        <!-- Tabel. Ditunda ([BL-037]) — kerangkanya memakai jumlah kolom yang
+             sama supaya lebar kolom tidak berubah saat barisnya tiba. -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred data="rules">
+                <template #fallback>
+                    <SkeletonTable :rows="5" :columns="5" label="Memuat aturan saran jual…" />
+                </template>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-200">
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Pemicu</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Disarankan</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Berlaku</th>
+                                <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr v-for="rule in rules" :key="rule.id" class="hover:bg-gray-50 transition-colors">
+                                <td class="px-5 py-4">
+                                    <span v-if="rule.trigger_variant" class="text-sm text-gray-900">
+                                        {{ variantLabel(rule.trigger_variant) }}
+                                    </span>
+                                    <span v-else class="text-sm text-gray-500 italic">Setiap penjualan</span>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span class="text-sm font-medium text-gray-900 block">{{ variantLabel(rule.suggested_variant) }}</span>
+                                    <span class="text-xs text-gray-500">{{ formatRupiah(rule.suggested_variant?.price) }}</span>
+                                    <span v-if="rule.note" class="text-xs text-gray-400 block mt-0.5">“{{ rule.note }}”</span>
+                                </td>
+                                <td class="px-5 py-4 text-sm text-gray-600 whitespace-nowrap">
+                                    <template v-if="rule.starts_on || rule.ends_on">
+                                        {{ rule.starts_on ? rule.starts_on.slice(0, 10) : '…' }}
+                                        &ndash;
+                                        {{ rule.ends_on ? rule.ends_on.slice(0, 10) : '…' }}
+                                    </template>
+                                    <span v-else class="text-gray-400">Selamanya</span>
+                                </td>
+                                <td class="px-5 py-4 text-center">
+                                    <span
+                                        :class="[
+                                            'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+                                            dormantReason(rule) ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success',
+                                        ]"
+                                    >
+                                        {{ dormantReason(rule) ?? 'Tampil di kasir' }}
+                                    </span>
+                                </td>
+                                <td class="px-5 py-4 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <button @click="toggle(rule)" class="px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 transition-colors">
+                                            {{ rule.is_active ? 'Matikan' : 'Nyalakan' }}
+                                        </button>
+                                        <button @click="openEdit(rule)" class="px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
+                                            Edit
+                                        </button>
+                                        <button @click="deleteTarget = rule" class="px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
+                                            Hapus
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="rules && rules.length === 0">
+                                <td colspan="5" class="px-5 py-12 text-center">
+                                    <svg class="mx-auto w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                    </svg>
+                                    <p class="mt-2 text-sm text-gray-500">Belum ada aturan buatan Anda</p>
+                                    <p class="mt-1 text-xs text-gray-400">
+                                        Kasir tetap menerima saran dari sistem. Aturan di sini menambahkan saran yang Anda pilih sendiri.
+                                    </p>
+                                    <button @click="openCreate" class="mt-3 text-sm text-primary hover:text-primary/80 font-medium">
+                                        Tambah aturan pertama
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </Deferred>
+        </div>
+    </div>
+
+    <ConfirmDialog
+        :show="!!deleteTarget"
+        title="Hapus aturan ini?"
+        message="Kasir tidak akan melihat saran ini lagi. Kalau hanya ingin menghentikannya sementara, pakai Matikan — aturannya tetap tersimpan."
+        confirm-text="Hapus"
+        variant="danger"
+        @confirm="doDelete"
+        @cancel="deleteTarget = null"
+    />
+</template>

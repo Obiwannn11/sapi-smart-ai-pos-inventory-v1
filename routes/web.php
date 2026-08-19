@@ -226,6 +226,23 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::get('/dashboard', [\App\Http\Controllers\Owner\DashboardController::class, 'index'])
             ->name('dashboard');
 
+        // Aturan saran jual buatan owner ([BL-074]).
+        //
+        // Owner-eksklusif, bukan modul RBAC baru: memilih barang mana yang
+        // didorong adalah keputusan pemilik usaha, dan menggantungkannya pada
+        // permission `reports` akan memberi kuasa MENULIS kepada siapa pun yang
+        // hanya diberi hak MEMBACA laporan.
+        Route::get('upsell-rules', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'index'])
+            ->name('upsell-rules.index');
+        Route::post('upsell-rules', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'store'])
+            ->name('upsell-rules.store');
+        Route::put('upsell-rules/{upsellRule}', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'update'])
+            ->name('upsell-rules.update');
+        Route::post('upsell-rules/{upsellRule}/toggle', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'toggle'])
+            ->name('upsell-rules.toggle');
+        Route::delete('upsell-rules/{upsellRule}', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'destroy'])
+            ->name('upsell-rules.destroy');
+
         // Koreksi transaksi offline yang tersinkron dengan anomali (sensitif)
         Route::get('offline-review', [\App\Http\Controllers\Owner\OfflineReviewController::class, 'index'])
             ->name('offline-review.index');

@@ -10,6 +10,85 @@
 
 ## Daftar Entri
 
+### [BL-074] Saran Jual Hanya Bisa Ditemukan Mesin — Owner Belum Punya Cara Menargetkan Sendiri
+- **Ditemukan:** 2026-08-13
+- **Sumber:** Pertanyaan pemilik saat menyisir backlog — "fitur untuk upsell yang terintegrasi stock (otomatis) atau di targetkan (manual by user)". Sisi **otomatis**-nya sudah ada dan selesai (`[BL-017]`, 2026-07-27); sisi **manual**-nya ternyata tidak pernah tercatat di mana pun.
+- **Status:** **Selesai 2026-08-19** — butir (a)–(f) seluruhnya, dan kedua pertanyaan terbuka sudah dijawab pemilik
+- **Prioritas:** Medium — bukan cacat, melainkan setengah fitur. Mesinnya bekerja, tapi owner yang paling tahu barangnya sendiri belum punya tempat menaruh pengetahuan itu.
+- **Area Terdampak:**
+  - `app/Services/Upsell/UpsellIndexBuilder.php:23-28` — tiga strategi disuntikkan di konstruktor; tidak ada jalur keempat untuk aturan buatan manusia
+  - `app/Services/Upsell/Strategies/` — `AttachModifierStrategy`, `UpsizeVariantStrategy`, `PressedStockStrategy`; ketiganya menurunkan saran dari data, bukan dari perintah
+  - `config/upsell.php:38-42` — `types` hanya bisa menyalakan/mematikan **jenis** saran; tidak ada tempat menuliskan "kalau beli A, tawarkan B"
+  - `app/Services/Upsell/SellableVariantQuery.php` — penjaga kandidat tunggal (stok, kedaluwarsa, produk nonaktif)
+  - `database/migrations/2026_07_27_100000_create_upsell_events_table.php:28` — `type` hanya mengenal `attach | pressed_stock | upsize`
+  - `app/Services/Upsell/Suggestion.php:17-30` — bentuk satu saran; sudah cukup umum untuk menampung aturan manual tanpa diubah
+- **Deskripsi:**
+  Seluruh saran jual hari ini **ditemukan mesin**: ko-okurensi modifier dari riwayat 30 hari, barang yang tertekan stok/kedaluwarsa, dan naik ukuran berdasarkan selisih harga. Owner tidak punya satu pun cara mengatakan "bulan ini dorong kopi susu botol" atau "setiap yang beli nasi goreng, tawarkan teh manis" — padahal dialah yang paling tahu barang mana yang sedang perlu didorong dan kenapa.
+  Yang tersedia hanya saklar tingkat konfigurasi (`config/upsell.php`), dan itu pun bukan permukaan owner: ia berkas kode, bukan halaman. Satu-satunya pengaturan upsell yang benar-benar bisa disentuh owner adalah `upsell_mandatory` (`database/migrations/2026_07_31_023207_add_upsell_mandatory_to_tenants_table.php:18`) — dan itu mengatur **apakah saran wajib diselesaikan**, bukan **apa yang disarankan**.
+  Perlu ditegaskan supaya tidak dicatat dua kali: ini **bukan** `[BL-018]`. `[BL-018]` soal saran barang tertekan yang boleh **berdiskon**; entri ini soal siapa yang **memilih** barangnya. Keduanya bisa dikerjakan terpisah, dan aturan manual justru lebih murah karena tidak menyentuh harga sama sekali.
+- **Usulan Perbaikan:**
+  **(a) Strategi keempat, bukan mesin kedua.** Kontrak `SuggestionStrategy` sudah ada dan `UpsellIndexBuilder` sudah merakit banyak strategi jadi satu indeks. Aturan manual paling murah masuk sebagai `ManualRuleStrategy` yang membaca tabel baru `upsell_rules` (tenant, pemicu, yang disarankan, catatan, jendela berlaku, prioritas). Dengan begitu **tidak ada** perubahan pada bentuk props POS, `UpsellStrip.vue`, maupun pencatatan event.
+  **(b) `type: 'manual'` sebagai nilai keempat** di `upsell_events.type` dan di `config/upsell.php` `types`. Ini bukan formalitas: laporan konversi memisahkan angka per jenis, jadi inilah satu-satunya cara owner bisa tahu apakah tebakannya sendiri mengalahkan tebakan mesin. Tanpa ini, aturan manual jadi fitur yang tidak pernah bisa dievaluasi.
+  **(c) Aturan manual harus menang saat berebut slot.** `max_per_transaction` default 2 (`config/upsell.php:25`). Kalau aturan manual hanya diberi skor lalu diadu dengan skor mesin, saran yang dipasang owner bisa tergeser diam-diam oleh angka yang tidak pernah ia lihat — dan ia akan menyimpulkan fiturnya rusak. Beri lantai skor atau satu slot yang dicadangkan; putuskan yang mana sebelum menulis kodenya.
+  **(d) Penjaga kandidat tetap berlaku, tanpa pengecualian.** Aturan manual **tidak boleh** melewati `SellableVariantQuery`: varian kedaluwarsa, stok nol, dan produk nonaktif harus tetap gugur walaupun owner sendiri yang menuliskannya. `[BL-017]` menulis test khusus untuk ini; jalur manual yang menerobos akan menghidupkan kembali persis bug yang test itu jaga.
+  **(e) Offline ikut gratis, tapi ada jebakan yang sudah dikenal.** Karena aturan ikut indeks di props POS, ia ikut ter-snapshot `useCatalogCache` dan hidup offline tanpa kode tambahan (`UpsellIndexBuilder.php:16-20`). Konsekuensinya sama dengan yang sudah tertulis di `[BL-018]` poin 7: **jendela berlaku sebuah aturan bisa kedaluwarsa di dalam snapshot** tanpa diketahui perangkatnya. Perangkat yang seharian offline akan menawarkan promo yang sudah berakhir semalam. Putuskan apakah itu diterima (kemungkinan besar ya, karena harganya tetap harga katalog) atau perlu tanggal kedaluwarsa yang dibaca client.
+  **(f) Halamannya berdiri sendiri, jangan ditambahkan ke Pengaturan.** Editor aturan butuh tabel, pencarian produk, dan jendela tanggal — dan `[BL-039]` sudah mencatat bahwa "Profil Usaha" kelebihan muatan. Tempatnya di grup yang sama dengan laporan upsell, bukan di formulir pengaturan.
+- **Yang belum diputuskan dan menentukan bentuk tabelnya — jawab dulu sebelum ada migrasi:**
+  1. **Pemicunya selevel apa?** Varian tertentu, produk (semua variannya), atau kategori. Ketiganya bentuk kolom yang berbeda, dan yang paling longgar paling mahal di sisi penyaringan client.
+  2. **Apakah ada aturan tanpa pemicu** — "selalu tawarkan ini di setiap transaksi"? Itu masuk ke `cart_level` (lewat `CartLevelStrategy` yang sudah ada), bukan ke `by_variant`, jadi jawabannya menentukan aturan itu dirakit di mana.
+
+- **KEPUTUSAN PEMILIK 2026-08-19 — dua pertanyaan penentu bentuk tabel, terjawab:**
+  1. **Pemicunya selevel VARIAN, ditambah aturan tanpa pemicu.** Produk dan kategori tidak ikut. Yang paling longgar paling mahal di sisi penyaringan client, dan penyaringan itu berjalan tiap klik di perangkat kasir yang paling lemah.
+  2. **Ya, ada aturan tanpa pemicu** — "selalu tawarkan ini di setiap transaksi". Ia dirakit lewat `CartLevelStrategy`, dan `ManualRuleStrategy` karena itu mengimplementasikan **kedua** kontrak sekaligus.
+- **KEPUTUSAN PEMILIK 2026-08-19 tentang butir (c) — bukan lantai skor ATAU slot cadangan, melainkan keduanya diganti hal lain.**
+  Yang diminta pemilik: tiap aturan bisa dinyalakan/dimatikan sendiri dan dijadwalkan dari jauh hari ("promo setiap tanggal kembar, disetting hari-hari sebelumnya"), dan **batas tampil dinaikkan jadi 3** supaya saran mesin tidak tergeser habis begitu owner mulai memasang aturannya. Yang terpasang di kode: lantai skor `1000 + priority` (skor mesin tertinggi 100), kolom `is_active`, dan jendela `starts_on`/`ends_on`. Pemilik meminta angka 3 **diverifikasi langsung di layar kasir** — bila strip-nya terlalu ramai, `config/upsell.php` `max_per_transaction` yang diturunkan, bukan fiturnya yang dicabut.
+- **Butir (e) tetap berlaku apa adanya dan diterima sebagai keterbatasan.** Jendela berlaku sebuah aturan memang bisa kedaluwarsa di dalam snapshot `useCatalogCache`; perangkat yang seharian offline akan menawarkan promo yang berakhir semalam. Diterima karena **harganya tetap harga katalog**. Di `[BL-018]` konsekuensi yang sama jauh lebih serius, karena di sana yang ikut basi adalah potongan harganya.
+- **Entri penutup di `docs/CHANGELOG.md`:** `[ADDITION] Owner Akhirnya Bisa Menargetkan Saran Jualnya Sendiri, dan Aturannya Selalu Menang Slot (BL-074)`
+
+---
+
+### [BL-056] Pengajuan Harga Adaptif Berlaku untuk Bulan Mana — Bulan Pengajuan atau Bulan Berikutnya?
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Pemilik saat menutup keputusan struktur harga — "apakah ajukan itu untuk bulan pengajuan itu, atau bulan depan... catat saja dulu"
+- **Status:** **Selesai 2026-08-19** — dijawab pemilik: berlaku **periode berikutnya** (opsi (i)), sebagai turunan dari model prabayar. Satu cacat yang baru terungkap saat keputusannya ditulis dipisahkan jadi `[BL-080]`
+- **Prioritas:** **High sejak 2026-08-10** — `[BL-055]` sudah mendarat dan memilih opsi **(i) berlaku periode berikutnya**, mengikuti apa yang sudah dijanjikan kalimat sukses consent sejak awal. Itu bukan jawaban atas entri ini, melainkan keadaan bawaan yang dipertahankan supaya tidak ada keputusan pemilik yang diambil diam-diam. Bila jawabannya (ii), yang berubah adalah penerbitan ulang tagihan terbuka — bukan alur pengajuannya
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `pricingAsOf()`: harga ditetapkan dari awal bulan periode tagihan
+  - `app/Models/Invoice.php` — `amount` dan `pricing_context` dibekukan saat tagihan terbit
+- **Deskripsi:**
+  Tagihan periode berjalan sudah terbit dengan nominal tetap dan konteks harga yang dibekukan. Tidak ada apa pun hari ini yang menghitung ulang tagihan **terbuka** ketika jalur harga tenant berubah.
+  Akibatnya, dalam alur tenggat yang menawarkan "bayar `paid-1` atau ajukan diskon", tenant bisa mengajukan, disetujui, lalu **tetap melihat nominal lama** di layar — putus tepat di titik yang paling menentukan.
+  Yang sudah aman dan tidak perlu dikhawatirkan: kekhawatiran pemilik bahwa sistem akan memeriksa omset **bulan berjalan** padahal tunggakannya dari bulan lalu. `pricingAsOf()` memakai awal bulan periode tagihan, dan `current_period_end` membeku selama tenant belum membayar — jadi omset yang dipakai memang omset periode yang tertunggak.
+- **Usulan Perbaikan:**
+  Putuskan salah satu, lalu `[BL-055]` mengikutinya: **(i)** berlaku bulan berikutnya — paling sederhana, tidak menyentuh tagihan yang sudah terbit, tapi tenant yang sedang terjepit harus membayar penuh dulu; **(ii)** berlaku untuk bulan pengajuan — tagihan terbuka diterbitkan ulang atau disesuaikan, dengan tagihan lama dibatalkan bukan dihapus. Opsi (ii) menjawab alur tenggat, tapi menuntut aturan tegas soal tagihan yang sudah sebagian dibayar.
+  **Jangan pilih (ii) tanpa penjaga:** pengajuan yang bisa memotong tunggakan berjalan adalah jalan keluar dari tagihan mana pun. Penjaga alaminya sudah ada — harganya dihitung dari penjualan yang tenant catat sendiri, jadi menekannya merusak datanya sendiri — tapi itu perlu dinyatakan, bukan diandalkan diam-diam.
+
+---
+
+### [BL-061] Tombol Simulasi Lama Kini Jalur Uang Ketiga — Dicabut Setelah Peragaan
+- **Ditemukan:** 2026-08-07
+- **Sumber:** Konsekuensi `[BL-059]`, sudah diantisipasi di butir (i) entri itu
+- **Status:** **Selesai 2026-08-19** — peragaan sudah berjalan, seluruh butir (a)–(d) dikerjakan
+- **Prioritas:** Low
+- **Area Terdampak:**
+  - `app/Http/Controllers/Billing/SimulatedPaymentController.php` — pelunasan peragaan satu klik
+  - `routes/web.php` — `billing.simulate.store`
+  - `resources/js/Pages/Billing/Show.vue` — tombol "Simulasikan pembayaran" dan prop `simulation`
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `simulation.enabled`
+  - `app/Services/Billing/InvoiceSettlement.php` — `SOURCE_SIMULATION` dan `canSimulate()`
+  - `tests/Feature/Subscription/SimulatedPaymentTest.php` — tesnya ikut, kecuali dua tes terakhir yang menguji jalur pemilik SaaS dan harus **dipindahkan**, bukan dihapus
+- **Deskripsi:**
+  Setelah `[BL-059]`, ada tiga cara sebuah tagihan berpindah ke lunas tanpa uang sungguhan diperiksa: bukti transfer manual (sah, tetap dipertahankan), gateway tiruan lewat webhook (jalur baru), dan tombol simulasi satu klik (peninggalan `[BL-045]`). Yang ketiga sekarang mubazir — ia melunasi dengan caranya sendiri, tidak lewat webhook, dan karena itu tidak membuktikan apa pun tentang jalur yang akan dipakai produksi.
+  Gerbangnya memang masih benar (`is_demo` + bukan produksi), jadi ini bukan lubang keamanan. Yang menjadikannya utang adalah jumlahnya: tiap jalur menuju `active` adalah satu tempat lagi yang harus ikut dipikirkan setiap kali aturan pelunasan berubah.
+- **Kenapa belum dicabut:** peragaan ke calon klien dijadwalkan sehari setelah `[BL-059]` mendarat, dan mencabut satu-satunya jalur yang sudah pernah dipakai di depan orang tepat sebelum itu tidak ada untungnya.
+- **Usulan Perbaikan:**
+  **(a)** Cabut controller, rute, tombol, dan prop `simulation` setelah peragaan berjalan mulus.
+  **(b)** `SOURCE_SIMULATION` **jangan dihapus** — nilai itu mungkin sudah tertulis di kolom `settled_via` beberapa tagihan, dan konstanta yang hilang membuat riwayatnya tak terbaca. Beri catatan bahwa ia peninggalan.
+  **(c)** `canSimulate()` ikut dicabut bila tidak ada pemanggil lain yang tersisa.
+  **(d)** Pindahkan dua tes terakhir di `SimulatedPaymentTest` (jalur verifikasi pemilik SaaS lewat `InvoiceSettlement`) ke berkas tes yang bukan tentang simulasi — keduanya menguji jalur yang tetap hidup.
+
+---
+
 ### [BL-075] Foto Bukti Pembayaran Non-Tunai Belum Ada — dan Harus Bisa Dimatikan per Toko
 - **Ditemukan:** 2026-08-13
 - **Sumber:** Pertanyaan pemilik saat menyisir backlog — "fitur untuk take gambar ketika pembayaran (biasanya untuk yang non tunai seperti qris, tf, dll)", disusul keputusan bentuknya di hari yang sama

@@ -16,11 +16,18 @@ return [
     |--------------------------------------------------------------------------
     | Batas tampilan
     |--------------------------------------------------------------------------
-    | Kasir yang diberi tiga saran tiap penjualan akan menutup semuanya tanpa
-    | membaca, dan fiturnya mati diam-diam sambil tetap terlihat "ada" saat
-    | didemokan. Dua adalah batas yang masih dibaca.
+    | Kasir yang diberi terlalu banyak saran tiap penjualan akan menutup
+    | semuanya tanpa membaca, dan fiturnya mati diam-diam sambil tetap terlihat
+    | "ada" saat didemokan.
+    |
+    | NAIK DARI 2 KE 3 pada 2026-08-19, atas keputusan pemilik, bersamaan dengan
+    | lahirnya aturan manual ([BL-074]): begitu owner bisa memasang sarannya
+    | sendiri, dua slot berarti saran mesin nyaris selalu tergeser habis. Tiga
+    | adalah batas yang pemilik minta diverifikasi langsung di layar kasir —
+    | bila strip-nya jadi terlalu ramai, angka inilah yang diturunkan lagi,
+    | bukan fiturnya yang dicabut.
     */
-    'max_per_transaction' => 2,
+    'max_per_transaction' => 3,
 
     /** Kandidat yang disiapkan server per varian pemicu (client menyaring lagi). */
     'candidates_per_trigger' => 2,
@@ -39,6 +46,14 @@ return [
         'attach' => true,
         'pressed_stock' => true,
         'upsize' => true,
+
+        /**
+         * Aturan yang ditulis owner sendiri ([BL-074]). Mematikannya di sini
+         * membungkam SELURUH aturan manual sekaligus — saklar darurat, bukan
+         * cara mengatur aturan satu per satu. Yang itu ada di halaman
+         * Aturan Saran Jual, per baris.
+         */
+        'manual' => true,
     ],
 
     /*

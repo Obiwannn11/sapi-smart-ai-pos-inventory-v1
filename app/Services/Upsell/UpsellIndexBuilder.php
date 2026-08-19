@@ -4,6 +4,7 @@ namespace App\Services\Upsell;
 
 use App\Models\Tenant;
 use App\Services\Upsell\Strategies\AttachModifierStrategy;
+use App\Services\Upsell\Strategies\ManualRuleStrategy;
 use App\Services\Upsell\Strategies\PressedStockStrategy;
 use App\Services\Upsell\Strategies\UpsizeVariantStrategy;
 
@@ -25,6 +26,7 @@ class UpsellIndexBuilder
         private AttachModifierStrategy $attachModifier,
         private UpsizeVariantStrategy $upsizeVariant,
         private PressedStockStrategy $pressedStock,
+        private ManualRuleStrategy $manualRule,
     ) {}
 
     /**
@@ -65,7 +67,7 @@ class UpsellIndexBuilder
             'by_variant' => $byVariant,
             'cart_level' => array_map(
                 fn (Suggestion $suggestion) => $suggestion->toArray(),
-                $this->enabled('pressed_stock') ? $this->pressedStock->suggest($tenant) : [],
+                $this->cartLevelSuggestions($tenant),
             ),
             'max_per_transaction' => $maxPerTransaction,
             'mandatory' => $mandatory,
@@ -125,6 +127,11 @@ class UpsellIndexBuilder
         $strategies = array_filter([
             'attach' => $this->attachModifier,
             'upsize' => $this->upsizeVariant,
+            // Aturan manual masuk sebagai strategi keempat, bukan sebagai
+            // cabang tersendiri di atas hasil mesin ([BL-074]). Yang membuatnya
+            // menang bukan tempatnya di daftar ini, melainkan lantai skornya —
+            // lihat ManualRuleStrategy.
+            'manual' => $this->manualRule,
         ], fn (string $type) => $this->enabled($type), ARRAY_FILTER_USE_KEY);
 
         foreach ($strategies as $strategy) {
@@ -134,6 +141,22 @@ class UpsellIndexBuilder
         }
 
         return $merged;
+    }
+
+    /**
+     * Saran yang tidak butuh pemicu, dari kedua sumbernya.
+     *
+     * Urutannya di sini tidak menentukan apa pun — client menyortir ulang
+     * berdasarkan skor, dan itulah tempat aturan manual memenangkan slotnya.
+     *
+     * @return list<Suggestion>
+     */
+    private function cartLevelSuggestions(Tenant $tenant): array
+    {
+        return array_merge(
+            $this->enabled('pressed_stock') ? $this->pressedStock->suggest($tenant) : [],
+            $this->enabled('manual') ? $this->manualRule->suggest($tenant) : [],
+        );
     }
 
     private function enabled(string $type): bool

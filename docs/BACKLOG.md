@@ -99,6 +99,47 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-13 (penyisiran backlog)** — pemilik menanyakan empat fitur yang dikiranya mungkin terlewat dicatat; seluruhnya sudah **diperiksa terhadap kode**, dan hasilnya dua sudah tercatat, dua memang terlewat. **Sudah ada:** offline + printer Bluetooth + lapisan native adalah `[BL-016]` (Capacitor ada di sana sebagai opsi 2, dan lingkupnya sudah dikunci Android saja), sedangkan upsell dari sinyal stok sudah **selesai** lewat `[BL-017]`/`[BL-025]` — sisanya hanya bundling berdiskon yang menunggu `[BL-018]`. **Benar-benar terlewat:** upsell yang **ditargetkan manual oleh owner** — tiga strategi yang ada semuanya menurunkan saran dari data dan tidak ada satu pun tempat bagi owner menuliskan targetnya sendiri — jadi `[BL-074]`; dan **foto bukti pembayaran non-tunai**, yang nol kode (`transaction_payments` hanya punya `reference_code`), jadi `[BL-075]`. Satu hal yang mudah menyesatkan dan sudah ditulis di dalam `[BL-075]`: `invoices.proof_path` yang sudah ada itu bukti tenant membayar langganan SaaS, **bukan** bukti pelanggan membayar di kasir. `[BL-076]` lahir dari keputusan pemilik di hari yang sama — penyimpanan `[BL-075]` untuk sementara di disk server, dan pemindahannya ke object storage dicatat terpisah supaya "sementara" tidak diam-diam jadi permanen.
 
+### [BL-080] Tagihan Terbit Sebelum Omzet Bulan Sebelumnya Dihitung — Tenant Berjangkar Tanggal 1–8 Ditagih dari Omzet Dua Bulan Lalu
+- **Ditemukan:** 2026-08-19 (saat menuliskan keputusan `[BL-056]`; bukan dilaporkan, melainkan terlihat begitu ada aturan untuk mengukurnya)
+- **Sumber:** Turunan `[BL-056]`. Keputusan "tarif periode P dari omzet bulan sebelum P" bisa diperiksa terhadap kode, dan hasilnya: ia hanya berlaku untuk sebagian tenant
+- **Status:** Open — **butir (a) cacat murni, butir (b) butuh keputusan pemilik.** Sengaja dipisahkan dari `[BL-056]` supaya keputusan komersial di butir (b) tidak menyelundup di balik perbaikan penjadwalan di butir (a)
+- **Prioritas:** **High** — ini angka uang yang salah, bukan tampilan. Berbeda dari `[BL-056]` yang cuma butuh jawaban, ini butuh kode. Meredam sendiri hanya karena belum ada tenant Adaptif berbayar; tidak ada apa pun yang akan memberi tanda pada hari pertama ada
+- **Area Terdampak:**
+  - `routes/console.php:19` — `subscriptions:advance-lifecycle` harian **03:30**
+  - `routes/console.php:29` — `subscriptions:compute-revenue` tanggal 1 **04:00** — tiga puluh menit SESUDAHNYA
+  - `app/Services/SubscriptionService.php` — `advanceLifecycle()` memanggil `issueDuePeriodInvoices()` di dalamnya
+  - `app/Services/SubscriptionService.php:85` — `pricingAsOf()`: awal bulan periode tagihan
+  - `app/Services/Pricing/MonthlyRevenueResolver.php:32` — `metricFor()`: ringkasan **terbaru** dengan `period <= asOf`, bukan ringkasan bulan tertentu
+  - `config/subscription.php:74` — `invoice_lead_days = 7`
+- **Deskripsi — dua hal bertumpuk, dan masing-masing tidak cukup untuk menimbulkannya sendiri:**
+  1. **Urutan jadwal terbalik.** Penerbit tagihan tinggal di dalam `advanceLifecycle()` (03:30 harian). Penghitung omzet berjalan 04:00 tanggal 1. Setiap tanggal 1, penerbit berjalan **sebelum** omzet bulan yang baru tutup pernah ditulis ke `tenant_monthly_metrics`.
+  2. **Tagihan terbit H-7, sementara jangkar tagih diambil dari tanggal daftar.** Tenant berjangkar tanggal 7 mendapat tagihan periode Septembernya diterbitkan **31 Agustus** — saat Agustus bahkan belum tutup, jadi ringkasannya tidak mungkin ada.
+
+  Karena `metricFor()` mengambil ringkasan **terbaru** yang periodenya tidak melewati bulan itu (bukan ringkasan bulan tertentu), yang didapat bukan error melainkan **angka bulan sebelumnya lagi** — diam-diam, tanpa satu pun tanda.
+
+  | Jangkar tagih | Tagihan periode Sep terbit | Ringkasan Agustus sudah ada? | Omzet yang dipakai |
+  |---|---|---|---|
+  | tanggal 1 | 25 Agustus | belum | **Juli** |
+  | tanggal 7 | 31 Agustus | belum | **Juli** |
+  | tanggal 8 | 1 Sep, 03:30 | belum (ditulis 04:00) | **Juli** |
+  | tanggal 9 | 2 September | sudah | Agustus ✓ |
+  | tanggal 20 | 13 September | sudah | Agustus ✓ |
+
+  Jadi tenant berjangkar **tanggal 1–8** ditagih dari omzet **dua bulan** sebelumnya; tanggal 9 ke atas benar. Tidak ada satu pun tempat di kode yang menyatakan pembedaan ini, dan tidak ada yang pernah memutuskannya.
+- **Kenapa ini menggigit lebih keras daripada kelihatannya:** contoh yang dipakai pemilik sendiri saat memutuskan `[BL-056]` — **daftar 7 Juli** — mendarat tepat di jendela yang salah. Tagihan Septembernya memakai omzet Juli, dan bagi tenant itu Juli bahkan **bukan bulan penuh**: ia baru berjualan sejak tanggal 7. Omzetnya jadi terlalu rendah karena dua sebab sekaligus, bracket Adaptifnya terlalu murah, dan pada tangga 90/75/50/25% selisih satu bracket adalah **Rp 25.000/bulan**.
+- **Arahnya bisa dua-duanya, dan itu penting:** bulan yang lebih tua bisa lebih rendah (tenant baru yang sedang tumbuh → kita menagih kurang) maupun lebih tinggi (tenant yang penjualannya turun → tenant menagih lebih dari yang seharusnya, dan itu yang akan diadukan).
+- **Dugaan Penyebab:** `invoice_lead_days` dan jadwal penghitung omzet ditetapkan pada waktu berbeda untuk alasan berbeda, dan tidak ada satu pun tempat yang menyatakan hubungan antar keduanya. `config/subscription.php` sudah menyatakan satu hubungan semacam itu secara eksplisit (`trial_choice_lead_days` **wajib lebih besar dari** `invoice_lead_days`, lengkap dengan alasannya) — hubungan yang satu ini tidak pernah ikut ditulis.
+- **Usulan Perbaikan:**
+  **(a) Tukar urutan jadwalnya.** `subscriptions:compute-revenue` harus berjalan **sebelum** `subscriptions:advance-lifecycle`, bukan sesudah. Ini cacat murni tanpa sisi komersial: geser penghitung omzet ke sebelum 03:30 (mis. tanggal 1 pukul 02:40), atau geser `advance-lifecycle` ke sesudah 04:00. Yang **pertama** lebih baik — `advance-lifecycle` sengaja berjalan sebelum jam buka warung supaya tenant yang jatuh ke tenggat mengetahuinya di awal hari, dan alasan itu tidak boleh dibuang untuk memperbaiki yang lain. Sertakan komentar yang menyebut ketergantungannya, seperti yang sudah dilakukan `config/subscription.php` untuk `trial_choice_lead_days`; urutan yang benar tanpa alasan tertulis adalah urutan yang akan digeser lagi oleh orang berikutnya.
+  **(b) Butuh keputusan pemilik: apa yang terjadi pada tenant berjangkar tanggal 1–8.** Butir (a) sendiri **tidak** menyelesaikannya — untuk jangkar tanggal 1–7 tagihannya memang terbit sebelum bulan sebelumnya tutup, jam berapa pun penghitungnya berjalan. Tiga pilihan, dan ketiganya menukar hal yang berbeda:
+  - **(i) Tunda penerbitan sampai ringkasannya ada.** Tagihan tetap memakai omzet bulan sebelumnya sebagaimana `[BL-056]`, tapi masa pemberitahuan bagi tenant ini menyusut dari 7 hari ke 0–7 hari. Paling jujur terhadap aturan harganya; ongkosnya waktu bersiap tenant.
+  - **(ii) Pakai omzet bulan sebelumnya lagi, dan NYATAKAN itu.** Tidak ada kode yang berubah selain dokumentasi dan kalimat di layar. Paling murah, tapi berarti aturan `[BL-056]` punya pengecualian permanen yang bergantung tanggal daftar — sesuatu yang tenant tidak pilih dan tidak bisa ubah.
+  - **(iii) Turunkan `invoice_lead_days`** sehingga tak ada tagihan yang pernah terbit sebelum bulan sebelumnya tutup. Menyeragamkan semua tenant, tapi menyentuh `trial_choice_lead_days` yang wajib lebih besar darinya — jadi ia menggeser dua angka, bukan satu.
+  **(c) Apa pun pilihan (b), pertimbangkan menjadikan `MonthlyRevenueResolver` TEGAS soal bulan yang diminta.** Hari ini ia mengambil "yang terbaru sampai `asOf`", dan itulah yang mengubah ringkasan yang hilang menjadi angka yang salah alih-alih ketiadaan yang terlihat. Mengembalikan `null` untuk bulan yang tidak ada akan membuat tagihannya terhitung `unpriced` — tercatat di `PlatformAuditLog` `invoices.unpriced` dan bisa ditindak — alih-alih terbit dengan angka yang tak seorang pun tahu berasal dari bulan lain. **Jangan kerjakan butir ini sebelum (b) diputuskan:** tanpa (b), ia mengubah tagihan yang salah menjadi tagihan yang tidak terbit sama sekali, dan itu belum tentu perbaikan.
+- **Catatan:** bagian "Prabayar, dan harganya dari bulan lalu" di `README.md` sudah menyatakan aturannya sebagai satu baris tanpa pengecualian. Bila (b) jatuh ke opsi (ii), bagian itu **harus** ikut diperbaiki — aturan yang ditulis lebih bersih daripada perilakunya adalah dokumentasi yang menyesatkan pembacanya sendiri.
+
+---
+
 ### [BL-079] `business_type` Masih Boleh Kosong Padahal Ia Sudah Jadi Dimensi Harga
 - **Ditemukan:** 2026-08-15 (butir (d) `[BL-071]`, sengaja dipisahkan)
 - **Sumber:** Butir (d) entri `[BL-071]` — "tinjau juga apakah `business_type` masih layak `nullable` sekarang setelah ia jadi dimensi harga sungguhan"
@@ -199,24 +240,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-056] Pengajuan Harga Adaptif Berlaku untuk Bulan Mana — Bulan Pengajuan atau Bulan Berikutnya?
-- **Ditemukan:** 2026-08-07
-- **Sumber:** Pemilik saat menutup keputusan struktur harga — "apakah ajukan itu untuk bulan pengajuan itu, atau bulan depan... catat saja dulu"
-- **Status:** Open — **menunggu keputusan pemilik**, sengaja belum dibahas
-- **Prioritas:** **High sejak 2026-08-10** — `[BL-055]` sudah mendarat dan memilih opsi **(i) berlaku periode berikutnya**, mengikuti apa yang sudah dijanjikan kalimat sukses consent sejak awal. Itu bukan jawaban atas entri ini, melainkan keadaan bawaan yang dipertahankan supaya tidak ada keputusan pemilik yang diambil diam-diam. Bila jawabannya (ii), yang berubah adalah penerbitan ulang tagihan terbuka — bukan alur pengajuannya
-- **Area Terdampak:**
-  - `app/Services/SubscriptionService.php` — `pricingAsOf()`: harga ditetapkan dari awal bulan periode tagihan
-  - `app/Models/Invoice.php` — `amount` dan `pricing_context` dibekukan saat tagihan terbit
-- **Deskripsi:**
-  Tagihan periode berjalan sudah terbit dengan nominal tetap dan konteks harga yang dibekukan. Tidak ada apa pun hari ini yang menghitung ulang tagihan **terbuka** ketika jalur harga tenant berubah.
-  Akibatnya, dalam alur tenggat yang menawarkan "bayar `paid-1` atau ajukan diskon", tenant bisa mengajukan, disetujui, lalu **tetap melihat nominal lama** di layar — putus tepat di titik yang paling menentukan.
-  Yang sudah aman dan tidak perlu dikhawatirkan: kekhawatiran pemilik bahwa sistem akan memeriksa omset **bulan berjalan** padahal tunggakannya dari bulan lalu. `pricingAsOf()` memakai awal bulan periode tagihan, dan `current_period_end` membeku selama tenant belum membayar — jadi omset yang dipakai memang omset periode yang tertunggak.
-- **Usulan Perbaikan:**
-  Putuskan salah satu, lalu `[BL-055]` mengikutinya: **(i)** berlaku bulan berikutnya — paling sederhana, tidak menyentuh tagihan yang sudah terbit, tapi tenant yang sedang terjepit harus membayar penuh dulu; **(ii)** berlaku untuk bulan pengajuan — tagihan terbuka diterbitkan ulang atau disesuaikan, dengan tagihan lama dibatalkan bukan dihapus. Opsi (ii) menjawab alur tenggat, tapi menuntut aturan tegas soal tagihan yang sudah sebagian dibayar.
-  **Jangan pilih (ii) tanpa penjaga:** pengajuan yang bisa memotong tunggakan berjalan adalah jalan keluar dari tagihan mana pun. Penjaga alaminya sudah ada — harganya dihitung dari penjualan yang tenant catat sendiri, jadi menekannya merusak datanya sendiri — tapi itu perlu dinyatakan, bukan diandalkan diam-diam.
-
----
-
 ### [BL-072] Enam Commit Berturut-turut Tidak Bisa Boot — `git bisect` dan `git revert` Menyesatkan di Rentang Itu
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Percobaan menulis ulang riwayat jadi commit atomik; ditemukan karena commit hasil pecahannya gagal menjalankan tes dengan sebab yang bukan berasal dari pecahannya
@@ -250,27 +273,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(c)** Merapikannya berarti menulis ulang **8 commit** dengan basis `b3a0686` — sudah dicoba dan dihentikan 2026-08-08 atas keputusan pemilik. Alasannya: sebagian besar isinya pekerjaan sesi lain, dan menyusun keadaan antaranya menuntut menafsirkan maksud tiap hunk milik orang lain. Riwayat yang ditulis ulang berdasarkan tafsiran bukan riwayat yang lebih bisa dipercaya. Tetap layak dikerjakan bila suatu saat rentang ini benar-benar perlu ditelusuri.
   **(d)** Aturan ke depan, dan inilah yang sebenarnya menutup entri ini: **satu commit = satu perubahan yang bisa boot sendiri.** Kelas dan pemakainya masuk di commit yang sama, atau kelasnya lebih dulu. Uji cepatnya satu perintah — `git stash && php artisan route:list` sebelum `commit`.
 
-### [BL-061] Tombol Simulasi Lama Kini Jalur Uang Ketiga — Dicabut Setelah Peragaan
-- **Ditemukan:** 2026-08-07
-- **Sumber:** Konsekuensi `[BL-059]`, sudah diantisipasi di butir (i) entri itu
-- **Status:** Open — **sengaja ditunda**, bukan terlewat
-- **Prioritas:** Low
-- **Area Terdampak:**
-  - `app/Http/Controllers/Billing/SimulatedPaymentController.php` — pelunasan peragaan satu klik
-  - `routes/web.php` — `billing.simulate.store`
-  - `resources/js/Pages/Billing/Show.vue` — tombol "Simulasikan pembayaran" dan prop `simulation`
-  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `simulation.enabled`
-  - `app/Services/Billing/InvoiceSettlement.php` — `SOURCE_SIMULATION` dan `canSimulate()`
-  - `tests/Feature/Subscription/SimulatedPaymentTest.php` — tesnya ikut, kecuali dua tes terakhir yang menguji jalur pemilik SaaS dan harus **dipindahkan**, bukan dihapus
-- **Deskripsi:**
-  Setelah `[BL-059]`, ada tiga cara sebuah tagihan berpindah ke lunas tanpa uang sungguhan diperiksa: bukti transfer manual (sah, tetap dipertahankan), gateway tiruan lewat webhook (jalur baru), dan tombol simulasi satu klik (peninggalan `[BL-045]`). Yang ketiga sekarang mubazir — ia melunasi dengan caranya sendiri, tidak lewat webhook, dan karena itu tidak membuktikan apa pun tentang jalur yang akan dipakai produksi.
-  Gerbangnya memang masih benar (`is_demo` + bukan produksi), jadi ini bukan lubang keamanan. Yang menjadikannya utang adalah jumlahnya: tiap jalur menuju `active` adalah satu tempat lagi yang harus ikut dipikirkan setiap kali aturan pelunasan berubah.
-- **Kenapa belum dicabut:** peragaan ke calon klien dijadwalkan sehari setelah `[BL-059]` mendarat, dan mencabut satu-satunya jalur yang sudah pernah dipakai di depan orang tepat sebelum itu tidak ada untungnya.
-- **Usulan Perbaikan:**
-  **(a)** Cabut controller, rute, tombol, dan prop `simulation` setelah peragaan berjalan mulus.
-  **(b)** `SOURCE_SIMULATION` **jangan dihapus** — nilai itu mungkin sudah tertulis di kolom `settled_via` beberapa tagihan, dan konstanta yang hilang membuat riwayatnya tak terbaca. Beri catatan bahwa ia peninggalan.
-  **(c)** `canSimulate()` ikut dicabut bila tidak ada pemanggil lain yang tersisa.
-  **(d)** Pindahkan dua tes terakhir di `SimulatedPaymentTest` (jalur verifikasi pemilik SaaS lewat `InvoiceSettlement`) ke berkas tes yang bukan tentang simulasi — keduanya menguji jalur yang tetap hidup.
+---
 
 ### [BL-060] Integrasi Sumopod Payment Gateway (Sandbox → Produksi) — Terhalang Dokumentasi & Kredensial
 - **Ditemukan:** 2026-08-07
@@ -355,7 +358,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-069] Kuota AI Tambahan Belum Bisa Dibeli — Tidak Ada Kolom, Tidak Ada Harga, Tidak Ada Layar
 - **Ditemukan:** 2026-08-08 (dipecah dari `[BL-053]` butir (c) saat butir (a)+(b) selesai)
 - **Sumber:** Keputusan pemilik 2026-08-07 — "begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
-- **Status:** Open — **terhalang satu angka yang belum pernah ditetapkan**
+- **Status:** Open — **angkanya SUDAH ditetapkan 2026-08-19, kodenya belum ada.** Yang menghalangi entri ini sejak 2026-08-08 sudah terjawab; sisanya murni pekerjaan meniru pola seat
 - **Prioritas:** Medium — tidak mendesak seperti seat (satuannya tidak sedang salah, ia memang belum ada sama sekali), tapi sudah dijanjikan pemilik dan sudah disebut di `[BL-067]`(e) sebagai hal yang **tidak boleh** dijanjikan di landing sebelum ada wujudnya
 - **Area Terdampak:**
   - `app/Models/Plan.php` — `limits.ai_daily` menetapkan jatah harian per paket (2/5, 3/15, 5/30, 10/60); tak ada satu pun kolom untuk tambahan per langganan
@@ -370,6 +373,25 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   1. **Satuan yang dijual.** "+10 analisis/hari" (menaikkan plafon harian, sejalan dengan `ai_daily`) atau "+100 analisis sekali pakai" (kredit yang habis)? Keduanya menuntut mekanisme berbeda: yang pertama cukup satu angka tambahan yang dibaca `AiQuota`, yang kedua menuntut saldo yang berkurang dan karena itu tabel tersendiri.
   2. **Harga per satuannya**, dan apakah ia per paket seperti `extra_seat_price` (makin tinggi paketnya makin murah) atau seragam. **Lihat hitungan ongkosnya di bawah** — angkanya sudah ada, yang belum keputusannya.
   3. **Apa yang terjadi saat dilepas atau saat tenant turun paket** — kuota yang dibeli mengikuti pola seat (berlaku satu periode penuh ke depan), atau berhenti seketika.
+#### KEPUTUSAN PEMILIK 2026-08-19 — ini yang membuka entri ini
+
+| | |
+|---|---|
+| Satuan yang dijual | **plafon harian**, +5 analisis/hari |
+| Harga | **Rp 15.000 per bulan**, berulang, seragam antar paket |
+| Pola | **persis seat** — komponen bulanan di `issueDuePeriodInvoices()`, panel beli/lepas di halaman langganan, pelepasan berlaku satu periode penuh ke depan |
+| Model AI | **tetap bawaan** (`gpt-4o-mini` via SumoPod). Tidak ada kuota yang berbeda per model |
+
+Ini menjawab ketiga pertanyaan di atas sekaligus: satuannya plafon harian (bukan kredit), harganya Rp 15.000 seragam (bukan tangga per paket), dan pelepasannya mengikuti pola seat (bukan berhenti seketika).
+
+**Keputusan ini menolak saran (1) di bawah, dan penolakannya sadar.** Saran itu menganjurkan paket kredit karena plafon bulanan menanggung paparan 30× untuk kebutuhan yang cuma muncul beberapa hari. Pemilik memilih keseragaman pola pembelian — satu panel, satu cara melepas, satu komponen tagihan — di atas penghematan itu. Yang harus disadari dan tidak boleh dilupakan saat menulis kalimat di layarnya: **sebagian pembeli akan membayar Rp 15.000 untuk kapasitas yang mereka pakai beberapa hari saja.**
+
+**Marginnya tetap aman, dan itu yang membuat penolakan di atas tidak berbahaya.** 150 analisis/bulan × ± Rp 9 = ± Rp 1.350 ongkos atas Rp 15.000 pendapatan — 91% bahkan bila kuotanya dihabiskan tiap hari. **Tapi hanya pada model sekelas `gpt-4o-mini`;** lihat tabel ongkos di bawah sebelum mengganti `AI_SUMOPOD_MODEL`.
+
+**Yang sengaja TIDAK dibangun, atas pertimbangan pemilik bahwa ia berlebihan:** penghitungan pemakaian yang berbeda per model. Satu satuan ("satu analisis") dipertahankan apa adanya, apa pun model yang kebetulan dipakai di belakang. Akibatnya seluruh risiko perubahan model ditanggung sisi kita, bukan tenant — itu benar untuk tenant, dan justru karena itu batas modelnya harus dijaga di sisi kita.
+
+**Sisa pekerjaan yang disebut pemilik dan belum dikerjakan:** menuliskan daftar model AI yang tersedia. Nama-nama yang beredar di percakapan belum diverifikasi terhadap katalog SumoPod maupun harga resminya; sampai daftar itu ada dan ongkos tiap barisnya dihitung dengan cara yang sama seperti tabel di bawah, `config/ai.php` tetap satu model per provider. Menuliskan nama model yang belum diperiksa ke config berarti menawarkan pilihan yang bisa gagal di panggilan pertama.
+
 - **Usulan Perbaikan:**
   **(a)** Ikuti pola seat apa adanya, jangan menemukan pola kedua: kolom hak di `subscriptions` (bukan paket baru per tenant — `Plan::limits` sudah JSON, tapi melahirkan paket per tenant akan meledakkan tabel paket), komponen tambahan di `issueDuePeriodInvoices()` yang ikut masuk `pricing_context.billing_breakdown`, dan panel beli/lepas di halaman langganan.
   **(b)** `AiQuota::dailyLimitFor()` mendapat satu tingkat baru **di atas** paket: kuota yang dibeli langganan, lalu batas paket, lalu bawaan platform. Urutan pembacaannya sudah tunggal dan tetap (`[BL-047]`(b)) — tambahkan tingkatnya di sana, jangan bikin pembaca kedua.
@@ -499,7 +521,7 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
 ### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Pertanyaan pemilik saat `[BL-023]` selesai — "apakah tagihan atau open bill itu hidup berdasarkan waktu hidup kas / shift kasir atau per hari atau sampai diselesaikan"
-- **Status:** Open — **menunggu keputusan pemilik**, bukan menunggu implementasi
+- **Status:** Open — **keputusannya SUDAH diambil 2026-08-19 (per hari + kas negatif), implementasinya belum ada.** Yang tersisa murni pekerjaan kode
 - **Prioritas:** Medium sekarang, naik jadi High begitu ada outlet yang benar-benar memakai Tunda Bayar setiap hari
 - **Area Terdampak:**
   - `app/Http/Middleware/HandleInertiaRequests.php` — `openBillsFor()` menyaring `user_id` + `status pending`, **tanpa batas waktu apa pun**
@@ -521,6 +543,26 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
   | **Sampai dilunasi** (perilaku sekarang) | warung dengan pelanggan langganan yang menitipkan tagihan lintas hari | pengingat umur tagihan, batas jumlah/nilai, dan cara owner menutup paksa — tanpa itu stok tersandera diam-diam |
   | **Per hari** | mayoritas warung makan; tagihan meja tidak masuk akal menyeberang hari | tugas terjadwal yang membatalkan (memulihkan stok!) atau menandai tagihan semalam, plus laporan apa yang dibatalkan |
   | **Per sesi kas** | outlet ber-shift yang serah terima kas | tagihan harus **dioper** saat tutup kas: dilunasi, dibatalkan, atau dipindahkan ke kasir berikutnya — dan tutup kas jadi tidak boleh berjalan sampai tak ada yang menggantung |
+#### KEPUTUSAN PEMILIK 2026-08-19 — per hari, dan yang lewat jadi kas negatif
+
+Umur tagihan terbuka ditetapkan **per hari**: 24 jam setelah transaksinya tercatat, tagihan yang belum dilunasi berhenti menjadi tagihan hidup dan **dicatat sebagai kas negatif**. Yang boleh membereskannya **hanya owner**, dan hanya dari **dashboard transaksi owner** — bukan dari menu log transaksi kasir.
+
+**"Jadi kas negatif" bukan sama dengan "dibatalkan", dan perbedaannya mengubah satu catatan di entri ini.** Membatalkan akan memulihkan stok dan menghapus jejak uangnya — bersih di pembukuan, tapi bohong: barangnya sudah keluar dan dibawa pelanggan. Karena itu **stok TIDAK dipulihkan** pada jalur ini, dan butir 2 "Usulan Perbaikan" di bawah (*"pemulihan stok wajib ikut pada jalur pembatalan mana pun"*) **tidak berlaku untuk jalur 24 jam ini** — ia ditulis dengan asumsi jalurnya pembatalan. Butir itu tetap berlaku bila kelak ada jalur pembatalan sungguhan, yaitu ketika owner memutuskan sebuah tagihan memang tak akan pernah dibayar; di sanalah stok kembali, dan di sana pula kas negatifnya ditutup.
+
+**Kenapa hanya owner.** Kas negatif adalah selisih yang harus dipertanggungjawabkan; membiarkan kasir menyuntingnya berarti orang yang bertanggung jawab atas selisih itu juga yang bisa merapikannya. Ini melanjutkan garis yang sudah ada — `canEditTransaction()` sudah menolak kasir menyunting transaksi di luar sesi lacinya yang terbuka — dan yang ditambahkan keputusan ini adalah **tempat** suntingan itu boleh terjadi.
+
+**Yang harus ikut dibangun, dan belum ada satu pun:**
+1. Tugas terjadwal di `routes/console.php` yang memindahkan tagihan >24 jam ke kas negatif. Hari ini tidak ada satu pun tugas yang menyentuh transaksi `pending`.
+2. **Tugas itu wajib sekaligus melepaskan tagihannya dari papan dapur.** Kalau tidak, timbunan `fulfillment_status = waiting` cuma berpindah sumber — persis yang pernah dibersihkan migrasi `backfill_stale_fulfillment_status`.
+3. Penampung kas negatif, dan tempatnya muncul di rekonsiliasi kas (`CashDrawerReconciliation`).
+4. Jalur sunting di dashboard transaksi owner.
+5. Pembatas umur di `HandleInertiaRequests::openBillsFor()`, yang sekarang menyaring `user_id` + `status pending` tanpa batas waktu apa pun.
+6. Kalimat di UI kasir yang menyebut tagihannya bertahan sampai kapan — butir 4 "Usulan Perbaikan" di bawah, yang keputusan ini justru menjadikannya wajib.
+
+**Satu hal yang harus diputuskan di kodenya, bukan disimpulkan dari sini:** 24 jam dihitung dari `occurred_at`, bukan `created_at`. `[BL-028]` cacat #3 sudah membuktikan `created_at` melempar penjualan offline ke hari sinkronisasinya, dan `Transaction::scopeWhereEffectiveBetween()` sudah ada untuk itu — tapi itu perlu tertulis di kodenya.
+
+**Yang TIDAK berubah:** uangnya tetap milik laci yang MELUNASI (`[BL-028]`). Yang berubah hanya jendela hidupnya — sesudah 24 jam tidak ada laci mana pun yang akan menerimanya.
+
 - **Usulan Perbaikan:**
   1. **Putuskan dulu, catat di `CHANGELOG.md` sebagai `[DECISION]`.** Ini aturan operasional, bukan detail teknis — pilihannya menentukan apakah stok bisa tersandera semalaman.
   2. Apa pun pilihannya, **pemulihan stok wajib ikut** pada jalur pembatalan mana pun. Membatalkan tagihan tanpa mengembalikan stok menukar satu masalah dengan masalah yang lebih sulit dilihat.
@@ -618,33 +660,6 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
   - **Jangan tertukar dengan `[BL-015]`.** Tabel `pricing_rules` yang sudah ada adalah harga **langganan SaaS** yang dibayar tenant ke pemilik platform — sama sekali bukan harga jual produk ke pelanggan tenant. Pakai penamaan yang tidak menyerempet supaya keduanya tak pernah tercampur.
   - **Sejak `[BL-017]` selesai (2026-07-27), entri ini adalah satu-satunya penghalang bundling berdiskon.** Mesin saran, permukaan kasir, permukaan self-order, dan pencatatan konversinya sudah berdiri; `pressed_stock` menawarkan barang tertekan pada harga katalog karena belum ada tempat sah untuk harga di bawahnya. Begitu entri ini selesai, yang tersisa hanyalah menyambungkan potongan harga ke kandidat yang sudah ada — dan lantai margin di poin 2 **wajib** ikut ditegakkan di sisi saran, bukan hanya di sisi harga.
   - **Satu keterbatasan yang sudah tercatat jadi jauh lebih tajam di sini:** `ProfitService` memakai `cost_price` **saat ini**, bukan biaya historis saat transaksi (lihat docblock-nya). Selama COGS hanya dipakai untuk laporan, itu ketidaktepatan yang bisa ditolerir. Begitu `cost_price` jadi dasar klaim "diskon ini tetap untung", perubahan harga modal di kemudian hari akan **mengubah klaim atas penjualan yang sudah lewat**. Simpan `cost_price` yang berlaku saat itu bersama barisnya.
-
-### [BL-074] Saran Jual Hanya Bisa Ditemukan Mesin — Owner Belum Punya Cara Menargetkan Sendiri
-- **Ditemukan:** 2026-08-13
-- **Sumber:** Pertanyaan pemilik saat menyisir backlog — "fitur untuk upsell yang terintegrasi stock (otomatis) atau di targetkan (manual by user)". Sisi **otomatis**-nya sudah ada dan selesai (`[BL-017]`, 2026-07-27); sisi **manual**-nya ternyata tidak pernah tercatat di mana pun.
-- **Status:** Open
-- **Prioritas:** Medium — bukan cacat, melainkan setengah fitur. Mesinnya bekerja, tapi owner yang paling tahu barangnya sendiri belum punya tempat menaruh pengetahuan itu.
-- **Area Terdampak:**
-  - `app/Services/Upsell/UpsellIndexBuilder.php:23-28` — tiga strategi disuntikkan di konstruktor; tidak ada jalur keempat untuk aturan buatan manusia
-  - `app/Services/Upsell/Strategies/` — `AttachModifierStrategy`, `UpsizeVariantStrategy`, `PressedStockStrategy`; ketiganya menurunkan saran dari data, bukan dari perintah
-  - `config/upsell.php:38-42` — `types` hanya bisa menyalakan/mematikan **jenis** saran; tidak ada tempat menuliskan "kalau beli A, tawarkan B"
-  - `app/Services/Upsell/SellableVariantQuery.php` — penjaga kandidat tunggal (stok, kedaluwarsa, produk nonaktif)
-  - `database/migrations/2026_07_27_100000_create_upsell_events_table.php:28` — `type` hanya mengenal `attach | pressed_stock | upsize`
-  - `app/Services/Upsell/Suggestion.php:17-30` — bentuk satu saran; sudah cukup umum untuk menampung aturan manual tanpa diubah
-- **Deskripsi:**
-  Seluruh saran jual hari ini **ditemukan mesin**: ko-okurensi modifier dari riwayat 30 hari, barang yang tertekan stok/kedaluwarsa, dan naik ukuran berdasarkan selisih harga. Owner tidak punya satu pun cara mengatakan "bulan ini dorong kopi susu botol" atau "setiap yang beli nasi goreng, tawarkan teh manis" — padahal dialah yang paling tahu barang mana yang sedang perlu didorong dan kenapa.
-  Yang tersedia hanya saklar tingkat konfigurasi (`config/upsell.php`), dan itu pun bukan permukaan owner: ia berkas kode, bukan halaman. Satu-satunya pengaturan upsell yang benar-benar bisa disentuh owner adalah `upsell_mandatory` (`database/migrations/2026_07_31_023207_add_upsell_mandatory_to_tenants_table.php:18`) — dan itu mengatur **apakah saran wajib diselesaikan**, bukan **apa yang disarankan**.
-  Perlu ditegaskan supaya tidak dicatat dua kali: ini **bukan** `[BL-018]`. `[BL-018]` soal saran barang tertekan yang boleh **berdiskon**; entri ini soal siapa yang **memilih** barangnya. Keduanya bisa dikerjakan terpisah, dan aturan manual justru lebih murah karena tidak menyentuh harga sama sekali.
-- **Usulan Perbaikan:**
-  **(a) Strategi keempat, bukan mesin kedua.** Kontrak `SuggestionStrategy` sudah ada dan `UpsellIndexBuilder` sudah merakit banyak strategi jadi satu indeks. Aturan manual paling murah masuk sebagai `ManualRuleStrategy` yang membaca tabel baru `upsell_rules` (tenant, pemicu, yang disarankan, catatan, jendela berlaku, prioritas). Dengan begitu **tidak ada** perubahan pada bentuk props POS, `UpsellStrip.vue`, maupun pencatatan event.
-  **(b) `type: 'manual'` sebagai nilai keempat** di `upsell_events.type` dan di `config/upsell.php` `types`. Ini bukan formalitas: laporan konversi memisahkan angka per jenis, jadi inilah satu-satunya cara owner bisa tahu apakah tebakannya sendiri mengalahkan tebakan mesin. Tanpa ini, aturan manual jadi fitur yang tidak pernah bisa dievaluasi.
-  **(c) Aturan manual harus menang saat berebut slot.** `max_per_transaction` default 2 (`config/upsell.php:25`). Kalau aturan manual hanya diberi skor lalu diadu dengan skor mesin, saran yang dipasang owner bisa tergeser diam-diam oleh angka yang tidak pernah ia lihat — dan ia akan menyimpulkan fiturnya rusak. Beri lantai skor atau satu slot yang dicadangkan; putuskan yang mana sebelum menulis kodenya.
-  **(d) Penjaga kandidat tetap berlaku, tanpa pengecualian.** Aturan manual **tidak boleh** melewati `SellableVariantQuery`: varian kedaluwarsa, stok nol, dan produk nonaktif harus tetap gugur walaupun owner sendiri yang menuliskannya. `[BL-017]` menulis test khusus untuk ini; jalur manual yang menerobos akan menghidupkan kembali persis bug yang test itu jaga.
-  **(e) Offline ikut gratis, tapi ada jebakan yang sudah dikenal.** Karena aturan ikut indeks di props POS, ia ikut ter-snapshot `useCatalogCache` dan hidup offline tanpa kode tambahan (`UpsellIndexBuilder.php:16-20`). Konsekuensinya sama dengan yang sudah tertulis di `[BL-018]` poin 7: **jendela berlaku sebuah aturan bisa kedaluwarsa di dalam snapshot** tanpa diketahui perangkatnya. Perangkat yang seharian offline akan menawarkan promo yang sudah berakhir semalam. Putuskan apakah itu diterima (kemungkinan besar ya, karena harganya tetap harga katalog) atau perlu tanggal kedaluwarsa yang dibaca client.
-  **(f) Halamannya berdiri sendiri, jangan ditambahkan ke Pengaturan.** Editor aturan butuh tabel, pencarian produk, dan jendela tanggal — dan `[BL-039]` sudah mencatat bahwa "Profil Usaha" kelebihan muatan. Tempatnya di grup yang sama dengan laporan upsell, bukan di formulir pengaturan.
-- **Yang belum diputuskan dan menentukan bentuk tabelnya — jawab dulu sebelum ada migrasi:**
-  1. **Pemicunya selevel apa?** Varian tertentu, produk (semua variannya), atau kategori. Ketiganya bentuk kolom yang berbeda, dan yang paling longgar paling mahal di sisi penyaringan client.
-  2. **Apakah ada aturan tanpa pemicu** — "selalu tawarkan ini di setiap transaksi"? Itu masuk ke `cart_level` (lewat `CartLevelStrategy` yang sudah ada), bukan ke `by_variant`, jadi jawabannya menentukan aturan itu dirakit di mana.
 
 ### [BL-076] Berkas Milik Tenant Masih Menumpang Disk Server — Belum Ada Jalan ke Object Storage
 - **Ditemukan:** 2026-08-13
@@ -792,6 +807,9 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-056` | Pengajuan harga adaptif berlaku untuk bulan mana — bulan pengajuan atau bulan berikutnya | 2026-08-19 (dijawab: periode berikutnya, sebagai turunan model prabayar; cacat penjadwalan yang ikut terungkap dipisah jadi `[BL-080]`) | `[DECISION] Prabayar, dan Tarifnya dari Omzet Bulan Sebelumnya (BL-056)` |
+| `BL-061` | Tombol simulasi lama kini jalur uang ketiga — dicabut setelah peragaan | 2026-08-19 (seluruh butir (a)–(d); `SOURCE_SIMULATION` sengaja ditahan sebagai peninggalan) | `[DEPRECATE] Tombol Simulasi Pembayaran Dicabut — Jalur Uang Ketiga Ditutup (BL-061)` |
+| `BL-074` | Saran jual hanya bisa ditemukan mesin — owner belum punya cara menargetkan sendiri | 2026-08-19 (butir (a)–(f); batas tampil kasir ikut naik 2 → 3 atas permintaan pemilik) | `[ADDITION] Owner Akhirnya Bisa Menargetkan Saran Jualnya Sendiri, dan Aturannya Selalu Menang Slot (BL-074)` |
 | `BL-075` | Foto bukti pembayaran non-tunai belum ada — dan harus bisa dimatikan per toko | 2026-08-19 (seluruh butir; modal EDIT transaksi sengaja tidak ikut, alasannya di arsip) | `[ADDITION] Pembayaran Non-Tunai Bisa Difoto, dan Sinkronisasi Offline Ternyata Tidak Perlu Ikut Berubah (BL-075)` |
 | `BL-034` | Pendaftaran belum menentukan paket/fitur — tipe usaha hanya dipakai harga | 2026-08-15 (mekanismenya utuh untuk keempat jenis usaha; preset `bazar` menunggu `[BL-035]` dan masuk sebagai satu baris config) | `[ADDITION] Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034)` |
 | `BL-037` | Perpindahan halaman hanya ditandai progress bar — belum ada skeleton | 2026-08-13 (komponen + 4 halaman pertama), 2026-08-15 (sisa tabel pelacakan + bilah kemajuan) | `[ADDITION] Halaman Menunjukkan Bentuknya Sebelum Datanya Sampai (BL-037)` |
