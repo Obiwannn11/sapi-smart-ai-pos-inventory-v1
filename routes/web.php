@@ -378,11 +378,41 @@ Route::prefix('platform')
             Route::post('/reset-password', [\App\Http\Controllers\Platform\PasswordResetController::class, 'reset'])
                 ->middleware('throttle:platform-password-reset')
                 ->name('password.update');
+
+            // Faktor kedua ([BL-013]). Di dalam `guest:platform` dengan
+            // sengaja: sesinya BELUM terautentikasi di sini — kata sandi sudah
+            // benar, tapi yang tersimpan barulah id yang menunggu. Menaruhnya
+            // di bawah `auth:platform` berarti akun sudah masuk sambil diminta
+            // kode, dan gerbang seperti itu bisa dilewati dengan menutup
+            // halamannya.
+            Route::get('/two-factor', [\App\Http\Controllers\Platform\AuthController::class, 'showChallenge'])
+                ->name('two-factor.challenge');
+            Route::post('/two-factor', [\App\Http\Controllers\Platform\AuthController::class, 'challenge'])
+                // Throttle-nya sama dengan login: kode enam angka punya sejuta
+                // kemungkinan, dan tanpa batas percobaan sejuta bukan angka
+                // besar sama sekali.
+                ->middleware('throttle:platform-login')
+                ->name('two-factor.verify');
         });
 
         Route::middleware('auth:platform')->group(function () {
             Route::post('/logout', [\App\Http\Controllers\Platform\AuthController::class, 'logout'])
                 ->name('logout');
+
+            // Pendaftaran faktor kedua ([BL-013]). Tidak digerbang
+            // `platform.can` mana pun: ini keamanan akun sendiri, bukan modul
+            // — staf platform yang tidak dipegangi satu modul pun tetap harus
+            // bisa mengamankan akunnya.
+            Route::get('/keamanan/two-factor', [\App\Http\Controllers\Platform\TwoFactorController::class, 'show'])
+                ->name('two-factor.show');
+            Route::post('/keamanan/two-factor', [\App\Http\Controllers\Platform\TwoFactorController::class, 'create'])
+                ->name('two-factor.create');
+            Route::post('/keamanan/two-factor/konfirmasi', [\App\Http\Controllers\Platform\TwoFactorController::class, 'confirm'])
+                ->name('two-factor.confirm');
+            Route::post('/keamanan/two-factor/kode-pemulihan', [\App\Http\Controllers\Platform\TwoFactorController::class, 'regenerateRecoveryCodes'])
+                ->name('two-factor.recovery-codes');
+            Route::delete('/keamanan/two-factor', [\App\Http\Controllers\Platform\TwoFactorController::class, 'destroy'])
+                ->name('two-factor.destroy');
 
             Route::get('/', [\App\Http\Controllers\Platform\DashboardController::class, 'index'])
                 ->name('dashboard');

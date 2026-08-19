@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
 use App\Models\PlatformAuditLog;
+use App\Models\PlatformUser;
+use App\Services\Platform\TotpService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,6 +14,20 @@ use Inertia\Response;
 
 class AuthController extends Controller
 {
+    /**
+     * Kunci sesi tempat id akun menunggu antara kata sandi benar dan kode
+     * kedua benar ([BL-013]).
+     *
+     * Yang disimpan hanya ID — bukan objek pengguna, dan sama sekali bukan
+     * kredensialnya. Sesi ini belum terautentikasi: `Auth::guard('platform')`
+     * baru dipanggil setelah faktor kedua terbukti.
+     */
+    private const PENDING_KEY = 'platform.two_factor.pending_id';
+
+    public function __construct(
+        private readonly TotpService $totp,
+    ) {}
+
     public function showLogin(): Response
     {
         return Inertia::render('Platform/Login');
@@ -39,6 +55,21 @@ class AuthController extends Controller
             return back()->withErrors(['email' => __('auth.failed')]);
         }
 
+        $user = Auth::guard('platform')->user();
+
+        // Faktor kedua ([BL-013]). Kata sandi yang benar BELUM berarti masuk:
+        // sesinya dilepas kembali dan yang tersisa hanya id yang menunggu di
+        // sesi. Membiarkan sesi tetap terautentikasi sambil "meminta" kode
+        // adalah gerbang yang bisa dilewati dengan menutup modalnya.
+        if ($user->hasTwoFactorEnabled()) {
+            Auth::guard('platform')->logout();
+
+            $request->session()->put(self::PENDING_KEY, $user->id);
+            $request->session()->put('platform.two_factor.remember', $request->boolean('remember'));
+
+            return redirect()->route('platform.two-factor.challenge');
+        }
+
         $request->session()->regenerate();
 
         // Rutin: masuk berkali-kali dalam sehari itu wajar. Yang perlu menonjol
@@ -46,6 +77,94 @@ class AuthController extends Controller
         PlatformAuditLog::recordRoutine('login.success');
 
         return redirect()->to($this->intendedPlatformUrl($request) ?? route('platform.dashboard'));
+    }
+
+    /**
+     * Layar kode kedua. Hanya bisa dibuka oleh sesi yang baru saja melewati
+     * kata sandi.
+     */
+    public function showChallenge(Request $request): Response|RedirectResponse
+    {
+        if (! $this->pendingUser($request)) {
+            return redirect()->route('platform.login');
+        }
+
+        return Inertia::render('Platform/TwoFactorChallenge');
+    }
+
+    /**
+     * Verifikasi kode TOTP atau kode pemulihan.
+     */
+    public function challenge(Request $request): RedirectResponse
+    {
+        $user = $this->pendingUser($request);
+
+        if (! $user) {
+            return redirect()->route('platform.login');
+        }
+
+        $request->validate([
+            'code' => ['required', 'string', 'max:64'],
+        ]);
+
+        $code = (string) $request->input('code');
+
+        $viaTotp = $this->totp->verify($user->two_factor_secret, $code);
+
+        // Kode pemulihan hanya dicoba SETELAH TOTP gagal. Urutan sebaliknya
+        // akan membakar satu kode pemulihan tiap kali seseorang salah ketik
+        // digit terakhir.
+        $viaRecovery = ! $viaTotp && $user->consumeRecoveryCode($code);
+
+        if (! $viaTotp && ! $viaRecovery) {
+            // Sensitif, dengan alasan yang sama seperti login.failed: kata
+            // sandi yang benar diikuti kode kedua yang salah berkali-kali
+            // adalah bentuk yang tidak dihasilkan pemilik akun yang sah.
+            PlatformAuditLog::create([
+                'action' => 'two-factor.failed',
+                'severity' => PlatformAuditLog::SEVERITY_SENSITIVE,
+                'meta' => ['email' => $user->email],
+                'ip' => $request->ip(),
+            ]);
+
+            return back()->withErrors(['code' => 'Kode tidak cocok. Coba lagi, atau pakai kode pemulihan.']);
+        }
+
+        $remember = (bool) $request->session()->pull('platform.two_factor.remember', false);
+        $request->session()->forget(self::PENDING_KEY);
+
+        Auth::guard('platform')->login($user, $remember);
+        $request->session()->regenerate();
+
+        PlatformAuditLog::recordRoutine('login.success');
+
+        if ($viaRecovery) {
+            // Sensitif: kode pemulihan dipakai berarti authenticator-nya hilang
+            // ATAU seseorang lain yang memegangnya. Keduanya perlu terlihat.
+            PlatformAuditLog::record('two-factor.recovery-used', $user, [
+                'remaining_codes' => count($user->fresh()->two_factor_recovery_codes ?? []),
+            ]);
+        }
+
+        return redirect()->to($this->intendedPlatformUrl($request) ?? route('platform.dashboard'));
+    }
+
+    /**
+     * Akun yang sedang menunggu faktor kedua, atau null.
+     */
+    private function pendingUser(Request $request): ?PlatformUser
+    {
+        $id = $request->session()->get(self::PENDING_KEY);
+
+        if (! $id) {
+            return null;
+        }
+
+        $user = PlatformUser::find($id);
+
+        // Faktor kedua yang dimatikan sementara sesi menunggu membuat id ini
+        // tidak lagi berarti apa-apa.
+        return $user?->hasTwoFactorEnabled() ? $user : null;
     }
 
     /**

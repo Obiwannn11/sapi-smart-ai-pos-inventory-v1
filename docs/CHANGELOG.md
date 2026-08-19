@@ -65,6 +65,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-08-19 | DECISION | Langganan | Kuota AI Tambahan Dijual seperti Seat — +5 Analisis/Hari Rp 15.000 per Bulan (BL-069) |
 | 2026-08-19 | DEPRECATE | Langganan | Tombol Simulasi Pembayaran Dicabut — Jalur Uang Ketiga Ditutup (BL-061) |
 | 2026-08-19 | DECISION | Langganan | Prabayar, dan Tarifnya dari Omzet Bulan Sebelumnya (BL-056) |
+| 2026-08-19 | ADDITION | Platform | Akun Platform Punya Faktor Kedua, dan Kata Sandi yang Benar Tidak Lagi Berarti Masuk (BL-013) |
 | 2026-08-19 | ADDITION | Upsell | Owner Akhirnya Bisa Menargetkan Saran Jualnya Sendiri, dan Aturannya Selalu Menang Slot (BL-074) |
 | 2026-08-19 | ADDITION | Kasir | Pembayaran Non-Tunai Bisa Difoto, dan Sinkronisasi Offline Ternyata Tidak Perlu Ikut Berubah (BL-075) |
 | 2026-08-19 | ADDITION | Unggahan | Gambar Dikecilkan di Perangkat Sebelum Diunggah, dan Bukti Transfer Berhenti Mendarat Mentah (BL-077 butir a & b) |
@@ -190,6 +191,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Akun Platform Punya Faktor Kedua, dan Kata Sandi yang Benar Tidak Lagi Berarti Masuk (BL-013)
+- **Tanggal:** 2026-08-19
+- **Fase Terkait:** Di Luar Fase — `[BL-013]`, sisa terakhir `[BL-010]` yang sejak awal ditandai "catat sebagai target"
+- **Dampak:** Migrasi | Model | Service | Controller | Route | Middleware | Frontend | Test
+- **Breaking Change:** Tidak. Faktor kedua **opsional** dan mati bawaannya; akun yang tidak mendaftarkannya masuk persis seperti sebelumnya.
+- **Deskripsi:** Akun platform bisa mendaftarkan aplikasi authenticator (TOTP, RFC 6238) lewat halaman **Keamanan Akun**, lengkap dengan delapan kode pemulihan sekali-pakai. Sejak itu login jadi dua langkah, dan pengaktifan/pencabutannya tercatat sebagai kejadian `sensitive`.
+- **Alasan:** Satu akun di panel ini memegang data administratif seluruh klien. Lapisannya sudah lebih baik daripada saat dicatat pertama kali — ada throttle (`[BL-007]`), jejak audit yang bisa dibaca (`[BL-009]`), pemulihan kata sandi yang tidak membocorkan keberadaan akun (`[BL-010]`) — tapi tetap: siapa pun yang memegang kata sandinya langsung masuk.
+
+- **Kata sandi yang benar MELEPAS sesinya kembali, bukan mempertahankannya sambil "meminta" kode.** `Auth::guard('platform')->attempt()` berhasil, lalu `logout()` dipanggil segera dan yang tersimpan di sesi hanya **id** yang menunggu. Alternatif yang jauh lebih sering ditulis — biarkan sesi terautentikasi lalu pasang middleware yang mengalihkan ke layar kode — menghasilkan gerbang yang bisa dilewati dengan menutup halamannya, dan gerbang seperti itu adalah teater. Ada tesnya: `expect(auth('platform')->check())->toBeFalse()` tepat setelah kata sandi benar.
+- **TOTP, bukan OTP surel — dan itu keputusan keamanan, bukan selera.** Surel adalah jalur pemulihan kata sandi akun ini. Faktor kedua yang dikirim ke sana berarti kotak masuk yang jebol menjebol keduanya sekaligus, dan dua faktor itu sebenarnya satu.
+- **Ditulis sendiri, tanpa menambah dependensi.** Menambah paket butuh persetujuan lebih dulu di proyek ini, sedangkan seluruh algoritmanya muat dalam satu kelas: HMAC-SHA1 atas nomor langkah waktu, pemotongan dinamis (RFC 4226 §5.3), enam digit. Yang **tidak** ditulis sendiri adalah kriptografinya — `hash_hmac` dan `hash_equals` milik PHP yang mengerjakannya. Base32 ditulis manual karena PHP memang tidak punya fungsi bawaannya.
+- **Konsekuensi dari tidak menambah dependensi: tidak ada kode QR.** Merender QR butuh pustaka, jadi halaman pendaftaran menampilkan **kuncinya** dalam potongan empat huruf untuk dimasukkan manual, plus tautan `otpauth://` yang bisa disalin. Setiap authenticator arus utama menerima pemasukan manual, dan panel ini hanya dipakai segelintir akun internal. Bila QR suatu saat diinginkan, itu penambahan dependensi tersendiri yang perlu persetujuan.
+- **Pendaftarannya DUA LANGKAH, dan `two_factor_confirmed_at` adalah kolom terpisah karena itu.** Rahasianya lahir saat layar dibuka; akunnya baru terkunci setelah satu kode dari aplikasi dibuktikan. Tanpa pemisahan itu, membuka layar lalu menutup tab akan mengunci akun dengan rahasia yang tidak pernah masuk ke ponsel mana pun — pada panel yang memegang data seluruh klien, tanpa jalan keluar selain menyunting basis data.
+- **Kode pemulihan wajib ada, bukan pelengkap.** Ponsel hilang tanpa kode pemulihan berarti akun terkunci permanen. Ditampilkan **sekali saja**, dan halamannya mengatakan itu terus terang — kode yang bisa dilihat lagi kapan saja adalah kode yang tidak pernah dicatat siapa pun.
+- **TOTP dicoba lebih dulu, kode pemulihan hanya SETELAH ia gagal.** Urutan sebaliknya akan membakar satu kode pemulihan setiap kali seseorang salah ketik digit terakhir. Ada tesnya.
+- **Rahasianya terenkripsi di tingkat model, bukan sekadar `$hidden`.** Rahasia TOTP yang terbaca dari dump basis data atau cadangan yang bocor membangkitkan kode sah **selamanya** — faktor kedua yang bisa dibaca bersama faktor pertama bukan faktor kedua. Ada tes yang membaca kolom mentahnya lewat `DB::table()` dan memastikan isinya berbeda dari rahasianya.
+- **Rahasia dan kode pemulihan menyeberang lewat FLASH, bukan prop halaman.** Prop tetap berarti keduanya ikut di setiap kunjungan berikutnya ke halaman itu, termasuk lama setelah pendaftarannya selesai. Keduanya didaftarkan eksplisit di `HandleInertiaRequests` karena daftar flash di sana memang whitelist.
+- **Mematikan dan menerbitkan ulang kode pemulihan menuntut kata sandi.** Sesi yang tertinggal terbuka di komputer bersama tidak boleh bisa melepas lapisan ini dengan satu klik — itu akan membuatnya bisa dicabut oleh persis orang yang ia ada untuk hadang.
+- **Pencabutannya yang paling perlu terlihat di jejak audit.** `two-factor.enabled`, `two-factor.disabled`, `two-factor.recovery-codes-regenerated`, dan `two-factor.recovery-used` semuanya `sensitive`; `two-factor.failed` juga, dengan alasan yang sama seperti `login.failed`. Menyalakan lapisan keamanan adalah kabar baik; mencabutnya bisa jadi langkah pertama seseorang yang baru menguasai akun.
+- **Halaman Keamanan Akun TIDAK digerbang `platform.can` mana pun, dan nav-nya tanpa `modules` maupun `ownerOnly`.** Keamanan akun sendiri bukan modul yang bisa dipegangkan atau ditahan; staf platform yang tidak dipegangi satu modul pun tetap harus bisa mengamankan akunnya. Ada tesnya.
+- **Throttle layar kode kedua memakai limiter yang sama dengan login.** Kode enam angka punya sejuta kemungkinan, dan tanpa batas percobaan sejuta bukan angka besar sama sekali.
+- **`email_verified_at` yang disebut entri backlognya sengaja TIDAK ikut.** Ia hal lain — verifikasi kepemilikan alamat surel, bukan faktor kedua — dan menambahkannya di sini berarti mengubah alur pembuatan akun platform sebagai efek samping entri keamanan login. Bila diinginkan, ia entri tersendiri.
+- **Berkas:** `database/migrations/2026_08_19_111521_add_two_factor_to_platform_users_table.php` (baru) · `app/Services/Platform/TotpService.php` (baru) · `app/Http/Controllers/Platform/TwoFactorController.php` (baru) · `resources/js/Pages/Platform/TwoFactorChallenge.vue` (baru) · `resources/js/Pages/Platform/TwoFactorSetup.vue` (baru) · `app/Models/PlatformUser.php` · `app/Http/Controllers/Platform/AuthController.php` · `app/Http/Middleware/HandleInertiaRequests.php` · `routes/web.php` · `resources/js/Layouts/PlatformLayout.vue` · `tests/Feature/Platform/PlatformTwoFactorTest.php` (baru, 20 tes)
 
 ---
 

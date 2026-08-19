@@ -786,19 +786,6 @@ Urutannya disusun supaya **yang paling mungkin menggagalkan rencana diuji paling
 - **Bagian B.2 (IndexedDB diusir) justru membaik, meski tidak sengaja.** Penyimpanan WebView tinggal di direktori data aplikasi, jadi "Hapus data penjelajahan" di Chrome **tidak lagi menyentuh antrean penjualan**. Yang tersisa hanya "Hapus data aplikasi" dan uninstall — dua tindakan yang jauh lebih disengaja. Ini alasan tambahan yang layak dihitung saat menimbang ongkosnya.
 - **Dua perbaikan murah di Bagian B tetap dikerjakan lebih dulu** dan tidak menunggu rencana ini: `navigator.storage.persist()` dan pendaftaran Background Sync. Keduanya berguna untuk pengguna PWA yang tidak memasang APK, dan pengguna itu tidak akan pernah hilang.
 
-### [BL-013] Akun Platform Belum Punya 2FA
-- **Ditemukan:** 2026-07-22 (dipisahkan dari `[BL-010]` yang sudah ditutup)
-- **Sumber:** Poin ketiga `[BL-010]`, sejak awal ditandai "catat sebagai target, jangan dikerjakan sekarang"
-- **Status:** Open
-- **Prioritas:** Low (target jangka menengah — bukan penghalang operasional)
-- **Area Terdampak:**
-  - `app/Models/PlatformUser.php` — tanpa `email_verified_at`, tanpa kolom rahasia TOTP
-  - `app/Http/Controllers/Platform/AuthController.php` — alur masuk masih satu langkah
-- **Deskripsi:**
-  Satu akun platform memegang data administratif seluruh klien; satu faktor terasa tipis untuk kewenangan sebesar itu. Sekarang lapisannya sudah lebih baik daripada saat dicatat pertama kali — ada throttle (`[BL-007]`), jejak audit yang bisa dibaca (`[BL-009]`), dan pemulihan kata sandi yang tidak membocorkan keberadaan akun (`[BL-010]`) — tapi tetap: siapa pun yang memegang kata sandinya langsung masuk.
-- **Usulan Perbaikan:**
-  TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
-
 ---
 
 ## Riwayat Selesai (Arsip)
@@ -809,6 +796,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 |---|---|---|---|
 | `BL-056` | Pengajuan harga adaptif berlaku untuk bulan mana — bulan pengajuan atau bulan berikutnya | 2026-08-19 (dijawab: periode berikutnya, sebagai turunan model prabayar; cacat penjadwalan yang ikut terungkap dipisah jadi `[BL-080]`) | `[DECISION] Prabayar, dan Tarifnya dari Omzet Bulan Sebelumnya (BL-056)` |
 | `BL-061` | Tombol simulasi lama kini jalur uang ketiga — dicabut setelah peragaan | 2026-08-19 (seluruh butir (a)–(d); `SOURCE_SIMULATION` sengaja ditahan sebagai peninggalan) | `[DEPRECATE] Tombol Simulasi Pembayaran Dicabut — Jalur Uang Ketiga Ditutup (BL-061)` |
+| `BL-013` | Akun platform belum punya 2FA | 2026-08-19 (TOTP + kode pemulihan + jejak audit; `email_verified_at` dan kode QR sengaja tidak ikut) | `[ADDITION] Akun Platform Punya Faktor Kedua, dan Kata Sandi yang Benar Tidak Lagi Berarti Masuk (BL-013)` |
 | `BL-074` | Saran jual hanya bisa ditemukan mesin — owner belum punya cara menargetkan sendiri | 2026-08-19 (butir (a)–(f); batas tampil kasir ikut naik 2 → 3 atas permintaan pemilik) | `[ADDITION] Owner Akhirnya Bisa Menargetkan Saran Jualnya Sendiri, dan Aturannya Selalu Menang Slot (BL-074)` |
 | `BL-075` | Foto bukti pembayaran non-tunai belum ada — dan harus bisa dimatikan per toko | 2026-08-19 (seluruh butir; modal EDIT transaksi sengaja tidak ikut, alasannya di arsip) | `[ADDITION] Pembayaran Non-Tunai Bisa Difoto, dan Sinkronisasi Offline Ternyata Tidak Perlu Ikut Berubah (BL-075)` |
 | `BL-034` | Pendaftaran belum menentukan paket/fitur — tipe usaha hanya dipakai harga | 2026-08-15 (mekanismenya utuh untuk keempat jenis usaha; preset `bazar` menunggu `[BL-035]` dan masuk sebagai satu baris config) | `[ADDITION] Jenis Usaha Akhirnya Menentukan Fitur, Bukan Cuma Harga (BL-034)` |

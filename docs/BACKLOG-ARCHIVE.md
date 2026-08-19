@@ -10,6 +10,29 @@
 
 ## Daftar Entri
 
+### [BL-013] Akun Platform Belum Punya 2FA
+- **Ditemukan:** 2026-07-22 (dipisahkan dari `[BL-010]` yang sudah ditutup)
+- **Sumber:** Poin ketiga `[BL-010]`, sejak awal ditandai "catat sebagai target, jangan dikerjakan sekarang"
+- **Status:** **Selesai 2026-08-19** — TOTP, kode pemulihan, dan pencatatan `sensitive`-nya; `email_verified_at` sengaja tidak ikut
+- **Prioritas:** Low (target jangka menengah — bukan penghalang operasional)
+- **Area Terdampak:**
+  - `app/Models/PlatformUser.php` — tanpa `email_verified_at`, tanpa kolom rahasia TOTP
+  - `app/Http/Controllers/Platform/AuthController.php` — alur masuk masih satu langkah
+- **Deskripsi:**
+  Satu akun platform memegang data administratif seluruh klien; satu faktor terasa tipis untuk kewenangan sebesar itu. Sekarang lapisannya sudah lebih baik daripada saat dicatat pertama kali — ada throttle (`[BL-007]`), jejak audit yang bisa dibaca (`[BL-009]`), dan pemulihan kata sandi yang tidak membocorkan keberadaan akun (`[BL-010]`) — tapi tetap: siapa pun yang memegang kata sandinya langsung masuk.
+- **Usulan Perbaikan:**
+  TOTP (aplikasi authenticator) lebih tepat daripada OTP surel di sini, karena surel justru jalur pemulihan kata sandinya — kalau kotak masuk jebol, dua-duanya jebol sekaligus. Sertakan kode pemulihan sekali-pakai, dan catat pengaktifan/penonaktifannya sebagai kejadian `sensitive`.
+
+- **CATATAN PENUTUP 2026-08-19 — `email_verified_at` sengaja TIDAK ikut.**
+  Ia disebut di Area Terdampak bersama kolom rahasia TOTP, tapi keduanya menjawab hal berbeda: verifikasi kepemilikan alamat surel bukan faktor kedua. Menambahkannya di sini berarti mengubah alur pembuatan akun platform sebagai efek samping sebuah entri keamanan login. Bila diinginkan, ia entri tersendiri.
+- **CATATAN PENUTUP 2026-08-19 — tanpa kode QR, dan itu konsekuensi larangan menambah dependensi.**
+  Merender QR butuh pustaka. Halaman pendaftaran menampilkan kuncinya dalam potongan empat huruf plus tautan `otpauth://` yang bisa disalin; setiap authenticator arus utama menerima pemasukan manual, dan panel ini hanya dipakai segelintir akun internal. Bila QR diinginkan, itu penambahan dependensi tersendiri yang perlu persetujuan lebih dulu.
+- **CATATAN PENUTUP 2026-08-19 — TOTP-nya ditulis sendiri, bukan lewat paket.**
+  Seluruh algoritmanya muat dalam `app/Services/Platform/TotpService.php`: HMAC-SHA1 atas nomor langkah waktu, pemotongan dinamis RFC 4226 §5.3, enam digit, toleransi ±1 langkah. Kriptografinya tetap milik PHP (`hash_hmac`, `hash_equals`); yang ditulis manual hanya base32, karena PHP memang tidak punya fungsi bawaannya.
+- **Entri penutup di `docs/CHANGELOG.md`:** `[ADDITION] Akun Platform Punya Faktor Kedua, dan Kata Sandi yang Benar Tidak Lagi Berarti Masuk (BL-013)`
+
+---
+
 ### [BL-074] Saran Jual Hanya Bisa Ditemukan Mesin — Owner Belum Punya Cara Menargetkan Sendiri
 - **Ditemukan:** 2026-08-13
 - **Sumber:** Pertanyaan pemilik saat menyisir backlog — "fitur untuk upsell yang terintegrasi stock (otomatis) atau di targetkan (manual by user)". Sisi **otomatis**-nya sudah ada dan selesai (`[BL-017]`, 2026-07-27); sisi **manual**-nya ternyata tidak pernah tercatat di mana pun.
