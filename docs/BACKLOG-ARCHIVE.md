@@ -10,6 +10,59 @@
 
 ## Daftar Entri
 
+### [BL-075] Foto Bukti Pembayaran Non-Tunai Belum Ada — dan Harus Bisa Dimatikan per Toko
+- **Ditemukan:** 2026-08-13
+- **Sumber:** Pertanyaan pemilik saat menyisir backlog — "fitur untuk take gambar ketika pembayaran (biasanya untuk yang non tunai seperti qris, tf, dll)", disusul keputusan bentuknya di hari yang sama
+- **Status:** **Selesai 2026-08-19** — kecuali satu sisa yang sengaja dibiarkan terbuka, dicatat di bagian paling bawah
+- **Prioritas:** Medium — tidak ada uang yang tercatat salah karenanya, tapi tanpa ini perselisihan "katanya sudah transfer" tidak punya alat bukti apa pun di sisi toko
+- **Area Terdampak:**
+  - `database/migrations/2026_03_06_000012_create_transaction_payments_table.php:11-19` — satu-satunya jejak pembayaran non-tunai adalah `reference_code` bertipe string; tidak ada kolom berkas
+  - `app/Http/Controllers/Cashier/POSController.php:178-181` — validasi checkout hanya menerima `payment_method_id`, `amount`, `reference_code`
+  - `app/Services/TransactionService.php:180-183`, `:364-367`, `:628-629` — **tiga** tempat membuat baris pembayaran (checkout, tagihan terbuka, sinkronisasi offline); ketiganya harus ikut berubah bersama
+  - `database/migrations/2026_03_06_000010_create_payment_methods_table.php:15` — `type` enum sudah membedakan `cash` dari `qris_static | qris_dynamic | bank_transfer`, jadi definisi "non-tunai" **sudah ada** dan tidak perlu kolom baru
+  - `app/Services/ImageService.php:29-31` — pola penyimpanan gambar yang sudah terbukti: disk privat, WEBP, dua ukuran
+  - `app/Http/Controllers/MediaController.php:33-49` — gerbang berkas ber-auth dengan pemeriksaan tenant, 404 (bukan 403) untuk milik tenant lain
+  - `resources/js/Components/PaymentModal.vue` — permukaan tempat tombol kamera akan hidup
+  - `resources/js/services/offlineDb.js`, `resources/js/composables/useOfflineQueue.js:85,138` — outbox IndexedDB dan flush-nya
+  - `database/migrations/2026_07_29_141632_add_capability_flags_to_tenants_table.php:13-15` — pola saklar kapabilitas per tenant
+- **Deskripsi:**
+  Sama sekali belum ada. Tidak ada kolom, tidak ada unggahan, tidak ada tombol. Kasir yang menerima QRIS atau transfer hanya bisa mengetik kode referensi — dan kode yang diketik tangan tidak membuktikan apa pun soal uangnya masuk.
+  **Satu kemiripan yang menyesatkan dan wajib dibaca sebelum menyentuh kode:** `invoices.proof_path` **sudah ada** (`database/migrations/2026_07_24_181636_create_invoices_table.php:35`). Itu bukti transfer **tenant membayar langganan SaaS**, alur platform, tabel lain, penonton lain. Ia bukan preseden yang bisa dipakai ulang begitu saja untuk pembayaran pelanggan di kasir, dan jangan sampai ada yang menyimpulkan fitur ini "setengah ada" karena melihatnya.
+  Yang paling dekat menyinggung di backlog hanyalah `[BL-028]` poin 4 — non-tunai ditandai "tidak masuk laci" — tapi itu soal menampilkan angka, bukan menyimpan buktinya.
+- **KEPUTUSAN PEMILIK 2026-08-13 — tiga hal yang sudah tidak perlu ditanyakan lagi:**
+  1. **Opsional, bisa dinyalakan/dimatikan per toko.** Sebagian toko memang perlu foto bukti bayar non-tunai, sebagian tidak. Jadi ini **bukan** langkah wajib yang ditambahkan ke setiap penjualan non-tunai di semua tenant.
+  2. **Penyimpanannya untuk sementara di disk server**, mengikuti pola yang sudah ada.
+  3. **Pemindahan ke object storage (S3 dan sekerabatnya) dicatat terpisah sebagai pekerjaan berikutnya** — lihat `[BL-076]`, yang sengaja dibuat supaya keputusan (2) tidak terbaca sebagai keputusan permanen.
+- **Usulan Perbaikan:**
+  **(a) Saklarnya kolom tenant, `default false`.** `payment_proof_enabled` sejajar dengan `kitchen_queue_enabled`/`self_order_enabled`/`ai_enabled`, disunting di halaman pengaturan yang sama (`app/Http/Controllers/Owner/SettingsController.php:55-56,130-131`). **Default `false` bukan detail** — menyalakannya untuk semua orang berarti menambah satu langkah ke setiap penjualan non-tunai di setiap toko, termasuk toko yang tidak pernah memintanya, dan itu langsung terasa di antrean kasir.
+  **(b) Berlakunya berdasarkan `payment_methods.type`, bukan daftar baru.** Kamera muncul hanya untuk metode ber-`type` selain `cash`. Definisinya sudah ada di enum; tidak perlu kolom, tidak perlu konfigurasi tambahan. Kalau nanti ada toko yang ingin QRIS difoto tapi transfer tidak, barulah itu jadi kolom opt-out per metode — jangan dibangun sebelum ada yang memintanya.
+  **(c) Kolomnya di `transaction_payments`, bukan di `transactions`.** Satu transaksi bisa dibayar beberapa metode sekaligus (split bill), dan buktinya melekat pada **pembayarannya**, bukan pada penjualannya. `proof_path` nullable di `transaction_payments` menjawab keduanya sekaligus.
+  **(d) Ikuti `ImageService` apa adanya, jangan tulis penyimpanan kedua.** Disk **privat** (`storage/app/private`), dinormalkan jadi WEBP, dan **tidak pernah** lewat symlink publik. Alasannya di sini lebih kuat daripada untuk foto produk: tangkapan layar aplikasi e-wallet kerap memuat nama dan nomor telepon pelanggan. Penyajiannya lewat rute ber-auth seperti `MediaController`, dengan pemeriksaan tenant yang sama dan 404 yang sama.
+  **(e) Ukuran gambar dikecilkan di PERANGKAT, bukan hanya di server.** `ImageService` mengecilkan setelah berkas sampai (`ImageService.php:57-60`) — cukup untuk foto produk yang diunggah owner sambil online, tapi **tidak cukup di sini**. Alasannya ada di bagian offline di bawah.
+- **OFFLINE — bagian yang paling mudah salah, dan alasan butir (e) di atas ada:**
+  1. **Kameranya sendiri tidak butuh jaringan.** Mengambil foto offline bukan masalah; yang menunggu hanya pengirimannya. Jadi kasir **tetap bisa berjualan dan tetap bisa memotret** saat sinyal mati — dan memang harus begitu.
+  2. **Yang jadi masalah adalah antreannya.** Outbox hidup di IndexedDB (`offlineDb.js`) dan hari ini hanya berisi JSON penjualan yang beberapa kilobyte. Satu foto kamera ponsel 12MP berukuran 3–5 MB; disimpan sebagai base64 ia membengkak sekitar sepertiga lagi. Sehari berjualan offline bisa berarti ratusan megabyte di penyimpanan yang — menurut `[BL-016]` Bagian B — **masih bisa diusir peramban kapan saja**. Karena itu kompresi wajib terjadi sebelum masuk antrean, dan simpanlah sebagai **Blob**, bukan string base64.
+  3. **`navigator.storage.persist()` naik dari "perbaikan murah" jadi prasyarat.** Ia sudah tercatat di `[BL-016]` Bagian B sebagai salah satu dari dua perbaikan yang tidak menunggu lapisan native. Begitu antrean berisi gambar, mengerjakannya **sebelum** fitur ini menyala adalah urutan yang benar, bukan pelengkap.
+  4. **Unggahan foto harus jadi langkah yang bisa diulang sendiri, terpisah dari pengiriman penjualannya.** Idempotensi outbox bersandar pada `client_uuid`. Kalau foto dibundel sedemikian rupa sehingga kegagalan unggah memaksa penjualannya dikirim ulang, jaminan anti-duplikat itu ikut dipertaruhkan demi hal yang jauh lebih sepele daripada uang. Kirim penjualannya dulu, lalu foto menyusul dengan `client_uuid` sebagai penunjuknya — dan bila fotonya hilang selamanya, penjualannya tetap sah.
+  5. **Jangan pernah jadikan foto sebagai syarat menyelesaikan penjualan offline.** Pelajarannya sudah dibayar di `[BL-025]`/`UpsellIndexBuilder.php:38-42`: aturan yang mengikat saat online tapi bisa dilewati saat offline adalah aturan yang tidak berarti apa-apa — dan kebalikannya, aturan yang mengunci kasir saat sinyal mati akan dimatikan owner di hari pertama. Bila fotonya gagal, tandai pembayarannya "bukti belum ada" dan biarkan penjualannya lewat.
+  6. **Sinkronisasi offline adalah salah satu dari tiga jalur pembuat pembayaran** (`TransactionService.php:628-629`). Ia mudah terlewat justru karena tidak pernah tersentuh saat pengujian manual di meja yang sinyalnya penuh.
+- **Yang belum diputuskan — jawab sebelum fiturnya menyala di tenant sungguhan:**
+  1. **Berapa lama fotonya disimpan?** Ini yang menentukan pertumbuhan disk, dan ia keputusan produk, bukan keputusan teknis. Bukti pembayaran berguna selama sengketa masih mungkin — bukan selamanya. Tanpa jawaban, disk server tumbuh tanpa batas dan `[BL-076]` berubah dari peningkatan jadi keadaan darurat.
+  2. **Wajib atau opsional saat saklarnya menyala?** Toko yang menyalakannya mungkin ingin kasir tidak bisa melewatkannya — tapi baca butir offline (5) di atas sebelum memutuskan "wajib".
+
+- **CATATAN PENUTUP 2026-08-19 — bagian OFFLINE di atas menjawab masalah yang belum ada.**
+  Dibiarkan tertulis apa adanya karena ia akan berlaku persis seperti itu begitu penjualan non-tunai offline dibuka, tapi **hari ini tidak satu pun butirnya perlu dikerjakan**. Alasannya ditemukan saat mengerjakan entri ini: `TransactionService::assertCashOnly()` menolak setiap pembayaran non-tunai pada jalur sinkronisasi, dan `resources/js/Pages/Cashier/POS.vue` bahkan sudah menyaring daftar metode jadi tunai saja saat perangkat offline. Non-tunai tidak pernah terjadi offline, jadi tidak pernah ada foto yang perlu masuk antrean IndexedDB — dan keputusan pemilik "wajib saat online, dilewati saat offline" tidak butuh satu baris kode pun untuk ditegakkan.
+- **CATATAN PENUTUP 2026-08-19 — jalur pembuat pembayarannya EMPAT, bukan tiga.**
+  `app/Services/TransactionEditService.php:87-97` menghapus lalu membangun ulang seluruh baris pembayaran dari kiriman client, dan client edit tidak pernah mengirim bukti. Tanpa penanganan, mengoreksi jumlah item pada penjualan QRIS menghapus buktinya sebagai efek samping — tanpa galat, tanpa jejak. Sekarang buktinya diselamatkan lewat `payment_method_id`.
+- **KEPUTUSAN PEMILIK 2026-08-19 — dua pertanyaan yang tertinggal, terjawab:**
+  1. **Retensi: tanpa batas untuk sekarang.** Tidak ada pembersihan otomatis untuk foto yang sudah melekat pada pembayaran. Konsekuensi yang sudah tertulis di atas tetap berlaku dan kini benar-benar berjalan: disk server tumbuh tanpa batas, dan **`[BL-076]` berubah dari peningkatan jadi pekerjaan mendesak**. Yang punya perintah pembersih hanya berkas TERTUNDA yang tidak pernah diklaim (`payment-proofs:prune-unclaimed`, harian, batas 24 jam) — itu kebersihan disk, bukan kebijakan retensi, dan keduanya sengaja tidak digabung.
+  2. **Wajib saat saklarnya menyala.** Ditegakkan di server pada kedua jalur online (checkout dan pelunasan tagihan terbuka), bukan sekadar dengan menahan tombol di layar.
+- **SISA YANG SENGAJA DIBIARKAN TERBUKA — modal EDIT transaksi belum punya tombol kamera.**
+  Akibatnya sebuah pembayaran yang **diubah** jadi non-tunai lewat pengeditan bisa lolos tanpa bukti. Menutupnya dengan menolak edit semacam itu akan menciptakan jalan buntu di layar yang tidak punya cara memotret — persis yang butir offline (5) larang. Yang menahan risikonya sekarang: pengeditan sudah dibatasi (owner kapan saja, kasir hanya dalam shift laci terbuka) dan seluruhnya teraudit. Bila suatu saat ini perlu ditutup, tempatnya `resources/js/Components/TransactionEditModal.vue` dan pola tombolnya sudah ada di `PaymentModal.vue`.
+- **Entri penutup di `docs/CHANGELOG.md`:** `[ADDITION] Pembayaran Non-Tunai Bisa Difoto, dan Sinkronisasi Offline Ternyata Tidak Perlu Ikut Berubah (BL-075)`
+
+---
+
 ### [BL-034] Pendaftaran Belum Menentukan Paket/Fitur — Tipe Usaha Hanya Dipakai Harga
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "perbaiki dan kasih jelas alur pendaftaran, ... pakai paket kategori, misal bazar maka aktif itu cuma kasir dan stock biasa, kalau cafe maka akan aktif open bill dll"

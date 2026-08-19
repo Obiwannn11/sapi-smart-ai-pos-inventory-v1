@@ -423,6 +423,7 @@ const logout = async () => {
             :show="settlingBill !== null"
             :total-amount="Number(settlingBill?.total_amount || 0)"
             :payment-methods="cashierPaymentMethods"
+            :proof-required="hasFeature('payment_proof')"
             @close="settlingBill = null"
             @confirm="handleSettle"
         />

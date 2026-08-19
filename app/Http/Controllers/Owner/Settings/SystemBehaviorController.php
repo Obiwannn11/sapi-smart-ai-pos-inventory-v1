@@ -34,7 +34,12 @@ class SystemBehaviorController extends Controller
                 'kitchen_queue_enabled' => $tenant->kitchen_queue_enabled,
                 'self_order_enabled' => $tenant->self_order_enabled,
                 'ai_enabled' => $tenant->ai_enabled,
-                // Bukan kapabilitas modul seperti tiga di atas, melainkan
+                // Kapabilitas modul juga, dan bawaannya MATI ([BL-075]).
+                // Menyalakannya menambah satu langkah ke setiap penjualan
+                // non-tunai; toko yang tidak memintanya tidak seharusnya
+                // menemukannya sudah menyala.
+                'payment_proof_enabled' => $tenant->payment_proof_enabled,
+                // Bukan kapabilitas modul seperti empat di atas, melainkan
                 // ATURAN KERJA: menyalakannya menahan tombol bayar sampai tiap
                 // saran dijawab. Dikelompokkan di sini karena tempatnya sama di
                 // mata owner, tapi sengaja TIDAK masuk Tenant::hasFeature() —
@@ -64,6 +69,7 @@ class SystemBehaviorController extends Controller
             'kitchen_queue_enabled' => 'boolean',
             'self_order_enabled' => 'boolean',
             'ai_enabled' => 'boolean',
+            'payment_proof_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
             // `sometimes` dengan alasan yang sama seperti `business_type` di
             // halaman Profil: field yang tidak dikirim berarti "jangan sentuh",

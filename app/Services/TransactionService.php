@@ -22,7 +22,34 @@ class TransactionService
         private StockService $stockService,
         private UpsellEventRecorder $upsellEventRecorder,
         private QueueNumberAllocator $queueNumberAllocator,
+        private PaymentProofService $paymentProofs,
     ) {}
+
+    /**
+     * Baris pembayaran, berikut foto buktinya bila ada ([BL-075]).
+     *
+     * Satu tempat untuk kedua jalur online — checkout dan bayar open bill —
+     * karena aturannya identik dan menuliskannya dua kali berarti suatu hari
+     * ia akan berbeda di satu tempat.
+     *
+     * `claim()` tidak pernah melempar. Kalau tokennya tidak sah atau berkasnya
+     * sudah hilang, pembayarannya tetap tersimpan tanpa bukti: penjualan yang
+     * uangnya sudah diterima tidak boleh gagal karena sebuah foto. Yang menjaga
+     * agar hal itu tak terjadi diam-diam adalah validasi di
+     * StoreTransactionRequest, yang sudah menolak request-nya jauh sebelum
+     * sampai ke sini.
+     *
+     * @param  array<string, mixed>  $payment
+     */
+    private function recordPayment(Transaction $transaction, array $payment, int $tenantId): void
+    {
+        $transaction->payments()->create([
+            'payment_method_id' => $payment['payment_method_id'],
+            'amount' => $payment['amount'],
+            'reference_code' => $payment['reference_code'] ?? null,
+            'proof_path' => $this->paymentProofs->claim($payment['proof_token'] ?? null, $tenantId),
+        ]);
+    }
 
     /**
      * Beri kartu ini label panggil dan posisi di papan.
@@ -177,11 +204,7 @@ class TransactionService
             ]);
 
             foreach ($data['payments'] as $payment) {
-                $transaction->payments()->create([
-                    'payment_method_id' => $payment['payment_method_id'],
-                    'amount' => $payment['amount'],
-                    'reference_code' => $payment['reference_code'] ?? null,
-                ]);
+                $this->recordPayment($transaction, $payment, $user->tenant_id);
             }
 
             // 8. Update status
@@ -361,11 +384,7 @@ class TransactionService
 
             // Simpan pembayaran (support semua payment method: cash, QRIS, transfer, dll)
             foreach ($payments as $payment) {
-                $transaction->payments()->create([
-                    'payment_method_id' => $payment['payment_method_id'],
-                    'amount' => $payment['amount'],
-                    'reference_code' => $payment['reference_code'] ?? null,
-                ]);
+                $this->recordPayment($transaction, $payment, $transaction->tenant_id);
             }
 
             $transaction->update([
@@ -624,6 +643,18 @@ class TransactionService
                 'sync_status' => $needsReview ? Transaction::SYNC_NEEDS_REVIEW : null,
             ]);
 
+            // Jalur pembuat pembayaran KETIGA, dan satu-satunya yang tidak
+            // pernah menyimpan foto bukti bayar ([BL-075]) — bukan karena
+            // terlewat, melainkan karena assertCashOnly() di atas menolak
+            // setiap pembayaran non-tunai jauh sebelum sampai ke sini.
+            // Penjualan offline hari ini SELALU tunai, dan pembayaran tunai
+            // tidak pernah punya bukti untuk difoto.
+            //
+            // Begitu penjualan non-tunai offline dibuka (lihat [BL-016]),
+            // barisan inilah yang harus ikut berubah, dan bersamanya seluruh
+            // bagian offline [BL-075]: kompresi sebelum masuk antrean,
+            // penyimpanan sebagai Blob, dan unggahan yang terpisah dari
+            // pengiriman penjualannya.
             foreach ($payments as $payment) {
                 $transaction->payments()->create([
                     'payment_method_id' => $payment['payment_method_id'],

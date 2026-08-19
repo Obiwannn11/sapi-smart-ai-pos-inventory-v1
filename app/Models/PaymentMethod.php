@@ -10,7 +10,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class PaymentMethod extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToTenant;
+    use BelongsToTenant, HasFactory, SoftDeletes;
+
+    /**
+     * Satu-satunya tipe yang berarti "uang fisik berpindah tangan di sini".
+     *
+     * Definisi "non-tunai" di seluruh aplikasi diturunkan dari sini, bukan dari
+     * daftar terpisah: `qris_static`, `qris_dynamic`, dan `bank_transfer`
+     * adalah non-tunai karena mereka BUKAN ini. Menambah tipe baru di kemudian
+     * hari otomatis ikut terhitung non-tunai, yang memang jawaban yang benar.
+     */
+    public const TYPE_CASH = 'cash';
 
     protected $fillable = ['tenant_id', 'name', 'type', 'is_active'];
 
@@ -19,6 +29,11 @@ class PaymentMethod extends Model
         return [
             'is_active' => 'boolean',
         ];
+    }
+
+    public function isCash(): bool
+    {
+        return $this->type === self::TYPE_CASH;
     }
 
     // --- Relationships ---

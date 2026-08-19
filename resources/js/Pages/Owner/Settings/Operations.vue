@@ -16,6 +16,7 @@ const form = useForm({
     kitchen_queue_enabled: props.features.kitchen_queue_enabled,
     self_order_enabled:    props.features.self_order_enabled,
     ai_enabled:            props.features.ai_enabled,
+    payment_proof_enabled: props.features.payment_proof_enabled,
     upsell_mandatory:      props.features.upsell_mandatory,
     order_identity_mode:   props.features.order_identity_mode ?? 'none',
 });
@@ -107,6 +108,19 @@ const submit = () => {
                                     Analisis AI di aplikasi sekaligus akses AI client eksternal lewat token MCP.
                                     Kunci API dan tokennya sendiri diatur di
                                     <a href="/owner/settings/integrations" class="text-primary hover:underline">Integrasi &amp; Kredensial</a>.
+                                </span>
+                            </span>
+                        </label>
+
+                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+                            <input v-model="form.payment_proof_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                            <span class="text-sm">
+                                <span class="font-medium text-gray-900 block">Foto Bukti Bayar Non-Tunai</span>
+                                <span class="text-xs text-gray-500">
+                                    Kasir memotret bukti QRIS/transfer sebelum penjualan ditutup, dan fotonya melekat pada pembayarannya.
+                                    Berlaku untuk <strong>semua metode selain tunai</strong>; baris tunai tidak pernah diminta foto.
+                                    Menyalakannya menambah satu langkah ke tiap penjualan non-tunai, jadi nyalakan hanya bila memang perlu bukti saat ada perselisihan.
+                                    Penjualan <strong>offline selalu tunai</strong>, jadi aturan ini tidak pernah menghalangi kasir saat sinyal mati.
                                 </span>
                             </span>
                         </label>

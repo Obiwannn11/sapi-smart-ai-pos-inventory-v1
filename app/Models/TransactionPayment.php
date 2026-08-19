@@ -9,10 +9,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TransactionPayment extends Model
 {
     use HasFactory;
+
     const UPDATED_AT = null;
 
     protected $fillable = [
-        'transaction_id', 'payment_method_id', 'amount', 'reference_code',
+        'transaction_id', 'payment_method_id', 'amount', 'reference_code', 'proof_path',
     ];
 
     protected function casts(): array
@@ -31,5 +32,10 @@ class TransactionPayment extends Model
     public function paymentMethod(): BelongsTo
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function hasProof(): bool
+    {
+        return $this->proof_path !== null;
     }
 }

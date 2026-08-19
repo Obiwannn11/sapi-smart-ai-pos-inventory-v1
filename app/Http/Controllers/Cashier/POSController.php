@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Cashier;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PayOpenBillRequest;
 use App\Http\Requests\StoreTransactionRequest;
 use App\Http\Requests\SyncOfflineTransactionsRequest;
 use App\Models\CashDrawer;
@@ -60,6 +61,10 @@ class POSController extends Controller
             'paymentMethods' => $paymentMethods,
             'cashDrawer' => $openDrawer,
             'tenantName' => Auth::user()->tenant->name,
+            // Saklar foto bukti bayar non-tunai ([BL-075]). Eager, bukan
+            // ditunda: modal pembayaran harus tahu jawabannya sebelum kasir
+            // menekan Bayar, dan jawabannya satu boolean.
+            'paymentProofEnabled' => $user->tenant->payment_proof_enabled,
 
             // --- Katalog dan indeks upsell: ditunda ([BL-037]) ---
             // Keduanya kueri terberat di halaman ini (produk membawa varian,
@@ -165,7 +170,7 @@ class POSController extends Controller
     /**
      * Bayar open bill.
      */
-    public function payOpenBill(Request $request, Transaction $transaction): RedirectResponse
+    public function payOpenBill(PayOpenBillRequest $request, Transaction $transaction): RedirectResponse
     {
         $user = Auth::user();
 
@@ -173,13 +178,6 @@ class POSController extends Controller
         if (! $user || $transaction->tenant_id !== $user->tenant_id) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
-
-        $request->validate([
-            'payments' => 'required|array|min:1',
-            'payments.*.payment_method_id' => 'required|exists:payment_methods,id',
-            'payments.*.amount' => 'required|numeric|min:0',
-            'payments.*.reference_code' => 'nullable|string|max:255',
-        ]);
 
         try {
             $transaction = $this->transactionService->payOpenBill(

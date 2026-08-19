@@ -75,7 +75,7 @@ class Tenant extends Model
         'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'is_demo', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
-        'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled',
+        'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
         'upsell_mandatory', 'order_identity_mode',
     ];
 
@@ -95,6 +95,7 @@ class Tenant extends Model
         'kitchen_queue_enabled' => false,
         'self_order_enabled' => false,
         'ai_enabled' => true,
+        'payment_proof_enabled' => false,
         'upsell_mandatory' => false,
         'order_identity_mode' => self::ORDER_IDENTITY_NONE,
     ];
@@ -107,6 +108,7 @@ class Tenant extends Model
             'kitchen_queue_enabled' => 'boolean',
             'self_order_enabled' => 'boolean',
             'ai_enabled' => 'boolean',
+            'payment_proof_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
             'is_demo' => 'boolean',
         ];
@@ -130,6 +132,7 @@ class Tenant extends Model
             'kitchen_queue' => $this->kitchen_queue_enabled,
             'self_order' => $this->self_order_enabled,
             'ai' => $this->ai_enabled,
+            'payment_proof' => $this->payment_proof_enabled,
             default => false,
         };
     }

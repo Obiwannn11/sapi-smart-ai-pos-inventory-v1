@@ -57,6 +57,16 @@ Route::middleware('auth')
     ->whereIn('size', ['full', 'thumb'])
     ->name('media.product-image');
 
+// Foto bukti bayar non-tunai ([BL-075]). Alasan ia ada di sini dan bukan di
+// grup kasir sama persis dengan gambar produk di atas — <img> tidak bisa
+// menampilkan halaman pengalihan. Yang berbeda hanya isinya: tangkapan layar
+// e-wallet kerap memuat nama dan nomor telepon pelanggan, jadi pemeriksaan
+// tenantnya di MediaController lebih penting di sini, bukan kurang.
+Route::middleware('auth')
+    ->get('/media/bukti-bayar/{payment}/{size}', [\App\Http\Controllers\MediaController::class, 'paymentProof'])
+    ->whereIn('size', ['full', 'thumb'])
+    ->name('media.payment-proof');
+
 // --- Langganan (sisi tenant) ---
 // Satu-satunya halaman bertenant yang tetap terbuka saat tenant ditangguhkan —
 // lihat daftar ALWAYS_ALLOWED di EnsureSubscriptionActive. Menutupnya berarti
@@ -97,15 +107,6 @@ Route::middleware(['auth', 'tenant'])
                 ->name('upgrade.destroy');
             Route::post('/langganan/tagihan/{invoice}/bukti', [\App\Http\Controllers\Billing\UpgradeController::class, 'storeProof'])
                 ->name('proof.store');
-
-            // Pelunasan peragaan — melunasi tagihan TANPA bukti transfer.
-            // Rutenya selalu terdaftar, tapi aksinya menjawab 404 di luar
-            // tenant peragaan dan di produksi (`InvoiceSettlement::canSimulate`).
-            // Gerbangnya sengaja di controller, bukan di sini: syaratnya
-            // bergantung pada tenant yang sedang masuk, dan middleware yang
-            // hanya bisa membaca lingkungan akan memberi rasa aman yang keliru.
-            Route::post('/langganan/tagihan/{invoice}/simulasi-bayar', [\App\Http\Controllers\Billing\SimulatedPaymentController::class, 'store'])
-                ->name('simulate.store');
 
             // Alur bayar lewat payment gateway (`[BL-059]`). Namanya diawali
             // `billing.` sehingga ikut tercakup ALWAYS_ALLOWED di
@@ -280,6 +281,13 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
             ->name('pos');
         Route::post('/transactions', [\App\Http\Controllers\Cashier\POSController::class, 'store'])
             ->name('transactions.store');
+
+        // Foto bukti bayar non-tunai ([BL-075]). Berdiri sendiri, SEBELUM
+        // penjualannya disimpan: checkout tetap JSON dan hanya membawa
+        // tokennya. Alasan lengkapnya di PaymentProofService.
+        Route::post('/bukti-bayar', [\App\Http\Controllers\Cashier\PaymentProofController::class, 'store'])
+            ->middleware('throttle:60,1')
+            ->name('payment-proofs.store');
 
         // Sinkronisasi transaksi offline (batch, JSON) — didaftarkan sebelum
         // rute ber-parameter agar "sync" tidak tertangkap sebagai {transaction}.

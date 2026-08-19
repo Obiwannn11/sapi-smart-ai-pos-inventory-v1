@@ -83,6 +83,11 @@ class HandleInertiaRequests extends Middleware
                         'kitchen_queue' => $user->tenant->hasFeature('kitchen_queue'),
                         'self_order' => $user->tenant->hasFeature('self_order'),
                         'ai' => $user->tenant->hasFeature('ai'),
+                        // Dibagikan, bukan dikirim per halaman: pelunasan
+                        // tagihan terbuka hidup di CashierTopbar, yang ada di
+                        // SETIAP halaman kasir dan tidak punya controller
+                        // sendiri untuk menitipkan propnya ([BL-075]).
+                        'payment_proof' => $user->tenant->hasFeature('payment_proof'),
                     ],
                 ] : null,
 

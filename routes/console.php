@@ -31,3 +31,9 @@ Schedule::command('subscriptions:compute-revenue')->monthlyOn(1, '04:00');
 // Pemangkasan ringkasan omset yang lewat retensi. Bulanan sudah cukup — datanya
 // pun hanya bertambah sebulan sekali.
 Schedule::command('subscriptions:prune-metrics')->monthlyOn(1, '04:30');
+
+// Foto bukti bayar yang diunggah lalu modalnya dibatalkan ([BL-075]). Harian
+// dan di jam sepi. Hanya menyentuh berkas TERTUNDA — foto yang sudah melekat
+// pada sebuah pembayaran tidak punya kebijakan retensi, dan itu keputusan yang
+// sengaja belum diambil.
+Schedule::command('payment-proofs:prune-unclaimed')->dailyAt('03:50');

@@ -23,6 +23,8 @@ const props = defineProps({
     categories: Array,
     products: Array,
     paymentMethods: Array,
+    // Saklar foto bukti bayar non-tunai milik toko ([BL-075]).
+    paymentProofEnabled: { type: Boolean, default: false },
     cashDrawer: Object,
     tenantName: { type: String, default: 'SAPI POS' },
     upsell: { type: Object, default: null },
@@ -1029,6 +1031,7 @@ onUnmounted(stopResizeCart);
             :show="showPaymentModal"
             :total-amount="cartTotal"
             :payment-methods="availablePaymentMethods"
+            :proof-required="paymentProofEnabled"
             @close="showPaymentModal = false"
             @confirm="handlePayment"
         />

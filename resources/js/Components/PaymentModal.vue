@@ -21,11 +21,20 @@
  */
 import { ref, computed, watch, nextTick } from 'vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import { useImageCompressor } from '@/composables/useImageCompressor';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
     totalAmount: { type: Number, default: 0 },
     paymentMethods: { type: Array, default: () => [] },
+    /**
+     * Saklar foto bukti bayar milik toko ([BL-075]). Mati bawaannya.
+     *
+     * Tidak perlu dipasangkan dengan pemeriksaan online: saat perangkat offline
+     * POS sudah menyaring metode bayar jadi tunai saja, jadi baris non-tunai —
+     * satu-satunya yang bisa meminta foto — tidak pernah ada di sana.
+     */
+    proofRequired: { type: Boolean, default: false },
 });
 
 const paymentMethodOptions = computed(() =>
@@ -40,6 +49,13 @@ const blankRow = () => ({
     amount: 0,
     touched: false,
     reference_code: '',
+    // Foto bukti bayar ([BL-075]). `proof_token` adalah UUID yang dikembalikan
+    // server setelah fotonya terunggah; yang menyeberang saat checkout hanya
+    // token itu, bukan berkasnya — lihat PaymentProofService.
+    proof_token: null,
+    proof_preview: null,
+    proof_uploading: false,
+    proof_error: null,
 });
 
 const rows = ref([blankRow()]);
@@ -122,6 +138,80 @@ const emptyRowIndex = computed(() =>
     rows.value.findIndex((row, idx) => !row.payment_method_id || amountAt(idx) <= 0)
 );
 
+// --- Foto bukti bayar ([BL-075]) ---
+
+const { compress } = useImageCompressor();
+
+const needsProof = (row) => props.proofRequired && isNonCash(row.payment_method_id);
+
+const missingProofIndex = computed(() =>
+    rows.value.findIndex((row) => needsProof(row) && !row.proof_token)
+);
+
+const uploadingProof = computed(() => rows.value.some((row) => row.proof_uploading));
+
+/**
+ * Unggah fotonya SEKARANG, bukan saat tombol Bayar ditekan.
+ *
+ * Kegagalan unggah yang baru ketahuan di detik terakhir adalah kegagalan yang
+ * terjadi di depan pelanggan yang sudah menunggu. Diunggah lebih dulu berarti
+ * kasir melihat centangnya sebelum ia menekan apa pun — dan bila jaringannya
+ * bermasalah, ia tahu saat masih punya waktu memotret ulang.
+ *
+ * Dikompresi lebih dulu di perangkat ([BL-077]): yang menyeberang jaringan
+ * warung adalah beberapa ratus kilobyte, bukan foto 12 MP apa adanya.
+ */
+const onProofPicked = async (idx, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    const row = rows.value[idx];
+    row.proof_error = null;
+    row.proof_uploading = true;
+
+    try {
+        const prepared = await compress(file);
+
+        const body = new FormData();
+        body.append('proof', prepared);
+
+        const response = await fetch('/cashier/bukti-bayar', {
+            method: 'POST',
+            body,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+            throw new Error('upload gagal');
+        }
+
+        const { token } = await response.json();
+
+        row.proof_token = token;
+        row.proof_preview = URL.createObjectURL(prepared);
+    } catch {
+        row.proof_error = 'Foto gagal diunggah. Coba potret ulang.';
+    } finally {
+        row.proof_uploading = false;
+    }
+};
+
+const clearProof = (idx) => {
+    const row = rows.value[idx];
+
+    if (row.proof_preview) URL.revokeObjectURL(row.proof_preview);
+
+    row.proof_token = null;
+    row.proof_preview = null;
+    row.proof_error = null;
+};
+
 const blockingReason = computed(() => {
     if (emptyRowIndex.value !== -1) {
         return `Lengkapi metode dan nominal pada Pembayaran ${emptyRowIndex.value + 1}.`;
@@ -131,6 +221,12 @@ const blockingReason = computed(() => {
     }
     if (shortfall.value > 0) {
         return `Masih kurang ${formatCurrency(shortfall.value)}.`;
+    }
+    if (uploadingProof.value) {
+        return 'Menunggu foto bukti bayar selesai diunggah.';
+    }
+    if (missingProofIndex.value !== -1) {
+        return `Foto bukti bayar wajib pada Pembayaran ${missingProofIndex.value + 1}.`;
     }
     return '';
 });
@@ -209,6 +305,7 @@ const confirm = () => {
         payment_method_id: row.payment_method_id,
         amount: amountAt(idx),
         reference_code: row.reference_code || null,
+        proof_token: row.proof_token,
     })));
 
     emit('close');
@@ -331,6 +428,43 @@ const close = () => {
                                 placeholder="Kode referensi (opsional)"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                             />
+
+                            <!-- Foto bukti bayar ([BL-075]). Hanya untuk baris
+                                 non-tunai, dan hanya bila tokonya menyalakan.
+                                 `capture="environment"` membuka kamera belakang
+                                 langsung di ponsel, tanpa mampir ke galeri. -->
+                            <div v-if="needsProof(row)" class="space-y-2">
+                                <input
+                                    :id="'proof-' + idx"
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    class="hidden"
+                                    @change="onProofPicked(idx, $event)"
+                                />
+
+                                <div v-if="row.proof_preview" class="flex items-center gap-3 rounded-lg border border-success/30 bg-success/5 p-2">
+                                    <img :src="row.proof_preview" alt="Pratinjau bukti bayar" class="h-14 w-14 rounded object-cover border border-gray-200 bg-white" />
+                                    <span class="flex-1 text-xs font-medium text-success">Bukti bayar terlampir</span>
+                                    <button type="button" class="text-xs text-red-500 hover:text-red-700" @click="clearProof(idx)">
+                                        Ganti
+                                    </button>
+                                </div>
+
+                                <label
+                                    v-else
+                                    :for="'proof-' + idx"
+                                    class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-amber-300 bg-amber-50/60 px-3 py-2.5 text-xs font-medium text-amber-800 hover:border-amber-400"
+                                >
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    {{ row.proof_uploading ? 'Mengunggah foto...' : 'Foto bukti bayar (wajib)' }}
+                                </label>
+
+                                <p v-if="row.proof_error" role="alert" class="text-xs text-destructive">{{ row.proof_error }}</p>
+                            </div>
                         </div>
 
                         <!-- Add payment row -->

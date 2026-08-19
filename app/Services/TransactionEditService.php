@@ -12,7 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 class TransactionEditService
 {
-    public function __construct(private StockService $stockService) {}
+    public function __construct(
+        private StockService $stockService,
+        private PaymentProofService $paymentProofs,
+    ) {}
 
     /**
      * Edit penuh transaksi completed: item, modifier, pembayaran.
@@ -85,15 +88,46 @@ class TransactionEditService
             $totalAmount = $this->rebuildItems($transaction, $data['items']);
 
             // 5. Rebuild payments + recompute change
+            //
+            // Foto bukti bayar DIPERTAHANKAN menyeberangi pembangunan ulang
+            // ini ([BL-075]). Baris pembayaran dihapus lalu dibuat lagi dari
+            // kiriman client, dan client edit tidak pernah mengirim bukti —
+            // jadi tanpa penyelamatan di bawah, mengoreksi jumlah item pada
+            // penjualan QRIS akan MENGHAPUS buktinya sebagai efek samping.
+            // Itu persis jenis kesalahan yang paling sulit disadari: tidak ada
+            // pesan galat, tidak ada yang gagal, buktinya hanya tidak ada lagi
+            // saat perselisihan datang berbulan-bulan kemudian.
+            //
+            // Dicocokkan lewat `payment_method_id` karena itulah satu-satunya
+            // identitas yang bertahan — baris lamanya sendiri sudah dihapus.
+            // Metode yang dicabut dari transaksi kehilangan buktinya, dan
+            // berkasnya ikut dihapus supaya tidak jadi yatim di disk.
+            $survivingProofs = $transaction->payments
+                ->whereNotNull('proof_path')
+                ->pluck('proof_path', 'payment_method_id');
+
             $transaction->payments()->delete();
             $totalPaid = 0;
+            $claimedProofs = [];
             foreach ($data['payments'] as $payment) {
+                $methodId = $payment['payment_method_id'];
+                $proofPath = $survivingProofs[$methodId] ?? null;
+
+                if ($proofPath !== null) {
+                    $claimedProofs[] = $proofPath;
+                }
+
                 $transaction->payments()->create([
-                    'payment_method_id' => $payment['payment_method_id'],
+                    'payment_method_id' => $methodId,
                     'amount' => $payment['amount'],
                     'reference_code' => $payment['reference_code'] ?? null,
+                    'proof_path' => $proofPath,
                 ]);
                 $totalPaid += $payment['amount'];
+            }
+
+            foreach ($survivingProofs->diff($claimedProofs) as $orphan) {
+                $this->paymentProofs->files()->delete($orphan);
             }
             if ($totalPaid < $totalAmount) {
                 throw new \Exception('Total pembayaran kurang dari total transaksi setelah edit.');

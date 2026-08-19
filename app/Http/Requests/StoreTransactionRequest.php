@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\Product;
 use App\Models\UpsellEvent;
+use App\Services\PaymentProofService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -58,6 +59,15 @@ class StoreTransactionRequest extends FormRequest
             ],
             'payments.*.amount' => 'required|numeric|min:0',
             'payments.*.reference_code' => 'nullable|string|max:255',
+
+            // Token foto bukti bayar ([BL-075]) — bukan berkasnya.
+            //
+            // Fotonya sudah diunggah lebih dulu lewat endpoint tersendiri, dan
+            // yang menyeberang di sini hanya sebuah UUID. Dengan begitu payload
+            // checkout tetap JSON: menukarnya jadi multipart demi satu foto
+            // akan mengubah setiap angka jadi string di seluruh validasi yang
+            // menjaga uang. Alasan lengkapnya di PaymentProofService.
+            'payments.*.proof_token' => 'nullable|uuid',
 
             // Notes
             'notes' => 'nullable|string|max:1000',
@@ -141,6 +151,32 @@ class StoreTransactionRequest extends FormRequest
             if ($totalBayar < $totalBelanja) {
                 $validator->errors()->add('payments', 'Total pembayaran kurang dari total belanja.');
             }
+
+            $this->validatePaymentProofs($validator, $this->input('payments', []));
         });
+    }
+
+    /**
+     * Foto bukti bayar wajib untuk setiap pembayaran non-tunai, bila tokonya
+     * menyalakannya ([BL-075]).
+     *
+     * **Ditegakkan di server, bukan hanya dengan menyembunyikan tombolnya.**
+     * Modal pembayaran memang menahan tombol Bayar, tapi aturan yang hanya
+     * hidup di layar adalah aturan yang tidak berlaku bagi siapa pun yang
+     * mengirim request sendiri.
+     *
+     * Aturannya sendiri di PaymentProofService::missingProofs(), dipakai
+     * bersama jalur bayar open bill.
+     *
+     * @param  array<int, array<string, mixed>>  $payments
+     */
+    private function validatePaymentProofs($validator, array $payments): void
+    {
+        $missing = app(PaymentProofService::class)
+            ->missingProofs($payments, Auth::user()?->tenant);
+
+        foreach ($missing as $index => $message) {
+            $validator->errors()->add("payments.{$index}.proof_token", $message);
+        }
     }
 }
