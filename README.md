@@ -128,18 +128,48 @@ Langganan berjalan **dua jalur**: harga normal dan **harga subsidi untuk UMKM** 
 ### Siklus hidup
 
 ```
-trial (30 hari) ──┐
-                  ├──> grace (hanya-baca, 30 hari) ──> suspended
+trial (2 bulan) ──┐
+                  ├──> grace (bertingkat, 30 hari) ──> suspended
 active (periode) ─┘
 ```
 
-Angka-angkanya kebijakan komersial, jadi tinggal di `config/subscription.php` (`trial_days`, `grace_days`), bukan sebagai konstanta di kode.
+Angka-angkanya kebijakan komersial, jadi tinggal di `config/subscription.php` (`trial_months`, `grace_days`, `grace_intensive_from_day`, `grace_readonly_from_day`), bukan sebagai konstanta di kode.
+
+Masa gratisnya dihitung dalam **bulan**, bukan hari, karena jangkar tanggal tagih diambil dari **tanggal daftar**: yang mendaftar tanggal 7 ditagih tiap tanggal 7. Menghitungnya dalam hari menggeser jangkarnya sekali dan permanen.
 
 Di keadaan `grace`, halaman tetap terbuka dan data lama tetap bisa dibuka serta diunduh — hanya permintaan yang **mengubah** data yang ditolak. Menyandera data pelanggan bukan alat penagihan yang sah; menahan layanan baru adalah. Halaman `/langganan` dan logout **selalu** terbuka di keadaan apa pun, karena menutup jalan keluar berarti tenant tak akan pernah bisa keluar dari keadaan itu — termasuk dengan membayar.
 
+### Prabayar, dan harganya dari bulan lalu
+
+**Bayar dulu, baru pakai.** Tagihan sebuah periode terbit **sebelum** periode itu dimulai (`invoice_lead_days`, H-7) dan dilunasi di awal, bukan ditagih di belakang atas pemakaian yang sudah lewat. Itu sekaligus menjelaskan kenapa tarifnya tidak bisa diambil dari bulan yang sedang ditagih: pada saat tagihannya terbit, bulan itu belum terjadi.
+
+Karena itu aturannya satu baris, dan berlaku untuk seluruh jalur harga:
+
+> **Tarif periode P dihitung dari omzet bulan sebelum P** — bukan dari omzet P, dan bukan dari omzet saat tagihannya dibayar.
+
+Contoh yang menjadi acuan (keputusan pemilik 2026-08-19, `[BL-056]`):
+
+| | |
+|---|---|
+| Daftar | Juli |
+| Bulan 1–2 | Juli & Agustus — **gratis**, tidak ada tagihan |
+| Bulan 3 | September — tagihan pertama, tarifnya dari **omzet Agustus** |
+| Bulan 4 | Oktober — tarifnya dari omzet September |
+
+Dua akibat yang sengaja dinyatakan, karena keduanya pernah ditanyakan:
+
+- **Pengajuan Harga Adaptif berlaku untuk periode berikutnya, bukan periode yang sedang ditagih.** Tagihan yang sudah terbit tidak pernah dihitung ulang; nominal dan `pricing_context`-nya membeku di saat terbit (`Invoice::amount`). Tenant yang mengajukan di tengah tenggat tetap melunasi tagihan yang ada, dan keringanannya muncul di tagihan berikutnya. Alternatifnya — pengajuan yang memotong tunggakan berjalan — akan menjadikan pengajuan sebagai jalan keluar dari tagihan mana pun.
+- **Omzet yang dinilai adalah omzet periode yang tertunggak, bukan bulan berjalan.** `pricingAsOf()` memakai awal bulan periode tagihan dan `current_period_end` membeku selama tenant belum membayar, jadi tenant yang menunggak dari Agustus tidak diperiksa dengan omzet Oktober.
+
+Penghitung omzetnya sendiri (`subscriptions:compute-revenue`) berjalan **tanggal 1 pukul 04:00** atas bulan yang baru saja tutup — lihat [Tugas terjadwal](#tugas-terjadwal). Urutan "hitung dulu, tagih kemudian" itu bagian dari aturan di atas, bukan detail penjadwalan yang bebas digeser.
+
+> ⚠️ **Aturan di atas belum sepenuhnya ditegakkan kode hari ini.** Penerbit tagihan berjalan 03:30 sementara penghitung omzet 04:00, dan tagihan terbit H-7 — sehingga tenant yang jangkar tagihnya jatuh di **tanggal 1–8** ditagih dari omzet **dua** bulan sebelumnya, bukan satu. Perinciannya, dampaknya, dan pilihan perbaikannya ada di `[BL-080]` (`docs/BACKLOG.md`). Jangan membaca bagian ini sebagai gambaran perilaku yang berjalan sampai entri itu ditutup.
+
 ### Seat
 
-Seat dihitung dari **pengguna aktif**, tetapi tagihan mengikuti `seat_high_water` — puncak jumlah seat dalam satu periode. Menonaktifkan staf di akhir bulan karena itu tidak menghemat biaya, dan itu disengaja.
+Seat dihitung dari **pengguna aktif**, tetapi yang ditagih adalah `purchased_extra_seats` — seat yang benar-benar **dibeli**, bukan puncak pemakaian. Melepas seat berlaku di akhir periode, bukan seketika: kursinya masih boleh dipakai sampai tanggal itu, dan tenant diberi tahu tanggalnya.
+
+`seat_high_water` masih ada tapi perannya sudah bukan penagihan — ia hanya dimensi penetapan harga (`active_seats`), dan hari ini belum dipakai satu pun aturan harga.
 
 ### Jalur subsidi
 
