@@ -77,3 +77,33 @@ test('bagian pengganti testimoni menyebut siapa yang dilayani, bukan siapa yang 
         ->assertSee('Toko Kelontong &amp; Retail', false)
         ->assertSee('Usaha dengan Beberapa Kasir');
 });
+
+test('tangkapan layar landing dilayani sebagai WebP, bukan PNG mentah', function () {
+    // Kelimanya bertanggal 25 Mei dan masih PNG sampai `[BL-032]` butir (3)
+    // ditutup: diambil ulang dari aplikasi yang berjalan, lalu dikonversi WebP
+    // q80. Yang dikunci di sini bukan kesegarannya — itu tidak bisa diuji —
+    // melainkan bahwa tidak ada yang diam-diam mengembalikan PNG-nya.
+    $html = get('/')->assertStatus(200)->getContent();
+
+    $layar = ['Dashboard-owner', 'POS-Interface', 'Reports-Daily', 'Stock-Management', 'Product-List'];
+
+    foreach ($layar as $nama) {
+        expect($html)->toContain("{$nama}.webp")
+            ->and($html)->not->toContain("{$nama}.png");
+
+        $path = public_path("{$nama}.webp");
+
+        expect(file_exists($path))->toBeTrue()
+            ->and(filesize($path))->toBeLessThan(120 * 1024)
+            ->and(file_exists(public_path("{$nama}.png")))->toBeFalse();
+    }
+});
+
+test('tangkapan layar landing menyebutkan dimensinya supaya tata letak tidak bergeser', function () {
+    // Tanpa width/height, kelima gambar 2160x1350 ini menggeser isi halaman saat
+    // menyusul termuat — dan empat di antaranya `loading="lazy"`, jadi mereka
+    // menyusul tepat ketika pembaca sedang membaca.
+    $html = get('/')->assertStatus(200)->getContent();
+
+    expect(substr_count($html, 'width="2160" height="1350"'))->toBe(6);
+});

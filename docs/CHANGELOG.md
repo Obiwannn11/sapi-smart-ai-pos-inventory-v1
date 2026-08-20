@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-20 | ADDITION | UI | Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3) |
 | 2026-08-20 | HOTFIX | Seeder | Seeder Demo Melewatkan Hari yang Hanya Berisi Tagihan Terbuka |
 | 2026-08-20 | ADDITION | Langganan | Kuota AI Tambahan Akhirnya Bisa Dibeli, dan Dilepas Lagi — Persis seperti Kursi (BL-069) |
 | 2026-08-20 | DEPRECATE | UI | Testimoni Karangan Dicabut, Diganti Bagian yang Tidak Mengaku Sebagai Kesaksian (BL-078) |
@@ -198,6 +199,25 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3)
+- **Tanggal:** 2026-08-20
+- **Fase Terkait:** Di Luar Fase — butir terakhir `[BL-032]`, tertahan sejak 2026-08-14 bukan karena kodenya melainkan karena tidak ada alat yang bisa menulis berkas gambar. Menutup `[BL-032]` seluruhnya
+- **Dampak:** Frontend | Aset | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** `Dashboard-owner`, `POS-Interface`, `Reports-Daily`, `Stock-Management`, dan `Product-List` diambil ulang dari aplikasi yang benar-benar berjalan, menggantikan berkas bertanggal 25 Mei. Kelimanya kini WebP q80 pada 2160x1350 — dimensi yang sama persis dengan PNG yang digantikannya. Keenam rujukan di landing menunjuk `.webp`, lengkap dengan `width`/`height` dan `loading="lazy"` untuk lima yang berada di bawah lipatan.
+- **Alasan:** Berkas Mei mendahului hampir semua yang dikirim sejak itu: tema hijau, topbar tagihan terbuka, papan antrian, Saran Jual, Aturan Diskon, AI Analysis, Koreksi Offline, Staf, dan Role tidak ada satu pun di sana. `Product-List.png` yang lama bahkan memajang ikon "gambar rusak" di setiap kartu.
+
+- **Penghalang yang dicatat dua kali sebagai buntu ternyata hanya satu server MCP yang belum tersambung.** Entri backlognya sudah menuliskan tiga jalan keluar; yang terjadi adalah nomor (3) — `chrome-devtools` tersambung, dan alat `take_screenshot`-nya menerima `filePath`. Yang membuat hasilnya setara berkas lama adalah `emulate` dengan `<lebar>x<tinggi>x<DPR>`: 1440x900 pada DPR 1,5 menghasilkan 2160x1350 asli, jadi ketajaman 2x didapat tanpa memperbesar gambar sedikit pun.
+- **1440 CSS px dipilih setelah 1080 terbukti salah, dan itu bukan soal selera.** Pada 1080 px, keempat kartu statistik dashboard memampatkan angkanya jadi "Rp 3.0…", "Rp 13…", dan "Rp 9.2…". Tangkapan layar produk yang memajang angka terpotong lebih buruk daripada tangkapan layar usang. Pada 1440 keempatnya utuh.
+- **Keranjang POS sengaja diisi lebih dulu.** Layar kasir berkeranjang kosong tidak menunjukkan apa pun yang membedakan aplikasi ini; yang terpasang sekarang memuat satu item bermodifier (Iced + Less Sugar), satu item biasa, tombol "Harga khusus" per baris, serta "Tunda Bayar" dan "BAYAR" dalam keadaan aktif. Pengisiannya berhenti tepat sebelum "BAYAR" — tidak ada transaksi yang tercatat demi sebuah gambar.
+- **Turun ke WebP menghemat lebih dari yang terlihat.** PNG hasil tangkapan berjumlah 1.066 KB; WebP q80 dari berkas yang sama berjumlah 294 KB. Yang layak dicatat: itu **lebih ringan daripada lima PNG Mei yang digantikannya** (531 KB), padahal isinya jauh lebih padat.
+- **`width`/`height` dipasang bersama `loading="lazy"`, bukan sesudahnya.** Lima dari enam gambar dimuat malas, jadi mereka menyusul justru ketika pembaca sedang membaca; tanpa dimensi, tiap kedatangan menggeser isi halaman. Yang di hero sengaja **tidak** lazy karena ia di atas lipatan. Sebuah test mengunci keenamnya membawa dimensi.
+- **Dua temuan lain saat memotret sengaja tidak dikerjakan di sini**, dan keduanya jadi entri sendiri: `[BL-082]` (aplikasi berjalan di UTC sementara tokonya tidak) dan `[BL-083]` (kartu melayang di hero menjanjikan prediksi stok yang tidak ada mesinnya).
+- **Yang diketahui masih kurang:** nol produk demo punya foto di kedua tenant, jadi kartu produk memakai penampung berinisial.
+- **Berkas:** `public/{Dashboard-owner,POS-Interface,Reports-Daily,Stock-Management,Product-List}.webp` (baru) · `public/{…}.png` (dihapus) · `resources/views/public/landing.blade.php` — enam rujukan · `tests/Feature/Public/LandingClaimsTest.php` — dua test baru (71 tes lulus di `tests/Feature/Public`)
 
 ---
 

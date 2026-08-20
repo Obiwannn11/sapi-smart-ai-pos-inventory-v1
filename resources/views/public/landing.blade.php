@@ -184,7 +184,7 @@
                 <div class="lg:col-span-6 relative reveal-right">
                     <!-- Main Mockup -->
                     <div class="relative z-10 bg-gray-50 rounded-[3rem] p-4 border border-gray-100 shadow-2xl">
-                        <img src="{{ asset('Dashboard-owner.png') }}" alt="Mockup SAPI" class="rounded-[2.5rem] w-full">
+                        <img src="{{ asset('Dashboard-owner.webp') }}" alt="Dashboard pemilik SAPI" width="2160" height="1350" class="rounded-[2.5rem] w-full">
                     </div>
 
                     <!-- Floating Elements -->
@@ -416,7 +416,7 @@
                             <div class="relative">
                                 <div class="absolute -inset-4 bg-primary/10 rounded-[3rem] rotate-3 opacity-50"></div>
                                 <div class="relative bg-white rounded-[2.5rem] p-4 shadow-2xl border border-gray-100 transform -rotate-2 transition-transform hover:rotate-0 duration-500">
-                                    <img src="{{ asset('POS-Interface.png') }}" alt="Fitur SAPI" class="rounded-[2rem] w-full shadow-inner">
+                                    <img src="{{ asset('POS-Interface.webp') }}" alt="Layar kasir SAPI dengan keranjang berisi" width="2160" height="1350" loading="lazy" class="rounded-[2rem] w-full shadow-inner">
                                     <div class="absolute -bottom-6 -right-6 bg-primary text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl">
                                         Interface Kasir
                                     </div>
@@ -442,7 +442,7 @@
                 <div class="group reveal stagger-1">
                     <div class="bg-white rounded-[2.5rem] p-4 shadow-lg border border-gray-100 transition-all group-hover:-translate-y-2 group-hover:shadow-2xl">
                         <div class="relative rounded-[1.5rem] overflow-hidden mb-6 aspect-video">
-                            <img src="{{ asset('Reports-Daily.png') }}" alt="Laporan Harian" class="w-full h-full object-cover">
+                            <img src="{{ asset('Reports-Daily.webp') }}" alt="Laporan Harian" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
                         <h4 class="text-xl font-black text-gray-900 px-2">Laporan Harian Pintar</h4>
@@ -454,7 +454,7 @@
                 <div class="group reveal stagger-2">
                     <div class="bg-white rounded-[2.5rem] p-4 shadow-lg border border-gray-100 transition-all group-hover:-translate-y-2 group-hover:shadow-2xl">
                         <div class="relative rounded-[1.5rem] overflow-hidden mb-6 aspect-video">
-                            <img src="{{ asset('Stock-Management.png') }}" alt="Manajemen Stok" class="w-full h-full object-cover">
+                            <img src="{{ asset('Stock-Management.webp') }}" alt="Manajemen Stok" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
                         <h4 class="text-xl font-black text-gray-900 px-2">Kontrol Inventori Akurat</h4>
@@ -466,7 +466,7 @@
                 <div class="group reveal stagger-3">
                     <div class="bg-white rounded-[2.5rem] p-4 shadow-lg border border-gray-100 transition-all group-hover:-translate-y-2 group-hover:shadow-2xl">
                         <div class="relative rounded-[1.5rem] overflow-hidden mb-6 aspect-video">
-                            <img src="{{ asset('Product-List.png') }}" alt="Daftar Produk" class="w-full h-full object-cover">
+                            <img src="{{ asset('Product-List.webp') }}" alt="Daftar Produk" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
                         <h4 class="text-xl font-black text-gray-900 px-2">Katalog Produk Modern</h4>
@@ -652,7 +652,7 @@
                         </div>
                         <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-3 rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
-                                <img src="{{ asset('POS-Interface.png') }}" class="w-full opacity-30 blur-[2px] rounded-lg">
+                                <img src="{{ asset('POS-Interface.webp') }}" alt="" width="2160" height="1350" loading="lazy" class="w-full opacity-30 blur-[2px] rounded-lg">
                                 <div class="absolute inset-0 flex items-center justify-center">
                                     <div class="bg-white px-8 py-4 rounded-2xl shadow-2xl border border-primary/15 flex items-center gap-4 animate-bounce">
                                         <div class="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
