@@ -161,9 +161,33 @@ Dua akibat yang sengaja dinyatakan, karena keduanya pernah ditanyakan:
 - **Pengajuan Harga Adaptif berlaku untuk periode berikutnya, bukan periode yang sedang ditagih.** Tagihan yang sudah terbit tidak pernah dihitung ulang; nominal dan `pricing_context`-nya membeku di saat terbit (`Invoice::amount`). Tenant yang mengajukan di tengah tenggat tetap melunasi tagihan yang ada, dan keringanannya muncul di tagihan berikutnya. Alternatifnya — pengajuan yang memotong tunggakan berjalan — akan menjadikan pengajuan sebagai jalan keluar dari tagihan mana pun.
 - **Omzet yang dinilai adalah omzet periode yang tertunggak, bukan bulan berjalan.** `pricingAsOf()` memakai awal bulan periode tagihan dan `current_period_end` membeku selama tenant belum membayar, jadi tenant yang menunggak dari Agustus tidak diperiksa dengan omzet Oktober.
 
-Penghitung omzetnya sendiri (`subscriptions:compute-revenue`) berjalan **tanggal 1 pukul 04:00** atas bulan yang baru saja tutup — lihat [Tugas terjadwal](#tugas-terjadwal). Urutan "hitung dulu, tagih kemudian" itu bagian dari aturan di atas, bukan detail penjadwalan yang bebas digeser.
+Penghitung omzetnya sendiri (`subscriptions:compute-revenue`) berjalan **tanggal 1 pukul 02:40** atas bulan yang baru saja tutup, lima puluh menit sebelum penerbit tagihan — lihat [Tugas terjadwal](#tugas-terjadwal). Urutan "hitung dulu, tagih kemudian" itu bagian dari aturan di atas, bukan detail penjadwalan yang bebas digeser, dan ketergantungan itu ditulis sebagai komentar di kedua sisi `routes/console.php` serta dijaga `tests/Feature/Subscription/ScheduleOrderTest.php`.
 
-> ⚠️ **Aturan di atas belum sepenuhnya ditegakkan kode hari ini.** Penerbit tagihan berjalan 03:30 sementara penghitung omzet 04:00, dan tagihan terbit H-7 — sehingga tenant yang jangkar tagihnya jatuh di **tanggal 1–8** ditagih dari omzet **dua** bulan sebelumnya, bukan satu. Perinciannya, dampaknya, dan pilihan perbaikannya ada di `[BL-080]` (`docs/BACKLOG.md`). Jangan membaca bagian ini sebagai gambaran perilaku yang berjalan sampai entri itu ditutup.
+#### Tagihan menunggu omzetnya, dan itu bagian dari aturannya
+
+Aturan satu baris di atas berlaku **tanpa pengecualian** — tapi menegakkannya menuntut satu perilaku yang perlu diketahui sebelum membaca kode penagihan.
+
+Dua penanggalan berjalan berdampingan di sini, dan keduanya tidak otomatis sepakat:
+
+| | Mengikuti | Berputar tiap |
+|---|---|---|
+| **Siklus tagih** | tanggal daftar tenant (`billing_anchor_day`) | tanggal D bulan M → tanggal D bulan M+1 |
+| **Ringkasan omzet** | bulan kalender (`tenant_monthly_metrics.period`, `YYYY-MM`) | ditulis sekali, tanggal 1, atas bulan yang baru tutup |
+
+Bagi tenant yang jangkar tagihnya **tanggal 8 ke atas**, keduanya berimpit: tagihan terbit H-7, yaitu tanggal 1 atau sesudahnya, saat ringkasan bulan lalu sudah ada. Bagi yang berjangkar **tanggal 1–7**, tagihannya jatuh di akhir bulan sebelumnya — sebelum bulan penentu tarifnya tutup, jadi ringkasannya belum mungkin ada.
+
+**Yang dilakukan sistem: menunggu, bukan menebak.** Selama ringkasan bulan penentu tarifnya belum ada, tagihan tenant jalur Adaptif **tidak diterbitkan**. `subscriptions:advance-lifecycle` berjalan harian, jadi tagihannya terbit sendiri di hari ringkasan itu ditulis. Akibatnya masa siap tenant berjangkar 1–7 menjadi **0–6 hari**, bukan 7 — `invoice_lead_days` adalah batas **tercepat**, bukan janji. Itu pertukaran yang disengaja (keputusan pemilik 2026-08-20, `[BL-080]`): masa siap yang lebih pendek dibayarkan untuk tarif yang dihitung dari bulan yang benar.
+
+Empat hal yang membuat penundaan itu aman, dan tak satu pun boleh dilepas:
+
+- **Diputuskan SEBELUM penetapan harga** (`MetricReadiness`), bukan disimpulkan dari hasilnya. `PricingService::resolveFor()` tidak pernah kehabisan jawaban — tanpa aturan yang cocok ia menjatuhkan tenant ke **paket penampung**, dan angka itu berupa harga yang sah. Tanpa penjaga di depan, tenant subsidi yang ringkasannya belum tiba akan ditagih tarif penampung, lazimnya paket termahal.
+- **Bersyarat.** Hanya jalur Adaptif. Jalur Harga Tetap tidak pernah punya baris ringkasan sama sekali dan tetap mendapat masa siap 7 hari penuh.
+- **Bulannya tegas** (`MonthlyMetricResolver::requiredPeriodFor()`). Ringkasan bulan lain — sekalipun lebih tua dan tersedia — tidak melepas penundaan. Ini yang dulu mengubah data yang belum ada menjadi angka yang salah alih-alih ketiadaan yang terlihat.
+- **Ada batasnya.** Lewat hari jatuh tempo, penundaan berhenti: tagihannya **tetap ditahan** (bukan diterbitkan dari paket penampung), dicatat sebagai `invoices.postponement-overdue`, dan satu surel peringatan dikirim. Tanpa batas ini, "tunda sampai ada" berubah diam-diam jadi "tidak pernah ditagih" — mencabut consent menghapus seluruh ringkasan omzet seketika, sementara jalur harganya baru kembali normal di akhir periode.
+
+Keluaran `subscriptions:advance-lifecycle` memisahkan keduanya: **"Menunggu ringkasan omzet"** adalah keadaan wajar yang berulang tiap bulan, sementara **"Ringkasan omzet tak kunjung ada"** adalah peringatan yang menuntut tindakan.
+
+> Yang sengaja **belum** dikerjakan: memindahkan omzet penentu tarif ke jendela 30 hari yang selalu penuh, yang akan mengembalikan masa siap 7 hari untuk semua tenant. Ongkosnya bukan di kode melainkan di persetujuan — dokumen consent subsidi yang sudah ditandatangani menyebut pengumpulannya "sekali sebulan, setelah bulan berjalan tutup", jadi ia menuntut versi consent baru dan persetujuan ulang setiap tenant Adaptif. Tercatat sebagai `[BL-081]` (`docs/BACKLOG.md`).
 
 ### Seat
 
@@ -187,9 +211,9 @@ Dokumen persetujuannya terpisah per jalur (`resources/consents/`) dan **tidak pe
 | Perintah | Jadwal |
 |---|---|
 | `platform:prune-audit-logs` | harian, 03:10 |
-| `subscriptions:advance-lifecycle` | harian, 03:30 |
+| `subscriptions:advance-lifecycle` | harian, 03:30 — **wajib sesudah** `compute-revenue` |
 | `platform:alert-failed-logins` | tiap jam |
-| `subscriptions:compute-revenue` | tanggal 1, 04:00 |
+| `subscriptions:compute-revenue` | tanggal 1, 02:40 — **wajib sebelum** `advance-lifecycle` |
 | `subscriptions:prune-metrics` | tanggal 1, 04:30 |
 
 `schedule:run` harus aktif di produksi agar semua ini berjalan.
