@@ -107,3 +107,23 @@ test('tangkapan layar landing menyebutkan dimensinya supaya tata letak tidak ber
 
     expect(substr_count($html, 'width="2160" height="1350"'))->toBe(6);
 });
+
+test('hero tidak menjanjikan ramalan stok maupun tombol yang tidak punya jalan', function () {
+    // Tiga klaim di layar pertama, ketiganya diperiksa ke kode lebih dulu:
+    // BadgeHelperService membandingkan ambang tetap (stok <= 5, habis, tak
+    // terjual 30 hari, lewat expiry_date) dan tidak pernah meramal horizon;
+    // BadgeCard.vue hanya membuka-tutup, jadi tidak ada jalan satu tekan dari
+    // saran ke diskon terpasang. Lihat [BL-083].
+    //
+    // Yang dikunci di sini SENGAJA hanya hero. Sebutan prediksi di tab demo
+    // dan FAQ masih ada dan dicatat terpisah sebagai [BL-089]; menyapunya di
+    // test ini akan membuatnya lulus hanya setelah pekerjaan yang belum
+    // diputuskan pemilik ikut dikerjakan.
+    $html = get('/')->assertStatus(200)->getContent();
+
+    foreach (['Aman Hingga 14 Hari', 'Eksekusi Sekarang', 'memprediksi stok Anda'] as $klaim) {
+        expect($html)->not->toContain($klaim);
+    }
+
+    expect($html)->toContain('varian mendekati habis');
+});

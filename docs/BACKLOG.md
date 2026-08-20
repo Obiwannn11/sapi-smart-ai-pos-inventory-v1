@@ -155,6 +155,38 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   3. Rincian yang tidak membocorkan jawaban — tunai masuk, kembalian keluar, non-tunai yang ditandai "tidak masuk laci", kas negatif `[BL-031]` — **tetap** ditampilkan. Yang disembunyikan hanya totalnya.
 - **Catatan:** butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan; angkanya tetap ada di props Inertia dan terbaca dari devtools. Untuk peragaan itu cukup; untuk benar-benar mencegah manipulasi, `index()` harus berhenti mengirimkannya sampai hitungan fisik disetorkan.
 
+### [BL-089] Klaim Prediksi Stok Masih Berdiri di Tab Demo, FAQ, dan Label "Machine Learning"
+- **Ditemukan:** 2026-08-20 (butir (c) `[BL-083]` — menyisir hero ternyata membuka bahwa klaimnya jauh melampaui hero)
+- **Sumber:** Kelanjutan `[BL-083]`. Hero sudah dibersihkan; entri ini memuat sisanya, yang lingkupnya berbeda kelas
+- **Status:** Open — **butuh keputusan pemilik**, dan keputusannya lebih besar daripada `[BL-078]` maupun `[BL-083]`: yang dipertaruhkan satu dari tiga pilar bagian Demo
+- **Prioritas:** Medium — sama seperti `[BL-083]`, tapi permukaannya jauh lebih luas dan salah satunya menyebut teknologi tertentu dengan nama
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:569` — judul panel: **"Prediksi Stok (Machine Learning)"**
+  - `resources/views/public/landing.blade.php:514` — tab demo ketiga berlabel "Prediksi Stok"
+  - `resources/views/public/landing.blade.php:574` — tombol "Jalankan Ulang Prediksi AI"
+  - `resources/views/public/landing.blade.php:1025-1029` — FAQ "Bagaimana cara AI memprediksi stok saya?" beserta jawabannya
+  - `resources/views/public/landing.blade.php:~1066` — `predictData`: stok sekarang, **stok terprediksi**, dan **sisa hari** per produk
+  - `resources/views/public/landing.blade.php:~1060` — `badgeTemplates`: "Habis dalam 2-3 hari", plus tombol "Pesan ke Supplier", "Promo Diskon", "Buat Bundle"
+  - `app/Services/BadgeHelperService.php` — apa yang sebenarnya ada
+  - `app/Jobs/RunAiAnalysisJob.php:142` — satu-satunya yang menyerempet proyeksi, dan itu **profit**, bukan stok
+- **Deskripsi:**
+  `[BL-083]` menutup dua kartu melayang di hero dengan asumsi itulah sisanya. Ternyata bukan. Sebutan ramalan stok berdiri di **empat tempat lain**, dan tiga di antaranya lebih tegas daripada kartu yang baru dicabut:
+
+  1. **"Machine Learning" disebut dengan nama.** Tidak ada model, tidak ada pelatihan, tidak ada pustaka ML di seluruh `composer.json`. Yang ada penyedia LLM (Anthropic, Gemini, OpenAI, SumoPod) untuk analisis teks. Menyebut teknologi tertentu adalah klaim yang paling mudah diperiksa orang luar, dan paling mahal bila keliru.
+  2. **Tab demonya interaktif dan memperagakan angka ramalan.** `predictData` memberi tiap produk "stok terprediksi" dan "sisa hari", dengan tombol "Jalankan Ulang Prediksi AI" yang membuat peragaannya terasa seperti perhitungan sungguhan. Ini bukan kalimat yang bisa diganti — ini satu dari tiga tab, dengan data dan interaksinya sendiri.
+  3. **FAQ menjelaskan CARA kerjanya.** "AI kami menganalisis data transaksi historis toko Anda selama 90 hari terakhir untuk menemukan pola musiman dan tren harian unik toko Anda." Kalimat itu menjelaskan mekanisme yang tidak ada — dan penjelasan mekanisme jauh lebih meyakinkan, karenanya jauh lebih menyesatkan, daripada slogan.
+  4. **Tombol aksi di peragaan badge** — "Pesan ke Supplier", "Promo Diskon", "Buat Bundle" — sama persis dengan "Eksekusi Sekarang" yang baru dicabut `[BL-083]` butir (b): tidak ada jalan satu tekan untuk satu pun dari ketiganya.
+- **Yang perlu diputuskan pemilik, dan kenapa ini bukan sekadar sunting teks:**
+  1. **Apakah prediksi stok akan dibangun?** Bila ya, ini bukan entri pemasaran melainkan entri fitur, dan halaman itu boleh tetap berdiri sampai fiturnya menyusul — asalkan diberi tanda "segera hadir", bukan dibiarkan tampak sudah jalan. Bila tidak, tab ketiga harus diganti dengan pilar yang benar-benar ada.
+  2. **Apa penggantinya bila dibongkar?** Tiga tab hari ini: Simulasi Kasir, Badge Helper AI, Prediksi Stok. Kandidat pengganti yang sudah nyata dan belum punya peragaan: Saran Jual berbasis aturan (`[BL-074]`), diskon dinamis dengan lantai untung (`[BL-018]`), atau tagihan terbuka berumur (`[BL-031]`).
+- **Usulan Perbaikan:**
+  **(a)** Apa pun keputusannya, **"(Machine Learning)" dicabut lebih dulu dan sendirian.** Ia klaim paling tegas, paling murah dibuang, dan tidak menunggu keputusan tentang tab.
+  **(b)** Jawaban FAQ diganti dengan yang benar-benar dikerjakan `BadgeHelperService`: ambang stok, dead stock 30 hari, dan kedaluwarsa. Pertanyaannya ikut berubah, karena "bagaimana cara AI memprediksi stok saya" tidak punya jawaban jujur.
+  **(c)** Tombol aksi di peragaan badge diturunkan jadi label, sama seperti `[BL-083]` butir (b) — atau dibangun jalannya. Keduanya sah; yang tidak sah adalah membiarkannya tampak bisa ditekan.
+  **(d)** **Jangan** menyimpan kata "prediksi" sambil membuang "Machine Learning". Yang menyesatkan bukan nama teknologinya melainkan janji horizonnya.
+
+---
+
 ### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
 - **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
 - **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
@@ -190,38 +222,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(b)** **Satu tempat saja yang boleh menjawab "hari ini milik tenant ini"** — sebuah helper di sisi PHP, dipakai bersama oleh laporan, dashboard, dan penghitung metrik. Aturan ini sudah terbukti pada `Transaction::effectiveDateSql()` dan `Transaction::openBillCutoff()`; zona waktu punya bentuk masalah yang sama persis, dan dua definisi yang berselisih hanya akan terlihat pada angka laporan.
   **(c)** **Sisi peramban ikut, di commit yang sama.** Selisih yang terlihat hari ini lahir justru karena satu sisi sudah lokal dan sisi lain belum. Memperbaiki server saja akan menukar arah selisihnya, bukan menghapusnya.
   **(d)** **Jangan** menambal dengan mengurangi 7 jam di satu-dua query. Itu memperbaiki layar yang sedang dilihat dan meninggalkan sisanya berselisih dengan layar itu.
-
----
-
-### [BL-084] Klaim Prediksi Stok Masih Berdiri di Tab Demo, FAQ, dan Label "Machine Learning"
-- **Ditemukan:** 2026-08-20 (butir (c) `[BL-083]` — menyisir hero ternyata membuka bahwa klaimnya jauh melampaui hero)
-- **Sumber:** Kelanjutan `[BL-083]`. Hero sudah dibersihkan; entri ini memuat sisanya, yang lingkupnya berbeda kelas
-- **Status:** Open — **butuh keputusan pemilik**, dan keputusannya lebih besar daripada `[BL-078]` maupun `[BL-083]`: yang dipertaruhkan satu dari tiga pilar bagian Demo
-- **Prioritas:** Medium — sama seperti `[BL-083]`, tapi permukaannya jauh lebih luas dan salah satunya menyebut teknologi tertentu dengan nama
-- **Area Terdampak:**
-  - `resources/views/public/landing.blade.php:569` — judul panel: **"Prediksi Stok (Machine Learning)"**
-  - `resources/views/public/landing.blade.php:514` — tab demo ketiga berlabel "Prediksi Stok"
-  - `resources/views/public/landing.blade.php:574` — tombol "Jalankan Ulang Prediksi AI"
-  - `resources/views/public/landing.blade.php:1025-1029` — FAQ "Bagaimana cara AI memprediksi stok saya?" beserta jawabannya
-  - `resources/views/public/landing.blade.php:~1066` — `predictData`: stok sekarang, **stok terprediksi**, dan **sisa hari** per produk
-  - `resources/views/public/landing.blade.php:~1060` — `badgeTemplates`: "Habis dalam 2-3 hari", plus tombol "Pesan ke Supplier", "Promo Diskon", "Buat Bundle"
-  - `app/Services/BadgeHelperService.php` — apa yang sebenarnya ada
-  - `app/Jobs/RunAiAnalysisJob.php:142` — satu-satunya yang menyerempet proyeksi, dan itu **profit**, bukan stok
-- **Deskripsi:**
-  `[BL-083]` menutup dua kartu melayang di hero dengan asumsi itulah sisanya. Ternyata bukan. Sebutan ramalan stok berdiri di **empat tempat lain**, dan tiga di antaranya lebih tegas daripada kartu yang baru dicabut:
-
-  1. **"Machine Learning" disebut dengan nama.** Tidak ada model, tidak ada pelatihan, tidak ada pustaka ML di seluruh `composer.json`. Yang ada penyedia LLM (Anthropic, Gemini, OpenAI, SumoPod) untuk analisis teks. Menyebut teknologi tertentu adalah klaim yang paling mudah diperiksa orang luar, dan paling mahal bila keliru.
-  2. **Tab demonya interaktif dan memperagakan angka ramalan.** `predictData` memberi tiap produk "stok terprediksi" dan "sisa hari", dengan tombol "Jalankan Ulang Prediksi AI" yang membuat peragaannya terasa seperti perhitungan sungguhan. Ini bukan kalimat yang bisa diganti — ini satu dari tiga tab, dengan data dan interaksinya sendiri.
-  3. **FAQ menjelaskan CARA kerjanya.** "AI kami menganalisis data transaksi historis toko Anda selama 90 hari terakhir untuk menemukan pola musiman dan tren harian unik toko Anda." Kalimat itu menjelaskan mekanisme yang tidak ada — dan penjelasan mekanisme jauh lebih meyakinkan, karenanya jauh lebih menyesatkan, daripada slogan.
-  4. **Tombol aksi di peragaan badge** — "Pesan ke Supplier", "Promo Diskon", "Buat Bundle" — sama persis dengan "Eksekusi Sekarang" yang baru dicabut `[BL-083]` butir (b): tidak ada jalan satu tekan untuk satu pun dari ketiganya.
-- **Yang perlu diputuskan pemilik, dan kenapa ini bukan sekadar sunting teks:**
-  1. **Apakah prediksi stok akan dibangun?** Bila ya, ini bukan entri pemasaran melainkan entri fitur, dan halaman itu boleh tetap berdiri sampai fiturnya menyusul — asalkan diberi tanda "segera hadir", bukan dibiarkan tampak sudah jalan. Bila tidak, tab ketiga harus diganti dengan pilar yang benar-benar ada.
-  2. **Apa penggantinya bila dibongkar?** Tiga tab hari ini: Simulasi Kasir, Badge Helper AI, Prediksi Stok. Kandidat pengganti yang sudah nyata dan belum punya peragaan: Saran Jual berbasis aturan (`[BL-074]`), diskon dinamis dengan lantai untung (`[BL-018]`), atau tagihan terbuka berumur (`[BL-031]`).
-- **Usulan Perbaikan:**
-  **(a)** Apa pun keputusannya, **"(Machine Learning)" dicabut lebih dulu dan sendirian.** Ia klaim paling tegas, paling murah dibuang, dan tidak menunggu keputusan tentang tab.
-  **(b)** Jawaban FAQ diganti dengan yang benar-benar dikerjakan `BadgeHelperService`: ambang stok, dead stock 30 hari, dan kedaluwarsa. Pertanyaannya ikut berubah, karena "bagaimana cara AI memprediksi stok saya" tidak punya jawaban jujur.
-  **(c)** Tombol aksi di peragaan badge diturunkan jadi label, sama seperti `[BL-083]` butir (b) — atau dibangun jalannya. Keduanya sah; yang tidak sah adalah membiarkannya tampak bisa ditekan.
-  **(d)** **Jangan** menyimpan kata "prediksi" sambil membuang "Machine Learning". Yang menyesatkan bukan nama teknologinya melainkan janji horizonnya.
 
 ---
 
@@ -690,7 +690,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
 | `BL-085` | Grup "Keuangan" di sidebar menampung alat promosi bersama laporan uang | 2026-08-21 | `[REFACTOR] Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085)` |
-| `BL-083` | Kartu melayang di hero menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang tidak ada mesinnya | 2026-08-20 (dijawab pemilik: ganti jadi Stok Kritis; butir (b) dan (c) ikut dikerjakan, dan butir (c) memunculkan `[BL-084]`) | `[HOTFIX] Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083)` |
+| `BL-083` | Kartu melayang di hero menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang tidak ada mesinnya | 2026-08-20 (dijawab pemilik: ganti jadi Stok Kritis; butir (b) dan (c) ikut dikerjakan, dan butir (c) memunculkan `[BL-089]`) | `[HOTFIX] Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083)` |
 | `BL-084` | Sidebar owner menulis "SAPI", bukan nama toko yang sedang dibuka | 2026-08-21 (pertanyaan glyph-nya dijawab sekalian: inisialnya ikut nama toko) | `[HOTFIX] Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084)` |
 | `BL-032` | Landing page tidak lagi menggambarkan produk yang sudah jadi | 2026-08-20 (butir (1)+(2) 2026-08-14; butir (3) ditutup 2026-08-20 setelah server MCP chrome-devtools tersambung dan bisa menulis berkas gambar) | `[ADDITION] Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3)` |
 | `BL-069` | Kuota AI tambahan belum bisa dibeli — tidak ada kolom, tidak ada harga, tidak ada layar | 2026-08-20 (butir (a)-(d) seluruhnya; prasyarat pembatasan `profit_by_item` ikut dikerjakan lebih dulu. Saran (1) paket kredit dan (2) tidak menjualnya ditolak sadar oleh keputusan pemilik 2026-08-19) | `[ADDITION] Kuota AI Tambahan Akhirnya Bisa Dibeli, dan Dilepas Lagi — Persis seperti Kursi (BL-069)` |

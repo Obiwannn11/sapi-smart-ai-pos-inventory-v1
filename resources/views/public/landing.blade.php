@@ -163,7 +163,7 @@
                         Dengan AI.
                     </h1>
                     <p class="text-lg sm:text-xl text-gray-600 mb-10 leading-relaxed max-w-lg font-medium">
-                        SAPI bukan sekadar aplikasi kasir biasa. SAPI bisa memprediksi stok Anda, menganalisis pola penjualan, dan memberikan Anda saran aksi nyata secara otomatis.
+                        SAPI bukan sekadar aplikasi kasir biasa. SAPI menandai stok yang menipis dan barang yang berhenti laku, menganalisis pola penjualan Anda, dan menurunkan saran jual yang menyebut barangnya.
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4 sm:gap-5">
                         {{--
@@ -188,14 +188,24 @@
                     </div>
 
                     <!-- Floating Elements -->
+                    {{--
+                        Kartu ini dulu berbunyi "Prediksi Stok — Aman Hingga 14
+                        Hari", dan itu menyebut horizon yang tidak pernah
+                        dihitung di mana pun: `BadgeHelperService` membandingkan
+                        ambang tetap, bukan meramal. Kalimatnya sekarang meminjam
+                        pesan badge `low_stock` apa adanya — "{n} varian mendekati
+                        habis" — dan warnanya mengikuti `severity: warning` yang
+                        sama, supaya yang dijanjikan di sini persis yang dilihat
+                        orang setelah masuk (`[BL-083]`).
+                    --}}
                     <div class="absolute -top-10 -right-5 z-20 float-animation hidden sm:block">
                         <div class="bg-white p-5 rounded-3xl shadow-2xl border border-gray-100 flex items-center gap-4">
-                            <div class="w-12 h-12 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center">
-                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                            <div class="w-12 h-12 bg-amber-100 text-amber-500 rounded-2xl flex items-center justify-center">
+                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                             </div>
                             <div>
-                                <p class="text-xs font-bold text-gray-400 uppercase">Prediksi Stok</p>
-                                <p class="text-sm font-black text-gray-900">Aman Hingga 14 Hari</p>
+                                <p class="text-xs font-bold text-gray-400 uppercase">Stok Kritis</p>
+                                <p class="text-sm font-black text-gray-900">3 varian mendekati habis</p>
                             </div>
                         </div>
                     </div>
@@ -209,7 +219,15 @@
                             <p class="text-sm text-gray-600 font-medium leading-tight">
                                 "Kopi Susu Gula Aren mulai <br> sepi, beri diskon 15%?"
                             </p>
-                            <button class="mt-4 w-full py-2 bg-primary/5 text-primary rounded-xl text-xs font-black">Eksekusi Sekarang</button>
+                            {{--
+                                Dulu sebuah tombol "Eksekusi Sekarang". Tidak ada
+                                jalan satu tekan dari saran ke diskon terpasang:
+                                `BadgeCard.vue` hanya membuka-tutup, dan aturan
+                                diskon punya layarnya sendiri. Diturunkan jadi
+                                keterangan tempat, bukan janji tindakan
+                                (`[BL-083]` butir (b)).
+                            --}}
+                            <p class="mt-4 text-xs font-black text-gray-400 uppercase tracking-wide">Muncul di dashboard Anda</p>
                         </div>
                     </div>
                 </div>
