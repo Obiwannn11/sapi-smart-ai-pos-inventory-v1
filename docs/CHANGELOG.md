@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-20 | FIX | Langganan | Penghitung Omzet Dipindah ke Sebelum Penerbit Tagihan (BL-080 butir a) |
 | 2026-08-19 | DECISION | Kasir | Tagihan Terbuka Hidup Satu Hari, Lalu Jadi Kas Negatif yang Hanya Owner Bisa Bereskan (BL-031) |
 | 2026-08-19 | DECISION | Langganan | Kuota AI Tambahan Dijual seperti Seat — +5 Analisis/Hari Rp 15.000 per Bulan (BL-069) |
 | 2026-08-19 | DEPRECATE | Langganan | Tombol Simulasi Pembayaran Dicabut — Jalur Uang Ketiga Ditutup (BL-061) |
@@ -192,6 +193,23 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [FIX] Penghitung Omzet Dipindah ke Sebelum Penerbit Tagihan (BL-080 butir a)
+- **Tanggal:** 2026-08-20
+- **Fase Terkait:** Di Luar Fase — `[BL-080]` butir (a). Butir (b) dan (c) sengaja TIDAK dikerjakan di sini
+- **Dampak:** Jadwal | Test
+- **Breaking Change:** Tidak. Tidak ada tabel, kolom, atau perilaku aplikasi yang berubah — hanya jam sebuah perintah terjadwal.
+- **Deskripsi:** `subscriptions:compute-revenue` bergeser dari tanggal 1 pukul **04:00** ke pukul **02:40**, sehingga ia berjalan sebelum `subscriptions:advance-lifecycle` (harian 03:30) alih-alih tiga puluh menit sesudahnya. Penerbit tagihan tinggal di dalam `advanceLifecycle()`, jadi sebelum ini setiap tanggal 1 tagihan terbit sebelum ringkasan omzet bulan yang baru tutup pernah ditulis.
+- **Alasan:** Bukan error yang berbunyi, melainkan angka salah yang diam. `MonthlyRevenueResolver::metricFor()` mengambil ringkasan **terbaru** dengan `period <= asOf`, bukan ringkasan bulan tertentu — jadi ringkasan yang belum ada tidak menghasilkan kegagalan, ia menghasilkan angka bulan sebelumnya lagi. Tenant jalur Adaptif berjangkar tanggal 8 tertagih dari omzet dua bulan lalu, dan pada tangga 90/75/50/25% selisih satu bracket adalah Rp 25.000/bulan.
+
+- **Yang DIGESER adalah penghitungnya, bukan penerbitnya** — dan itu pilihan, bukan kebetulan. `advance-lifecycle` sengaja berjalan sebelum jam buka warung supaya tenant yang jatuh ke masa tenggang mengetahuinya di awal hari, bukan di tengah antrean pembeli. Alasan itu masih berlaku dan tidak boleh dibuang untuk memperbaiki hal lain.
+- **Ongkosnya nyata dan ditulis di tempatnya:** 04:00 dulu dipilih agar jaraknya cukup jauh dari tengah malam, termasuk untuk sinkronisasi offline larut malam. Jarak itu kini menyusut dari empat jam ke 2 jam 40 menit. Yang lebih larut dari itu terlewat, dan `--period` memang ada persis untuk menghitung ulang bulannya — tapi tagihan yang sudah terbit tetap butuh tinjauan manual.
+- **Ketergantungan antar-jadwalnya kini TERTULIS, bukan tersirat dari urutan baris.** Penyebab cacat ini sejak awal adalah dua angka yang ditetapkan pada waktu berbeda untuk alasan berbeda, tanpa satu pun tempat yang menyatakan hubungannya. `config/subscription.php` sudah lama melakukan hal yang benar untuk `trial_choice_lead_days` ("wajib lebih besar dari `invoice_lead_days`", lengkap dengan alasannya); komentar di kedua sisi `routes/console.php` kini melakukan hal yang sama. Urutan yang benar tanpa alasan tertulis adalah urutan yang akan digeser lagi oleh orang berikutnya.
+- **Dijaga tes, bukan hanya komentar.** `tests/Feature/Subscription/ScheduleOrderTest.php` membaca ekspresi cron yang benar-benar terdaftar dan menuntut empat hal: penghitung sebelum penerbit, penghitung tetap ≥ 02:00 dari tengah malam, pemangkas ringkasan sesudah penghitungnya, dan keduanya benar-benar bertemu di tanggal 1 (yang satu bulanan, yang lain harian — urutan jam saja tidak cukup bila mereka tak pernah menyala di hari yang sama). Pemeriksaan: mengembalikan 02:40 ke 04:00 membuat tes pertama gagal.
+- **Yang TIDAK diselesaikan entri ini, dan itu penting.** Butir (a) tidak menyembuhkan tenant berjangkar **tanggal 1–7**: tagihan mereka terbit H-7, jadi tetap sebelum bulan sebelumnya tutup, jam berapa pun penghitungnya berjalan. Sisa itu menunggu keputusan pemilik di `[BL-080]` butir (b), dan butir (c) — membuat `MonthlyRevenueResolver` tegas soal bulan yang diminta — memang harus menunggu (b), karena tanpa (b) ia hanya mengubah tagihan yang salah jadi tagihan yang tidak terbit sama sekali.
+- **Berkas:** `routes/console.php` · `tests/Feature/Subscription/ScheduleOrderTest.php` (baru, 4 tes)
 
 ---
 

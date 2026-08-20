@@ -15,6 +15,14 @@ Schedule::command('platform:prune-audit-logs')->dailyAt('03:10');
 // Perpindahan keadaan langganan. Dijalankan sebelum jam buka warung supaya
 // tenant yang jatuh ke masa tenggang mengetahuinya di awal hari, bukan di
 // tengah antrean pembeli.
+//
+// **Wajib berjalan SESUDAH `subscriptions:compute-revenue`,** dan itu bukan
+// kebetulan urutan baris di berkas ini: penerbit tagihan tinggal di dalam
+// `advanceLifecycle()`, dan tarif jalur Adaptif dibaca dari ringkasan omzet
+// bulan sebelumnya. Berjalan lebih dulu berarti ringkasan bulan yang baru tutup
+// belum ada, dan `MonthlyRevenueResolver` diam-diam jatuh ke bulan sebelumnya
+// lagi — tagihan terbit dengan angka dua bulan lalu, tanpa satu pun tanda
+// ([BL-080] butir (a)). Jangan geser jam ini tanpa menggeser yang itu.
 Schedule::command('subscriptions:advance-lifecycle')->dailyAt('03:30');
 
 // Peringatan percobaan masuk yang menumpuk. Tiap jam, bukan harian: serangan
@@ -23,10 +31,18 @@ Schedule::command('subscriptions:advance-lifecycle')->dailyAt('03:30');
 Schedule::command('platform:alert-failed-logins')->hourly();
 
 // Omset tenant jalur subsidi, dihitung atas bulan yang baru saja tutup.
-// Tanggal 1 pukul 04:00 — cukup lewat dari tengah malam agar transaksi terakhir
-// bulan lalu sudah pasti tersimpan, termasuk yang masuk dari sinkronisasi
-// offline larut malam.
-Schedule::command('subscriptions:compute-revenue')->monthlyOn(1, '04:00');
+// Tanggal 1 pukul 02:40 — cukup lewat dari tengah malam agar transaksi terakhir
+// bulan lalu sudah pasti tersimpan, dan lima puluh menit sebelum
+// `subscriptions:advance-lifecycle` supaya penerbit tagihan di dalamnya membaca
+// ringkasan yang baru ditulis, bukan ringkasan bulan sebelumnya ([BL-080]
+// butir (a)). Yang digeser sengaja yang ini, bukan `advance-lifecycle` —
+// alasannya berjalan sebelum jam buka warung masih berlaku.
+//
+// Ongkos pergeseran ini: jarak dari tengah malam menyusut dari empat jam ke
+// 2 jam 40 menit, jadi sinkronisasi offline yang tiba lebih larut dari itu
+// terlewat. `--period` ada persis untuk itu — hitung ulang bulannya, lalu
+// tagihan yang sudah terbit ditinjau manual.
+Schedule::command('subscriptions:compute-revenue')->monthlyOn(1, '02:40');
 
 // Pemangkasan ringkasan omset yang lewat retensi. Bulanan sudah cukup — datanya
 // pun hanya bertambah sebulan sekali.
