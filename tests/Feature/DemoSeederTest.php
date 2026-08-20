@@ -15,13 +15,13 @@ use Illuminate\Support\Facades\DB;
  * pengujian tidak perlu menunggu 90 hari penjualan sungguhan disemai hanya
  * untuk membuktikan bahwa hari yang sudah terisi memang tidak disentuh.
  */
-function penandaTransaksi(Tenant $tenant, User $kasir, Carbon $day): void
+function penandaTransaksi(Tenant $tenant, User $kasir, Carbon $day, string $status = 'completed'): void
 {
     DB::table('transactions')->insert([
         'tenant_id' => $tenant->id,
         'user_id' => $kasir->id,
         'code' => 'PENANDA-'.$day->format('Ymd'),
-        'status' => 'completed',
+        'status' => $status,
         'total_amount' => 10000,
         'change_amount' => 0,
         'source' => 'pos',
@@ -133,4 +133,51 @@ it('tidak menumpuk restock bulanan Kopi Story tiap kali dijalankan', function ()
 
     expect($restock())->toBe($setelahSekali);
     expect(jumlahTransaksi($tenant))->toBe($transaksiSekali);
+});
+
+it('tetap menyemai hari yang hanya berisi tagihan terbuka', function () {
+    // Satu tagihan terbuka yang ditinggalkan bukan penjualan: omzet hari itu
+    // nol. Sebelum penyaring status ada, ia cukup untuk membuat seeder
+    // melewati hari itu — dan seeder ini justru dijalankan pada hari demo,
+    // sehingga dashboard "hari ini" memajang angka kosong.
+    $this->seed(DatabaseSeeder::class);
+
+    $tenant = Tenant::where('slug', 'kopi-nusantara')->firstOrFail();
+    $kasir = User::where('tenant_id', $tenant->id)->where('role', 'cashier')->firstOrFail();
+
+    for ($daysAgo = 89; $daysAgo >= 1; $daysAgo--) {
+        penandaTransaksi($tenant, $kasir, Carbon::today()->subDays($daysAgo));
+    }
+
+    penandaTransaksi($tenant, $kasir, Carbon::today(), 'pending');
+
+    $this->seed(DemoTransactionSeeder::class);
+
+    expect(transaksiPadaHari($tenant, Carbon::today()))->toBeGreaterThan(1);
+
+    $omzetHariIni = DB::table('transactions')
+        ->where('tenant_id', $tenant->id)
+        ->where('status', 'completed')
+        ->whereBetween('created_at', [Carbon::today()->startOfDay(), Carbon::today()->endOfDay()])
+        ->sum('total_amount');
+
+    expect((float) $omzetHariIni)->toBeGreaterThan(0.0);
+});
+
+it('tidak menyemai ulang hari yang penjualannya sudah selesai', function () {
+    // Sisi lain penyaring yang sama: yang dijaga trait ini sejak awal —
+    // transaksi yang dibuat lewat UI menjelang demo — tetap tidak disentuh.
+    $this->seed(DatabaseSeeder::class);
+
+    $tenant = Tenant::where('slug', 'kopi-nusantara')->firstOrFail();
+    $kasir = User::where('tenant_id', $tenant->id)->where('role', 'cashier')->firstOrFail();
+
+    for ($daysAgo = 89; $daysAgo >= 0; $daysAgo--) {
+        penandaTransaksi($tenant, $kasir, Carbon::today()->subDays($daysAgo));
+    }
+
+    $sebelum = jumlahTransaksi($tenant);
+    $this->seed(DemoTransactionSeeder::class);
+
+    expect(jumlahTransaksi($tenant))->toBe($sebelum);
 });

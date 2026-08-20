@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-20 | HOTFIX | Seeder | Seeder Demo Melewatkan Hari yang Hanya Berisi Tagihan Terbuka |
 | 2026-08-20 | ADDITION | Langganan | Kuota AI Tambahan Akhirnya Bisa Dibeli, dan Dilepas Lagi — Persis seperti Kursi (BL-069) |
 | 2026-08-20 | DEPRECATE | UI | Testimoni Karangan Dicabut, Diganti Bagian yang Tidak Mengaku Sebagai Kesaksian (BL-078) |
 | 2026-08-20 | ADDITION | Kasir | Tagihan Terbuka Punya Umur, dan yang Lewat Jadi Kas Negatif yang Hanya Owner Bisa Bereskan (BL-031) |
@@ -197,6 +198,21 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Seeder Demo Melewatkan Hari yang Hanya Berisi Tagihan Terbuka
+- **Tanggal:** 2026-08-20
+- **Fase Terkait:** Di Luar Fase — ditemukan saat menyegarkan data demo untuk `[BL-032]` butir (3)
+- **Dampak:** Seeder | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** `FillsMissingSalesDays::existingSalesDays()` kini hanya menghitung transaksi `completed` sebagai "hari ini sudah ada penjualannya". Sebelumnya ia menghitung transaksi berstatus apa pun.
+- **Alasan:** Satu tagihan terbuka `pending` yang ditinggalkan — sisa uji coba `[BL-031]` — cukup untuk menandai hari itu terisi, padahal omzetnya nol. Seeder lalu melewatinya, dan dashboard "hari ini" memajang angka kosong. Itu persis kegagalan yang trait ini ditulis untuk mencegah, hanya lewat pintu yang lain: ia dijalankan tepat pada hari demo, saat kesalahan paling mahal.
+
+- **`voided` dan `unsettled` ikut dikecualikan dengan alasan yang sama.** Yang pertama penjualan yang dibatalkan; yang kedua, sejak `[BL-031]`, justru kas negatif. Tidak satu pun dari keduanya berarti "hari itu ada penjualannya".
+- **Yang dijaga trait ini sejak awal tetap utuh:** transaksi yang dibuat lewat UI menjelang demo tidak disentuh, selama ia memang penjualan selesai. Dua test mengunci kedua sisinya — hari yang hanya berisi tagihan terbuka tetap disemai, hari yang penjualannya sudah selesai tetap dilewati.
+- **Terbukti menangkap cacatnya:** test barunya dijalankan sekali dengan penyaring status dicabut dan gagal di sana, lalu lulus setelah dikembalikan.
+- **Berkas:** `database/seeders/Concerns/FillsMissingSalesDays.php` · `tests/Feature/DemoSeederTest.php` — dua test baru (6 tes lulus)
 
 ---
 

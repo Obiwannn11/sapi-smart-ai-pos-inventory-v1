@@ -16,13 +16,22 @@ use Illuminate\Support\Facades\DB;
  * baru saja dibuat lewat UI untuk keperluan demo itu sendiri.
  *
  * Jalan keluarnya adalah tidak melakukan keduanya: yang disemai hanya hari
- * yang benar-benar kosong. Hari yang sudah punya transaksi — dari seeder
+ * yang benar-benar kosong. Hari yang sudah punya PENJUALAN — dari seeder
  * sebelumnya maupun dari tangan sendiri — tidak disentuh sama sekali.
+ *
+ * Yang dihitung sebagai penjualan hanya `completed`, dan pembatasan itu bukan
+ * kerapian. Sebuah tagihan terbuka yang ditinggalkan (`pending`) sudah cukup
+ * menandai satu hari "terisi" padahal omzetnya nol — jadi seeder yang
+ * dijalankan tepat pada hari demo melewati hari itu, lalu dashboard "hari ini"
+ * memajang angka kosong. Persis kegagalan yang berkas ini ditulis untuk
+ * mencegah, hanya lewat pintu yang lain. `voided` dan `unsettled` dikecualikan
+ * dengan alasan yang sama: yang pertama penjualan yang dibatalkan, yang kedua
+ * justru kas negatif.
  */
 trait FillsMissingSalesDays
 {
     /**
-     * Tanggal penjualan yang sudah punya transaksi milik tenant ini.
+     * Tanggal yang sudah punya penjualan selesai milik tenant ini.
      *
      * Berkunci 'Y-m-d' supaya pemanggilnya cukup memeriksa keberadaan kunci,
      * bukan menyisir array tiap hari. Memakai tanggal efektif — bukan
@@ -37,6 +46,7 @@ trait FillsMissingSalesDays
 
         return DB::table('transactions')
             ->where('tenant_id', $tenantId)
+            ->where('status', Transaction::STATUS_COMPLETED)
             ->whereRaw("DATE({$tanggalEfektif}) BETWEEN ? AND ?", [$start->toDateString(), $end->toDateString()])
             ->selectRaw("DATE({$tanggalEfektif}) AS sales_day")
             ->distinct()
