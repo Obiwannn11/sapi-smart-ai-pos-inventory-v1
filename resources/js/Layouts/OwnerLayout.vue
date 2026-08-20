@@ -121,14 +121,24 @@ const sidebarGroups = [
             { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments', perm: 'products' },
         ],
     },
+    // Tempat owner MENYUSUN cara berjualan, bukan tempat ia membaca hasilnya
+    // ([BL-085]). Ketiganya menulis aturan yang berlaku ke depan — "Saran Jual"
+    // ikut ke sini meski ia laporan, karena ia laporan TENTANG dua di bawahnya
+    // dan memisahkannya berarti owner membaca hasil di satu grup lalu
+    // membetulkan sebabnya di grup lain.
+    {
+        label: 'Penjualan & Promosi',
+        items: [
+            { name: 'Saran Jual', href: '/owner/reports/upsell', icon: 'sparkles', perm: 'reports' },
+            { name: 'Aturan Saran Jual', href: '/owner/upsell-rules', icon: 'adjustments', ownerOnly: true },
+            { name: 'Aturan Diskon', href: '/owner/discount-rules', icon: 'tag', ownerOnly: true },
+        ],
+    },
     {
         label: 'Keuangan',
         items: [
             { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report', perm: 'reports' },
             { name: 'Laporan Bulanan', href: '/owner/reports/monthly', icon: 'trending-up', perm: 'reports' },
-            { name: 'Saran Jual', href: '/owner/reports/upsell', icon: 'sparkles', perm: 'reports' },
-            { name: 'Aturan Saran Jual', href: '/owner/upsell-rules', icon: 'adjustments', ownerOnly: true },
-            { name: 'Aturan Diskon', href: '/owner/discount-rules', icon: 'tag', ownerOnly: true },
             { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt', perm: 'reports' },
             { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash', perm: 'reports' },
             { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive', ownerOnly: true },

@@ -10,6 +10,18 @@
 
 ## Daftar Entri
 
+### [BL-085] Grup "Keuangan" di Sidebar Menampung Alat Promosi Bersama Laporan Uang
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "saya rasa perlu mengatur menu untuk upsell dan diskon ini lainnya, karena menu nya tercampur sebagai keuangan dan saya rasa kurang cocok"
+- **Status:** **Selesai 2026-08-21** — lihat `[REFACTOR] Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085)`
+- **Status semula:** Open
+- **Prioritas:** Low — tidak ada angka yang salah, tapi ia satu-satunya grup dengan sepuluh item dan dua di antaranya bukan keuangan
+- **Area Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue:125-137` — grup `Keuangan` berisi Laporan Harian, Laporan Bulanan, Saran Jual, Aturan Saran Jual, Aturan Diskon, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis
+- **Deskripsi:** "Aturan Saran Jual" (`[BL-074]`) dan "Aturan Diskon" (`[BL-018]`) adalah tempat owner **menyusun cara berjualan** — keduanya menulis aturan yang berlaku ke depan, bukan melaporkan apa yang sudah terjadi. Menaruhnya di antara Laporan Harian dan Sesi Kas membuat orang mencarinya di tempat yang salah, dan membuat Keuangan jadi grup terpanjang di sidebar.
+- **Usulan Perbaikan:** grup baru **"Penjualan & Promosi"** berisi Saran Jual, Aturan Saran Jual, Aturan Diskon; Keuangan menyisakan Laporan Harian, Laporan Bulanan, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis. Murni penyusunan ulang array `navGroups` — gerbang `perm`/`ownerOnly` tiap item ikut pindah apa adanya, tidak ada satu pun hak akses yang berubah.
+- **Hasil:** ditempuh persis seperti usulan. Satu hal ditemukan saat memindahkan dan tidak ada di entri ini: isi grup dibatasi `max-h-96` (384px) sementara sepuluh item Keuangan mengukur **380px** — item kesebelas akan hilang tanpa satu pun tanda. Batasnya tidak diubah; ia tetap ranjau bagi grup mana pun yang tumbuh melewati sepuluh item.
+
 ### [BL-083] Kartu Melayang di Hero Menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang Tidak Ada Mesinnya
 - **Ditemukan:** 2026-08-20 (saat memasang tangkapan layar baru `[BL-032]` butir (3) — kartunya melayang tepat di atas gambar yang sedang diganti)
 - **Sumber:** Kelanjutan langsung `[BL-032]` butir (1). Empat klaim karangan dibuang 2026-08-14, tapi penyisirannya berhenti pada teks bagian isi dan **tidak menyentuh dua kartu melayang di hero**

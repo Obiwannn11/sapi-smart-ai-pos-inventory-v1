@@ -155,16 +155,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   3. Rincian yang tidak membocorkan jawaban — tunai masuk, kembalian keluar, non-tunai yang ditandai "tidak masuk laci", kas negatif `[BL-031]` — **tetap** ditampilkan. Yang disembunyikan hanya totalnya.
 - **Catatan:** butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan; angkanya tetap ada di props Inertia dan terbaca dari devtools. Untuk peragaan itu cukup; untuk benar-benar mencegah manipulasi, `index()` harus berhenti mengirimkannya sampai hitungan fisik disetorkan.
 
-### [BL-085] Grup "Keuangan" di Sidebar Menampung Alat Promosi Bersama Laporan Uang
-- **Ditemukan:** 2026-08-21
-- **Sumber:** Catatan pemilik — "saya rasa perlu mengatur menu untuk upsell dan diskon ini lainnya, karena menu nya tercampur sebagai keuangan dan saya rasa kurang cocok"
-- **Status:** Open
-- **Prioritas:** Low — tidak ada angka yang salah, tapi ia satu-satunya grup dengan sepuluh item dan dua di antaranya bukan keuangan
-- **Area Terdampak:**
-  - `resources/js/Layouts/OwnerLayout.vue:125-137` — grup `Keuangan` berisi Laporan Harian, Laporan Bulanan, Saran Jual, Aturan Saran Jual, Aturan Diskon, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis
-- **Deskripsi:** "Aturan Saran Jual" (`[BL-074]`) dan "Aturan Diskon" (`[BL-018]`) adalah tempat owner **menyusun cara berjualan** — keduanya menulis aturan yang berlaku ke depan, bukan melaporkan apa yang sudah terjadi. Menaruhnya di antara Laporan Harian dan Sesi Kas membuat orang mencarinya di tempat yang salah, dan membuat Keuangan jadi grup terpanjang di sidebar.
-- **Usulan Perbaikan:** grup baru **"Penjualan & Promosi"** berisi Saran Jual, Aturan Saran Jual, Aturan Diskon; Keuangan menyisakan Laporan Harian, Laporan Bulanan, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis. Murni penyusunan ulang array `navGroups` — gerbang `perm`/`ownerOnly` tiap item ikut pindah apa adanya, tidak ada satu pun hak akses yang berubah.
-
 ### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
 - **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
 - **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
@@ -699,6 +689,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-085` | Grup "Keuangan" di sidebar menampung alat promosi bersama laporan uang | 2026-08-21 | `[REFACTOR] Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085)` |
 | `BL-083` | Kartu melayang di hero menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang tidak ada mesinnya | 2026-08-20 (dijawab pemilik: ganti jadi Stok Kritis; butir (b) dan (c) ikut dikerjakan, dan butir (c) memunculkan `[BL-084]`) | `[HOTFIX] Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083)` |
 | `BL-084` | Sidebar owner menulis "SAPI", bukan nama toko yang sedang dibuka | 2026-08-21 (pertanyaan glyph-nya dijawab sekalian: inisialnya ikut nama toko) | `[HOTFIX] Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084)` |
 | `BL-032` | Landing page tidak lagi menggambarkan produk yang sudah jadi | 2026-08-20 (butir (1)+(2) 2026-08-14; butir (3) ditutup 2026-08-20 setelah server MCP chrome-devtools tersambung dan bisa menulis berkas gambar) | `[ADDITION] Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3)` |

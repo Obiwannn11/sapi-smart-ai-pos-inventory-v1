@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-21 | REFACTOR | UI | Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085) |
 | 2026-08-20 | HOTFIX | UI | Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083) |
 | 2026-08-21 | HOTFIX | UI | Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084) |
 | 2026-08-20 | ADDITION | UI | Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3) |
@@ -219,6 +220,22 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Asumsi entri backlognya terbukti keliru, dan sisanya sengaja tidak dibongkar.** Sebutan ramalan stok masih berdiri di tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo — keputusan pemasaran, bukan konsekuensi teknis. Dicatat sebagai `[BL-084]`.
 - **Testnya sengaja hanya mengunci hero,** dengan alasan yang ditulis di dalam testnya sendiri: menyapu seluruh sebutan "prediksi" akan membuatnya gagal sampai `[BL-084]` dikerjakan, padahal `[BL-084]` menunggu keputusan pemilik.
 - **Berkas:** `resources/views/public/landing.blade.php` — paragraf hero, dua kartu melayang · `tests/Feature/Public/LandingClaimsTest.php` — satu test baru (72 tes lulus di `tests/Feature/Public`)
+
+---
+
+### [REFACTOR] Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-085]`, entri kedua dari catatan pemilik 2026-08-21
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak. Tidak ada rute, izin, maupun gerbang yang berubah — hanya di grup mana tautannya dipajang.
+- **Deskripsi:** Grup baru **"Penjualan & Promosi"** di sidebar owner, berisi Saran Jual, Aturan Saran Jual, dan Aturan Diskon. Keuangan menyisakan tujuh item: Laporan Harian, Laporan Bulanan, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis.
+- **Alasan:** Dilaporkan pemilik — "menu nya tercampur sebagai keuangan dan saya rasa kurang cocok". Aturan Saran Jual (`[BL-074]`) dan Aturan Diskon (`[BL-018]`) adalah tempat owner **menyusun cara berjualan**: keduanya menulis aturan yang berlaku ke depan, bukan melaporkan apa yang sudah terjadi. Menaruhnya di antara Laporan Harian dan Sesi Kas membuat orang mencarinya di tempat yang salah.
+
+- **"Saran Jual" ikut pindah meski ia laporan, dan itu keputusan, bukan kelalaian.** Ia laporan **tentang** dua item di bawahnya. Menahannya di Keuangan berarti owner membaca hasil saran jualnya di satu grup lalu membetulkan sebabnya di grup lain — pemisahan yang benar secara kategori dan salah secara pekerjaan.
+- **Ditemukan saat memindahkan, bukan saat mencari: grup Keuangan tinggal empat piksel dari terpotong diam-diam.** Isi grup dibatasi `max-h-96` (384px) saat terbuka; sepuluh itemnya mengukur **380px** di peramban. Item kesebelas mana pun — dan sudah ada `[BL-065]` (pajak) serta `[BL-087]` yang kelak menambah layar — akan hilang dari sidebar tanpa satu pun tanda, karena pembatasnya `max-height` bukan `overflow`. Sesudah pemecahan: 266px dan 114px. Batas itu **tidak diubah**; yang berkurang adalah kemungkinannya tertabrak, dan ia tetap ranjau bagi grup mana pun yang tumbuh melewati sepuluh item.
+- **Gerbang tiap item ikut pindah apa adanya, dan itu yang dijaga tesnya.** Menulis aturan saran jual dan diskon `ownerOnly`; membaca laporannya cukup `perm: 'reports'`. Menyamakan keduanya saat memindahkan grup akan memberi kuasa MENULIS kepada siapa pun yang hanya diberi hak MEMBACA laporan — persis yang ditolak `UpsellRuleController` di komentar kelasnya — dan **tidak akan terlihat sama sekali dari layar owner**, karena owner melewati setiap pemeriksaan.
+- **Keadaan buka-tutup grup tidak perlu disentuh.** `collapsedGroups` berkunci label dan bawaannya terbuka, jadi label baru langsung bekerja tanpa migrasi keadaan apa pun.
+- **Berkas:** `resources/js/Layouts/OwnerLayout.vue` · `tests/Feature/Owner/SidebarNavGroupsTest.php` (baru, 3 tes)
 
 ---
 
