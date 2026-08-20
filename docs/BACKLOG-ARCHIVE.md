@@ -10,6 +10,50 @@
 
 ## Daftar Entri
 
+### [BL-083] Kartu Melayang di Hero Menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang Tidak Ada Mesinnya
+- **Ditemukan:** 2026-08-20 (saat memasang tangkapan layar baru `[BL-032]` butir (3) — kartunya melayang tepat di atas gambar yang sedang diganti)
+- **Sumber:** Kelanjutan langsung `[BL-032]` butir (1). Empat klaim karangan dibuang 2026-08-14, tapi penyisirannya berhenti pada teks bagian isi dan **tidak menyentuh dua kartu melayang di hero**
+- **Status:** **Selesai 2026-08-20** — ketiga butir dikerjakan. Dijawab pemilik: kartunya diganti **Stok Kritis**
+- **Status semula:** Open — butuh keputusan pemilik, sama seperti `[BL-078]`: ini teks pemasaran, bukan cacat teknis
+- **Prioritas:** Medium — tidak ada angka yang salah, tapi ia berdiri di **layar pertama**, di atas lipatan, dan ia klaim yang bisa diperiksa ke kode. Persis kategori yang `[BL-032]`(1) bersihkan
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:196-197` — kartu "PREDIKSI STOK / Aman Hingga 14 Hari"
+  - `resources/views/public/landing.blade.php:209-212` — kartu "Badge Helper" dengan kutipan dan tombol "Eksekusi Sekarang"
+  - `app/Services/BadgeHelperService.php:26-110` — apa yang sebenarnya dihitung
+- **Deskripsi:**
+  **Kartu pertama menjanjikan ramalan; yang ada ambang tetap.** `BadgeHelperService` menghitung empat hal, semuanya perbandingan sederhana terhadap keadaan sekarang: stok ≤ 5 (Stok Kritis), stok ≤ 0 (Stok Habis), nol penjualan dalam 30 hari (Dead Stock), dan `expiry_date` yang sudah lewat. Tidak ada satu pun yang memproyeksikan berapa lama stok akan bertahan. "Aman Hingga 14 Hari" menyebut **horizon** — angka yang tidak pernah dihitung di mana pun.
+
+  **Kartu kedua jauh lebih dekat dengan kenyataan, dan sengaja dipisahkan dari yang pertama.** "Kopi Susu Gula Aren mulai sepi, beri diskon 15%?" kira-kira sama dengan badge Dead Stock, dan sejak `[BL-018]` diskon memang entitas sungguhan serta `[BL-074]` memberi owner cara menargetkan sarannya sendiri. Yang belum diperiksa adalah tombol "Eksekusi Sekarang": apakah benar ada satu jalan dari saran ke diskon terpasang dalam satu tekan. Bila tidak ada, yang perlu diubah tombolnya, bukan kalimatnya.
+- **Kenapa tidak dikerjakan sekalian:** menggantinya berarti menulis kalimat pemasaran baru, dan kalimat pengganti yang dikarang sendiri adalah cara paling halus mengulang kesalahan yang sedang diperbaiki — pelajaran yang baru saja terbukti di `[BL-078]`, ketika "prediksi stok" dan "barcode" nyaris ikut masuk ke bagian yang justru dibuat untuk berhenti mengarang.
+- **Usulan Perbaikan:**
+  **(a)** Ganti kartu pertama dengan yang benar-benar dihitung. Yang paling dekat dan tetap terdengar kuat: **"STOK KRITIS — 3 varian mendekati habis"**, karena itulah badge `low_stock` apa adanya. Bentuknya tidak berubah; janjinya berubah dari ramalan jadi peringatan.
+  **(b)** Periksa tombol "Eksekusi Sekarang" terhadap kode sebelum kartu kedua dinyatakan aman. Bila jalannya belum satu tekan, turunkan jadi label yang tidak menjanjikan tindakan.
+  **(c)** Sisir **seluruh** hero sekali lagi, bukan hanya dua kartu ini. `[BL-032]`(1) berhenti di teks bagian isi, dan itulah sebabnya keduanya bertahan enam hari lebih lama daripada empat klaim yang sudah dibuang.
+
+---
+- **Hasil:**
+  **(a)** Kartu pertama jadi "STOK KRITIS / 3 varian mendekati habis" — kalimatnya meminjam pesan badge `low_stock` apa adanya, dan warnanya turun dari hijau ke amber mengikuti `severity: warning` milik badge itu sendiri. Ikon centang diganti segitiga peringatan: kartu yang memperingatkan tidak boleh berwajah kabar baik.
+  **(b)** Tombol "Eksekusi Sekarang" **dicabut**, bukan diganti kata. Diperiksa lebih dulu dan hasilnya tegas: `BadgeCard.vue` hanya membuka-tutup, tidak ada rute yang mengubah saran jadi diskon, dan aturan diskon punya layarnya sendiri (`owner/discount-rules`). Penggantinya keterangan tempat — "Muncul di dashboard Anda" — yang benar dan tidak menjanjikan tindakan.
+  **(c)** Sisiran hero menemukan yang ketiga, dan ia lebih menonjol daripada kedua kartu: **paragraf utama** berbunyi "SAPI bisa memprediksi stok Anda". Diganti dengan yang benar-benar dikerjakan — menandai stok menipis dan barang yang berhenti laku, menganalisis pola penjualan, dan menurunkan saran jual yang menyebut barangnya.
+- **Butir (c) juga membuktikan asumsi entri ini keliru, dan itu hasil terpentingnya.** Entri ini ditulis seolah persoalannya dua kartu melayang. Ternyata sebutan ramalan stok berdiri di empat tempat lain — tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo, jadi ia **tidak** dibongkar di sini dan jadi `[BL-084]`.
+- **Testnya sengaja hanya mengunci hero.** Menyapu seluruh sebutan "prediksi" akan membuat test ini gagal sampai `[BL-084]` dikerjakan — padahal `[BL-084]` menunggu keputusan pemilik. Test yang menuntut pekerjaan yang belum diputuskan adalah test yang akan dilewati orang, bukan test yang menjaga.
+- **Entri penutup di `docs/CHANGELOG.md`:** `[HOTFIX] Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083)`
+
+### [BL-084] Sidebar Owner Menulis "SAPI", Bukan Nama Toko yang Sedang Dibuka
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "sidebar mengapa menampilkan tulisan sapi, bukannya disitu tertulis jadi nama toko owner begitu di sidebar nya?"
+- **Status:** **Selesai 2026-08-21** — lihat `[HOTFIX] Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084)`
+- **Status semula:** Open
+- **Prioritas:** Low
+- **Area Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue:299` — literal `SAPI`, tidak membaca prop mana pun
+  - `resources/js/Components/CashierTopbar.vue:133` — sisi kasir **sudah** memakai `page.props.auth?.tenant?.name` dengan cadangan `'SAPI POS'`; polanya tinggal ditiru
+  - `app/Http/Middleware/HandleInertiaRequests.php:55` — `auth.tenant.name` sudah dibagikan ke setiap halaman, tanpa query tambahan
+- **Deskripsi:** Shell owner menyebut nama produk di tempat yang seharusnya menyebut nama usaha penggunanya. Kasir di aplikasi yang sama sudah melihat nama tokonya sendiri di topbar; hanya sidebar owner yang tidak ikut.
+- **Dugaan Penyebab:** `[DECISION] Tiga Permukaan Publik Jadi Satu Keluarga: SAPI POS Resmi (BL-033)` menetapkan penyebutan merek yang seragam — tapi keputusan itu tentang **permukaan publik** (landing, login, halaman galat), tempat pembacanya memang belum punya toko. Shell owner ikut terbawa padahal pembacanya sudah jelas berada di dalam satu toko.
+- **Usulan Perbaikan:** `auth.tenant?.name` dengan cadangan `'SAPI POS'`, persis pola `CashierTopbar.vue`. Yang perlu diputuskan pemilik: glyph `S` di sebelahnya ikut jadi inisial toko, atau tetap penanda produk.
+- **Hasil:** ditempuh seperti usulan, dan pertanyaan glyph-nya **dijawab ikut nama toko** — `S` di sebelah "Kopi Nusantara" akan terbaca sebagai merek yang salah, bukan sebagai penanda produk. Satu baris `computed`, gampang dikembalikan kalau pemilik memutuskan sebaliknya.
+
 ### [BL-032] Landing Page Tidak Lagi Menggambarkan Produk yang Sudah Jadi
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "landing perbaiki menyesuaikan sekarang", "perbaiki gambar2 di landing page"

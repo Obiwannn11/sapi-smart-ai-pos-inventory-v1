@@ -165,19 +165,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Deskripsi:** "Aturan Saran Jual" (`[BL-074]`) dan "Aturan Diskon" (`[BL-018]`) adalah tempat owner **menyusun cara berjualan** — keduanya menulis aturan yang berlaku ke depan, bukan melaporkan apa yang sudah terjadi. Menaruhnya di antara Laporan Harian dan Sesi Kas membuat orang mencarinya di tempat yang salah, dan membuat Keuangan jadi grup terpanjang di sidebar.
 - **Usulan Perbaikan:** grup baru **"Penjualan & Promosi"** berisi Saran Jual, Aturan Saran Jual, Aturan Diskon; Keuangan menyisakan Laporan Harian, Laporan Bulanan, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis. Murni penyusunan ulang array `navGroups` — gerbang `perm`/`ownerOnly` tiap item ikut pindah apa adanya, tidak ada satu pun hak akses yang berubah.
 
-### [BL-084] Sidebar Owner Menulis "SAPI", Bukan Nama Toko yang Sedang Dibuka
-- **Ditemukan:** 2026-08-21
-- **Sumber:** Catatan pemilik — "sidebar mengapa menampilkan tulisan sapi, bukannya disitu tertulis jadi nama toko owner begitu di sidebar nya?"
-- **Status:** Open
-- **Prioritas:** Low
-- **Area Terdampak:**
-  - `resources/js/Layouts/OwnerLayout.vue:299` — literal `SAPI`, tidak membaca prop mana pun
-  - `resources/js/Components/CashierTopbar.vue:133` — sisi kasir **sudah** memakai `page.props.auth?.tenant?.name` dengan cadangan `'SAPI POS'`; polanya tinggal ditiru
-  - `app/Http/Middleware/HandleInertiaRequests.php:55` — `auth.tenant.name` sudah dibagikan ke setiap halaman, tanpa query tambahan
-- **Deskripsi:** Shell owner menyebut nama produk di tempat yang seharusnya menyebut nama usaha penggunanya. Kasir di aplikasi yang sama sudah melihat nama tokonya sendiri di topbar; hanya sidebar owner yang tidak ikut.
-- **Dugaan Penyebab:** `[DECISION] Tiga Permukaan Publik Jadi Satu Keluarga: SAPI POS Resmi (BL-033)` menetapkan penyebutan merek yang seragam — tapi keputusan itu tentang **permukaan publik** (landing, login, halaman galat), tempat pembacanya memang belum punya toko. Shell owner ikut terbawa padahal pembacanya sudah jelas berada di dalam satu toko.
-- **Usulan Perbaikan:** `auth.tenant?.name` dengan cadangan `'SAPI POS'`, persis pola `CashierTopbar.vue`. Yang perlu diputuskan pemilik: glyph `S` di sebelahnya ikut jadi inisial toko, atau tetap penanda produk.
-
 ### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
 - **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
 - **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
@@ -216,24 +203,35 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-083] Kartu Melayang di Hero Menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang Tidak Ada Mesinnya
-- **Ditemukan:** 2026-08-20 (saat memasang tangkapan layar baru `[BL-032]` butir (3) — kartunya melayang tepat di atas gambar yang sedang diganti)
-- **Sumber:** Kelanjutan langsung `[BL-032]` butir (1). Empat klaim karangan dibuang 2026-08-14, tapi penyisirannya berhenti pada teks bagian isi dan **tidak menyentuh dua kartu melayang di hero**
-- **Status:** Open — **butuh keputusan pemilik**, sama seperti `[BL-078]`: ini teks pemasaran, bukan cacat teknis
-- **Prioritas:** Medium — tidak ada angka yang salah, tapi ia berdiri di **layar pertama**, di atas lipatan, dan ia klaim yang bisa diperiksa ke kode. Persis kategori yang `[BL-032]`(1) bersihkan
+### [BL-084] Klaim Prediksi Stok Masih Berdiri di Tab Demo, FAQ, dan Label "Machine Learning"
+- **Ditemukan:** 2026-08-20 (butir (c) `[BL-083]` — menyisir hero ternyata membuka bahwa klaimnya jauh melampaui hero)
+- **Sumber:** Kelanjutan `[BL-083]`. Hero sudah dibersihkan; entri ini memuat sisanya, yang lingkupnya berbeda kelas
+- **Status:** Open — **butuh keputusan pemilik**, dan keputusannya lebih besar daripada `[BL-078]` maupun `[BL-083]`: yang dipertaruhkan satu dari tiga pilar bagian Demo
+- **Prioritas:** Medium — sama seperti `[BL-083]`, tapi permukaannya jauh lebih luas dan salah satunya menyebut teknologi tertentu dengan nama
 - **Area Terdampak:**
-  - `resources/views/public/landing.blade.php:196-197` — kartu "PREDIKSI STOK / Aman Hingga 14 Hari"
-  - `resources/views/public/landing.blade.php:209-212` — kartu "Badge Helper" dengan kutipan dan tombol "Eksekusi Sekarang"
-  - `app/Services/BadgeHelperService.php:26-110` — apa yang sebenarnya dihitung
+  - `resources/views/public/landing.blade.php:569` — judul panel: **"Prediksi Stok (Machine Learning)"**
+  - `resources/views/public/landing.blade.php:514` — tab demo ketiga berlabel "Prediksi Stok"
+  - `resources/views/public/landing.blade.php:574` — tombol "Jalankan Ulang Prediksi AI"
+  - `resources/views/public/landing.blade.php:1025-1029` — FAQ "Bagaimana cara AI memprediksi stok saya?" beserta jawabannya
+  - `resources/views/public/landing.blade.php:~1066` — `predictData`: stok sekarang, **stok terprediksi**, dan **sisa hari** per produk
+  - `resources/views/public/landing.blade.php:~1060` — `badgeTemplates`: "Habis dalam 2-3 hari", plus tombol "Pesan ke Supplier", "Promo Diskon", "Buat Bundle"
+  - `app/Services/BadgeHelperService.php` — apa yang sebenarnya ada
+  - `app/Jobs/RunAiAnalysisJob.php:142` — satu-satunya yang menyerempet proyeksi, dan itu **profit**, bukan stok
 - **Deskripsi:**
-  **Kartu pertama menjanjikan ramalan; yang ada ambang tetap.** `BadgeHelperService` menghitung empat hal, semuanya perbandingan sederhana terhadap keadaan sekarang: stok ≤ 5 (Stok Kritis), stok ≤ 0 (Stok Habis), nol penjualan dalam 30 hari (Dead Stock), dan `expiry_date` yang sudah lewat. Tidak ada satu pun yang memproyeksikan berapa lama stok akan bertahan. "Aman Hingga 14 Hari" menyebut **horizon** — angka yang tidak pernah dihitung di mana pun.
+  `[BL-083]` menutup dua kartu melayang di hero dengan asumsi itulah sisanya. Ternyata bukan. Sebutan ramalan stok berdiri di **empat tempat lain**, dan tiga di antaranya lebih tegas daripada kartu yang baru dicabut:
 
-  **Kartu kedua jauh lebih dekat dengan kenyataan, dan sengaja dipisahkan dari yang pertama.** "Kopi Susu Gula Aren mulai sepi, beri diskon 15%?" kira-kira sama dengan badge Dead Stock, dan sejak `[BL-018]` diskon memang entitas sungguhan serta `[BL-074]` memberi owner cara menargetkan sarannya sendiri. Yang belum diperiksa adalah tombol "Eksekusi Sekarang": apakah benar ada satu jalan dari saran ke diskon terpasang dalam satu tekan. Bila tidak ada, yang perlu diubah tombolnya, bukan kalimatnya.
-- **Kenapa tidak dikerjakan sekalian:** menggantinya berarti menulis kalimat pemasaran baru, dan kalimat pengganti yang dikarang sendiri adalah cara paling halus mengulang kesalahan yang sedang diperbaiki — pelajaran yang baru saja terbukti di `[BL-078]`, ketika "prediksi stok" dan "barcode" nyaris ikut masuk ke bagian yang justru dibuat untuk berhenti mengarang.
+  1. **"Machine Learning" disebut dengan nama.** Tidak ada model, tidak ada pelatihan, tidak ada pustaka ML di seluruh `composer.json`. Yang ada penyedia LLM (Anthropic, Gemini, OpenAI, SumoPod) untuk analisis teks. Menyebut teknologi tertentu adalah klaim yang paling mudah diperiksa orang luar, dan paling mahal bila keliru.
+  2. **Tab demonya interaktif dan memperagakan angka ramalan.** `predictData` memberi tiap produk "stok terprediksi" dan "sisa hari", dengan tombol "Jalankan Ulang Prediksi AI" yang membuat peragaannya terasa seperti perhitungan sungguhan. Ini bukan kalimat yang bisa diganti — ini satu dari tiga tab, dengan data dan interaksinya sendiri.
+  3. **FAQ menjelaskan CARA kerjanya.** "AI kami menganalisis data transaksi historis toko Anda selama 90 hari terakhir untuk menemukan pola musiman dan tren harian unik toko Anda." Kalimat itu menjelaskan mekanisme yang tidak ada — dan penjelasan mekanisme jauh lebih meyakinkan, karenanya jauh lebih menyesatkan, daripada slogan.
+  4. **Tombol aksi di peragaan badge** — "Pesan ke Supplier", "Promo Diskon", "Buat Bundle" — sama persis dengan "Eksekusi Sekarang" yang baru dicabut `[BL-083]` butir (b): tidak ada jalan satu tekan untuk satu pun dari ketiganya.
+- **Yang perlu diputuskan pemilik, dan kenapa ini bukan sekadar sunting teks:**
+  1. **Apakah prediksi stok akan dibangun?** Bila ya, ini bukan entri pemasaran melainkan entri fitur, dan halaman itu boleh tetap berdiri sampai fiturnya menyusul — asalkan diberi tanda "segera hadir", bukan dibiarkan tampak sudah jalan. Bila tidak, tab ketiga harus diganti dengan pilar yang benar-benar ada.
+  2. **Apa penggantinya bila dibongkar?** Tiga tab hari ini: Simulasi Kasir, Badge Helper AI, Prediksi Stok. Kandidat pengganti yang sudah nyata dan belum punya peragaan: Saran Jual berbasis aturan (`[BL-074]`), diskon dinamis dengan lantai untung (`[BL-018]`), atau tagihan terbuka berumur (`[BL-031]`).
 - **Usulan Perbaikan:**
-  **(a)** Ganti kartu pertama dengan yang benar-benar dihitung. Yang paling dekat dan tetap terdengar kuat: **"STOK KRITIS — 3 varian mendekati habis"**, karena itulah badge `low_stock` apa adanya. Bentuknya tidak berubah; janjinya berubah dari ramalan jadi peringatan.
-  **(b)** Periksa tombol "Eksekusi Sekarang" terhadap kode sebelum kartu kedua dinyatakan aman. Bila jalannya belum satu tekan, turunkan jadi label yang tidak menjanjikan tindakan.
-  **(c)** Sisir **seluruh** hero sekali lagi, bukan hanya dua kartu ini. `[BL-032]`(1) berhenti di teks bagian isi, dan itulah sebabnya keduanya bertahan enam hari lebih lama daripada empat klaim yang sudah dibuang.
+  **(a)** Apa pun keputusannya, **"(Machine Learning)" dicabut lebih dulu dan sendirian.** Ia klaim paling tegas, paling murah dibuang, dan tidak menunggu keputusan tentang tab.
+  **(b)** Jawaban FAQ diganti dengan yang benar-benar dikerjakan `BadgeHelperService`: ambang stok, dead stock 30 hari, dan kedaluwarsa. Pertanyaannya ikut berubah, karena "bagaimana cara AI memprediksi stok saya" tidak punya jawaban jujur.
+  **(c)** Tombol aksi di peragaan badge diturunkan jadi label, sama seperti `[BL-083]` butir (b) — atau dibangun jalannya. Keduanya sah; yang tidak sah adalah membiarkannya tampak bisa ditekan.
+  **(d)** **Jangan** menyimpan kata "prediksi" sambil membuang "Machine Learning". Yang menyesatkan bukan nama teknologinya melainkan janji horizonnya.
 
 ---
 
@@ -701,6 +699,8 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-083` | Kartu melayang di hero menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang tidak ada mesinnya | 2026-08-20 (dijawab pemilik: ganti jadi Stok Kritis; butir (b) dan (c) ikut dikerjakan, dan butir (c) memunculkan `[BL-084]`) | `[HOTFIX] Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083)` |
+| `BL-084` | Sidebar owner menulis "SAPI", bukan nama toko yang sedang dibuka | 2026-08-21 (pertanyaan glyph-nya dijawab sekalian: inisialnya ikut nama toko) | `[HOTFIX] Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084)` |
 | `BL-032` | Landing page tidak lagi menggambarkan produk yang sudah jadi | 2026-08-20 (butir (1)+(2) 2026-08-14; butir (3) ditutup 2026-08-20 setelah server MCP chrome-devtools tersambung dan bisa menulis berkas gambar) | `[ADDITION] Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3)` |
 | `BL-069` | Kuota AI tambahan belum bisa dibeli — tidak ada kolom, tidak ada harga, tidak ada layar | 2026-08-20 (butir (a)-(d) seluruhnya; prasyarat pembatasan `profit_by_item` ikut dikerjakan lebih dulu. Saran (1) paket kredit dan (2) tidak menjualnya ditolak sadar oleh keputusan pemilik 2026-08-19) | `[ADDITION] Kuota AI Tambahan Akhirnya Bisa Dibeli, dan Dilepas Lagi — Persis seperti Kursi (BL-069)` |
 | `BL-078` | Testimoni di landing berdiri di atas nama dan potret yang tidak bisa dipertanggungjawabkan | 2026-08-20 (dijawab pemilik: memang karangan; ditempuh jalan kedua opsi (2) — diganti bagian "Untuk Siapa SAPI Dibuat", bukan dihapus) | `[DEPRECATE] Testimoni Karangan Dicabut, Diganti Bagian yang Tidak Mengaku Sebagai Kesaksian (BL-078)` |

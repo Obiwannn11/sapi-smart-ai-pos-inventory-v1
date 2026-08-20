@@ -190,6 +190,18 @@ const visibleGroups = computed(() =>
 // ditampilkan — menyembunyikannya membuat aplikasi tampak menyusut, bukan
 // terkunci — tapi dirender mati supaya tidak ada klik yang berakhir memantul.
 const isSuspended = computed(() => auth.tenant?.is_suspended === true);
+
+// ── Merek di kepala sidebar ────────────────────────────────────────────────
+// Nama TOKO, bukan nama produk ([BL-084]). Cadangannya `SAPI POS` dan bukan
+// string kosong: shell ini juga dirender sesaat sebelum props tenant sampai,
+// dan kepala sidebar yang kosong terbaca sebagai halaman rusak. Pola dan
+// cadangannya sengaja sama persis dengan `CashierTopbar.vue` — dua permukaan
+// yang menjawab pertanyaan sama ("saya sedang di toko mana") tidak boleh
+// menjawabnya dengan dua cara.
+const tenantName = computed(() => auth.tenant?.name || 'SAPI POS');
+// Inisialnya ikut nama toko. Glyph `S` di sebelah "Kopi Nusantara" akan
+// terbaca sebagai merek yang salah, bukan sebagai penanda produk.
+const tenantInitial = computed(() => tenantName.value.trim().charAt(0).toUpperCase() || 'S');
 const isLocked = (item) => isSuspended.value && item.href !== '/langganan';
 
 // Tautan yang jadi awalan tautan lain di sidebar — `/owner/settings` terhadap
@@ -290,13 +302,14 @@ const logout = async () => {
                         class="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0"
                         aria-hidden="true"
                     >
-                        <span class="text-primary-foreground text-[11px] font-bold tracking-tight select-none">S</span>
+                        <span class="text-primary-foreground text-[11px] font-bold tracking-tight select-none">{{ tenantInitial }}</span>
                     </div>
-                    <!-- SAPI text — hidden in icon-only rail mode -->
+                    <!-- Store name — hidden in icon-only rail mode ([BL-084]) -->
                     <span
                         v-show="sidebarOpen"
-                        class="text-[1.0625rem] font-bold text-brand tracking-tight select-none whitespace-nowrap"
-                    >SAPI</span>
+                        :title="tenantName"
+                        class="text-[1.0625rem] font-bold text-brand tracking-tight select-none truncate max-w-[10.5rem]"
+                    >{{ tenantName }}</span>
                 </div>
 
                 <!-- Close button — hidden in icon-only rail mode -->

@@ -61,6 +61,8 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-20 | HOTFIX | UI | Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083) |
+| 2026-08-21 | HOTFIX | UI | Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084) |
 | 2026-08-20 | ADDITION | UI | Lima Tangkapan Layar Landing Diambil Ulang dari Aplikasi yang Berjalan, dan Jadi WebP (BL-032 butir 3) |
 | 2026-08-20 | HOTFIX | Seeder | Seeder Demo Melewatkan Hari yang Hanya Berisi Tagihan Terbuka |
 | 2026-08-20 | ADDITION | Langganan | Kuota AI Tambahan Akhirnya Bisa Dibeli, dan Dilepas Lagi — Persis seperti Kursi (BL-069) |
@@ -199,6 +201,41 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083)
+- **Tanggal:** 2026-08-20
+- **Fase Terkait:** Di Luar Fase — kelanjutan `[BL-032]` butir (1), yang penyisirannya berhenti di teks bagian isi dan tidak pernah mencapai hero. Menutup `[BL-083]`
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Tiga klaim di layar pertama dicabut. Kartu "Prediksi Stok — Aman Hingga 14 Hari" jadi "Stok Kritis — 3 varian mendekati habis"; tombol "Eksekusi Sekarang" jadi keterangan "Muncul di dashboard Anda"; dan paragraf hero berhenti menyebut "memprediksi stok Anda".
+- **Alasan:** Ketiganya bisa diperiksa ke kode, dan ketiganya tidak ada. `BadgeHelperService` membandingkan ambang tetap — stok ≤ 5, stok habis, tak terjual 30 hari, lewat `expiry_date` — dan tidak pernah menghitung horizon. `BadgeCard.vue` hanya membuka-tutup, jadi tidak ada jalan satu tekan dari saran ke diskon terpasang.
+
+- **Kalimat penggantinya meminjam kalimat produk sendiri, bukan dikarang ulang.** "3 varian mendekati habis" adalah bentuk persis pesan badge `low_stock` (`"{count} varian mendekati habis"`), dan warnanya turun dari hijau ke amber mengikuti `severity: warning` milik badge itu. Yang dijanjikan di landing kini sama dengan yang dilihat orang setelah masuk — dan itu, bukan nada kalimatnya, yang membuatnya aman.
+- **Ikon centang ikut diganti segitiga peringatan.** Kartu lama berwajah kabar baik karena isinya memang kabar baik ("aman hingga 14 hari"). Isinya sekarang peringatan; mempertahankan centang hijau akan membuat gambar dan kalimatnya berselisih.
+- **Tombolnya dicabut, bukan diganti kata.** Mengganti label sambil mempertahankan bentuk tombol tetap mengundang tekanan yang tidak akan menghasilkan apa pun. Yang menggantikannya paragraf kecil berwarna redup.
+- **Penyisiran hero — butir (c) — menemukan yang ketiga, dan ia yang paling menonjol.** Paragraf utama hero, bukan kartu melayang, adalah tempat "memprediksi stok Anda" berdiri. Dua kartu itu hanya yang paling mudah terlihat.
+- **Asumsi entri backlognya terbukti keliru, dan sisanya sengaja tidak dibongkar.** Sebutan ramalan stok masih berdiri di tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo — keputusan pemasaran, bukan konsekuensi teknis. Dicatat sebagai `[BL-084]`.
+- **Testnya sengaja hanya mengunci hero,** dengan alasan yang ditulis di dalam testnya sendiri: menyapu seluruh sebutan "prediksi" akan membuatnya gagal sampai `[BL-084]` dikerjakan, padahal `[BL-084]` menunggu keputusan pemilik.
+- **Berkas:** `resources/views/public/landing.blade.php` — paragraf hero, dua kartu melayang · `tests/Feature/Public/LandingClaimsTest.php` — satu test baru (72 tes lulus di `tests/Feature/Public`)
+
+---
+
+### [HOTFIX] Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-084]`, entri pertama dari catatan pemilik 2026-08-21
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Kepala sidebar owner membaca `auth.tenant.name` — nama usaha penggunanya — dengan cadangan `'SAPI POS'`. Glyph di sebelahnya ikut jadi inisial toko itu.
+- **Alasan:** Shell owner menyebut nama produk di satu-satunya tempat yang seharusnya menyebut nama pembacanya. Kasir di aplikasi yang sama sudah melihat nama tokonya sendiri di topbar sejak lama; hanya sidebar owner yang tidak ikut, dan tidak ada alasan yang pernah ditulis untuk itu.
+
+- **`[BL-033]` tidak dilanggar, lingkupnya diperjelas.** Keputusan "SAPI POS resmi" mengatur **permukaan publik** — landing, login, halaman galat — tempat pembacanya memang belum punya toko dan merek produklah satu-satunya yang bisa disebut. Shell owner ikut terbawa padahal pembacanya sudah pasti berada di dalam satu toko, sudah masuk, dan sudah tahu memakai aplikasi apa.
+- **Cadangannya `'SAPI POS'`, bukan string kosong,** dan itu bukan kehati-hatian berlebihan: shell ini juga dirender sesaat sebelum props tenant sampai, dan kepala sidebar yang kosong terbaca sebagai halaman rusak. Pola dan cadangannya disalin persis dari `CashierTopbar.vue` — dua permukaan yang menjawab pertanyaan sama ("saya sedang di toko mana") tidak boleh menjawabnya dengan dua cara.
+- **Glyph `S` ikut berubah, dan pertanyaannya sengaja dijawab di sini alih-alih ditunda.** `S` di sebelah tulisan "Kopi Nusantara" tidak terbaca sebagai penanda produk melainkan sebagai merek yang salah. Satu baris `computed`; kalau pemilik memutuskan sebaliknya, mengembalikannya juga satu baris.
+- **Nama panjang dipotong, bukan dibiarkan mendorong tata letak.** Sidebarnya `w-64` dan `overflow-hidden`; nama toko yang panjang akan tertelan diam-diam di tengah kata. `truncate max-w-[10.5rem]` plus `title` membuat pemotongannya terlihat sebagai pemotongan, dan nama utuhnya tetap bisa dibaca dari tooltip.
+- **Tesnya dua lapis karena satu lapis tidak bisa membuktikan apa pun sendirian.** Shell-nya Vue dan tidak pernah dirender PHP, jadi tes HTTP hanya sanggup membuktikan **datanya sampai** (`auth.tenant.name` ada di props tiap halaman owner) — sementara berkas Vue-nya bisa saja berhenti membacanya besok tanpa satu tes pun gagal. Lapis kedua karena itu memeriksa berkas layout-nya langsung: `>SAPI<` tidak boleh kembali sebagai teks tetap.
+- **Berkas:** `resources/js/Layouts/OwnerLayout.vue` · `tests/Feature/Owner/SidebarBrandingTest.php` (baru, 2 tes)
 
 ---
 
