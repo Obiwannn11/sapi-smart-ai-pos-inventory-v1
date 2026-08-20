@@ -108,6 +108,14 @@ Route::middleware(['auth', 'tenant'])
             Route::post('/langganan/tagihan/{invoice}/bukti', [\App\Http\Controllers\Billing\UpgradeController::class, 'storeProof'])
                 ->name('proof.store');
 
+            // Kuota AI tambahan (`[BL-069]`). Alurnya kembar dengan seat —
+            // beli berlaku seketika, lepas berlaku satu periode ke depan — dan
+            // pembatasnya sama: keputusan komersial, jadi owner saja.
+            Route::post('/langganan/tambah-kuota-ai', [\App\Http\Controllers\Billing\AiQuotaController::class, 'store'])
+                ->name('ai-quota.store');
+            Route::post('/langganan/lepas-kuota-ai', [\App\Http\Controllers\Billing\AiQuotaController::class, 'destroy'])
+                ->name('ai-quota.destroy');
+
             // Alur bayar lewat payment gateway (`[BL-059]`). Namanya diawali
             // `billing.` sehingga ikut tercakup ALWAYS_ALLOWED di
             // EnsureSubscriptionActive — tenant yang ditangguhkan justru

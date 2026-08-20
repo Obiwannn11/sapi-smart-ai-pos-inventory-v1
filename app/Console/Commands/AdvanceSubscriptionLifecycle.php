@@ -154,6 +154,13 @@ class AdvanceSubscriptionLifecycle extends Command
             $dryRun ? ' (dry-run)' : ''
         ));
 
+        // Dilaporkan meski nol, dengan alasan yang sama (`[BL-069]`).
+        $this->line(sprintf(
+            'Pelepasan kuota AI berlaku     : %d langganan%s',
+            $result['ai_quota_released'],
+            $dryRun ? ' (dry-run)' : ''
+        ));
+
         $this->info($dryRun
             ? 'Tidak ada yang diubah.'
             : 'Selesai.');

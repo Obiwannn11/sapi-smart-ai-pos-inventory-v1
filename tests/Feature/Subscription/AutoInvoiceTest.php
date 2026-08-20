@@ -359,6 +359,101 @@ test('seats are billed because they were bought, not because they were used', fu
     expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(110000.0);
 });
 
+// ── Kuota AI tambahan (`[BL-069]`) ───────────────────────────────────────────
+
+test('an invoice carries the purchased AI quota as a monthly component', function () {
+    config(['subscription.ai_quota.block_price' => 15000, 'subscription.ai_quota.block_size' => 5]);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    $subscription->update(['purchased_ai_blocks' => 2]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Rp 100.000 paket + 2 blok × Rp 15.000. Berulang tiap bulan, bukan sekali
+    // bayar — itulah seluruh isi keputusan pemilik 2026-08-19.
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(130000.0);
+});
+
+test('seats and AI quota are billed side by side, not one instead of the other', function () {
+    config(['subscription.ai_quota.block_price' => 15000]);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    $subscription->update(['seats' => 3, 'purchased_extra_seats' => 2, 'purchased_ai_blocks' => 1]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // 100.000 + (2 × 5.000) + (1 × 15.000).
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(125000.0);
+});
+
+test('the invoice freezes the AI quota pieces too', function () {
+    config(['subscription.ai_quota.block_price' => 15000, 'subscription.ai_quota.block_size' => 5]);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+    $subscription->update(['purchased_ai_blocks' => 2]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $breakdown = Invoice::where('tenant_id', $tenant->id)->firstOrFail()
+        ->pricing_context['billing_breakdown'];
+
+    // `ai_block_size` ikut dibekukan, bukan cuma harganya: kalau satu blok
+    // nanti berarti jumlah analisis yang berbeda, tagihan lama harus tetap bisa
+    // menjelaskan kapasitas apa yang waktu itu dibayar.
+    expect($breakdown['ai_blocks'])->toBe(2)
+        ->and($breakdown['ai_block_size'])->toBe(5)
+        ->and($breakdown['ai_block_price'])->toEqual(15000)
+        ->and($breakdown['ai_blocks_amount'])->toEqual(30000)
+        ->and($breakdown['total'])->toEqual(130000);
+});
+
+test('a tenant on a free plan is still billed for the AI quota it bought', function () {
+    config(['subscription.ai_quota.block_price' => 15000]);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3, basePrice: 0);
+    $subscription->update(['purchased_ai_blocks' => 1]);
+
+    $result = app(SubscriptionService::class)->advanceLifecycle();
+
+    // Penjaga "tidak ada yang perlu ditagih" memeriksa TOTALNYA. Memeriksa
+    // tarif paketnya saja akan memberikan kuota berbayar itu cuma-cuma, tiap
+    // bulan — persis celah yang sudah ditutup untuk seat.
+    expect($result['invoiced'])->toBe(1)
+        ->and($result['free'])->toBe(0)
+        ->and((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(15000.0);
+});
+
+test('a scheduled AI quota release is still billed once before it takes effect', function () {
+    config(['subscription.ai_quota.block_price' => 15000]);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    $subscription->update([
+        'purchased_ai_blocks' => 2,
+        'scheduled_ai_blocks' => 0,
+        'ai_quota_release_at' => $subscription->current_period_end->copy()->addMonthNoOverflow()->toDateString(),
+    ]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Menutup celah "beli hari ini, lepas besok, tak pernah bayar": tiap blok
+    // yang dibeli pasti tertagih sekali.
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(130000.0);
+});
+
+test('an AI quota release already effective when the period opens is not billed', function () {
+    config(['subscription.ai_quota.block_price' => 15000]);
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    $subscription->update([
+        'purchased_ai_blocks' => 2,
+        'scheduled_ai_blocks' => 0,
+        'ai_quota_release_at' => $subscription->current_period_end->toDateString(),
+    ]);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Hak dihitung untuk periode yang DITAGIH, bukan untuk hari ini.
+    expect((float) Invoice::where('tenant_id', $tenant->id)->firstOrFail()->amount)->toBe(100000.0);
+});
+
 test('the invoice freezes how its total was reached', function () {
     ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
     $subscription->update(['seats' => 3, 'purchased_extra_seats' => 2]);

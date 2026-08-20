@@ -389,6 +389,37 @@ class SubscriptionService
     }
 
     /**
+     * Komponen kuota AI tambahan untuk satu periode (`[BL-069]`).
+     *
+     * Kembaran `seatChargeFor()` sampai ke perkara `$periodStart`-nya, dan
+     * kemiripan itu disengaja: keputusan pemilik 2026-08-19 menetapkan kuota AI
+     * dijual PERSIS seperti seat — komponen bulanan yang berulang, bukan
+     * pembelian sekali bayar. Dua alur beli untuk satu bentuk yang sama akan
+     * berselisih pada hal yang paling mahal untuk salah: apa yang berhak
+     * ditagih.
+     *
+     * **Tarifnya dari config, bukan dari paket,** dan di sinilah ia berpisah
+     * dari seat. `extra_seat_price` bertangga per paket karena seat adalah hak
+     * yang nilainya berbeda menurut ukuran tenant; ongkos satu analisis tidak
+     * berbeda menurut paket pembelinya, sehingga tangga di sana hanya akan jadi
+     * angka yang harus dijelaskan tanpa punya dasar.
+     *
+     * @return array{blocks: int, block_size: int, unit_price: float, amount: float}
+     */
+    public function aiQuotaChargeFor(Subscription $subscription, ?Carbon $periodStart = null): array
+    {
+        $blocks = $subscription->entitledAiBlocks($periodStart);
+        $unitPrice = (float) config('subscription.ai_quota.block_price', 0);
+
+        return [
+            'blocks' => $blocks,
+            'block_size' => (int) config('subscription.ai_quota.block_size', 0),
+            'unit_price' => $unitPrice,
+            'amount' => $blocks * $unitPrice,
+        ];
+    }
+
+    /**
      * Terbitkan tagihan periode berikutnya untuk tenant yang periodenya hampir
      * habis.
      *
@@ -593,7 +624,16 @@ class SubscriptionService
             // tenant bertarif Rp 0 yang membeli seat kini PUNYA yang harus
             // dibayar dan karena itu berhenti terhitung `free`.
             $seat = $this->seatChargeFor($subscription, $periodStart);
-            $amount = $price + $seat['amount'];
+
+            // Komponen kuota AI, dengan pertimbangan yang sama persis seperti
+            // seat di atasnya (`[BL-069]`): dihitung untuk periode yang
+            // DITAGIH, dan ikut menentukan apakah tenant terhitung `free`.
+            // Tenant di paket Rp 0 yang membeli kuota punya yang benar-benar
+            // harus dibayar; melewatinya berarti memberikan kapasitas berbayar
+            // itu cuma-cuma.
+            $aiQuota = $this->aiQuotaChargeFor($subscription, $periodStart);
+
+            $amount = $price + $seat['amount'] + $aiQuota['amount'];
 
             if ($amount <= 0.0) {
                 // Tidak dicatat ke jejak audit: selama tarifnya belum
@@ -635,6 +675,10 @@ class SubscriptionService
                             'extra_seats' => $seat['seats'],
                             'extra_seat_price' => $seat['unit_price'],
                             'extra_seats_amount' => $seat['amount'],
+                            'ai_blocks' => $aiQuota['blocks'],
+                            'ai_block_size' => $aiQuota['block_size'],
+                            'ai_block_price' => $aiQuota['unit_price'],
+                            'ai_blocks_amount' => $aiQuota['amount'],
                             'total' => $amount,
                         ],
                     ],
@@ -656,6 +700,7 @@ class SubscriptionService
                     'amount' => $amount,
                     'base_price' => $price,
                     'extra_seats' => $seat['seats'],
+                    'ai_blocks' => $aiQuota['blocks'],
                     'pricing_rule' => $resolved['label'],
                     'source' => $resolved['source'],
                 ]);
@@ -1271,6 +1316,166 @@ class SubscriptionService
     }
 
     /**
+     * Belikan tenant blok kuota AI. Berlaku seketika, tanpa tagihan tersendiri.
+     *
+     * Cerminan `grantSeats()`, dengan pertimbangan yang sama sebaris demi
+     * sebaris — termasuk yang paling mudah terlewat: **pelepasan yang sedang
+     * menunggu dibatalkan.** Tenant yang menjadwalkan pengurangan lalu berubah
+     * pikiran dan membeli lagi tidak sedang meminta keduanya; membiarkan
+     * keduanya hidup berarti blok yang baru dibeli ikut lenyap di tanggal
+     * pelepasan, tanpa seorang pun memintanya.
+     *
+     * **Gratis sampai periode berjalan habis,** sama seperti seat. Tagihan
+     * periode berikutnya sudah memuatnya, jadi tidak ada yang lolos — yang
+     * ditiadakan hanya tagihan di tengah bulan, bukan uangnya. Bedanya dengan
+     * seat justru menguntungkan tenant di sini: kuota berlaku HARIAN, jadi
+     * jatah yang lebih besar itu benar-benar bisa dipakai mulai hari ini juga.
+     *
+     * Batas atasnya ditegakkan pemanggilnya lewat `aiQuotaPurchaseCeiling()`,
+     * bukan di sini, supaya kalimat penolakannya bisa menyebut angka yang
+     * tenant lihat di layarnya.
+     */
+    public function grantAiQuota(Tenant $tenant, int $blocks): Subscription
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $sebelum = $subscription->purchased_ai_blocks;
+
+        $subscription->update([
+            'purchased_ai_blocks' => $sebelum + $blocks,
+            'scheduled_ai_blocks' => null,
+            'ai_quota_release_at' => null,
+        ]);
+
+        PlatformAuditLog::record('subscriptions.ai-quota-granted', $subscription, [
+            'tenant_id' => $tenant->id,
+            'added' => $blocks,
+            'ai_blocks_before' => $sebelum,
+            'ai_blocks_after' => $subscription->purchased_ai_blocks,
+            'daily_quota' => $subscription->purchasedAiDailyQuota(),
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Jadwalkan pelepasan blok kuota AI.
+     *
+     * **Berlaku satu periode penuh ke depan,** dengan alasan yang sama seperti
+     * `releaseSeats()`: tagihan periode berikutnya terbit `invoice_lead_days`
+     * SEBELUM periode berjalan habis dan sudah memuat blok itu, jadi melepasnya
+     * di akhir periode berjalan berarti tenant membayar sebulan untuk kuota
+     * yang sudah dicabut. Sekaligus menutup celah "beli hari ini, lepas besok,
+     * tak pernah bayar".
+     *
+     * Tidak ada padanan `seatReleaseCeiling()` di sini, dan ketiadaannya
+     * disengaja: seat yang masih diduduki staf aktif tidak boleh dilepas karena
+     * pelepasannya akan mematikan akun orang yang sedang bekerja. Kuota AI tidak
+     * diduduki siapa pun — yang terjadi paling buruk adalah jatah harian turun
+     * kembali ke angka paketnya, dan itu justru yang tenant minta. Satu-satunya
+     * batas yang berlaku adalah tidak melepas lebih banyak daripada yang
+     * dimiliki, dan itu dijepit di sini.
+     */
+    public function releaseAiQuota(Tenant $tenant, int $blocks): Subscription
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $target = max(0, $subscription->entitledAiBlocks() - $blocks);
+
+        // Dihitung dari akhir periode berjalan, bukan dari hari ini: jangkar
+        // tanggal tagihlah yang menentukan batas periode, dan `addMonth()` dari
+        // `now()` akan meleset di tiap bulan pendek.
+        $releaseAt = $subscription->nextAnchoredDateAfter(
+            $subscription->current_period_end ?? now(),
+        );
+
+        $subscription->update([
+            'scheduled_ai_blocks' => $target,
+            'ai_quota_release_at' => $releaseAt->toDateString(),
+        ]);
+
+        PlatformAuditLog::record('subscriptions.ai-quota-release-scheduled', $subscription, [
+            'tenant_id' => $tenant->id,
+            'released' => $blocks,
+            'ai_blocks_now' => $subscription->purchased_ai_blocks,
+            'ai_blocks_after' => $target,
+            'effective_at' => $releaseAt->toDateString(),
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Paling banyak berapa blok yang boleh DIBELI sekarang.
+     *
+     * Atapnya ada karena plafon harian yang dibeli tidak pernah ditinjau ulang
+     * oleh siapa pun sesudahnya: tanpa batas, satu salah ketik di formulir
+     * ("100" alih-alih "1") jadi tagihan Rp 1.500.000 sekaligus paparan ongkos
+     * 500 analisis/hari yang menetap sampai ada yang menyadarinya. Nol berarti
+     * tenant sudah di atapnya.
+     */
+    public function aiQuotaPurchaseCeiling(Subscription $subscription): int
+    {
+        $max = (int) config('subscription.ai_quota.max_blocks', 0);
+
+        return max(0, $max - $subscription->purchased_ai_blocks);
+    }
+
+    /**
+     * Paling banyak berapa blok yang boleh DILEPAS sekarang.
+     *
+     * Dibaca dari hak yang berlaku, bukan dari `purchased_ai_blocks` mentah:
+     * tenant yang sudah menjadwalkan pelepasan tidak boleh melepas blok yang
+     * sama dua kali.
+     */
+    public function aiQuotaReleaseCeiling(Subscription $subscription): int
+    {
+        return max(0, $subscription->entitledAiBlocks());
+    }
+
+    /**
+     * Berlakukan pelepasan kuota AI yang tanggalnya sudah tiba.
+     *
+     * Menumpang di `advanceLifecycle()` bersama tenggat-tenggat lain, dengan
+     * alasan yang sama seperti `applyDueSeatReleases()`: satu jadwal yang lupa
+     * dipasang cukup untuk membuat tenant terus tertagih atas kuota yang sudah
+     * ia lepas berbulan-bulan lalu.
+     *
+     * @return int berapa langganan yang kuotanya benar-benar turun
+     */
+    public function applyDueAiQuotaReleases(bool $dryRun = false): int
+    {
+        $due = Subscription::query()
+            ->whereNotNull('ai_quota_release_at')
+            ->whereNotNull('scheduled_ai_blocks')
+            ->whereDate('ai_quota_release_at', '<=', now()->startOfDay())
+            ->get();
+
+        if ($dryRun) {
+            return $due->count();
+        }
+
+        foreach ($due as $subscription) {
+            $sebelum = $subscription->purchased_ai_blocks;
+            $target = (int) $subscription->scheduled_ai_blocks;
+
+            $subscription->update([
+                'purchased_ai_blocks' => $target,
+                'scheduled_ai_blocks' => null,
+                'ai_quota_release_at' => null,
+            ]);
+
+            PlatformAuditLog::record('subscriptions.ai-quota-released', $subscription, [
+                'tenant_id' => $subscription->tenant_id,
+                'ai_blocks_before' => $sebelum,
+                'ai_blocks_after' => $target,
+            ]);
+        }
+
+        return $due->count();
+    }
+
+    /**
      * Tagihan upgrade yang masih terbuka, bila ada.
      *
      * **Peninggalan.** Tak ada lagi yang menerbitkan `KIND_UPGRADE` sejak seat
@@ -1400,7 +1605,7 @@ class SubscriptionService
      * Penandaan tenant Adaptif yang melewati ambang (`[BL-055]`(e)) menutup
      * barisan, dan urutannya juga mengikat — alasannya di tempatnya dipanggil.
      *
-     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int, skipped: int, graduated: int, stranded: int, seats_released: int, ceiling_exits: int}
+     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int, skipped: int, graduated: int, stranded: int, seats_released: int, ai_quota_released: int, ceiling_exits: int}
      */
     public function advanceLifecycle(bool $dryRun = false): array
     {
@@ -1410,6 +1615,13 @@ class SubscriptionService
         $graduation = $this->graduateExpiredTrials($dryRun);
         $billing = $this->issueDuePeriodInvoices($dryRun);
         $seatsReleased = $this->applyDueSeatReleases($dryRun);
+
+        // Sesudah penerbitan, dengan alasan yang sama persis seperti pelepasan
+        // seat di baris atasnya (`[BL-069]`): dibalik urutannya, kuota yang
+        // tanggal lepasnya jatuh tepat di hari penerbitan akan hilang lebih
+        // dulu, dan tagihan periode itu — periode yang kuotanya masih sah
+        // dipakai — terbit tanpa memuatnya.
+        $aiQuotaReleased = $this->applyDueAiQuotaReleases($dryRun);
 
         $expiring = fn () => Tenant::query()
             ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE])
@@ -1502,6 +1714,7 @@ class SubscriptionService
             'graduated' => $graduation['graduated'],
             'stranded' => $graduation['stranded'],
             'seats_released' => $seatsReleased,
+            'ai_quota_released' => $aiQuotaReleased,
             'ceiling_exits' => $ceilingExits,
         ];
     }

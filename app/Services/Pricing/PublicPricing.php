@@ -33,7 +33,8 @@ class PublicPricing
      *     plans: list<array{slug: string, name: string, price: float, included_seats: int, extra_seat_price: float, ai_daily: int|null, is_free: bool, hosts_adaptive: bool, is_post_trial_target: bool}>,
      *     adaptive: array{ladder: list<array{label: string, price: float, min: float|null, max: float|null}>, ceiling: float|null, host_plan: string|null},
      *     trial_months: int,
-     *     track_switch_minimum_months: int
+     *     track_switch_minimum_months: int,
+     *     ai_quota: array{block_size: int, block_price: float}
      * }
      */
     public function snapshot(?Carbon $asOf = null): array
@@ -56,6 +57,15 @@ class PublicPricing
             ],
             'trial_months' => SubscriptionService::trialMonths(),
             'track_switch_minimum_months' => SubscriptionService::trackSwitchMinimumMonths(),
+            // Kuota AI yang bisa DIBELI (`[BL-069]`). Boleh disebut di
+            // permukaan publik sejak alur belinya benar-benar ada — sebelum itu
+            // `[BL-067]`(e) melarangnya, karena menjanjikan pembelian yang
+            // tidak bisa dilakukan siapa pun adalah bentuk termurah dari
+            // berbohong.
+            'ai_quota' => [
+                'block_size' => (int) config('subscription.ai_quota.block_size'),
+                'block_price' => (float) config('subscription.ai_quota.block_price'),
+            ],
         ];
     }
 

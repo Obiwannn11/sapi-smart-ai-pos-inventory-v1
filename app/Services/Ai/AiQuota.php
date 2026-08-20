@@ -63,6 +63,13 @@ class AiQuota
      */
     protected array $policies = [];
 
+    /**
+     * Langganan per tenant, dibaca sekali per instance.
+     *
+     * @var array<int, Subscription|null>
+     */
+    protected array $subscriptions = [];
+
     public function __construct(protected AiProviderFactory $providers) {}
 
     /**
@@ -86,12 +93,20 @@ class AiQuota
      * sebagai jatah tetap, dan owner yang sudah terbiasa dengan angka itu akan
      * mengira aplikasinya rusak pada hari promonya berakhir.
      *
-     * @return array{using_free_tier: bool, daily_limit: int, used: int, remaining: int, limit_source: string, plan_name: string|null, bonus: int, bonus_label: string|null}
+     * `purchased` dipisah dari `daily_limit` dengan alasan yang sama seperti
+     * `bonus` (`[BL-069]`), tapi kepentingannya berbeda dan lebih besar: kuota
+     * yang dibeli MASUK TAGIHAN BULANAN. Owner yang tidak bisa melihat berapa
+     * dari jatahnya yang sedang ia bayar tidak punya cara menilai apakah
+     * pembelian itu masih layak diteruskan — dan panel pelepasannya jadi tombol
+     * tanpa angka pembanding.
+     *
+     * @return array{using_free_tier: bool, daily_limit: int, used: int, remaining: int, limit_source: string, plan_name: string|null, bonus: int, bonus_label: string|null, purchased: int, purchased_blocks: int}
      */
     public function snapshotFor(Tenant $tenant): array
     {
         $usingFreeTier = $this->providers->isUsingFreeTier($tenant);
         $plan = $this->planFor($tenant);
+        $purchased = $this->purchasedLimitFor($tenant);
         $base = $this->baseLimitFor($tenant);
         $bonus = $this->bonusOn($base);
         $limit = $base + $bonus;
@@ -109,6 +124,11 @@ class AiQuota
             'plan_name' => $plan?->name,
             'bonus' => $bonus,
             'bonus_label' => $bonus > 0 ? $this->policy(AiQuotaPolicy::MODE_BONUS)?->label : null,
+            // Berapa analisis/hari yang berasal dari blok yang dibeli, dan
+            // berapa bloknya. Keduanya dikirim karena layar menyebut keduanya:
+            // jatahnya dalam analisis, tagihannya dalam blok.
+            'purchased' => $purchased,
+            'purchased_blocks' => $this->subscriptionFor($tenant)?->entitledAiBlocks() ?? 0,
         ];
     }
 
@@ -184,13 +204,47 @@ class AiQuota
     }
 
     /**
-     * Batas sebelum promo: paket → kebijakan bawaan → `config/ai.php`.
+     * Batas sebelum promo: kuota yang DIBELI + (paket → kebijakan → config).
+     *
+     * Kuota yang dibeli langganan duduk satu tingkat di ATAS paket
+     * (`[BL-069]`(b)), bukan sebagai mata rantai keempat di bawahnya: ia
+     * menambah, bukan menggantikan. Menaruhnya sebagai lapis pengganti akan
+     * membuat tenant `paid-3` yang membeli satu blok justru turun jatahnya dari
+     * 60 ke 5.
+     *
+     * **Ia ditambahkan meski batas dasarnya nol, dan itu bedanya dari promo.**
+     * `bonusOn()` menolak membuka fitur yang sebuah paket sengaja tidak
+     * menjualnya, karena promo umum tidak pernah diminta siapa pun. Kuota yang
+     * dibeli sebaliknya: ia diminta, disetujui, dan MASUK TAGIHAN BULANAN.
+     * Menelannya karena paketnya kebetulan berjatah nol — misalnya sesudah
+     * tenant turun paket — berarti menagih kapasitas yang tidak pernah
+     * diberikan. Yang menolak pembelian di paket tanpa AI adalah alur belinya,
+     * bukan pembaca ini.
      */
     protected function baseLimitFor(Tenant $tenant): int
+    {
+        return $this->planLimitFor($tenant) + $this->purchasedLimitFor($tenant);
+    }
+
+    /**
+     * Batas yang berasal dari paket: paket → kebijakan bawaan → `config/ai.php`.
+     */
+    protected function planLimitFor(Tenant $tenant): int
     {
         $bawaan = $this->baselineLimit();
 
         return $this->planFor($tenant)?->limit(Plan::LIMIT_AI_DAILY, $bawaan) ?? $bawaan;
+    }
+
+    /**
+     * Tambahan harian dari blok kuota yang dibeli langganan (`[BL-069]`).
+     *
+     * Perkaliannya milik `Subscription::purchasedAiDailyQuota()` — hanya satu
+     * tempat yang boleh tahu bahwa satu blok berarti `block_size` analisis.
+     */
+    protected function purchasedLimitFor(Tenant $tenant): int
+    {
+        return $this->subscriptionFor($tenant)?->purchasedAiDailyQuota() ?? 0;
     }
 
     /**
@@ -250,6 +304,21 @@ class AiQuota
      */
     protected function planFor(Tenant $tenant): ?Plan
     {
-        return Subscription::where('tenant_id', $tenant->id)->first()?->plan;
+        return $this->subscriptionFor($tenant)?->plan;
+    }
+
+    /**
+     * Langganan tenant ini, dibaca sekali per tenant per instance.
+     *
+     * Di-memo dengan alasan yang sama seperti `$policies`: sejak kuota yang
+     * dibeli ikut terbaca (`[BL-069]`), satu `snapshotFor()` menanyakan
+     * langganan yang sama tiga kali — sekali untuk paketnya, sekali untuk
+     * bloknya, sekali lagi untuk label sumbernya. Jawabannya sudah pasti sama.
+     */
+    protected function subscriptionFor(Tenant $tenant): ?Subscription
+    {
+        return $this->subscriptions[$tenant->id] ??= Subscription::with('plan')
+            ->where('tenant_id', $tenant->id)
+            ->first();
     }
 }

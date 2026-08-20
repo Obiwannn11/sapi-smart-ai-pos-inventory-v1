@@ -174,6 +174,61 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Kuota AI Tambahan
+    |--------------------------------------------------------------------------
+    |
+    | Keputusan pemilik 2026-08-19 (`[BL-069]`): kuota AI dijual persis seperti
+    | seat — komponen bulanan yang berulang, dibeli dan dilepas dari halaman
+    | langganan, pelepasannya berlaku satu periode penuh ke depan.
+    |
+    | Yang dijual adalah PLAFON HARIAN, bukan kredit habis-pakai: satu blok
+    | menaikkan `ai_daily` sebesar `block_size` selama blok itu dimiliki. Pilihan
+    | ini menolak saran paket kredit di entri backlognya, dan penolakannya sadar
+    | — keseragaman pola pembelian (satu panel, satu cara melepas, satu komponen
+    | tagihan) dinilai lebih berharga daripada penghematan kredit. Akibatnya
+    | harus disebut di layar, bukan disembunyikan: sebagian pembeli membayar
+    | penuh untuk kapasitas yang mereka pakai beberapa hari saja.
+    |
+    | Harganya SERAGAM antar paket — berbeda dari `extra_seat_price` yang
+    | bertangga per paket — karena ongkos satu analisis tidak berbeda menurut
+    | paket pembelinya, dan tangga yang tak berdasar hanya menambah angka yang
+    | harus dijelaskan. Karena seragam, ia tinggal di sini, bukan sebagai kolom
+    | di `plans`.
+    |
+    | **Marginnya bergantung pada MODEL, bukan pada angka di bawah.** 150
+    | analisis/bulan berongkos ± Rp 1.350 pada `gpt-4o-mini` (margin 91%), tapi
+    | ± Rp 20.100 pada model kelas Sonnet — di atas harga jualnya sendiri.
+    | Periksa tabel ongkos di `[BL-069]` sebelum mengganti `AI_SUMOPOD_MODEL`,
+    | bukan sesudahnya.
+    |
+    */
+
+    'ai_quota' => [
+
+        /**
+         * Berapa analisis per hari yang ditambahkan satu blok.
+         */
+        'block_size' => 5,
+
+        /**
+         * Harga satu blok per bulan, rupiah. Seragam untuk semua paket.
+         */
+        'block_price' => 15_000,
+
+        /**
+         * Paling banyak berapa blok yang boleh dimiliki satu langganan.
+         *
+         * Ada batasnya karena plafon harian yang dibeli tidak pernah ditinjau
+         * ulang oleh siapa pun: tanpa atap, satu salah ketik di formulir
+         * ("100" alih-alih "1") jadi tagihan Rp 1.500.000 sekaligus paparan
+         * ongkos 500 analisis/hari yang menetap sampai ada yang menyadarinya.
+         */
+        'max_blocks' => 20,
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Payment Gateway
     |--------------------------------------------------------------------------
     |

@@ -27,6 +27,10 @@ const props = defineProps({
     // dijawab di halaman ini, kuota AI hanya di Pengaturan — dan tidak ada satu
     // pun layar yang menjawab "paket saya dapat apa saja".
     aiQuota: { type: Object, default: null },
+    // Panel beli/lepas kuota AI (`[BL-069]`). Terpisah dari `aiQuota` di
+    // atasnya: yang itu menjawab "berapa jatah saya", yang ini "apa yang bisa
+    // saya lakukan terhadapnya".
+    aiQuotaOffer: { type: Object, default: null },
     // Kelas harga jalur Harga Tetap ([BL-041](b)). `null` untuk tenant jalur
     // Harga Adaptif — mereka sudah punya `subsidy.bracket`.
     classification: { type: Object, default: null },
@@ -325,6 +329,33 @@ const seatsAreFree = computed(() => props.upgrade.extra_seat_price <= 0);
 const extraSeatsCost = computed(() =>
     formatRupiah(props.upgrade.extra_seat_price * props.subscription.extra_seats),
 );
+
+// --- Beli & lepas kuota AI (`[BL-069]`) ---
+const aiQuotaForm = useForm({ blocks: 1 });
+const aiQuotaReleaseForm = useForm({ blocks: 1 });
+
+const submitAiQuota = () => aiQuotaForm.post('/langganan/tambah-kuota-ai', { preserveScroll: true });
+const submitAiQuotaRelease = () => aiQuotaReleaseForm.post('/langganan/lepas-kuota-ai', { preserveScroll: true });
+
+// Biaya BULANAN dan BERULANG, sama seperti seat. Kalimatnya wajib menyebut
+// satuannya — angka yang sama persis akan terbaca sebagai harga sekali beli.
+const aiQuotaCost = computed(() =>
+    formatRupiah((props.aiQuotaOffer?.block_price ?? 0) * aiQuotaForm.blocks),
+);
+
+// Berapa analisis/hari yang ditambahkan jumlah blok yang sedang diketik.
+const aiQuotaGain = computed(() => (props.aiQuotaOffer?.block_size ?? 0) * aiQuotaForm.blocks);
+
+// Biaya blok yang berjalan sekarang, supaya angka pembandingnya ada di layar
+// yang sama dengan tombol pelepasannya.
+const aiQuotaRunningCost = computed(() =>
+    formatRupiah((props.aiQuotaOffer?.block_price ?? 0) * (props.aiQuota?.purchased_blocks ?? 0)),
+);
+
+// Panel hanya berarti kalau tenant memang memakai kunci bersama. Tenant ber-BYOK
+// membayar pemakaiannya sendiri dan tidak dijatah sama sekali — menawarkan
+// "tambah kuota" kepadanya adalah menjual sesuatu yang tidak ia butuhkan.
+const canBuyAiQuota = computed(() => Boolean(props.aiQuotaOffer) && props.aiQuota?.using_free_tier);
 
 // --- Unggah bukti bayar ---
 const proofTarget = ref(null);
@@ -850,6 +881,121 @@ const invoiceStatusLabels = {
 
                         <p v-if="releaseForm.errors.released_seats" role="alert" class="mt-2 text-xs text-destructive">
                             {{ releaseForm.errors.released_seats }}
+                        </p>
+                    </template>
+                </template>
+            </div>
+
+            <!-- Tambah & lepas kuota AI (`[BL-069]`) -->
+            <div v-if="tenant.is_owner && canBuyAiQuota" class="mt-6 rounded-xl border border-border bg-card px-5 py-4">
+                <p class="text-sm font-medium text-foreground">Tambah kuota analisis AI</p>
+
+                <!-- Kalimat yang menyebut apa yang sebenarnya dijual, dan
+                     kejujurannya disengaja. Yang dibeli adalah PLAFON HARIAN
+                     berlangganan bulanan, bukan paket kredit yang habis dipakai:
+                     tenant yang butuh kapasitas ekstra untuk tutup bulan saja
+                     tetap membayar sebulan penuh. Itu keputusan pemilik
+                     2026-08-19, diambil sadar demi keseragaman dengan pembelian
+                     kursi — dan keputusan yang diambil sadar adalah keputusan
+                     yang boleh disebutkan kepada yang membayarnya. -->
+                <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    Satu blok menambah <span class="text-foreground font-medium">{{ aiQuotaOffer.block_size }} analisis per hari</span>
+                    dan langsung berlaku hari ini. Tambahannya gratis sampai periode ini habis, lalu masuk tagihan
+                    bulanan sebesar {{ formatRupiah(aiQuotaOffer.block_price) }} per blok.
+                </p>
+                <p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+                    Ini plafon harian yang berulang tiap bulan, bukan paket sekali pakai — kalau kuota ekstra hanya
+                    Anda butuhkan beberapa hari sebulan, biayanya tetap sebulan penuh.
+                </p>
+
+                <p v-if="aiQuota.purchased_blocks > 0" class="mt-2 text-sm text-muted-foreground leading-relaxed">
+                    Sekarang Anda punya <span class="text-foreground font-medium">{{ aiQuota.purchased_blocks }} blok</span>
+                    (+{{ aiQuota.purchased }} analisis/hari) senilai {{ aiQuotaRunningCost }}/bulan.
+                </p>
+
+                <p v-if="aiQuotaOffer.purchasable_blocks < 1" class="mt-3 text-sm text-foreground">
+                    Anda sudah di batas maksimum {{ aiQuotaOffer.max_blocks }} blok.
+                </p>
+
+                <form v-else class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitAiQuota">
+                    <div>
+                        <label for="ai-quota-blocks" class="block text-xs font-medium text-muted-foreground mb-1">Jumlah blok</label>
+                        <input
+                            id="ai-quota-blocks"
+                            v-model.number="aiQuotaForm.blocks"
+                            type="number"
+                            min="1"
+                            :max="aiQuotaOffer.purchasable_blocks"
+                            class="w-24 px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        :disabled="aiQuotaForm.processing"
+                        class="px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                    >
+                        Tambah +{{ aiQuotaGain }}/hari · {{ aiQuotaCost }}/bulan
+                    </button>
+                </form>
+
+                <p v-if="aiQuotaForm.errors.blocks" role="alert" class="mt-2 text-xs text-destructive">
+                    {{ aiQuotaForm.errors.blocks }}
+                </p>
+
+                <!-- Konsekuensinya disebut di layar yang menjual kapasitasnya,
+                     bukan hanya di Pengaturan (`[BL-067]`(d)): apa yang terjadi
+                     saat kuota habis, dan bahwa ada jalan keluar yang melepas
+                     batasnya sama sekali. Menjual plafon tanpa menyebut
+                     keduanya berarti menjual satu-satunya jalan keluar yang
+                     kebetulan berbayar. -->
+                <p class="mt-3 text-xs text-muted-foreground leading-relaxed">
+                    Saat kuota harian habis, analisis baru ditolak sampai besok — data Anda tetap utuh dan tidak ada
+                    yang hilang. Kalau Anda mengisi API key sendiri di Pengaturan, batas ini tidak berlaku sama sekali
+                    dan blok tambahan tidak Anda butuhkan.
+                </p>
+
+                <!-- Pelepasan. Wajib ada dengan alasan yang sama seperti seat:
+                     tagihan yang mengikuti pembelian tanpa jalan turun mengunci
+                     tenant membayar selamanya. -->
+                <template v-if="aiQuota.purchased_blocks > 0 || aiQuotaOffer.release_at">
+                    <hr class="my-4 border-border" />
+
+                    <p class="text-sm font-medium text-foreground">Lepas blok kuota AI</p>
+
+                    <p v-if="aiQuotaOffer.release_at" class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                        Sudah ada pelepasan yang tercatat, berlaku {{ formatDate(aiQuotaOffer.release_at) }} — sisa
+                        {{ aiQuotaOffer.scheduled_blocks }} blok sesudahnya. Sampai tanggal itu jatah harian Anda
+                        masih penuh. Menambah blok lagi akan membatalkannya.
+                    </p>
+                    <template v-else>
+                        <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
+                            Berlaku di akhir periode berikutnya, bukan hari ini: kuotanya masih bisa dipakai selama
+                            periode yang sudah ditagihkan. Paling banyak {{ aiQuotaOffer.releasable_blocks }} blok sekarang.
+                        </p>
+
+                        <form class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitAiQuotaRelease">
+                            <div>
+                                <label for="ai-quota-release-blocks" class="block text-xs font-medium text-muted-foreground mb-1">Jumlah blok</label>
+                                <input
+                                    id="ai-quota-release-blocks"
+                                    v-model.number="aiQuotaReleaseForm.blocks"
+                                    type="number"
+                                    min="1"
+                                    :max="aiQuotaOffer.releasable_blocks"
+                                    class="w-24 px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                :disabled="aiQuotaReleaseForm.processing"
+                                class="px-4 py-2 border border-border text-foreground text-sm font-semibold rounded-lg hover:bg-muted disabled:opacity-50"
+                            >
+                                Lepas blok
+                            </button>
+                        </form>
+
+                        <p v-if="aiQuotaReleaseForm.errors.blocks" role="alert" class="mt-2 text-xs text-destructive">
+                            {{ aiQuotaReleaseForm.errors.blocks }}
                         </p>
                     </template>
                 </template>

@@ -96,6 +96,30 @@ class SubscriptionController extends Controller
             // `AiQuota::snapshotFor()`, bukan hitungan ketiga yang bisa
             // berbeda dari keduanya.
             'aiQuota' => $quota->snapshotFor($tenant),
+            // Yang dibutuhkan panel beli/lepas kuota (`[BL-069]`), terpisah
+            // dari `aiQuota` di atasnya dan pemisahan itu disengaja: yang di
+            // atas menjawab "berapa jatah saya hari ini" dan dibaca tiga layar
+            // lewat satu bentuk bersama; yang di bawah menjawab "apa yang bisa
+            // saya lakukan terhadap jatah itu", dan hanya berlaku di sini.
+            'aiQuotaOffer' => [
+                'block_size' => (int) config('subscription.ai_quota.block_size'),
+                'block_price' => (float) config('subscription.ai_quota.block_price'),
+                'max_blocks' => (int) config('subscription.ai_quota.max_blocks'),
+                // Dikirim sebagai angka, bukan sebagai boleh/tidak, dengan
+                // alasan yang sama seperti `releasable_seats`: formulir yang
+                // menawarkan lalu menolak membuat tenant menebak berapa yang
+                // sebenarnya bisa.
+                'purchasable_blocks' => $subscriptions->aiQuotaPurchaseCeiling($subscription),
+                'releasable_blocks' => $subscriptions->aiQuotaReleaseCeiling($subscription),
+                // Pelepasan yang sudah dijadwalkan tapi belum berlaku. Tanggalnya
+                // ikut, karena sampai hari itu jatahnya masih penuh — dan tenant
+                // yang tidak tahu tanggalnya akan mengira kuotanya sudah hilang
+                // hari ini.
+                'scheduled_blocks' => $subscription->hasPendingAiQuotaRelease()
+                    ? $subscription->scheduled_ai_blocks
+                    : null,
+                'release_at' => $subscription->ai_quota_release_at?->toDateString(),
+            ],
             'consent' => [
                 'agreed' => $consents->hasAgreedToCurrent($tenant, TenantConsent::TYPE_NORMAL),
                 // Versi dikirim BERPASANGAN supaya halamannya bisa membedakan

@@ -337,7 +337,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Deskripsi:**
   Tidak ada yang perlu "ditambahkan cabang"-nya; yang ada adalah asumsi satu-toko-satu-tenant yang tertanam di setiap tabel operasional. Menambahkan cabang berarti menyisipkan sumbu kedua (`branch_id`) di bawah `tenant_id` dan menjawabnya ulang di tiap tempat: stok per cabang atau bersama, katalog dan harga per cabang atau seragam, sesi kas jelas per cabang, staf terikat satu cabang atau bisa lintas, dan laporan default ke cabang mana.
   Hari ini seorang pemilik dua cabang bisa membuat dua tenant terpisah — dan itu **berhasil**, hanya tanpa laporan gabungan dan dengan dua tagihan. Untuk sebagian calon klien, itu sudah memadai; itu sebabnya menunda entri ini tidak menutup pintu penjualan.
-- **Kenapa syarat pemilik ("pastikan yang lain berhasil dulu") memang tepat:** cabang menyentuh penetapan harga (`[BL-041]`, `[BL-069]`), gerbang langganan (`[BL-054]`), dan laporan (`[BL-063]`) sekaligus. Mengerjakannya sekarang berarti tiga entri yang belum selesai itu harus ditulis dua kali — sekali untuk satu outlet, sekali untuk banyak.
+- **Kenapa syarat pemilik ("pastikan yang lain berhasil dulu") memang tepat:** cabang menyentuh penetapan harga (`[BL-041]`), gerbang langganan, laporan (`[BL-063]`), dan sejak 2026-08-20 juga kuota AI yang dibeli per langganan (`[BL-069]`, selesai) sekaligus. Mengerjakannya sekarang berarti setiap entri di daftar itu harus ditulis dua kali — sekali untuk satu outlet, sekali untuk banyak; yang sudah selesai pun harus dibongkar ulang, karena haknya melekat pada langganan, bukan pada cabang.
 - **Yang harus dijawab sebelum satu baris kode pun ditulis:**
   1. **Cabang menaikkan tagihan atau tidak?** Ini pertanyaan pertama, bukan terakhir — jawabannya menentukan apakah `branch_id` cukup jadi kolom, atau harus jadi entitas yang ikut dihitung penetapan harga. Kalau tiap cabang dibayar terpisah, dua tenant terpisah nyaris sama saja dan fitur ini kehilangan alasan komersialnya.
   2. **Stok per cabang atau satu kolam?** Ini yang paling menentukan besarnya pekerjaan. Stok per cabang berarti seluruh pergerakan stok, transfer antar cabang, dan opname harus tahu cabang.
@@ -345,97 +345,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   4. **Staf terikat satu cabang, dan bagaimana hubungannya dengan RBAC yang sudah ada?** Peran hari ini berlaku se-tenant; "kasir di cabang A saja" adalah dimensi baru pada model izin, bukan peran baru.
   5. **Apa yang terjadi pada tenant yang sudah berjalan?** Jawaban yang paling murah dan paling aman: setiap tenant lahir dengan satu cabang bawaan, dan yang tidak pernah membuat cabang kedua tidak pernah melihat kata "cabang" di mana pun.
 - **Catatan pengerjaan:** kalau nanti dikerjakan, buka sebagai **fase tersendiri** dengan dokumennya sendiri di `docs/phases-*`, bukan sebagai entri backlog. Ukurannya sekelas fase SAAS, dan menyelundupkannya sebagai "satu perbaikan" akan menghasilkan migrasi setengah jadi di tabel yang paling tidak boleh setengah jadi.
-
-### [BL-069] Kuota AI Tambahan Belum Bisa Dibeli — Tidak Ada Kolom, Tidak Ada Harga, Tidak Ada Layar
-- **Ditemukan:** 2026-08-08 (dipecah dari `[BL-053]` butir (c) saat butir (a)+(b) selesai)
-- **Sumber:** Keputusan pemilik 2026-08-07 — "begitu juga untuk nanti ketika mau nambah kuota ai, bayar bulanan begitu"
-- **Status:** Open — **angkanya SUDAH ditetapkan 2026-08-19, kodenya belum ada.** Yang menghalangi entri ini sejak 2026-08-08 sudah terjawab; sisanya murni pekerjaan meniru pola seat
-- **Prioritas:** Medium — tidak mendesak seperti seat (satuannya tidak sedang salah, ia memang belum ada sama sekali), tapi sudah dijanjikan pemilik dan sudah disebut di `[BL-067]`(e) sebagai hal yang **tidak boleh** dijanjikan di landing sebelum ada wujudnya
-- **Area Terdampak:**
-  - `app/Models/Plan.php` — `limits.ai_daily` menetapkan jatah harian per paket (2/5, 3/15, 5/30, 10/60); tak ada satu pun kolom untuk tambahan per langganan
-  - `app/Services/Ai/AiQuota.php` — sejak `[BL-047]` selesai (2026-08-13) urutannya: batas paket → kebijakan bawaan platform (`ai_quota_policies` mode `baseline`) → `config/ai.php`, lalu promo (mode `bonus`) menambah di atas hasilnya. Masih tanpa celah untuk kuota yang DIBELI langganan; tempatnya satu tingkat di atas paket, sebelum promo dijumlahkan
-  - `app/Services/SubscriptionService.php` — `seatChargeFor()` + `issueDuePeriodInvoices()`: polanya sudah ada dan tinggal ditiru
-  - `resources/js/Pages/Billing/Show.vue` — panel beli/lepas kursi; kuota AI belum punya panel apa pun
-  - `app/Http/Controllers/Platform/PricingRuleController.php` — form paket menyetel `ai_daily_limit`, tapi tak ada harga per satuan kuota
-- **Deskripsi:**
-  Seat tambahan sudah jadi komponen bulanan yang bisa dibeli dan dilepas (`[BL-053]`). Kuota AI diputuskan mengikuti pola yang sama di hari yang sama, tapi **belum punya bentuk apa pun**: tidak ada `extra_ai_price` di `plans`, tidak ada kolom penampung di `subscriptions`, tidak ada alur beli, dan `AiQuota::dailyLimitFor()` tidak punya tempat untuk membacanya.
-  Yang benar-benar menghalangi bukan kodenya — polanya sudah terbukti dan tinggal ditiru — melainkan **harganya**. Berapa rupiah per berapa analisis, dan per hari atau per bulan, belum pernah diputuskan siapa pun. Menuliskan angka tebakan di migrasi berarti menetapkan harga tanpa ada yang memutuskannya, persis yang entri asalnya larang.
-- **Yang harus diputuskan sebelum satu baris kode pun ditulis:**
-  1. **Satuan yang dijual.** "+10 analisis/hari" (menaikkan plafon harian, sejalan dengan `ai_daily`) atau "+100 analisis sekali pakai" (kredit yang habis)? Keduanya menuntut mekanisme berbeda: yang pertama cukup satu angka tambahan yang dibaca `AiQuota`, yang kedua menuntut saldo yang berkurang dan karena itu tabel tersendiri.
-  2. **Harga per satuannya**, dan apakah ia per paket seperti `extra_seat_price` (makin tinggi paketnya makin murah) atau seragam. **Lihat hitungan ongkosnya di bawah** — angkanya sudah ada, yang belum keputusannya.
-  3. **Apa yang terjadi saat dilepas atau saat tenant turun paket** — kuota yang dibeli mengikuti pola seat (berlaku satu periode penuh ke depan), atau berhenti seketika.
-#### KEPUTUSAN PEMILIK 2026-08-19 — ini yang membuka entri ini
-
-| | |
-|---|---|
-| Satuan yang dijual | **plafon harian**, +5 analisis/hari |
-| Harga | **Rp 15.000 per bulan**, berulang, seragam antar paket |
-| Pola | **persis seat** — komponen bulanan di `issueDuePeriodInvoices()`, panel beli/lepas di halaman langganan, pelepasan berlaku satu periode penuh ke depan |
-| Model AI | **tetap bawaan** (`gpt-4o-mini` via SumoPod). Tidak ada kuota yang berbeda per model |
-
-Ini menjawab ketiga pertanyaan di atas sekaligus: satuannya plafon harian (bukan kredit), harganya Rp 15.000 seragam (bukan tangga per paket), dan pelepasannya mengikuti pola seat (bukan berhenti seketika).
-
-**Keputusan ini menolak saran (1) di bawah, dan penolakannya sadar.** Saran itu menganjurkan paket kredit karena plafon bulanan menanggung paparan 30× untuk kebutuhan yang cuma muncul beberapa hari. Pemilik memilih keseragaman pola pembelian — satu panel, satu cara melepas, satu komponen tagihan — di atas penghematan itu. Yang harus disadari dan tidak boleh dilupakan saat menulis kalimat di layarnya: **sebagian pembeli akan membayar Rp 15.000 untuk kapasitas yang mereka pakai beberapa hari saja.**
-
-**Marginnya tetap aman, dan itu yang membuat penolakan di atas tidak berbahaya.** 150 analisis/bulan × ± Rp 9 = ± Rp 1.350 ongkos atas Rp 15.000 pendapatan — 91% bahkan bila kuotanya dihabiskan tiap hari. **Tapi hanya pada model sekelas `gpt-4o-mini`;** lihat tabel ongkos di bawah sebelum mengganti `AI_SUMOPOD_MODEL`.
-
-**Yang sengaja TIDAK dibangun, atas pertimbangan pemilik bahwa ia berlebihan:** penghitungan pemakaian yang berbeda per model. Satu satuan ("satu analisis") dipertahankan apa adanya, apa pun model yang kebetulan dipakai di belakang. Akibatnya seluruh risiko perubahan model ditanggung sisi kita, bukan tenant — itu benar untuk tenant, dan justru karena itu batas modelnya harus dijaga di sisi kita.
-
-**Sisa pekerjaan yang disebut pemilik dan belum dikerjakan:** menuliskan daftar model AI yang tersedia. Nama-nama yang beredar di percakapan belum diverifikasi terhadap katalog SumoPod maupun harga resminya; sampai daftar itu ada dan ongkos tiap barisnya dihitung dengan cara yang sama seperti tabel di bawah, `config/ai.php` tetap satu model per provider. Menuliskan nama model yang belum diperiksa ke config berarti menawarkan pilihan yang bisa gagal di panggilan pertama.
-
-- **Usulan Perbaikan:**
-  **(a)** Ikuti pola seat apa adanya, jangan menemukan pola kedua: kolom hak di `subscriptions` (bukan paket baru per tenant — `Plan::limits` sudah JSON, tapi melahirkan paket per tenant akan meledakkan tabel paket), komponen tambahan di `issueDuePeriodInvoices()` yang ikut masuk `pricing_context.billing_breakdown`, dan panel beli/lepas di halaman langganan.
-  **(b)** `AiQuota::dailyLimitFor()` mendapat satu tingkat baru **di atas** paket: kuota yang dibeli langganan, lalu batas paket, lalu bawaan platform. Urutan pembacaannya sudah tunggal dan tetap (`[BL-047]`(b)) — tambahkan tingkatnya di sana, jangan bikin pembaca kedua.
-  **(c)** Sebutkan konsekuensinya di layar seperti yang diminta `[BL-067]`(d): apa yang terjadi saat kuota habis (analisis ditolak sampai besok), dan bahwa BYOK melepas batasnya sama sekali.
-  **(d) Jangan menjanjikannya di landing sebelum (a) ada** — `[BL-067]`(e).
-
-#### Ongkos sebenarnya — diukur, bukan diperkirakan (2026-08-08)
-
-SumoPod meneruskan harga API resmi tiap provider (perannya perantara, bukan penjual paket), jadi ongkos per analisis bisa dihitung persis dari pemakaian yang sudah tercatat.
-
-**Pengukuran.** `ai_analyses.tokens_used` menyimpan `usage.total_tokens` untuk 8 analisis yang pernah selesai: **1.487–1.932 token, rata-rata ±1.800**. Dari panjang `result` (523–2.315 karakter) pecahannya kira-kira **1.300 masukan / 550 keluaran**.
-
-**Yang paling penting dari pengukuran itu:** token TIDAK tumbuh mengikuti jumlah transaksi. `Kopi Nusantara` (3.367 transaksi, 4 produk) dan `Kopi Story` (4.476 transaksi, 20 produk) sama-sama di kisaran 1.850 token, karena `AiContextService` mengirim data yang **sudah diagregasi** — `top_products` di-`take(10)`, `daily_trend` sepanjang periode, bukan transaksi mentah.
-Yang **tumbuh** adalah `profit_by_item`: satu baris per produk, tanpa batas. Selisih 4 → 20 produk hampir tak terasa karena prompt tetapnya mendominasi, tapi tenant dengan 200 produk akan menambah kira-kira 5.000–8.000 token masukan — **tiga sampai empat kali lipat**. Kalau butir (a) dikerjakan, batasi `profit_by_item` lebih dulu; kalau tidak, harga yang ditetapkan hari ini akan salah untuk tenant terbesar, yaitu justru yang paling mungkin membeli.
-
-**Ongkos per analisis** pada bentuk hari ini (1.300 masuk / 550 keluar), kurs asumsi Rp 16.500/USD:
-
-| Model | $/1M masuk | $/1M keluar | per analisis |
-|---|---|---|---|
-| `qwen3.7-flash` | 0,03 | 0,13 | **± Rp 2** |
-| `gpt-5-nano` | 0,05 | 0,40 | ± Rp 5 |
-| `deepseek-v4-flash` | 0,14 | 0,28 | ± Rp 6 |
-| **`gpt-4o-mini` (dipakai sekarang)** | 0,15 | 0,60 | **± Rp 9** |
-| `gemini-3.1-flash-lite` | 0,25 | 1,50 | ± Rp 19 |
-| `gpt-5-mini` | 0,25 | 2,00 | ± Rp 24 |
-| `claude-haiku-4-5` | 1,00 | 5,00 | ± Rp 67 |
-| `claude-sonnet-5` | 2,00 | 10,00 | ± Rp 134 |
-
-**Temuan yang paling menentukan, dan tidak ada hubungannya dengan harga jual kuota: yang menentukan untung-rugi fitur AI adalah PILIHAN MODEL, bukan harga kuotanya.** Rentangnya 60× dari ujung ke ujung. Paparan maksimum tiap paket bila jatah hariannya dipakai habis 30 hari:
-
-| Paket | Jatah | Maks/bulan | @ `gpt-4o-mini` | @ `claude-sonnet-5` |
-|---|---|---|---|---|
-| `free` (Rp 0) | 5/hari | 150 | Rp 1.350 | Rp 20.100 |
-| `paid-1` (Rp 100.000) | 15/hari | 450 | Rp 4.050 (4%) | Rp 60.300 (60%) |
-| `paid-2` (Rp 150.000) | 30/hari | 900 | Rp 8.100 (5%) | Rp 120.600 (80%) |
-| `paid-3` (Rp 200.000) | 60/hari | 1.800 | Rp 16.200 (8%) | **Rp 241.200 — melebihi langganannya** |
-
-Pada model sekarang jatah yang sudah terpasang aman di semua paket. Pada model kelas Sonnet, `paid-3` merugi meski tak seorang pun membeli kuota tambahan. **Periksa ini sebelum mengganti `AI_SUMOPOD_MODEL`,** bukan sesudahnya.
-
-#### Saran bentuk, kalau butir (a) jadi dikerjakan
-
-**(1) Jual PAKET KREDIT, jangan menaikkan plafon harian.** Menjual "+10/hari" berlangganan bulanan berarti menanggung paparan 30× plafonnya sementara hampir semua tenant memakainya beberapa hari saja — jadi harganya harus dipatok untuk kasus terburuk dan semua orang kemahalan. Paket kredit ("+100 analisis, berlaku sebulan") berbiaya persis sebanyak yang terpakai.
-Alasan kedua lebih kuat: plafon harian **tidak menjawab masalahnya**. Tenant menabrak batas pada SATU hari sibuk — tutup bulan, rapat dengan pemodal — bukan tiap hari. Menaikkan plafon 30 hari untuk menyelamatkan satu hari adalah bentuk yang salah.
-
-**(2) Pertimbangkan serius untuk TIDAK menjualnya sama sekali.** Dengan ongkos ± Rp 9/analisis, paket 100 analisis berongkos ± Rp 900; dijual Rp 10.000 marginnya 90% tapi **pendapatannya nyaris nol** — sepuluh tenant yang membeli tiap bulan menghasilkan Rp 100.000, kurang dari satu langganan. Yang dibayar untuk itu: kolom baru, komponen tagihan, alur beli, jalan melepas, layar, dan tes.
-Jatah AI per paket (5/15/30/60) **sudah** jadi pembeda paket yang bekerja — tenant yang kurang kuota punya alasan naik ke `paid-2`, dan itu Rp 50.000, bukan Rp 10.000. Menjual kuota eceran justru **melemahkan** tangga itu.
-Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mendesak), bukan sebagai lini pendapatan — dan jangan naikkan prioritasnya di atas entri yang menyentuh uang sungguhan.
-
-**(3) Kalau dijual, harga yang masuk akal:** paket 100 analisis Rp 10.000–15.000 sekali beli, berlaku sampai akhir periode berjalan. Seragam antar paket, tidak perlu tangga seperti `extra_seat_price` — ongkosnya tidak berbeda per paket, dan tangga yang tak berdasar hanya menambah angka yang harus dijelaskan.
-
-**Catatan kurs.** Seluruh rupiah di atas memakai asumsi Rp 16.500/USD dan **tidak terkunci**. Harga jual berdenominasi rupiah di atas ongkos berdenominasi dolar berarti marginnya menipis sendiri saat rupiah melemah. Pada margin 90% itu tidak berbahaya; pada model kelas Sonnet, di mana marginnya sudah negatif, kurs memperburuk yang sudah rusak.
-
----
 
 ### [BL-070] Membeli Seat di Tengah Periode Gratis Sampai Periode Habis — Prorata Ditunda, Bukan Ditolak
 - **Ditemukan:** 2026-08-08 (sisa `[BL-053]` butir (b)(2), sengaja dipisahkan untuk dipikirkan ulang)
@@ -693,6 +602,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-069` | Kuota AI tambahan belum bisa dibeli — tidak ada kolom, tidak ada harga, tidak ada layar | 2026-08-20 (butir (a)-(d) seluruhnya; prasyarat pembatasan `profit_by_item` ikut dikerjakan lebih dulu. Saran (1) paket kredit dan (2) tidak menjualnya ditolak sadar oleh keputusan pemilik 2026-08-19) | `[ADDITION] Kuota AI Tambahan Akhirnya Bisa Dibeli, dan Dilepas Lagi — Persis seperti Kursi (BL-069)` |
 | `BL-031` | Umur tagihan terbuka belum pernah diputuskan — sesi kas, per hari, atau sampai dilunasi | 2026-08-20 (dijawab pemilik 2026-08-19: per hari + kas negatif; keenam butir pelaksanaannya mendarat 2026-08-20, termasuk jalur penghapusan oleh pemilik tempat stok kembali) | `[ADDITION] Tagihan Terbuka Punya Umur, dan yang Lewat Jadi Kas Negatif yang Hanya Owner Bisa Bereskan (BL-031)` |
 | `BL-080` | Tagihan terbit sebelum omzet bulan sebelumnya dihitung — tenant berjangkar tanggal 1–8 ditagih dari omzet dua bulan lalu | 2026-08-20 (butir (a) tukar jadwal; butir (b) dijawab pemilik: opsi (i) tunda penerbitan, keluarga (c)/jangkar ditolak; butir (c) ikut dikerjakan sebagai prasyarat. Opsi (iv-b) yang sempat dipertimbangkan dipisah jadi `[BL-081]`) | `[FIX] Tagihan Tenant Adaptif Menunggu Omzetnya, dan Berhenti Menebak Bulan (BL-080)` |
 | `BL-056` | Pengajuan harga adaptif berlaku untuk bulan mana — bulan pengajuan atau bulan berikutnya | 2026-08-19 (dijawab: periode berikutnya, sebagai turunan model prabayar; cacat penjadwalan yang ikut terungkap dipisah jadi `[BL-080]`) | `[DECISION] Prabayar, dan Tarifnya dari Omzet Bulan Sebelumnya (BL-056)` |

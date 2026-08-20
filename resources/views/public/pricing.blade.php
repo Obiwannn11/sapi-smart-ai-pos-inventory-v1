@@ -164,17 +164,31 @@
 
             {{--
                 `[BL-067]`(d): batas yang tidak dijelaskan konsekuensinya akan
-                dibaca sebagai batas keras yang memutus fitur. Dua kalimat ini
-                menjawabnya sekaligus menyebut jalan keluarnya.
+                dibaca sebagai batas keras yang memutus fitur. Kalimat-kalimat
+                ini menjawabnya sekaligus menyebut jalan keluarnya.
 
-                Yang TIDAK boleh ada di sini: janji "beli tambahan kuota AI".
-                Alur belinya belum berbentuk sama sekali — `[BL-067]`(e),
-                menunggu `[BL-069]`.
+                Penambahan kuota BOLEH disebut di sini sejak `[BL-069]` selesai
+                — larangan `[BL-067]`(e) berlaku selama alur belinya belum
+                berbentuk, dan sekarang ia berbentuk: ada kolomnya, ada
+                komponen tagihannya, ada layarnya di halaman langganan.
+
+                Yang tetap tidak boleh: menyebutnya sebagai paket sekali pakai.
+                Yang dijual adalah plafon harian berlangganan bulanan, dan
+                kalimat yang mengaburkan itu menjual barang yang berbeda dari
+                yang akan tenant terima.
             --}}
             <div class="price-note">
                 <strong>Tentang batas analisis AI.</strong>
                 Jatahnya berulang setiap hari. Bila habis, analisis berikutnya ditolak sampai besok — fitur lain di aplikasi
                 tidak ikut berhenti. Anda juga bisa memakai API key sendiri, dan batas ini tidak lagi berlaku.
+            </div>
+
+            <div class="price-note">
+                <strong>Kalau jatahnya kurang.</strong>
+                Dari halaman langganan Anda bisa menambah kuota sebesar
+                {{ $pricing['ai_quota']['block_size'] }} analisis per hari seharga
+                Rp {{ number_format($pricing['ai_quota']['block_price'], 0, ',', '.') }} per bulan, berlaku hari itu juga.
+                Ini plafon harian yang berulang tiap bulan, bukan paket sekali pakai — dan bisa dilepas lagi kapan saja.
             </div>
         </section>
 

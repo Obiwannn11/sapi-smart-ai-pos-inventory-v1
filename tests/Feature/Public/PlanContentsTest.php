@@ -82,18 +82,36 @@ test('konsekuensi kuota AI habis dan jalan keluarnya disebut di halaman harga', 
         ->assertSee('API key sendiri');
 });
 
-test('permukaan publik tidak menjanjikan pembelian kuota AI', function () {
-    // `[BL-067]`(e): alur belinya belum berbentuk sama sekali — tidak ada kolom,
-    // tidak ada tagihan, tidak ada layar. Menjanjikannya sekarang berarti
-    // menjual sesuatu yang tidak bisa dibeli. Menunggu `[BL-069]`.
+test('halaman harga menyebut penambahan kuota AI beserta harga dan satuannya', function () {
+    // `[BL-067]`(e) melarang menjanjikannya SELAMA alur belinya belum ada.
+    // Sejak `[BL-069]` selesai alurnya ada — kolom, komponen tagihan, dan panel
+    // di halaman langganan — jadi larangannya tidak lagi berlaku dan yang
+    // menggantikannya adalah syarat isi: harganya harus disebut bersama
+    // satuannya, kalau tidak angka bulanan akan terbaca sebagai harga sekali
+    // beli.
+    config(['subscription.ai_quota.block_size' => 5, 'subscription.ai_quota.block_price' => 15000]);
+    Plan::factory()->create(['slug' => 'paid-1', 'name' => 'Paid 1', 'base_price' => 100_000, 'limits' => ['ai_daily' => 15]]);
+
+    get('/harga')
+        ->assertStatus(200)
+        ->assertSee('5 analisis per hari')
+        ->assertSee('Rp 15.000 per bulan')
+        ->assertSee('bukan paket sekali pakai');
+});
+
+test('permukaan publik tidak menjual kuota AI sebagai paket sekali pakai', function () {
+    // Yang dijual adalah plafon harian yang berulang tiap bulan. Kalimat yang
+    // menyebutnya "kredit" atau "sekali beli" menjual barang yang berbeda dari
+    // yang akan tenant terima — dan selisih itu baru ketahuan di tagihan bulan
+    // kedua, tempat paling mahal untuk menemukannya.
     Plan::factory()->create(['slug' => 'paid-1', 'name' => 'Paid 1', 'base_price' => 100_000, 'limits' => ['ai_daily' => 15]]);
 
     foreach (['/', '/harga'] as $url) {
         get($url)
             ->assertStatus(200)
-            ->assertDontSee('beli kuota')
-            ->assertDontSee('tambah kuota')
-            ->assertDontSee('Beli Kuota');
+            ->assertDontSee('kredit analisis')
+            ->assertDontSee('sekali beli')
+            ->assertDontSee('sekali bayar');
     }
 });
 

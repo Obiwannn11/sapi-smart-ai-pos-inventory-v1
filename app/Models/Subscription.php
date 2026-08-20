@@ -40,6 +40,7 @@ class Subscription extends Model
         'track_revert_reason',
         'seats', 'seat_high_water', 'provisional_blocked', 'price_locked',
         'purchased_extra_seats', 'scheduled_extra_seats', 'seat_release_at',
+        'purchased_ai_blocks', 'scheduled_ai_blocks', 'ai_quota_release_at',
         'trial_ends_at', 'current_period_start', 'current_period_end', 'billing_anchor_day',
     ];
 
@@ -51,6 +52,7 @@ class Subscription extends Model
             'track_changed_at' => 'datetime',
             'track_reverts_at' => 'date',
             'seat_release_at' => 'date',
+            'ai_quota_release_at' => 'date',
             'trial_ends_at' => 'datetime',
             'current_period_start' => 'date',
             'current_period_end' => 'date',
@@ -142,6 +144,46 @@ class Subscription extends Model
     public function hasPendingSeatRelease(): bool
     {
         return $this->seat_release_at !== null && $this->scheduled_extra_seats !== null;
+    }
+
+    /**
+     * Blok kuota AI yang berhak ditagih pada periode tertentu (`[BL-069]`).
+     *
+     * Kembarannya `entitledExtraSeats()`, termasuk perkara `$periodStart`-nya:
+     * ia harus periode yang DITAGIH, bukan `now()`. Tagihan terbit
+     * `invoice_lead_days` sebelum periode berjalan habis, jadi menanyakan
+     * keadaan hari ini akan menagih periode depan dengan hak hari ini — dan
+     * pelepasan yang jatuh persis di antara keduanya tertagih satu periode lebih
+     * lama daripada yang dijanjikan.
+     */
+    public function entitledAiBlocks(?CarbonInterface $periodStart = null): int
+    {
+        $released = $this->ai_quota_release_at !== null
+            && $this->scheduled_ai_blocks !== null
+            && $this->ai_quota_release_at->lte($periodStart ?? now());
+
+        return (int) ($released ? $this->scheduled_ai_blocks : $this->purchased_ai_blocks);
+    }
+
+    /**
+     * Berapa analisis per hari yang ditambahkan blok yang berlaku SEKARANG.
+     *
+     * Perkaliannya di sini, bukan di `AiQuota`, supaya hanya ada satu tempat
+     * yang tahu bahwa satu blok berarti `block_size` analisis. Yang dibaca
+     * adalah hak hari ini — kuota berlaku harian, jadi pertanyaannya memang
+     * "berapa jatah saya hari ini", bukan "berapa yang ditagihkan".
+     */
+    public function purchasedAiDailyQuota(): int
+    {
+        return $this->entitledAiBlocks() * (int) config('subscription.ai_quota.block_size', 0);
+    }
+
+    /**
+     * Ada pelepasan kuota AI yang sudah diminta tapi belum berlaku?
+     */
+    public function hasPendingAiQuotaRelease(): bool
+    {
+        return $this->ai_quota_release_at !== null && $this->scheduled_ai_blocks !== null;
     }
 
     public function isSubsidized(): bool
