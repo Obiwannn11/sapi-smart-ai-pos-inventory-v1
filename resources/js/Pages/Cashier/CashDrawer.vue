@@ -28,6 +28,28 @@ const expectedAmount = computed(() => Number(props.reconciliation?.expected_amou
 const selisih = computed(() => closingAmount.value - expectedAmount.value);
 
 /**
+ * Penghitungan buta selama sesi berjalan ([BL-086]).
+ *
+ * Sebelum ini panel sesi aktif memajang "Seharusnya di laci" sepanjang shift,
+ * dan kasir tinggal mengetik ulang angka itu di kolom uang fisik: selisihnya
+ * selalu nol, dan laci yang benar-benar kurang tidak pernah ketahuan. Angka
+ * yang menjadi JAWABAN tidak boleh terbaca sebelum hitungannya disetorkan.
+ *
+ * Yang disembunyikan bukan cuma totalnya, melainkan **ketiga angka yang
+ * membentuknya** — modal + tunai masuk − kembalian keluar. Menyembunyikan
+ * total sambil memajang penjumlahnya bukan penghitungan buta, itu soal
+ * hitungan.
+ *
+ * **Ini penyembunyian di sisi klien, dan itu diakui:** `reconciliation` tetap
+ * ikut props Inertia dan terbaca dari devtools. Untuk peragaan dan untuk
+ * menghilangkan godaan sehari-hari, ini cukup; penegakan sungguhan menuntut
+ * `index()` berhenti mengirimkannya sampai hitungan fisik disetorkan, dan itu
+ * tercatat sebagai butir yang belum dikerjakan di `[BL-086]`.
+ */
+const showExpected = ref(false);
+const toggleExpected = () => { showExpected.value = !showExpected.value; };
+
+/**
  * Ambil ulang angka rekonsiliasi sebelum menampilkan ringkasan.
  *
  * Penjualan bisa terjadi setelah halaman ini dibuka, dan `close()` menghitung
@@ -192,17 +214,41 @@ const goToPOS = () => {
                         <span class="text-gray-500">Modal awal</span>
                         <span class="font-medium text-gray-800">{{ formatCurrency(openDrawer.opening_amount) }}</span>
                     </div>
-                    <div v-if="reconciliation" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Penjualan tunai</span>
-                        <span class="font-medium text-gray-800 font-mono">+{{ formatCurrency(reconciliation.cash_in) }}</span>
-                    </div>
-                    <div v-if="reconciliation && Number(reconciliation.change_out) > 0" class="flex justify-between text-sm">
-                        <span class="text-gray-500">Kembalian keluar</span>
-                        <span class="font-medium text-gray-800 font-mono">−{{ formatCurrency(reconciliation.change_out) }}</span>
-                    </div>
-                    <div v-if="reconciliation" class="flex justify-between text-sm border-t border-border pt-2">
-                        <span class="text-gray-500">Seharusnya di laci</span>
-                        <span class="font-semibold text-gray-800 font-mono">{{ formatCurrency(expectedAmount) }}</span>
+                    <template v-if="reconciliation && showExpected">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Penjualan tunai</span>
+                            <span class="font-medium text-gray-800 font-mono">+{{ formatCurrency(reconciliation.cash_in) }}</span>
+                        </div>
+                        <div v-if="Number(reconciliation.change_out) > 0" class="flex justify-between text-sm">
+                            <span class="text-gray-500">Kembalian keluar</span>
+                            <span class="font-medium text-gray-800 font-mono">−{{ formatCurrency(reconciliation.change_out) }}</span>
+                        </div>
+                    </template>
+
+                    <!-- Tersembunyi secara bawaan ([BL-086]). Yang dipajang saat
+                         tertutup adalah ALASANNYA, bukan sekadar titik-titik:
+                         kasir yang tidak tahu kenapa angkanya hilang akan
+                         mengira halamannya rusak. -->
+                    <div v-if="reconciliation" class="border-t border-border pt-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-sm text-gray-500">
+                                Seharusnya di laci
+                                <span
+                                    :class="showExpected ? 'font-semibold text-gray-800 font-mono' : 'font-mono text-gray-400'"
+                                >{{ showExpected ? formatCurrency(expectedAmount) : '••••••' }}</span>
+                            </span>
+                            <button
+                                type="button"
+                                @click="toggleExpected"
+                                :aria-expanded="showExpected"
+                                class="text-xs font-medium text-primary hover:underline shrink-0"
+                            >
+                                {{ showExpected ? 'Sembunyikan' : 'Tampilkan uang seharusnya' }}
+                            </button>
+                        </div>
+                        <p v-if="!showExpected" class="text-xs text-muted-foreground mt-1 leading-relaxed">
+                            Disembunyikan supaya hitungan uang fisik Anda jujur. Hitung dulu isi laci, masukkan angkanya, dan ringkasan tutup kas akan membandingkannya sendiri.
+                        </p>
                     </div>
                 </div>
 

@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-21 | ADDITION | Kas | Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1) |
 | 2026-08-21 | REFACTOR | UI | Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085) |
 | 2026-08-20 | HOTFIX | UI | Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083) |
 | 2026-08-21 | HOTFIX | UI | Sidebar Owner Menyebut Nama Toko yang Sedang Dibuka, Bukan Nama Produknya (BL-084) |
@@ -220,6 +221,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Asumsi entri backlognya terbukti keliru, dan sisanya sengaja tidak dibongkar.** Sebutan ramalan stok masih berdiri di tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo — keputusan pemasaran, bukan konsekuensi teknis. Dicatat sebagai `[BL-089]`.
 - **Testnya sengaja hanya mengunci hero,** dengan alasan yang ditulis di dalam testnya sendiri: menyapu seluruh sebutan "prediksi" akan membuatnya gagal sampai `[BL-089]` dikerjakan, padahal `[BL-089]` menunggu keputusan pemilik.
 - **Berkas:** `resources/views/public/landing.blade.php` — paragraf hero, dua kartu melayang · `tests/Feature/Public/LandingClaimsTest.php` — satu test baru (72 tes lulus di `tests/Feature/Public`)
+
+---
+
+### [ADDITION] Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — butir 1 & 3 `[BL-086]`; butir 2 (pemecahan rute buka/tutup kas) **belum dikerjakan** dan entrinya tetap terbuka
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak. Tidak ada rute, kolom, maupun perhitungan yang berubah — yang berubah adalah kapan angkanya boleh dibaca.
+- **Deskripsi:** Di panel "Sesi Kas Aktif", ketiga angka yang menyusun isi laci — penjualan tunai, kembalian keluar, dan totalnya "Seharusnya di laci" — kini tertutup secara bawaan, dengan satu tombol **"Tampilkan uang seharusnya"** yang membukanya. Ringkasan tutup kas tetap membuka semuanya seperti sebelumnya.
+- **Alasan:** Dilaporkan pemilik — "kasir sisa input yang nyata (agar tidak manipulatif)". Sebelum ini kasir bisa membaca "Seharusnya di laci Rp 518.000" sepanjang shift lalu mengetik ulang angka itu di kolom uang fisik: selisihnya selalu nol, dan laci yang benar-benar kurang tidak pernah ketahuan.
+
+- **Penghitungan buta adalah satu-satunya alasan rekonsiliasi kas ada.** Seluruh mesin di `CashDrawerReconciliation` — pemisahan per laci, tanggal efektif, kas negatif `[BL-031]` — dibangun untuk menghasilkan satu angka pembanding. Angka pembanding yang sudah dibaca lebih dulu oleh orang yang sedang dibandingkan bukan pembanding, dan seluruh mesin itu jadi hiasan.
+- **Yang ditutup ketiga angkanya, bukan cuma totalnya, dan itu koreksi terhadap usulan di backlognya.** `expected_amount` = modal + tunai masuk − kembalian keluar, dan modal awal justru **tetap terlihat** karena kasir sendiri yang memasukkannya pagi tadi. Menutup total sambil memajang dua penjumlah lainnya bukan penghitungan buta, itu soal hitungan — dan soal hitungan yang bisa dikerjakan di kepala dalam tiga detik.
+- **Batas antara "bocoran" dan "bantuan" adalah kapan hitungan fisik disetorkan, bukan angka mana yang ditampilkan.** Rincian yang sama — tunai masuk, kembalian keluar, non-tunai bertanda "tidak masuk laci", kas negatif — tetap utuh di ringkasan tutup kas. `[BL-028]` Tahap A butir 4 yang memintanya masih berlaku sepenuhnya di sana: kasir tidak boleh mencari uang QRIS di dalam laci. Yang butir itu tidak pisahkan, dan entri ini pisahkan, adalah **sebelum** versus **sesudah** kasir menyetorkan hitungannya.
+- **Yang dipajang saat tertutup adalah alasannya, bukan sekadar titik-titik.** Kasir yang tidak tahu kenapa angkanya hilang akan mengira halamannya rusak dan melaporkannya sebagai bug — dan sebuah penjaga yang terbaca sebagai kerusakan akan dicabut oleh orang berikutnya yang "membetulkannya".
+- **Ini penyembunyian di sisi klien, dan layarnya tidak berpura-pura sebaliknya.** `reconciliation` tetap ikut props Inertia dan terbaca dari devtools. Pemilik meminta bentuk yang bisa **diperagakan**, dan untuk itu — juga untuk menghilangkan godaan sehari-hari — ini cukup. Penegakan sungguhan menuntut `index()` berhenti mengirimkannya sampai hitungan fisik disetorkan, dan itu tetap terbuka di `[BL-086]`.
+- **Satu lubang ditemukan saat mengerjakannya dan sengaja TIDAK ditambal di sini:** dari layar ringkasan, kasir bisa menekan "Kembali" lalu mengubah angka uang fisiknya **setelah** membaca selisih. Penutupnya murah — kunci kolomnya begitu ringkasan pernah dibuka — tapi ia mengubah alur, dan alurnya sedang menunggu pemecahan rute di butir 2. Menambalnya sekarang berarti membongkar layar yang sama dua kali. Ia ditulis di backlognya, bukan didiamkan.
+- **Berkas:** `resources/js/Pages/Cashier/CashDrawer.vue` · `tests/Feature/Cashier/CashDrawerBlindCountTest.php` (baru, 4 tes)
 
 ---
 
