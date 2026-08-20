@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-21 | REFACTOR | Kas | Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2) |
 | 2026-08-20 | HOTFIX | UI | Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089) |
 | 2026-08-21 | ADDITION | Kas | Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1) |
 | 2026-08-21 | REFACTOR | UI | Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085) |
@@ -239,6 +240,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Asumsi entri backlognya terbukti keliru, dan sisanya sengaja tidak dibongkar.** Sebutan ramalan stok masih berdiri di tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo — keputusan pemasaran, bukan konsekuensi teknis. Dicatat sebagai `[BL-089]`.
 - **Testnya sengaja hanya mengunci hero,** dengan alasan yang ditulis di dalam testnya sendiri: menyapu seluruh sebutan "prediksi" akan membuatnya gagal sampai `[BL-089]` dikerjakan, padahal `[BL-089]` menunggu keputusan pemilik.
 - **Berkas:** `resources/views/public/landing.blade.php` — paragraf hero, dua kartu melayang · `tests/Feature/Public/LandingClaimsTest.php` — satu test baru (72 tes lulus di `tests/Feature/Public`)
+
+---
+
+### [REFACTOR] Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — butir 2 `[BL-086]`, menutup entrinya seluruhnya. Sisa penegakan sisi servernya dipecah jadi `[BL-090]`
+- **Dampak:** Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak. Rute lama tidak dihapus dan tidak berpindah; yang lahir satu rute baru.
+- **Deskripsi:** Alur tutup kas pindah ke halamannya sendiri, `GET /cashier/cash-drawer/close`, lengkap dengan modal konfirmasi sebelum sesi benar-benar ditutup. Halaman kas menyisakan keadaan sesi, tombol ke POS, dan satu tautan "Tutup Kas". Bersamaan dengan itu, kolom uang fisik **terkunci begitu ringkasan pernah dibuka** — mengubahnya menuntut menekan "Hitung ulang", yang mengosongkan kolomnya.
+- **Alasan:** Dilaporkan pemilik — "seharusnya ada flow tersendiri ketika mau tutup kas (jadi kayak 2 menu begitu, bukan dalam 1 menu keliatannya)". Membuka kas dan mempertanggungjawabkannya terpisah beberapa jam dan berbeda niat; sebelum ini keduanya menumpang satu layar, sehingga kasir melewati alur tutup kas setiap kali sekadar memeriksa lacinya.
+
+- **Lubang "Kembali" ditutup di commit yang sama, dan itu bukan tambahan melainkan syarat.** `[BL-086]` butir 1 menyembunyikan angka seharusnya sampai hitungan fisik disetorkan — tapi dari layar ringkasan kasir bisa menekan "Kembali" dan menyunting hitungannya **setelah** membaca selisih. Penjagaan yang batal dalam dua klik bukan penjagaan, jadi memisahkan rutenya tanpa menutup lubang ini akan memindahkan cacatnya, bukan memperbaikinya.
+- **Yang dipasang friksi yang terlihat, bukan larangan.** Salah ketik itu nyata, dan kasir yang terkunci pada angka salah akan menutup kas dengan selisih karangan — persis kerusakan yang sedang dicegah. Karena itu "Hitung ulang" **mengosongkan** kolomnya alih-alih sekadar membuka kuncinya: revisi dimulai dari nol dan jadi tindakan yang disengaja, bukan koreksi diam-diam terhadap angka yang jawabannya sudah terbaca.
+- **`showClose()` mengembalikan kasir tanpa sesi ke halaman kas, bukan 404.** Tidak ada yang bisa ditutup, dan yang ia butuhkan saat itu adalah formulir membuka kas — yang ada di halaman itu. 404 hanya benar secara teknis.
+- **Halaman baru ini MEMANG mengirim angka rekonsiliasinya, dan itu bukan kelalaian.** Kasir datang ke sini untuk mempertanggungjawabkan lacinya; yang dijaga `[BL-086]` adalah halaman sesi, tempat angka itu terbaca sepanjang shift tanpa ada yang diminta dari kasir. Batasnya tetap sama: kapan hitungan fisik disetorkan.
+- **Satu perbaikan kecil ikut terbawa:** selisih negatif dulu tampil `Rp -3.000` — tanda minus mendarat di antara satuan dan angkanya karena `formatCurrency` menerima bilangan negatif apa adanya. Sekarang `−Rp 3.000`, sejajar dengan baris "Kembalian keluar" di atasnya yang sudah memakai bentuk itu sejak dulu.
+- **Modal konfirmasinya memakai `ConfirmDialog` yang sudah ada,** bukan modal baru. Ia menyebut nominal yang akan tercatat, karena konfirmasi yang tidak mengulang angkanya hanya melatih orang menekan "Ya".
+- **Berkas:** `app/Http/Controllers/Cashier/CashDrawerController.php` — `showClose()` · `routes/web.php` — `cashier.cash-drawer.close-form` · `resources/js/Pages/Cashier/CashDrawerClose.vue` (baru) · `resources/js/Pages/Cashier/CashDrawer.vue` — blok tutup kas (140 baris) diganti satu tautan · `tests/Feature/Cashier/CashDrawerCloseFlowTest.php` (baru, 5 tes) · `tests/Feature/Cashier/CashDrawerBlindCountTest.php` (jangkar penjaganya mengikuti pemecahan halaman)
 
 ---
 

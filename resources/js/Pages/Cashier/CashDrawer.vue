@@ -1,5 +1,5 @@
 <script setup>
-import { router, Head } from '@inertiajs/vue3';
+import { router, Head, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import { ref, computed, nextTick } from 'vue';
@@ -13,19 +13,12 @@ const props = defineProps({
 
 const openingAmount = ref(0);
 const openingAmountDisplay = ref('0');
-const closingAmount = ref(0);
-const closingAmountDisplay = ref('');
-const notes = ref('');
 const processing = ref(false);
-const refreshing = ref(false);
-const step = ref(1); // 1 = form, 2 = summary
 
 // Uang yang seharusnya ada di laci = modal + tunai masuk − kembalian keluar.
 // Sebelumnya halaman ini membandingkan uang fisik dengan modal awal saja,
 // sehingga seluruh penjualan tunai shift itu terbaca sebagai "kelebihan".
 const expectedAmount = computed(() => Number(props.reconciliation?.expected_amount ?? 0));
-
-const selisih = computed(() => closingAmount.value - expectedAmount.value);
 
 /**
  * Penghitungan buta selama sesi berjalan ([BL-086]).
@@ -49,28 +42,6 @@ const selisih = computed(() => closingAmount.value - expectedAmount.value);
 const showExpected = ref(false);
 const toggleExpected = () => { showExpected.value = !showExpected.value; };
 
-/**
- * Ambil ulang angka rekonsiliasi sebelum menampilkan ringkasan.
- *
- * Penjualan bisa terjadi setelah halaman ini dibuka, dan `close()` menghitung
- * ulang di server. Tanpa muat ulang, ringkasan bisa menjanjikan selisih yang
- * berbeda dari yang akhirnya tercatat — cara tercepat membuat kasir berhenti
- * mempercayai kedua angkanya.
- */
-const previewClose = () => {
-    if (refreshing.value) return;
-    refreshing.value = true;
-
-    router.reload({
-        only: ['reconciliation'],
-        onSuccess: () => { step.value = 2; },
-        onFinish: () => { refreshing.value = false; },
-    });
-};
-
-const backToForm = () => {
-    step.value = 1;
-};
 
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -100,40 +71,11 @@ const onOpeningBlur = (event) => {
     event.target.value = openingAmountDisplay.value;
 };
 
-const onClosingInput = (event) => {
-    const raw = event.target.value.replace(/\D/g, '');
-    const num = Number(raw) || 0;
-    closingAmount.value = num;
-    closingAmountDisplay.value = num > 0 ? formatNumber(num) : '';
-    nextTick(() => { event.target.value = closingAmountDisplay.value; });
-};
-
-const onClosingFocus = (event) => {
-    event.target.value = closingAmount.value > 0 ? String(closingAmount.value) : '';
-    event.target.select();
-};
-
-const onClosingBlur = (event) => {
-    closingAmountDisplay.value = closingAmount.value > 0 ? formatNumber(closingAmount.value) : '';
-    event.target.value = closingAmountDisplay.value;
-};
-
 const openCashDrawer = () => {
     if (processing.value) return;
     processing.value = true;
     router.post('/cashier/cash-drawer/open', {
         opening_amount: openingAmount.value,
-    }, {
-        onFinish: () => processing.value = false,
-    });
-};
-
-const closeCashDrawer = () => {
-    if (processing.value) return;
-    processing.value = true;
-    router.post('/cashier/cash-drawer/close', {
-        closing_amount: closingAmount.value,
-        notes: notes.value || null,
     }, {
         onFinish: () => processing.value = false,
     });
@@ -260,146 +202,17 @@ const goToPOS = () => {
                     Lanjut ke POS
                 </button>
 
-                <!-- Tutup Kas: dua langkah (form → ringkasan) -->
-                <div class="border-t border-border pt-6 mt-6">
-                    <!-- Langkah 1: Input -->
-                    <template v-if="step === 1">
-                        <h3 class="text-base font-semibold text-foreground mb-4">Tutup Kas</h3>
-                        <form @submit.prevent="previewClose" class="space-y-4">
-                            <div>
-                                <label for="closing_amount" class="block text-sm font-medium text-foreground mb-1">
-                                    Uang fisik di laci (Rp)
-                                </label>
-                                <input
-                                    id="closing_amount"
-                                    type="text"
-                                    inputmode="numeric"
-                                    :value="closingAmountDisplay"
-                                    @input="onClosingInput"
-                                    @focus="onClosingFocus"
-                                    @blur="onClosingBlur"
-                                    placeholder="Hitung uang fisik, lalu masukkan"
-                                    class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground placeholder:text-muted-foreground"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label for="notes" class="block text-sm font-medium text-foreground mb-1">
-                                    Catatan (opsional)
-                                </label>
-                                <textarea
-                                    id="notes"
-                                    v-model="notes"
-                                    rows="2"
-                                    placeholder="Catatan akhir shift..."
-                                    class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground placeholder:text-muted-foreground resize-none"
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                :disabled="refreshing"
-                                class="w-full py-3 bg-secondary text-secondary-foreground font-semibold rounded-lg hover:bg-secondary/80 transition text-sm disabled:opacity-50"
-                            >
-                                {{ refreshing ? 'Menghitung ulang...' : 'Lihat Ringkasan' }}
-                            </button>
-                        </form>
-                    </template>
+                <!-- Tutup kas punya halamannya sendiri ([BL-086] butir 2).
+                     Sengaja tautan sekunder, bukan tombol sebesar "Lanjut ke
+                     POS": memeriksa sesi adalah hal yang dilakukan berkali-kali
+                     sehari, menutupnya sekali. -->
+                <Link
+                    href="/cashier/cash-drawer/close"
+                    class="block w-full py-3 text-center border border-border text-foreground font-semibold rounded-lg hover:bg-muted transition text-sm"
+                >
+                    Tutup Kas
+                </Link>
 
-                    <!-- Langkah 2: Ringkasan rekonsiliasi -->
-                    <template v-else>
-                        <div class="flex items-center gap-2 mb-4">
-                            <button @click="backToForm" class="text-muted-foreground hover:text-foreground transition" aria-label="Kembali">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                                </svg>
-                            </button>
-                            <h3 class="text-base font-semibold text-foreground">Ringkasan Tutup Kas</h3>
-                        </div>
-
-                        <div class="bg-muted rounded-lg p-4 space-y-3 mb-4">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Modal awal</span>
-                                <span class="font-medium text-foreground font-mono">{{ formatCurrency(openDrawer.opening_amount) }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">
-                                    Penjualan tunai
-                                    <span v-if="reconciliation" class="text-muted-foreground/60">({{ reconciliation.transaction_count }} transaksi)</span>
-                                </span>
-                                <span class="font-medium text-success font-mono">+{{ formatCurrency(reconciliation?.cash_in ?? 0) }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Kembalian keluar</span>
-                                <span class="font-medium text-destructive font-mono">−{{ formatCurrency(reconciliation?.change_out ?? 0) }}</span>
-                            </div>
-                            <div class="border-t border-border pt-3 flex justify-between text-sm">
-                                <span class="text-muted-foreground font-medium">Seharusnya di laci</span>
-                                <span class="font-semibold text-foreground font-mono">{{ formatCurrency(expectedAmount) }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Uang fisik aktual</span>
-                                <span class="font-medium text-foreground font-mono">{{ formatCurrency(Number(closingAmount) || 0) }}</span>
-                            </div>
-                            <div class="border-t border-border pt-3 flex justify-between text-sm">
-                                <span class="text-muted-foreground">Selisih</span>
-                                <span
-                                    :class="[
-                                        'font-semibold font-mono',
-                                        selisih > 0  && 'text-success',
-                                        selisih < 0  && 'text-destructive',
-                                        selisih === 0 && 'text-muted-foreground',
-                                    ]"
-                                >
-                                    <template v-if="selisih === 0">Sesuai</template>
-                                    <template v-else-if="selisih > 0">+{{ formatCurrency(selisih) }}</template>
-                                    <template v-else>{{ formatCurrency(selisih) }}</template>
-                                </span>
-                            </div>
-                            <!-- Kas negatif: tagihan terbuka yang lewat 24 jam
-                                 dan berhenti bisa ditagih ([BL-031]). Di bawah
-                                 garis Selisih dan TIDAK ikut menghitungnya —
-                                 uang ini tidak pernah masuk laci, jadi
-                                 memasukkannya akan menuduh kasir kurang
-                                 sebesar tagihan yang bukan ia pegang. -->
-                            <div
-                                v-if="Number(reconciliation?.unsettled_cash) > 0"
-                                class="border-t border-border pt-3 flex justify-between text-xs"
-                            >
-                                <span class="text-muted-foreground">
-                                    Kas negatif
-                                    <span class="text-muted-foreground/60">
-                                        — {{ reconciliation.unsettled_count }} tagihan lewat 24 jam, hanya pemilik yang bisa membereskan
-                                    </span>
-                                </span>
-                                <span class="text-destructive font-mono">−{{ formatCurrency(reconciliation.unsettled_cash) }}</span>
-                            </div>
-                            <!-- Non-tunai ditampilkan terpisah dan ditandai tegas:
-                                 kasir tidak boleh mencari uang QRIS di dalam laci. -->
-                            <div
-                                v-if="Number(reconciliation?.non_cash_in) > 0"
-                                class="border-t border-border pt-3 flex justify-between text-xs"
-                            >
-                                <span class="text-muted-foreground">
-                                    Non-tunai (QRIS/transfer)
-                                    <span class="text-muted-foreground/60">— tidak masuk laci</span>
-                                </span>
-                                <span class="text-muted-foreground font-mono">{{ formatCurrency(reconciliation.non_cash_in) }}</span>
-                            </div>
-                            <div v-if="notes" class="border-t border-border pt-3 text-sm">
-                                <span class="text-muted-foreground">Catatan: </span>
-                                <span class="text-foreground">{{ notes }}</span>
-                            </div>
-                        </div>
-
-                        <button
-                            @click="closeCashDrawer"
-                            :disabled="processing"
-                            class="w-full py-3 bg-destructive text-destructive-foreground font-semibold rounded-lg hover:bg-destructive/90 transition disabled:opacity-50 text-sm"
-                        >
-                            {{ processing ? 'Memproses...' : 'Konfirmasi & Tutup Kas' }}
-                        </button>
-                    </template>
-                </div>
             </div>
         </main>
     </div>

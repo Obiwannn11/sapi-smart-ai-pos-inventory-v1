@@ -365,6 +365,12 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
             ->name('cash-drawer.index');
         Route::post('/cash-drawer/open', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'open'])
             ->name('cash-drawer.open');
+        // Alur tutup kas punya halamannya sendiri ([BL-086] butir 2). Didaftarkan
+        // SEBELUM `{cashDrawer}/summary` bukan karena keduanya bentrok — segmen
+        // `/summary` sudah membedakannya — melainkan supaya urutan bacanya
+        // mengikuti urutan pemakaiannya: buka, tutup, lalu rekap.
+        Route::get('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'showClose'])
+            ->name('cash-drawer.close-form');
         Route::post('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'close'])
             ->name('cash-drawer.close');
         Route::get('/cash-drawer/{cashDrawer}/summary', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'summary'])

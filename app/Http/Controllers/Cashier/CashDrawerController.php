@@ -45,6 +45,41 @@ class CashDrawerController extends Controller
     }
 
     /**
+     * Halaman tutup kas — hitungan fisik, ringkasan, lalu konfirmasi.
+     *
+     * **Halaman tersendiri, bukan bagian bawah halaman sesi ([BL-086] butir 2).**
+     * Membuka kas dan mempertanggungjawabkannya adalah dua pekerjaan yang
+     * terpisah beberapa jam dan berbeda niat; menumpuknya di satu layar membuat
+     * kasir melewati alur tutup kas setiap kali ia sekadar memeriksa sesinya,
+     * dan membuat "menutup kas" terlihat seperti hal yang bisa dilakukan
+     * sambil lalu.
+     */
+    public function showClose(): Response|RedirectResponse
+    {
+        $user = Auth::user();
+
+        if (! $user?->isCashier()) {
+            return redirect()->route('cashier.pos');
+        }
+
+        $openDrawer = CashDrawer::where('user_id', $user->id)
+            ->whereNull('closed_at')
+            ->first();
+
+        // Tanpa sesi terbuka tidak ada yang bisa ditutup. Dikembalikan ke
+        // halaman kas — di sana ada formulir membukanya — alih-alih 404, yang
+        // hanya benar secara teknis.
+        if (! $openDrawer) {
+            return redirect()->route('cashier.cash-drawer.index');
+        }
+
+        return Inertia::render('Cashier/CashDrawerClose', [
+            'openDrawer' => $openDrawer,
+            'reconciliation' => $this->reconciliation->for($openDrawer),
+        ]);
+    }
+
+    /**
      * Buka kas baru.
      */
     public function open(OpenCashDrawerRequest $request): RedirectResponse
