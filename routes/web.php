@@ -368,6 +368,20 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
     ->post('/owner/transactions/{transaction}/void', [\App\Http\Controllers\Cashier\POSController::class, 'void'])
     ->name('owner.transactions.void');
 
+// --- Kas negatif: tagihan terbuka yang lewat 24 jam ([BL-031]) ---
+// Sengaja `role:owner`, bukan izin modul laporan yang menampilkan halamannya:
+// MELIHAT kas negatif adalah soal laporan, MEMBERESKANNYA adalah soal
+// pertanggungjawaban. Staf yang diberi akses laporan tidak dengan sendirinya
+// boleh menutup selisih.
+Route::middleware(['auth', 'tenant', 'role:owner'])
+    ->name('owner.transactions.')
+    ->group(function () {
+        Route::post('/owner/transactions/{transaction}/settle-late', [\App\Http\Controllers\Owner\UnsettledBillController::class, 'settle'])
+            ->name('settle-late');
+        Route::post('/owner/transactions/{transaction}/write-off', [\App\Http\Controllers\Owner\UnsettledBillController::class, 'writeOff'])
+            ->name('write-off');
+    });
+
 // --- Platform Console (pemilik SaaS) ---
 // Sengaja DI LUAR middleware 'tenant': akun platform tidak punya tenant_id.
 // Tiap modul digerbang izinnya sendiri lewat 'platform.can', bukan satu gerbang

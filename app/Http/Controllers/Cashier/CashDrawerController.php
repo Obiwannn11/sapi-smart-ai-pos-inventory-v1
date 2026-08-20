@@ -124,6 +124,11 @@ class CashDrawerController extends Controller
             'cashDrawer' => $cashDrawer,
             'paymentSummary' => $reconciliation['payment_summary'],
             'transactionCount' => $reconciliation['transaction_count'],
+            // Kas negatif sesi ini ([BL-031]). Ikut di rekap, bukan cuma di
+            // pratinjau: rekap inilah yang dibuka lagi belakangan saat
+            // seseorang bertanya ke mana perginya uang shift itu.
+            'unsettledCash' => $reconciliation['unsettled_cash'],
+            'unsettledCount' => $reconciliation['unsettled_count'],
         ]);
     }
 }

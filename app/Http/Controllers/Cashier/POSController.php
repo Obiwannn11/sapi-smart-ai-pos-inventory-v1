@@ -140,7 +140,15 @@ class POSController extends Controller
             $isOpenBill = $request->boolean('is_open_bill');
 
             if ($isOpenBill) {
-                return back()->with('success', "Open bill {$transaction->code} berhasil disimpan!");
+                // Batas umurnya disebut di sini, pada detik kasir menekan
+                // "Tunda Bayar" ([BL-031]). Aturan yang hanya hidup di
+                // penjadwal adalah aturan yang baru diketahui pengguna saat ia
+                // sudah merugikannya.
+                return back()->with('success', sprintf(
+                    'Open bill %s berhasil disimpan! Berlaku %d jam — lewat itu jadi kas negatif.',
+                    $transaction->code,
+                    Transaction::OPEN_BILL_LIFETIME_HOURS,
+                ));
             }
 
             $transaction->loadMissing('user:id,name');

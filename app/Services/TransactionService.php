@@ -365,15 +365,70 @@ class TransactionService
     }
 
     /**
-     * Bayar open bill yang masih pending.
+     * Bayar open bill yang masih hidup.
+     *
+     * Tagihan yang sudah lewat 24 jam ditolak di sini, dengan kalimatnya
+     * sendiri ([BL-031]). Penjaga `!== STATUS_PENDING` di bawah sebenarnya
+     * sudah menolaknya — `unsettled` bukan `pending` — tapi pesannya akan
+     * berbunyi "sudah dibayar", dan kasir yang membaca itu akan mencari uang
+     * yang tidak pernah masuk alih-alih memanggil pemilik.
      */
     public function payOpenBill(Transaction $transaction, array $payments): Transaction
     {
+        if ($transaction->isUnsettled()) {
+            throw new \Exception(
+                'Tagihan ini sudah lewat '.Transaction::OPEN_BILL_LIFETIME_HOURS.' jam dan tercatat sebagai kas negatif. Hanya pemilik yang dapat membereskannya.'
+            );
+        }
+
         if ($transaction->status !== Transaction::STATUS_PENDING) {
             throw new \Exception('Transaksi ini bukan open bill / sudah dibayar.');
         }
 
-        return DB::transaction(function () use ($transaction, $payments) {
+        return $this->completeWithPayments($transaction, $payments);
+    }
+
+    /**
+     * Pemilik menerima pelunasan tagihan yang sudah jadi kas negatif ([BL-031]).
+     *
+     * Jalur terpisah dari `payOpenBill()` justru supaya penjaga di sana tidak
+     * perlu dilonggarkan: satu-satunya cara sebuah tagihan lewat umur bisa
+     * dilunasi adalah lewat pintu yang memeriksa kepemilikan, dan pintu itu
+     * hanya ada di dashboard transaksi pemilik.
+     *
+     * Uangnya TIDAK jatuh ke laci mana pun — keputusan pemilik menyebutnya
+     * langsung: sesudah 24 jam tidak ada laci yang akan menerimanya. Tanggal
+     * efektif penjualannya sudah di luar jendela sesi kas mana pun, jadi
+     * rekonsiliasi memang tidak akan memungutnya. Yang tertutup di sini adalah
+     * kas negatifnya.
+     *
+     * @param  array<int, array<string, mixed>>  $payments
+     */
+    public function paySettledLateBill(Transaction $transaction, array $payments, User $owner): Transaction
+    {
+        if (! $transaction->isUnsettled()) {
+            throw new \Exception('Transaksi ini bukan kas negatif.');
+        }
+
+        if (! $owner->isOwner() || $owner->tenant_id !== $transaction->tenant_id) {
+            throw new \Exception('Hanya pemilik yang dapat melunasi kas negatif.');
+        }
+
+        return $this->completeWithPayments($transaction, $payments, $owner);
+    }
+
+    /**
+     * Catat pembayaran lalu tutup transaksinya.
+     *
+     * Satu badan untuk dua pintu — pelunasan biasa dan pelunasan terlambat
+     * oleh pemilik. Menuliskannya dua kali berarti suatu hari kurang-bayar
+     * ditolak di satu pintu dan diterima di pintu lain.
+     *
+     * @param  array<int, array<string, mixed>>  $payments
+     */
+    private function completeWithPayments(Transaction $transaction, array $payments, ?User $settledBy = null): Transaction
+    {
+        return DB::transaction(function () use ($transaction, $payments, $settledBy) {
             $totalPaid = collect($payments)->sum('amount');
             $totalAmount = (float) $transaction->total_amount;
             $changeAmount = max(0, $totalPaid - $totalAmount);
@@ -392,7 +447,10 @@ class TransactionService
             $transaction->update([
                 'change_amount' => $changeAmount,
                 'status' => Transaction::STATUS_COMPLETED,
-            ]);
+            ] + ($settledBy ? [
+                'edited_at' => now(),
+                'edited_by' => $settledBy->id,
+            ] : []));
 
             return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
         });

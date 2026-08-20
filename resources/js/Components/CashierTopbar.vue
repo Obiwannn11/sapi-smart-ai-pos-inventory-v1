@@ -139,6 +139,25 @@ const formatTime = (date) => new Date(date).toLocaleString('id-ID', {
     minute: '2-digit',
 });
 
+/**
+ * Sisa umur tagihan, dalam kalimat pendek ([BL-031]).
+ *
+ * Dihitung di layar dari `expires_at` yang dikirim server, bukan diterima
+ * sebagai kalimat jadi: tab kasir sering dibiarkan terbuka berjam-jam, dan
+ * kalimat yang dibekukan saat halaman dimuat akan menjanjikan sisa waktu yang
+ * sudah lewat.
+ */
+const billExpiryLabel = (bill) => {
+    if (!bill.expires_at) return '';
+
+    const remainingMinutes = Math.round((new Date(bill.expires_at) - Date.now()) / 60000);
+
+    if (remainingMinutes <= 0) return 'habis masa tagih';
+    if (remainingMinutes < 60) return `sisa ${remainingMinutes} menit`;
+
+    return `sisa ${Math.floor(remainingMinutes / 60)} jam`;
+};
+
 /** Label pengenal tagihan: meja, nama, atau kodenya — mana yang ada. */
 const billLabel = (bill) => bill.table_number || bill.customer_name || bill.code;
 
@@ -277,13 +296,21 @@ const logout = async () => {
                         <div class="border-b border-border px-3 py-2.5">
                             <p class="text-sm font-semibold text-foreground">Tagihan Terbuka</p>
                             <p class="mt-0.5 text-xs text-foreground/50">{{ openBills.length }} pesanan menunggu dibayar</p>
+                            <!-- Kasir yang menekan "Tunda Bayar" berhak tahu
+                                 tagihannya bertahan sampai kapan ([BL-031]). -->
+                            <p class="mt-1 text-[10px] leading-snug text-amber-700">
+                                Berlaku 24 jam sejak pesanan dibuat. Lewat itu tagihan tercatat sebagai kas negatif dan hanya pemilik yang dapat membereskannya.
+                            </p>
                         </div>
 
                         <div class="max-h-[60vh] overflow-y-auto divide-y divide-border">
                             <div v-for="bill in openBills" :key="bill.id" class="p-3">
                                 <div class="flex items-center justify-between gap-2">
                                     <span class="truncate text-xs font-semibold text-amber-700">{{ billLabel(bill) }}</span>
-                                    <span class="shrink-0 text-[10px] text-foreground/40">{{ formatTime(bill.created_at) }}</span>
+                                    <span class="shrink-0 text-[10px] text-foreground/40">
+                                        {{ formatTime(bill.created_at) }}
+                                        <span v-if="billExpiryLabel(bill)" class="text-amber-600"> · {{ billExpiryLabel(bill) }}</span>
+                                    </span>
                                 </div>
                                 <p v-if="billLabel(bill) !== bill.code" class="mt-0.5 text-[10px] text-foreground/40">{{ bill.code }}</p>
 

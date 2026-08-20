@@ -18,6 +18,11 @@ const statusOptions = [
     { value: 'completed', label: 'Selesai' },
     { value: 'voided', label: 'Void' },
     { value: 'pending', label: 'Pending' },
+    // Tagihan terbuka yang lewat 24 jam ([BL-031]). Punya filternya sendiri
+    // karena inilah satu-satunya tempat ia bisa dibereskan — mencampurnya ke
+    // "Pending" berarti pemilik harus mencarinya di antara tagihan yang masih
+    // hidup dan bukan urusannya.
+    { value: 'unsettled', label: 'Kas Negatif' },
 ];
 
 const filterStatus = ref(props.filters?.status || '');
@@ -64,6 +69,7 @@ const statusBadge = (status) => {
         case 'completed': return 'bg-success/10 text-success';
         case 'voided': return 'bg-destructive/10 text-destructive';
         case 'pending': return 'bg-warning/10 text-warning-foreground';
+        case 'unsettled': return 'bg-destructive/10 text-destructive ring-1 ring-destructive/30';
         default: return 'bg-gray-100 text-gray-800';
     }
 };
@@ -73,6 +79,7 @@ const statusLabel = (status) => {
         case 'completed': return 'Selesai';
         case 'voided': return 'Void';
         case 'pending': return 'Pending';
+        case 'unsettled': return 'Kas Negatif';
         default: return status;
     }
 };

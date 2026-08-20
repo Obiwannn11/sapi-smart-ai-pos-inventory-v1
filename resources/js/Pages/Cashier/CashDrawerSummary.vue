@@ -8,6 +8,9 @@ const props = defineProps({
     cashDrawer: Object,
     paymentSummary: Array,
     transactionCount: Number,
+    // Tagihan terbuka yang lewat 24 jam di tengah sesi ini ([BL-031]).
+    unsettledCash: { type: Number, default: 0 },
+    unsettledCount: { type: Number, default: 0 },
 });
 
 const formatCurrency = (value) => {
@@ -122,6 +125,21 @@ const logout = async () => {
                                 {{ Number(cashDrawer.difference) >= 0 ? '+' : '' }}{{ formatCurrency(cashDrawer.difference) }}
                             </span>
                         </div>
+                    </div>
+
+                    <!-- Kas negatif: di bawah Selisih dan terpisah darinya.
+                         Uang ini tidak pernah masuk laci, jadi ia bukan
+                         selisih laci — ia utang yang berhenti bisa ditagih
+                         ([BL-031]). -->
+                    <div v-if="Number(unsettledCash) > 0" class="border-t border-gray-200 pt-4">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Kas negatif</span>
+                            <span class="font-medium text-destructive">−{{ formatCurrency(unsettledCash) }}</span>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-400">
+                            {{ unsettledCount }} tagihan terbuka lewat 24 jam dan berhenti bisa ditagih. Tidak dihitung sebagai selisih laci —
+                            hanya pemilik yang dapat membereskannya dari dashboard transaksi.
+                        </p>
                     </div>
 
                     <!-- Notes -->

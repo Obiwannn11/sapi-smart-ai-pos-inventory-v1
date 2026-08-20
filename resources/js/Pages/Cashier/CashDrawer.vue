@@ -309,6 +309,24 @@ const goToPOS = () => {
                                     <template v-else>{{ formatCurrency(selisih) }}</template>
                                 </span>
                             </div>
+                            <!-- Kas negatif: tagihan terbuka yang lewat 24 jam
+                                 dan berhenti bisa ditagih ([BL-031]). Di bawah
+                                 garis Selisih dan TIDAK ikut menghitungnya —
+                                 uang ini tidak pernah masuk laci, jadi
+                                 memasukkannya akan menuduh kasir kurang
+                                 sebesar tagihan yang bukan ia pegang. -->
+                            <div
+                                v-if="Number(reconciliation?.unsettled_cash) > 0"
+                                class="border-t border-border pt-3 flex justify-between text-xs"
+                            >
+                                <span class="text-muted-foreground">
+                                    Kas negatif
+                                    <span class="text-muted-foreground/60">
+                                        — {{ reconciliation.unsettled_count }} tagihan lewat 24 jam, hanya pemilik yang bisa membereskan
+                                    </span>
+                                </span>
+                                <span class="text-destructive font-mono">−{{ formatCurrency(reconciliation.unsettled_cash) }}</span>
+                            </div>
                             <!-- Non-tunai ditampilkan terpisah dan ditandai tegas:
                                  kasir tidak boleh mencari uang QRIS di dalam laci. -->
                             <div

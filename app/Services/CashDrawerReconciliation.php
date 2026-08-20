@@ -51,6 +51,8 @@ class CashDrawerReconciliation
      *     expected_amount: float,
      *     non_cash_in: float,
      *     transaction_count: int,
+     *     unsettled_cash: float,
+     *     unsettled_count: int,
      *     payment_summary: array<int, array{name: string, type: string, total: float}>,
      * }
      */
@@ -62,6 +64,7 @@ class CashDrawerReconciliation
         $nonCashIn = $this->sumOfType($paymentSummary, cash: false);
         $changeOut = (float) $this->transactionsOf($drawer)->sum('change_amount');
         $openingAmount = (float) $drawer->opening_amount;
+        $unsettled = $this->unsettledOf($drawer);
 
         return [
             'opening_amount' => $openingAmount,
@@ -70,8 +73,45 @@ class CashDrawerReconciliation
             'expected_amount' => $openingAmount + $cashIn - $changeOut,
             'non_cash_in' => $nonCashIn,
             'transaction_count' => $this->transactionsOf($drawer)->count(),
+            'unsettled_cash' => (float) $unsettled->sum('total_amount'),
+            'unsettled_count' => $unsettled->count(),
             'payment_summary' => $paymentSummary,
         ];
+    }
+
+    /**
+     * Kas negatif yang jatuh ke sesi ini: tagihan terbuka milik kasir ini yang
+     * lewat umurnya di tengah shiftnya ([BL-031]).
+     *
+     * **Sengaja TIDAK masuk `expected_amount`.** Rumus itu menjawab satu
+     * pertanyaan saja — berapa uang fisik yang seharusnya ada di laci — dan
+     * uang tagihan ini tidak pernah masuk laci mana pun. Menambahkannya akan
+     * membuat kasir tampak kurang sebesar tagihan yang bukan ia pegang, persis
+     * jenis angka salah yang [BL-028] baru saja perbaiki. Ia muncul sebagai
+     * baris tersendiri: terlihat, dipertanggungjawabkan, tapi bukan selisih
+     * laci.
+     *
+     * Penyaringnya `unsettled_at`, bukan tanggal efektif penjualan: tagihannya
+     * memang lahir di shift lain — kemarin, menurut definisi 24 jam — dan yang
+     * jatuh ke sesi ini adalah SAAT ia berhenti bisa ditagih.
+     *
+     * Batas yang disadari: bila kasir itu tidak sedang membuka laci saat
+     * sapuan berjalan, kas negatifnya tidak muncul di sesi mana pun. Ia tetap
+     * terlihat penuh di dashboard transaksi pemilik, dan di sanalah satu-satunya
+     * tempat ia boleh dibereskan.
+     *
+     * @return \Illuminate\Support\Collection<int, Transaction>
+     */
+    private function unsettledOf(CashDrawer $drawer): \Illuminate\Support\Collection
+    {
+        [$from, $to] = $this->window($drawer);
+
+        return Transaction::withoutGlobalScopes()
+            ->where('tenant_id', $drawer->tenant_id)
+            ->where('user_id', $drawer->user_id)
+            ->where('status', Transaction::STATUS_UNSETTLED)
+            ->whereBetween('unsettled_at', [$from, $to])
+            ->get(['id', 'code', 'total_amount']);
     }
 
     /**

@@ -1099,7 +1099,7 @@ onUnmounted(stopResizeCart);
                             @click="saveAsOpenBill"
                             :disabled="cart.length === 0 || processing"
                             class="flex-1 py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
-                            title="Simpan pesanan tanpa bayar"
+                            title="Simpan pesanan tanpa bayar — tagihan berlaku 24 jam"
                         >
                             Tunda Bayar
                         </button>

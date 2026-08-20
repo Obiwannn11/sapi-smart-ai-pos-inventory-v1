@@ -53,3 +53,12 @@ Schedule::command('subscriptions:prune-metrics')->monthlyOn(1, '04:30');
 // pada sebuah pembayaran tidak punya kebijakan retensi, dan itu keputusan yang
 // sengaja belum diambil.
 Schedule::command('payment-proofs:prune-unclaimed')->dailyAt('03:50');
+
+// Tagihan terbuka yang lewat 24 jam jadi kas negatif ([BL-031]).
+//
+// TIAP JAM, bukan harian, dan itu yang menentukan seberapa benar batas 24 jam
+// itu. Sapuan harian berarti sebuah tagihan bisa hidup sampai 48 jam hanya
+// karena ia lahir tepat sesudah sapuan lewat — batas yang diputuskan pemilik
+// akan jadi "antara satu dan dua hari", dan kalimat di layar kasir yang
+// menyebut 24 jam jadi bohong. Ongkosnya satu query berindeks per jam.
+Schedule::command('open-bills:expire')->hourly();

@@ -220,15 +220,22 @@ class HandleInertiaRequests extends Middleware
      * dibatasi keadaan — tagihan terbuka yang menumpuk sampai berat adalah
      * masalah operasional yang harus terlihat, bukan disembunyikan paginasi.
      *
+     * **Berumur, sejak [BL-031].** Batasnya bukan pengulangan sapuan
+     * terjadwal melainkan penutup celah di antaranya: `open-bills:expire`
+     * berjalan tiap jam, jadi tanpa penyaring ini ada sampai satu jam di mana
+     * kasir masih melihat — dan bisa menekan "Bayar" pada — tagihan yang
+     * menurut aturan sudah mati. Keduanya membaca ambang yang sama dari
+     * `Transaction::openBillCutoff()`.
+     *
      * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
     private function openBillsFor(User $user): \Illuminate\Support\Collection
     {
         return Transaction::where('user_id', $user->id)
-            ->where('status', Transaction::STATUS_PENDING)
+            ->liveOpenBills()
             ->with(['items:id,transaction_id,variant_name,qty,notes'])
             ->latest()
-            ->get(['id', 'code', 'customer_name', 'table_number', 'total_amount', 'created_at'])
+            ->get(['id', 'code', 'customer_name', 'table_number', 'total_amount', 'created_at', 'occurred_at'])
             ->map(fn (Transaction $bill) => [
                 'id' => $bill->id,
                 'code' => $bill->code,
@@ -236,6 +243,10 @@ class HandleInertiaRequests extends Middleware
                 'table_number' => $bill->table_number,
                 'total_amount' => $bill->total_amount,
                 'created_at' => $bill->created_at,
+                // Kapan tagihan ini mati. Dikirim sebagai cap waktu, bukan
+                // sebagai kalimat: layar yang menghitung sendiri sisa waktunya
+                // tetap benar walau tab kasir dibiarkan terbuka berjam-jam.
+                'expires_at' => $bill->effectiveDate()->copy()->addHours(Transaction::OPEN_BILL_LIFETIME_HOURS),
                 'items' => $bill->items->map(fn ($item) => [
                     'id' => $item->id,
                     'variant_name' => $item->variant_name,

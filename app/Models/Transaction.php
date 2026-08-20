@@ -20,6 +20,22 @@ class Transaction extends Model
 
     const STATUS_VOIDED = 'voided';
 
+    /**
+     * Tagihan terbuka yang lewat umurnya: berhenti jadi tagihan hidup, dicatat
+     * sebagai kas negatif ([BL-031]). Bukan `voided` — barangnya sudah dibawa
+     * pelanggan, jadi stok TIDAK dipulihkan di jalur ini. Bukan `completed` —
+     * uangnya tidak pernah masuk laci mana pun.
+     */
+    const STATUS_UNSETTLED = 'unsettled';
+
+    /**
+     * Berapa lama sebuah tagihan terbuka hidup, dihitung dari tanggal EFEKTIF
+     * penjualannya. Dipakai bersama oleh sapuan terjadwal dan daftar tagihan
+     * di topbar kasir — dua angka yang berbeda berarti kasir melihat tagihan
+     * yang sebenarnya sudah mati, atau sebaliknya.
+     */
+    const OPEN_BILL_LIFETIME_HOURS = 24;
+
     // --- Source Constants ---
     const SOURCE_POS = 'pos';
 
@@ -60,6 +76,7 @@ class Transaction extends Model
         'customer_name', 'table_number',
         'edited_at', 'edited_by',
         'channel', 'occurred_at', 'synced_at', 'sync_status', 'device_id',
+        'unsettled_at',
     ];
 
     protected function casts(): array
@@ -69,6 +86,7 @@ class Transaction extends Model
             'change_amount' => 'decimal:2',
             'edited_at' => 'datetime',
             'occurred_at' => 'datetime',
+            'unsettled_at' => 'datetime',
             'synced_at' => 'datetime',
             'preparing_at' => 'datetime',
             'ready_at' => 'datetime',
@@ -83,6 +101,14 @@ class Transaction extends Model
     public function isSelfOrder(): bool
     {
         return $this->source === self::SOURCE_SELF_ORDER;
+    }
+
+    /**
+     * Apakah tagihan ini sudah lewat umurnya dan jadi kas negatif ([BL-031])?
+     */
+    public function isUnsettled(): bool
+    {
+        return $this->status === self::STATUS_UNSETTLED;
     }
 
     /**
@@ -151,6 +177,50 @@ class Transaction extends Model
     public function scopeWhereEffectiveBetween(Builder $query, mixed $from, mixed $to): Builder
     {
         return $query->whereRaw(self::effectiveDateSql().' between ? and ?', [$from, $to]);
+    }
+
+    /**
+     * Batas umur tagihan terbuka: sebelum cap waktu ini, sebuah tagihan sudah
+     * mati ([BL-031]).
+     *
+     * Satu tempat untuk seluruh aplikasi. Aturan 24 jam yang ditulis ulang di
+     * tiap pemanggil adalah aturan yang suatu hari akan berbeda di salah
+     * satunya, dan bedanya baru terlihat sebagai tagihan hantu di topbar
+     * kasir.
+     */
+    public static function openBillCutoff(mixed $now = null): \Illuminate\Support\Carbon
+    {
+        $reference = $now instanceof \DateTimeInterface
+            ? \Illuminate\Support\Carbon::instance($now)
+            : \Illuminate\Support\Carbon::now();
+
+        return $reference->copy()->subHours(self::OPEN_BILL_LIFETIME_HOURS);
+    }
+
+    /**
+     * Tagihan terbuka POS yang MASIH hidup.
+     *
+     * `source = pos` bukan kehati-hatian berlebihan: self-order yang `pending`
+     * juga ada, tapi stoknya belum dikurangi dan ia punya jalur kedaluwarsanya
+     * sendiri (`voidExpiredSelfOrder`). Menyapunya lewat sini akan mencatat
+     * kas negatif atas barang yang tidak pernah keluar.
+     */
+    public function scopeLiveOpenBills(Builder $query, mixed $now = null): Builder
+    {
+        return $query->where('status', self::STATUS_PENDING)
+            ->where('source', self::SOURCE_POS)
+            ->whereRaw(self::effectiveDateSql().' > ?', [self::openBillCutoff($now)]);
+    }
+
+    /**
+     * Tagihan terbuka POS yang sudah lewat umurnya dan belum dipindahkan ke
+     * kas negatif. Inilah yang disapu `open-bills:expire`.
+     */
+    public function scopeExpiredOpenBills(Builder $query, mixed $now = null): Builder
+    {
+        return $query->where('status', self::STATUS_PENDING)
+            ->where('source', self::SOURCE_POS)
+            ->whereRaw(self::effectiveDateSql().' <= ?', [self::openBillCutoff($now)]);
     }
 
     /**

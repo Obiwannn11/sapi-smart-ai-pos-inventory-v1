@@ -10,6 +10,58 @@
 
 ## Daftar Entri
 
+### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Pertanyaan pemilik saat `[BL-023]` selesai — "apakah tagihan atau open bill itu hidup berdasarkan waktu hidup kas / shift kasir atau per hari atau sampai diselesaikan"
+- **Status:** **Selesai 2026-08-20.** Keputusan pemilik 2026-08-19 (per hari + kas negatif) dilaksanakan seluruhnya: keenam butir "yang harus ikut dibangun" mendarat. Satu catatan di teks lama sengaja TIDAK diikuti — butir 2 "Usulan Perbaikan" (*pemulihan stok wajib pada jalur pembatalan mana pun*) memang tidak berlaku untuk jalur 24 jam, persis seperti keputusan pemilik menyatakannya; stok baru kembali di jalur penghapusan oleh pemilik, dan jalur itu ikut dibangun di sini
+- **Status semula:** Open — **keputusannya SUDAH diambil 2026-08-19 (per hari + kas negatif), implementasinya belum ada.** Yang tersisa murni pekerjaan kode
+- **Prioritas:** Medium sekarang, naik jadi High begitu ada outlet yang benar-benar memakai Tunda Bayar setiap hari
+- **Area Terdampak:**
+  - `app/Http/Middleware/HandleInertiaRequests.php` — `openBillsFor()` menyaring `user_id` + `status pending`, **tanpa batas waktu apa pun**
+  - `app/Services/TransactionService.php:119` — `processItems(..., deductStock: true)` juga untuk open bill; **stok berkurang saat tagihan dibuat**, bukan saat dilunasi
+  - `app/Services/TransactionService.php:85-92` — mode antrian menyala → open bill ikut `fulfillment_status = waiting` dan masuk papan dapur
+  - `app/Services/TransactionService.php:308-320` — `voidExpiredSelfOrder()` hanya berlaku untuk **self-order**; open bill POS tidak punya padanannya
+  - `routes/console.php` — tidak ada satu pun tugas terjadwal yang menyentuh transaksi `pending`
+  - `app/Http/Controllers/Cashier/POSController.php` — `canEditTransaction()` mensyaratkan transaksi berada dalam sesi laci terbuka
+- **Keadaan sekarang (bukan keputusan, melainkan bawaan yang tak pernah dipilih):** tagihan terbuka hidup **sampai dilunasi, selamanya**, dan terikat pada `user_id` — bukan pada laci, bukan pada hari. Menutup kas tidak menyentuhnya; berganti hari tidak menyentuhnya. Tidak ada kedaluwarsa, tidak ada pembersihan, tidak ada peringatan.
+- **Kenapa ini bukan sekadar soal tampilan:**
+  1. **Stok sudah berkurang sejak tagihan dibuat.** Tagihan yang ditinggalkan menyandera stok tanpa batas waktu, dan tidak ada apa pun yang menagih kembali. Ini konsekuensi paling mahal dan yang paling tidak terlihat.
+  2. **`[BL-028]` sudah menetapkan uang mengikuti laci yang MELUNASI.** Tagihan yang dibuat shift pagi lalu dilunasi shift malam menaruh uangnya di laci malam — itu benar, dan tidak perlu diubah. Tapi artinya "tagihan milik shift mana" dan "uangnya milik laci mana" memang dua hal berbeda, dan keduanya harus dinyatakan, bukan disimpulkan.
+  3. **Kasir tidak bisa mengedit tagihan dari shift sebelumnya** (`canEditTransaction`), tapi tetap **melihat** dan **bisa melunasinya**. Kombinasi yang belum pernah diperiksa: boleh menerima uangnya, tidak boleh membetulkan isinya.
+  4. **Mode antrian menaruh open bill di papan dapur.** Tagihan yang hidup berhari-hari akan menumpuk di papan — persis jenis timbunan yang pernah dibersihkan migrasi `backfill_stale_fulfillment_status`, dan sumbernya belum tertutup untuk kasus ini.
+  5. **Berbeda dari self-order, yang PUNYA jalur kedaluwarsa.** Asimetri ini tidak pernah diputuskan; ia hanya belum sempat ditulis.
+- **Tiga pilihan, dan konsekuensinya masing-masing:**
+  | Pilihan | Cocok untuk | Yang harus ikut dibangun |
+  |---|---|---|
+  | **Sampai dilunasi** (perilaku sekarang) | warung dengan pelanggan langganan yang menitipkan tagihan lintas hari | pengingat umur tagihan, batas jumlah/nilai, dan cara owner menutup paksa — tanpa itu stok tersandera diam-diam |
+  | **Per hari** | mayoritas warung makan; tagihan meja tidak masuk akal menyeberang hari | tugas terjadwal yang membatalkan (memulihkan stok!) atau menandai tagihan semalam, plus laporan apa yang dibatalkan |
+  | **Per sesi kas** | outlet ber-shift yang serah terima kas | tagihan harus **dioper** saat tutup kas: dilunasi, dibatalkan, atau dipindahkan ke kasir berikutnya — dan tutup kas jadi tidak boleh berjalan sampai tak ada yang menggantung |
+#### KEPUTUSAN PEMILIK 2026-08-19 — per hari, dan yang lewat jadi kas negatif
+
+Umur tagihan terbuka ditetapkan **per hari**: 24 jam setelah transaksinya tercatat, tagihan yang belum dilunasi berhenti menjadi tagihan hidup dan **dicatat sebagai kas negatif**. Yang boleh membereskannya **hanya owner**, dan hanya dari **dashboard transaksi owner** — bukan dari menu log transaksi kasir.
+
+**"Jadi kas negatif" bukan sama dengan "dibatalkan", dan perbedaannya mengubah satu catatan di entri ini.** Membatalkan akan memulihkan stok dan menghapus jejak uangnya — bersih di pembukuan, tapi bohong: barangnya sudah keluar dan dibawa pelanggan. Karena itu **stok TIDAK dipulihkan** pada jalur ini, dan butir 2 "Usulan Perbaikan" di bawah (*"pemulihan stok wajib ikut pada jalur pembatalan mana pun"*) **tidak berlaku untuk jalur 24 jam ini** — ia ditulis dengan asumsi jalurnya pembatalan. Butir itu tetap berlaku bila kelak ada jalur pembatalan sungguhan, yaitu ketika owner memutuskan sebuah tagihan memang tak akan pernah dibayar; di sanalah stok kembali, dan di sana pula kas negatifnya ditutup.
+
+**Kenapa hanya owner.** Kas negatif adalah selisih yang harus dipertanggungjawabkan; membiarkan kasir menyuntingnya berarti orang yang bertanggung jawab atas selisih itu juga yang bisa merapikannya. Ini melanjutkan garis yang sudah ada — `canEditTransaction()` sudah menolak kasir menyunting transaksi di luar sesi lacinya yang terbuka — dan yang ditambahkan keputusan ini adalah **tempat** suntingan itu boleh terjadi.
+
+**Yang harus ikut dibangun, dan belum ada satu pun:**
+1. Tugas terjadwal di `routes/console.php` yang memindahkan tagihan >24 jam ke kas negatif. Hari ini tidak ada satu pun tugas yang menyentuh transaksi `pending`.
+2. **Tugas itu wajib sekaligus melepaskan tagihannya dari papan dapur.** Kalau tidak, timbunan `fulfillment_status = waiting` cuma berpindah sumber — persis yang pernah dibersihkan migrasi `backfill_stale_fulfillment_status`.
+3. Penampung kas negatif, dan tempatnya muncul di rekonsiliasi kas (`CashDrawerReconciliation`).
+4. Jalur sunting di dashboard transaksi owner.
+5. Pembatas umur di `HandleInertiaRequests::openBillsFor()`, yang sekarang menyaring `user_id` + `status pending` tanpa batas waktu apa pun.
+6. Kalimat di UI kasir yang menyebut tagihannya bertahan sampai kapan — butir 4 "Usulan Perbaikan" di bawah, yang keputusan ini justru menjadikannya wajib.
+
+**Satu hal yang harus diputuskan di kodenya, bukan disimpulkan dari sini:** 24 jam dihitung dari `occurred_at`, bukan `created_at`. `[BL-028]` cacat #3 sudah membuktikan `created_at` melempar penjualan offline ke hari sinkronisasinya, dan `Transaction::scopeWhereEffectiveBetween()` sudah ada untuk itu — tapi itu perlu tertulis di kodenya.
+
+**Yang TIDAK berubah:** uangnya tetap milik laci yang MELUNASI (`[BL-028]`). Yang berubah hanya jendela hidupnya — sesudah 24 jam tidak ada laci mana pun yang akan menerimanya.
+
+- **Usulan Perbaikan:**
+  1. **Putuskan dulu, catat di `CHANGELOG.md` sebagai `[DECISION]`.** Ini aturan operasional, bukan detail teknis — pilihannya menentukan apakah stok bisa tersandera semalaman.
+  2. Apa pun pilihannya, **pemulihan stok wajib ikut** pada jalur pembatalan mana pun. Membatalkan tagihan tanpa mengembalikan stok menukar satu masalah dengan masalah yang lebih sulit dilihat.
+  3. Kalau jatuhnya "per sesi kas", sambungkan ke `[BL-028]`: tutup kas adalah tempat paling wajar untuk memaksa keputusan atas tagihan yang menggantung.
+  4. Pertimbangkan menyatakan ini di UI apa pun keputusannya — kasir yang menekan "Tunda Bayar" berhak tahu tagihannya bertahan sampai kapan.
+- **Catatan:** per 2026-07-31 database **tidak punya satu pun transaksi `pending`**, jadi keputusan ini masih bisa diambil tanpa memigrasikan apa pun. Jendela itu akan tertutup begitu fitur Tunda Bayar benar-benar dipakai.
 ### [BL-080] Tagihan Terbit Sebelum Omzet Bulan Sebelumnya Dihitung — Tenant Berjangkar Tanggal 1–8 Ditagih dari Omzet Dua Bulan Lalu
 - **Ditemukan:** 2026-08-19 (saat menuliskan keputusan `[BL-056]`; bukan dilaporkan, melainkan terlihat begitu ada aturan untuk mengukurnya)
 - **Sumber:** Turunan `[BL-056]`. Keputusan "tarif periode P dari omzet bulan sebelum P" bisa diperiksa terhadap kode, dan hasilnya: ia hanya berlaku untuk sebagian tenant
