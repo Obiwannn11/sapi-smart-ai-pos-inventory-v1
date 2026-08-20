@@ -99,6 +99,85 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-13 (penyisiran backlog)** — pemilik menanyakan empat fitur yang dikiranya mungkin terlewat dicatat; seluruhnya sudah **diperiksa terhadap kode**, dan hasilnya dua sudah tercatat, dua memang terlewat. **Sudah ada:** offline + printer Bluetooth + lapisan native adalah `[BL-016]` (Capacitor ada di sana sebagai opsi 2, dan lingkupnya sudah dikunci Android saja), sedangkan upsell dari sinyal stok sudah **selesai** lewat `[BL-017]`/`[BL-025]` — sisanya hanya bundling berdiskon yang menunggu `[BL-018]`. **Benar-benar terlewat:** upsell yang **ditargetkan manual oleh owner** — tiga strategi yang ada semuanya menurunkan saran dari data dan tidak ada satu pun tempat bagi owner menuliskan targetnya sendiri — jadi `[BL-074]`; dan **foto bukti pembayaran non-tunai**, yang nol kode (`transaction_payments` hanya punya `reference_code`), jadi `[BL-075]`. Satu hal yang mudah menyesatkan dan sudah ditulis di dalam `[BL-075]`: `invoices.proof_path` yang sudah ada itu bukti tenant membayar langganan SaaS, **bukan** bukti pelanggan membayar di kasir. `[BL-076]` lahir dari keputusan pemilik di hari yang sama — penyimpanan `[BL-075]` untuk sementara di disk server, dan pemindahannya ke object storage dicatat terpisah supaya "sementara" tidak diam-diam jadi permanen.
 
+> **Catatan pemilik 2026-08-21 (sesi tanya-jawab konsep)** — `[BL-084]`–`[BL-088]` berasal dari satu daftar pertanyaan pemilik dan sudah **diverifikasi terhadap kode** sebelum jadi entri; tiap entri menyebut berkas dan barisnya. Dua hal dari daftar itu sengaja TIDAK jadi entri karena ternyata sudah benar: (1) **transaksi void** sudah utuh — stok kembali, papan dapur dibersihkan dua lapis, omzet menyaring `completed` saja, dan jumlah void dilaporkan terpisah di rekap harian, bulanan, dan CSV; satu-satunya batas yang tersisa ("hanya transaksi hari ini", `app/Services/TransactionService.php:469`) ditulis sendiri sebagai MVP dan belum pernah dikeluhkan, jadi dibiarkan sampai ada yang menagihnya. (2) **pendaftaran toko baru** sudah punya seluruh alurnya — `AuthController::register()`, preset fitur per jenis usaha (`[BL-034]`), masa coba dibuka di transaksi yang sama sehingga tenant tak pernah lahir tanpa langganan, penandaan IP oleh `SignupGuardService`, lalu verifikasi surel. Yang belum ada adalah **bergabung ke toko yang sudah ada** (staf hari ini ditambahkan owner dari modul Staf, tidak mendaftar sendiri) dan **multi-cabang** — yang kedua sudah tercatat sebagai `[BL-068]`.
+>
+> **Satu koreksi terhadap dugaan pemilik, dan ia menentukan bentuk tiga entri kas di bawah:** yang berumur 24 jam lalu tersapu otomatis adalah **tagihan terbuka** (`[BL-031]`, `open-bills:expire`, tiap jam) — **bukan sesi kas**. Sesi kas hari ini tidak punya umur sama sekali, dan tidak ada satu pun tugas terjadwal yang menyentuh `cash_drawers`. Jadi `[BL-088]` adalah fitur baru, bukan perbaikan sesuatu yang sudah berjalan.
+>
+> Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
+
+### [BL-088] Sesi Kas Tidak Punya Umur, Tidak Pernah Ditutup Sendiri, dan Rekapnya Terus Membesar
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "masa hidup kas cuma sehari dan auto close dan perlu perbaikan ketika lewat"
+- **Status:** Open
+- **Prioritas:** Medium — belum merusak angka mana pun, tapi ia yang membuat `[BL-086]` tidak cukup sendirian: kasir yang lupa menutup kas tidak akan pernah sampai ke layar tutup kas, sebagus apa pun layar itu dibuat
+- **Area Terdampak:**
+  - `routes/console.php` — **tidak ada** satu pun jadwal yang menyentuh `cash_drawers`; yang berjalan tiap jam adalah `open-bills:expire`, dan itu tagihan terbuka, bukan sesi kas
+  - `app/Http/Controllers/Cashier/CashDrawerController.php:83` — satu-satunya penutup sesi adalah kasir menekan tombol
+  - `app/Services/CashDrawerReconciliation.php:190` — jendela sesi memakai `closed_at ?? Carbon::now()`, jadi sesi yang tak pernah ditutup menyerap seluruh penjualan hari-hari berikutnya
+  - `app/Http/Controllers/Cashier/CashDrawerController.php:63` — kasir hanya boleh punya satu sesi terbuka, sehingga sesi yang menggantung **memblokir** pembukaan kas keesokan harinya
+- **Deskripsi:** Sesi kas hidup sampai ada yang menutupnya, tanpa batas. Kasir yang pulang tanpa menekan "Tutup Kas" meninggalkan sesi yang esok paginya menolak dibuka lagi ("Anda masih memiliki sesi kas yang terbuka"), sementara rekonsiliasinya diam-diam menghitung penjualan dua hari sebagai isi satu laci. Selisih yang muncul di akhir bukan lagi selisih kas, melainkan selisih akumulasi — dan tidak ada tanda apa pun di layar yang mengatakan sesi itu sudah lewat hari.
+- **Dugaan Penyebab:** `cash_drawers` lahir dengan asumsi satu shift = satu hari kerja yang selalu ditutup manual (lihat `[SCHEMA] Penambahan Tabel cash_drawers`, 2026-03-06). Asumsi itu tidak pernah ditulis dan tidak punya penegak.
+- **Usulan Perbaikan:**
+  1. Command `cash-drawers:expire` terjadwal, menutup paksa sesi yang lewat batas umur. **Batasnya keputusan pemilik**, bukan angka yang boleh ditebak di sini — dan kalau dipilih 24 jam, jadwalnya harus **tiap jam** dengan alasan yang sama persis seperti `open-bills:expire`: sapuan harian membuat batas 24 jam berarti "antara satu dan dua hari".
+  2. Sesi yang ditutup sistem **tidak boleh mengaku sudah dihitung**: `closing_amount` dan `difference` dibiarkan `null` dengan penanda tersendiri (mis. `closed_by_system`), bukan diisi `expected_amount` supaya selisihnya nol. Selisih nol yang dikarang adalah kebohongan yang persis sama dengan yang dilarang `[BL-086]`.
+  3. Sesi yang lewat umur muncul di daftar Sesi Kas owner sebagai butuh ditinjau.
+  4. Peringatan di layar kasir **sebelum** batasnya lewat, bukan sesudah — sesi yang terlanjur ditutup sistem tidak bisa lagi dihitung uangnya.
+- **Catatan:** menutup paksa berarti uang fisiknya tidak pernah dihitung siapa pun. Itu kerugian yang diterima secara sadar sebagai ganti sesi yang menggantung selamanya, dan justru karena itu butir 2 tidak boleh dilonggarkan.
+
+### [BL-087] Tidak Ada Cara Mencatat Uang Keluar atau Setoran di Tengah Sesi Kas
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "membuat button untuk meminta uang yang ada pada saat kas aktif sebelum tertutup"
+- **Status:** Open — **butuh keputusan pemilik soal bentuknya sebelum ada baris kode**
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Models/CashDrawer.php:14` — `$fillable` hanya mengenal modal awal, uang tutup, selisih, dan catatan; tidak ada tempat bagi uang yang keluar-masuk di tengah sesi
+  - `app/Services/CashDrawerReconciliation.php:73` — rumusnya `opening + cash_in − change_out`, dan ketiganya diturunkan dari transaksi penjualan; uang yang diambil pemilik dari laci tidak punya jalan masuk ke rumus ini
+  - `resources/js/Pages/Cashier/CashDrawer.vue` — tidak ada tombol apa pun selain "Lanjut ke POS" dan "Tutup Kas"
+- **Deskripsi:** Selama sesi berjalan, uang bisa keluar dari laci karena hal yang bukan kembalian — pemilik mengambil setoran, kasir membeli galon, uang kecil ditukar. Hari ini tidak ada tempat mencatatnya, sehingga uangnya menghilang sebagai **selisih kurang** di akhir shift dan kasir yang menanggung tuduhannya. Kebalikannya juga berlaku: menambah uang receh ke laci muncul sebagai selisih lebih.
+- **Usulan Perbaikan:** tabel `cash_drawer_movements` (`cash_drawer_id`, `type` = `payout`/`deposit`, `amount`, `reason`, `user_id`, `created_at`), tombolnya di halaman sesi kas, dan `expected_amount` jadi `opening + cash_in − change_out − payout + deposit`.
+- **Pertanyaan yang harus dijawab pemilik lebih dulu:** (a) siapa yang boleh mencatat pengeluaran — kasir sendiri, atau hanya owner? (b) apakah butuh persetujuan, atau cukup alasan tertulis? (c) apakah setoran ke pemilik **menutup** sesi, atau membiarkannya berjalan dengan modal berkurang? Jawaban (a) menentukan apakah ini fitur kas atau fitur pengawasan, dan itu perbedaan yang tidak bisa dibetulkan belakangan tanpa migrasi.
+
+### [BL-086] Layar Tutup Kas Menyebutkan Jawabannya Sebelum Kasir Menghitung, dan Dua Alur Berbeda Menumpang Satu Halaman
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "ada keliatan uang yang seharusnya di laci padahal itu owner saja yang liat, kasir sisa input yang nyata (agar tidak manipulatif), dan seharusnya ada flow tersendiri ketika mau tutup kas"
+- **Status:** Open
+- **Prioritas:** High — bukan soal tampilan: selama angkanya terbaca lebih dulu, seluruh rekonsiliasi kas tidak membuktikan apa pun
+- **Area Terdampak:**
+  - `resources/js/Pages/Cashier/CashDrawer.vue:203-206` — "Seharusnya di laci" tampil di panel sesi aktif, **sebelum** kasir menyentuh kolom uang fisik
+  - `resources/js/Pages/Cashier/CashDrawer.vue:288-292` — angka yang sama diulang di layar ringkasan
+  - `resources/js/Pages/Cashier/CashDrawer.vue:20` — `step = 1 | 2` menampung dua alur berbeda (buka kas dan tutup kas) dalam satu halaman dan satu rute
+  - `app/Http/Controllers/Cashier/CashDrawerController.php:36` — `index()` mengirim `reconciliation` penuh ke kasir tanpa syarat
+- **Deskripsi:** Kasir membuka halaman kas, membaca "Seharusnya di laci Rp 740.000", lalu mengetik Rp 740.000 di kolom uang fisik. Selisihnya selalu nol, dan laci yang benar-benar kurang Rp 50.000 tidak akan pernah ketahuan. Penghitungan buta (*blind count*) adalah satu-satunya alasan rekonsiliasi kas ada; membocorkan angkanya lebih dulu membuat seluruh mesin di `CashDrawerReconciliation` menghasilkan angka yang tidak membuktikan apa pun. Terpisah dari itu, satu halaman memegang dua pekerjaan yang berbeda hari dan berbeda niat — membuka kas di pagi hari, dan mempertanggungjawabkannya di malam hari.
+- **Dugaan Penyebab:** ini **akibat langsung** dari `[BL-028]` Tahap A butir 4, yang meminta rincian ditampilkan sebelum tombol tutup ditekan. Niatnya benar dan masih berlaku — kasir tidak boleh mencari uang QRIS di dalam laci — tapi butir itu tidak memisahkan **rincian yang membantu** (tunai masuk, kembalian keluar, non-tunai yang tidak masuk laci) dari **jawaban yang tidak boleh dibocorkan** (total seharusnya di laci). Keduanya dipasang bersamaan.
+- **Usulan Perbaikan:**
+  1. "Seharusnya di laci" **tersembunyi secara bawaan**, dengan tombol "Tampilkan uang seharusnya" — pemilik meminta bentuk ini secara eksplisit untuk keperluan peragaan. Idealnya tombol itu baru hidup setelah kolom uang fisik terisi.
+  2. Pecah jadi dua rute: `cash-drawer` (keadaan sesi + jalan ke POS) dan `cash-drawer/close` (alur tutup kas), dengan modal konfirmasi sebelum sesi benar-benar tertutup.
+  3. Rincian yang tidak membocorkan jawaban — tunai masuk, kembalian keluar, non-tunai yang ditandai "tidak masuk laci", kas negatif `[BL-031]` — **tetap** ditampilkan. Yang disembunyikan hanya totalnya.
+- **Catatan:** butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan; angkanya tetap ada di props Inertia dan terbaca dari devtools. Untuk peragaan itu cukup; untuk benar-benar mencegah manipulasi, `index()` harus berhenti mengirimkannya sampai hitungan fisik disetorkan.
+
+### [BL-085] Grup "Keuangan" di Sidebar Menampung Alat Promosi Bersama Laporan Uang
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "saya rasa perlu mengatur menu untuk upsell dan diskon ini lainnya, karena menu nya tercampur sebagai keuangan dan saya rasa kurang cocok"
+- **Status:** Open
+- **Prioritas:** Low — tidak ada angka yang salah, tapi ia satu-satunya grup dengan sepuluh item dan dua di antaranya bukan keuangan
+- **Area Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue:125-137` — grup `Keuangan` berisi Laporan Harian, Laporan Bulanan, Saran Jual, Aturan Saran Jual, Aturan Diskon, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis
+- **Deskripsi:** "Aturan Saran Jual" (`[BL-074]`) dan "Aturan Diskon" (`[BL-018]`) adalah tempat owner **menyusun cara berjualan** — keduanya menulis aturan yang berlaku ke depan, bukan melaporkan apa yang sudah terjadi. Menaruhnya di antara Laporan Harian dan Sesi Kas membuat orang mencarinya di tempat yang salah, dan membuat Keuangan jadi grup terpanjang di sidebar.
+- **Usulan Perbaikan:** grup baru **"Penjualan & Promosi"** berisi Saran Jual, Aturan Saran Jual, Aturan Diskon; Keuangan menyisakan Laporan Harian, Laporan Bulanan, Transaksi, Sesi Kas, Koreksi Offline, Pembayaran, AI Analysis. Murni penyusunan ulang array `navGroups` — gerbang `perm`/`ownerOnly` tiap item ikut pindah apa adanya, tidak ada satu pun hak akses yang berubah.
+
+### [BL-084] Sidebar Owner Menulis "SAPI", Bukan Nama Toko yang Sedang Dibuka
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "sidebar mengapa menampilkan tulisan sapi, bukannya disitu tertulis jadi nama toko owner begitu di sidebar nya?"
+- **Status:** Open
+- **Prioritas:** Low
+- **Area Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue:299` — literal `SAPI`, tidak membaca prop mana pun
+  - `resources/js/Components/CashierTopbar.vue:133` — sisi kasir **sudah** memakai `page.props.auth?.tenant?.name` dengan cadangan `'SAPI POS'`; polanya tinggal ditiru
+  - `app/Http/Middleware/HandleInertiaRequests.php:55` — `auth.tenant.name` sudah dibagikan ke setiap halaman, tanpa query tambahan
+- **Deskripsi:** Shell owner menyebut nama produk di tempat yang seharusnya menyebut nama usaha penggunanya. Kasir di aplikasi yang sama sudah melihat nama tokonya sendiri di topbar; hanya sidebar owner yang tidak ikut.
+- **Dugaan Penyebab:** `[DECISION] Tiga Permukaan Publik Jadi Satu Keluarga: SAPI POS Resmi (BL-033)` menetapkan penyebutan merek yang seragam — tapi keputusan itu tentang **permukaan publik** (landing, login, halaman galat), tempat pembacanya memang belum punya toko. Shell owner ikut terbawa padahal pembacanya sudah jelas berada di dalam satu toko.
+- **Usulan Perbaikan:** `auth.tenant?.name` dengan cadangan `'SAPI POS'`, persis pola `CashierTopbar.vue`. Yang perlu diputuskan pemilik: glyph `S` di sebelahnya ikut jadi inisial toko, atau tetap penanda produk.
+
 ### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
 - **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
 - **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
