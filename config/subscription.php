@@ -70,6 +70,14 @@ return [
      * mendapati aplikasinya sudah setengah terkunci di menit yang sama.
      * Menerbitkannya lebih awal membuat "berapa yang harus dibayar" tiba
      * sebagai pemberitahuan, bukan sebagai penjelasan setelah kejadian.
+     *
+     * **Ini batas TERCEPAT, bukan janji** — sejak `[BL-080]` opsi (i). Tenant
+     * jalur Adaptif tidak ditagih sebelum ringkasan omzet bulan penentu
+     * tarifnya ada, dan bagi yang berjangkar tanggal 1–7 ringkasan itu baru
+     * ditulis tanggal 1, setelah tagihannya seharusnya terbit. Tagihan mereka
+     * karena itu terbit belakangan, dengan masa siap 0–6 hari, bukan 7. Yang
+     * ditukar disengaja: masa siap yang lebih pendek dibayarkan untuk tarif
+     * yang dihitung dari bulan yang benar.
      */
     'invoice_lead_days' => 7,
 

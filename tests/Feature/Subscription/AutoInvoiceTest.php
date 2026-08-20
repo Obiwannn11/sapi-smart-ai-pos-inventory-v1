@@ -5,6 +5,7 @@ use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Models\TenantMonthlyMetric;
 use App\Services\Billing\InvoiceSettlement;
 use App\Services\SubscriptionService;
 use Illuminate\Support\Carbon;
@@ -41,6 +42,25 @@ function billableTenant(int $daysUntilPeriodEnd, float $basePrice = 100000, stri
     ]);
 
     return ['tenant' => $tenant, 'subscription' => $subscription];
+}
+
+/**
+ * Ringkasan omzet bulan penentu tarif bagi tenant jalur Adaptif.
+ *
+ * Sejak `[BL-080]` opsi (i), tenant Adaptif yang ringkasannya belum ada TIDAK
+ * ditagih — penerbitannya ditunda sampai angkanya tiba. Tes yang menyoal hal
+ * lain (bracket yang tak cocok, harga seat) harus menyediakan barisnya dulu,
+ * kalau tidak yang teruji cuma penundaannya.
+ *
+ * Bulannya satu sebelum periode yang ditagih, sesuai `[BL-056]`.
+ */
+function giveMonthlyMetric(Tenant $tenant, Carbon $periodEnd, float $revenue = 0): TenantMonthlyMetric
+{
+    return TenantMonthlyMetric::factory()->create([
+        'tenant_id' => $tenant->id,
+        'period' => $periodEnd->copy()->startOfMonth()->subMonth()->format('Y-m'),
+        'revenue' => $revenue,
+    ]);
 }
 
 // ── Penerbitan ───────────────────────────────────────────────────────────────
@@ -140,6 +160,10 @@ test('a tenant with no tariff at all is recorded as a sensitive event', function
     $subscription->update(['pricing_track' => Subscription::TRACK_SUBSIDIZED]);
     $tenant->update(['pricing_track' => Subscription::TRACK_SUBSIDIZED]);
     Plan::query()->update(['is_adaptive_fallback' => false]);
+
+    // Ringkasannya ADA — supaya yang diuji benar-benar "tak ada bracket yang
+    // cocok", bukan "datanya belum tiba" yang berakhir sebagai penundaan.
+    giveMonthlyMetric($tenant, $subscription->current_period_end, 3_000_000);
 
     artisan('subscriptions:advance-lifecycle')->assertSuccessful();
 
@@ -415,6 +439,8 @@ test('an adaptive tenant pays the plan seat price, undiscounted', function () {
     // Paket penampung jalur Adaptif — tarif langganannya Rp 20.000, tapi harga
     // seat-nya tetap dari paket yang dihuni tenant.
     Plan::factory()->create(['base_price' => 20000, 'is_adaptive_fallback' => true]);
+
+    giveMonthlyMetric($tenant, $subscription->current_period_end, 3_000_000);
 
     artisan('subscriptions:advance-lifecycle')->assertSuccessful();
 

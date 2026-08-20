@@ -66,6 +66,32 @@ class AdvanceSubscriptionLifecycle extends Command
             ));
         }
 
+        // Dilaporkan sebagai baris biasa, bukan peringatan: bagi tenant Adaptif
+        // berjangkar tanggal 1–7 ini keadaan yang WAJAR dan berulang tiap bulan
+        // ([BL-080] opsi (i)). Tagihannya terbit begitu ringkasan omzet bulan
+        // penentu tarifnya ditulis, beberapa hari lagi. Yang tidak wajar punya
+        // barisnya sendiri di bawah.
+        if ($result['postponed'] > 0) {
+            $this->line(sprintf(
+                'Menunggu ringkasan omzet          : %d tenant%s — tertunda, bukan gagal; terbit begitu omzet bulan penentunya dihitung.',
+                $result['postponed'],
+                $suffix
+            ));
+        }
+
+        // Ini yang tidak wajar: hari jatuh tempo sudah lewat dan ringkasannya
+        // tidak pernah tiba. Tagihannya sengaja ditahan daripada diterbitkan
+        // dari paket penampung — menagih tenant subsidi dengan tarif termahal
+        // karena sebuah cron gagal adalah kesalahan yang jauh lebih mahal
+        // daripada tagihan yang terlambat. Surel peringatannya sudah dikirim.
+        if ($result['overdue'] > 0) {
+            $this->warn(sprintf(
+                'Ringkasan omzet tak kunjung ada   : %d tenant%s — jatuh tempo terlewat dan tagihannya DITAHAN. Periksa `subscriptions:compute-revenue`, atau apakah tenantnya mencabut persetujuan subsidi.',
+                $result['overdue'],
+                $suffix
+            ));
+        }
+
         if ($result['unpriced'] > 0) {
             $this->warn(sprintf(
                 'Tanpa tarif sama sekali           : %d tenant%s — tak ada bracket yang cocok dan tak ada paket penampung. Periksa /platform/pricing-rules.',

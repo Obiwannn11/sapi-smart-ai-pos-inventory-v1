@@ -3,7 +3,6 @@
 namespace App\Services\Pricing;
 
 use App\Models\Tenant;
-use App\Models\TenantMonthlyMetric;
 use Illuminate\Support\Carbon;
 
 /**
@@ -14,15 +13,17 @@ use Illuminate\Support\Carbon;
  * pengambilan data baru. Ia berguna sebagai ukuran pemakaian yang tidak
  * bergantung harga jual: dua warung beromzet sama bisa sangat berbeda beban
  * pemakaiannya bila yang satu menjual banyak barang murah.
+ *
+ * Membaca lewat `MonthlyMetricResolver` supaya ia terikat pada bulan yang sama
+ * dengan dimensi omzet. Dua dimensi dari satu baris ringkasan yang memungut
+ * bulan berbeda akan melahirkan aturan harga yang syaratnya tak pernah bisa
+ * dipenuhi bersamaan.
  */
-class TransactionCountResolver implements DimensionResolver
+class TransactionCountResolver extends MonthlyMetricResolver
 {
     public function resolve(Tenant $tenant, ?Carbon $asOf = null): float|string|null
     {
-        $metric = TenantMonthlyMetric::where('tenant_id', $tenant->id)
-            ->when($asOf !== null, fn ($query) => $query->where('period', '<=', $asOf->format('Y-m')))
-            ->orderByDesc('period')
-            ->first();
+        $metric = $this->metricFor($tenant, $asOf);
 
         return $metric === null ? null : (float) $metric->transaction_count;
     }

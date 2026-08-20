@@ -10,6 +10,8 @@ use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMonthlyMetric;
 use App\Services\Pricing\AdaptiveEligibility;
+use App\Services\Pricing\MetricReadiness;
+use App\Services\Pricing\MonthlyMetricResolver;
 use App\Services\Pricing\SubsidyEstimator;
 use Illuminate\Support\Carbon;
 
@@ -19,6 +21,8 @@ class SubscriptionService
         private readonly PricingService $pricing,
         private readonly AdaptiveEligibility $eligibility,
         private readonly SubsidyEstimator $estimator,
+        private readonly MetricReadiness $readiness,
+        private readonly PlatformAlertService $alerts,
     ) {}
 
     /**
@@ -446,6 +450,8 @@ class SubscriptionService
         $free = 0;
         $unpriced = 0;
         $skipped = 0;
+        $postponed = 0;
+        $overdue = 0;
 
         $due = Tenant::query()
             ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE, Tenant::STATUS_GRACE])
@@ -493,7 +499,77 @@ class SubscriptionService
                 continue;
             }
 
-            $resolved = $this->pricing->resolveFor($tenant, self::pricingAsOf($period));
+            $asOf = self::pricingAsOf($period);
+
+            // PENUNDAAN PENERBITAN — `[BL-080]` butir (b), opsi (i).
+            //
+            // Tenant Adaptif berjangkar tanggal 1–7 sampai di sini pada hari
+            // ketika ringkasan omzet bulan sebelumnya belum ditulis: tagihannya
+            // terbit H-7, jadi di akhir bulan sebelumnya, sementara bulan itu
+            // sendiri baru tutup keesokan harinya. Menerbitkan sekarang berarti
+            // menagih dari angka yang tidak berhak dipakai.
+            //
+            // Diperiksa SEBELUM `resolveFor()`, dan itu seluruh alasan
+            // `MetricReadiness` ada: penetapan harga tidak pernah kehabisan
+            // jawaban — tanpa ringkasan ia menjatuhkan tenant ke paket
+            // penampung, dan tagihan yang terbit di jalur itu bukan tagihan
+            // yang tertunda melainkan tagihan yang terlalu mahal.
+            //
+            // Tidak dicatat ke jejak audit selama masih dalam tenggat: bagi
+            // tenant berjangkar awal bulan, tertunda beberapa hari adalah
+            // keadaan yang WAJAR dan berulang tiap bulan. Angkanya dilaporkan
+            // perintahnya, dan itu tempat yang benar untuk hal yang normal.
+            if (! $this->readiness->isReadyFor($tenant, $asOf)) {
+                if ($today->lt($periodStart)) {
+                    $postponed++;
+
+                    continue;
+                }
+
+                // BATAS PENUNDAAN. Tanpa baris ini "tunda sampai ringkasannya
+                // ada" berubah diam-diam jadi "tidak pernah ditagih" — dan itu
+                // bukan kemungkinan teoretis: dokumen persetujuan subsidi
+                // menjanjikan seluruh ringkasan omzet DIHAPUS seketika saat
+                // consent dicabut, sementara jalur harganya baru kembali normal
+                // di akhir periode. Di sela itu tenant masih Adaptif dan
+                // ringkasannya sudah tidak ada lagi.
+                //
+                // Tetap TIDAK diterbitkan, dan itu disengaja. Menerbitkan dari
+                // paket penampung berarti menagih tenant subsidi dengan tarif
+                // termahal karena sebuah cron gagal — persis arah kesalahan yang
+                // paling merugikan tenant, dan yang paling akan diadukan.
+                // Tagihan yang tertahan menunda uang; tagihan yang salah
+                // mengambilnya.
+                $overdue++;
+
+                if (! $dryRun) {
+                    PlatformAuditLog::record('invoices.postponement-overdue', $tenant, [
+                        'tenant_id' => $tenant->id,
+                        'period' => $period,
+                        'required_metric_period' => MonthlyMetricResolver::requiredPeriodFor($asOf),
+                        'pricing_track' => $subscription->pricing_track,
+                    ]);
+
+                    // Jejak audit menjawab "apa yang terjadi" bagi yang sempat
+                    // membukanya; keadaan ini butuh seseorang yang belum tahu
+                    // harus membuka apa pun.
+                    $this->alerts->send(
+                        key: 'invoices.postponement-overdue',
+                        subject: 'Tagihan langganan tertahan: ringkasan omzet tidak pernah tiba',
+                        summary: 'Satu atau lebih tenant Harga Adaptif sudah melewati hari jatuh tempo periodenya tanpa tagihan, karena ringkasan omzet bulan penentu tarifnya tidak ada. Tagihannya sengaja TIDAK diterbitkan agar tidak memakai tarif paket penampung.',
+                        lines: [
+                            "Tenant: {$tenant->name}",
+                            "Periode tagihan: {$period}",
+                            'Ringkasan yang dibutuhkan: '.MonthlyMetricResolver::requiredPeriodFor($asOf),
+                            'Periksa apakah `subscriptions:compute-revenue` berjalan, atau apakah tenant ini mencabut persetujuan subsidinya.',
+                        ],
+                    );
+                }
+
+                continue;
+            }
+
+            $resolved = $this->pricing->resolveFor($tenant, $asOf);
             $price = $resolved['price'];
 
             if ($price === null) {
@@ -591,6 +667,8 @@ class SubscriptionService
             'free' => $free,
             'unpriced' => $unpriced,
             'skipped' => $skipped,
+            'postponed' => $postponed,
+            'overdue' => $overdue,
         ];
     }
 
@@ -1419,6 +1497,8 @@ class SubscriptionService
             'free' => $billing['free'],
             'unpriced' => $billing['unpriced'],
             'skipped' => $billing['skipped'],
+            'postponed' => $billing['postponed'],
+            'overdue' => $billing['overdue'],
             'graduated' => $graduation['graduated'],
             'stranded' => $graduation['stranded'],
             'seats_released' => $seatsReleased,

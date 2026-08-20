@@ -54,9 +54,13 @@ function subsidizedTenant(float $revenue = 3_000_000, int $transactions = 100, ?
         'type' => TenantConsent::TYPE_SUBSIDIZED,
     ]);
 
+    // Bulan SEBELUM periode yang ditagih, sesuai `[BL-056]`: tarif periode P
+    // diambil dari omzet bulan sebelum P. Dulu baris ini memakai bulan berjalan
+    // dan tetap lolos, karena resolvernya memungut ringkasan terbaru yang
+    // periodenya tidak melewati $asOf — perilaku yang `[BL-080]`(c) cabut.
     TenantMonthlyMetric::factory()->create([
         'tenant_id' => $tenant->id,
-        'period' => now()->format('Y-m'),
+        'period' => now()->startOfMonth()->subMonth()->format('Y-m'),
         'revenue' => $revenue,
         'transaction_count' => $transactions,
     ]);
