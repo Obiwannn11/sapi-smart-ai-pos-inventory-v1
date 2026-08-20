@@ -51,19 +51,29 @@ test('landing menyebut kapabilitas yang benar-benar ada', function () {
     }
 });
 
-test('avatar testimoni dilayani sebagai berkas kecil, bukan potret 600 KB', function () {
-    // Ketiganya dulu ±600 KB — dan ternyata JPEG berekstensi `.png` — untuk
-    // dirender 48 piksel. Sekarang WebP 96 px, ±2 KB.
-    get('/')
-        ->assertStatus(200)
-        ->assertSee('avatar_andi.webp')
-        ->assertDontSee('avatar_andi.png');
+test('landing tidak memajang testimoni dari pelanggan yang tidak ada', function () {
+    // Tiga kutipan bernama (Andi/Senja Coffee, Santi/Roti Enak, Budi/Toko
+    // Kelontong Modern) berdiri di atas potret stok, sementara basis data hanya
+    // berisi dua tenant demo. Dijawab pemilik 2026-08-20: memang karangan, dan
+    // diganti bagian "Untuk Siapa SAPI Dibuat" yang tidak mengaku sebagai
+    // kesaksian siapa pun (`[BL-078]`).
+    $html = get('/')->assertStatus(200)->getContent();
+
+    foreach (['Senja Coffee', 'Roti Enak', 'Toko Kelontong Modern', 'Testimoni', 'avatar_'] as $fabrication) {
+        expect($html)->not->toContain($fabrication);
+    }
 
     foreach (['andi', 'budi', 'santi'] as $name) {
-        $path = public_path("avatar_{$name}.webp");
-
-        expect(file_exists($path))->toBeTrue()
-            ->and(filesize($path))->toBeLessThan(15 * 1024)
+        expect(file_exists(public_path("avatar_{$name}.webp")))->toBeFalse()
             ->and(file_exists(public_path("avatar_{$name}.png")))->toBeFalse();
     }
+});
+
+test('bagian pengganti testimoni menyebut siapa yang dilayani, bukan siapa yang memuji', function () {
+    get('/')
+        ->assertStatus(200)
+        ->assertSee('Untuk Siapa')
+        ->assertSee('Kafe')
+        ->assertSee('Toko Kelontong &amp; Retail', false)
+        ->assertSee('Usaha dengan Beberapa Kasir');
 });

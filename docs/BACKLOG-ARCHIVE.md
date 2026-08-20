@@ -113,6 +113,26 @@ Kalau tetap dijual, jual sebagai kenyamanan (satu paket kecil untuk keadaan mend
 
 ---
 
+### [BL-078] Testimoni di Landing Berdiri di Atas Nama dan Potret yang Tidak Bisa Dipertanggungjawabkan
+- **Ditemukan:** 2026-08-14
+- **Sumber:** Temuan saat mengerjakan `[BL-032]` butir (1) — empat klaim lain di halaman yang sama terbukti karangan dan dibuang; bagian ini sengaja ditahan karena keputusannya bukan teknis
+- **Status:** **Selesai 2026-08-20.** Dijawab pemilik: ketiga kutipan itu **karangan**, dan jalan yang dipilih adalah opsi (2) yang kedua — bagiannya diganti, bukan dihapus
+- **Status semula:** Open — **butuh keputusan pemilik**, bukan butuh implementasi
+- **Prioritas:** Medium — tidak ada angka yang salah dan tidak ada yang bocor, tapi ia satu-satunya sisa karangan di permukaan pertama yang dilihat calon klien
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php` — tiga blok testimoni: Andi (kafe), Santi, Budi, masing-masing dengan kutipan bertanda kutip
+  - `public/avatar_{andi,budi,santi}.webp` — potretnya; sudah dikecilkan jadi ±2 KB oleh `[BL-032]`(3), tapi bobot bukan persoalan entri ini
+- **Deskripsi:**
+  Tiga kutipan bernama lengkap dengan wajah, dan tidak ada satu pun pelanggan bernama itu. Basis data berisi dua tenant, keduanya demo (`Kopi Nusantara`, `Kopi Story`). Potretnya foto stok — bukan orang yang pernah memakai aplikasi ini.
+  Kenapa ini dipisah dari `[BL-032]`: empat klaim lain di halaman yang sama (login Google, katalog otomatis, "AI mengenali kebutuhan bisnis", "ribuan UMKM") dibuang karena **bisa diperiksa ke kode** — ada atau tidak ada, dan jawabannya tidak ada. Testimoni tidak begitu. Ia bisa saja mewakili percakapan nyata dengan calon klien yang namanya disamarkan, dan itu praktik yang lazim. Yang tidak bisa saya tentukan sendiri adalah mana dari keduanya.
+- **Yang perlu diputuskan pemilik:**
+  1. **Apakah ketiga kutipan itu berasal dari orang nyata?** Bila ya, cukup ganti potret stoknya dengan sesuatu yang tidak mengaku-aku wajah orang — inisial, ilustrasi, atau logo usahanya — dan tambahkan keterangan bahwa namanya disamarkan.
+  2. **Bila tidak**, ada dua jalan jujur: hapus bagiannya sampai ada pengguna sungguhan yang bersedia dikutip, atau ganti jadi bagian yang tidak mengaku sebagai kesaksian — misalnya "untuk siapa aplikasi ini dibuat", yang menyampaikan hal yang sama tanpa mengarang orang.
+- **Kenapa tidak dikerjakan sekalian:** menghapus testimoni adalah keputusan pemasaran, dan menggantinya dengan karangan yang lebih halus justru memperburuk. Keduanya milik pemilik, bukan konsekuensi teknis dari entri mana pun.
+- **Hasil:** Bagian "Testimoni — Cerita Sukses Bersama SAPI" dicabut seluruhnya dan digantikan **"Untuk Siapa SAPI Dibuat"**: tiga kartu persona (Kafe & Kedai Kopi, Toko Kelontong & Retail, Usaha dengan Beberapa Kasir) yang menyebut kemampuan yang benar-benar ada, tanpa satu pun nama orang, wajah, atau tanda kutip. Ketiga potret stoknya dihapus dari `public/`.
+- **Satu hal yang berubah saat dikerjakan, dan bukan bagian dari keputusan pemasarannya:** dua kemampuan yang hampir ikut ditulis di kartu persona ternyata **tidak ada wujudnya** — "prediksi stok menipis" (yang ada ambang tetap: `BadgeHelperService` menandai stok ≤ 5, habis, dead stock 30 hari, dan kedaluwarsa — bukan ramalan) dan "barcode" (`product_variants` punya `sku`, dan pencarian POS hanya mencocokkan nama produk & varian). Keduanya diganti sebutan yang jujur sebelum mendarat. Bagian yang dibuat untuk berhenti mengarang nyaris lahir membawa karangan barunya sendiri.
+- **Entri penutup di `docs/CHANGELOG.md`:** `[DEPRECATE] Testimoni Karangan Dicabut, Diganti Bagian yang Tidak Mengaku Sebagai Kesaksian (BL-078)`
+
 ### [BL-031] Umur Tagihan Terbuka Belum Pernah Diputuskan — Sesi Kas, Per Hari, atau Sampai Dilunasi?
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Pertanyaan pemilik saat `[BL-023]` selesai — "apakah tagihan atau open bill itu hidup berdasarkan waktu hidup kas / shift kasir atau per hari atau sampai diselesaikan"

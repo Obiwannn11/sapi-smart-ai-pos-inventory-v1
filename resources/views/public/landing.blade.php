@@ -912,55 +912,70 @@
         </section>
     @endif
 
-    <!-- Testimonials Section -->
+    <!-- Audience Section -->
     <section class="py-24 lg:py-32 bg-gray-50 overflow-hidden">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
-                <h2 class="text-primary font-black tracking-widest uppercase text-sm mb-4">Testimoni</h2>
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Cerita Sukses <br> Bersama SAPI</h3>
+                <h2 class="text-primary font-black tracking-widest uppercase text-sm mb-4">Cocok Untuk</h2>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Untuk Siapa <br> SAPI Dibuat</h3>
+                <p class="text-gray-600 leading-relaxed font-medium mt-6">
+                    Tiga bentuk usaha yang alur hariannya sudah ditangani SAPI hari ini — bukan yang direncanakan, melainkan yang sudah jalan di aplikasinya.
+                </p>
             </div>
 
             <div class="grid md:grid-cols-3 gap-8">
-                <!-- Testimonial 1 -->
-                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 reveal stagger-1">
-                    <p class="text-xl text-gray-900 font-bold leading-relaxed mb-8">
-                        "SAPI sangat membantu café saya. Dulu sering kehabisan biji kopi di jam sibuk, sekarang AI-nya selalu kasih tau 2 hari sebelumnya."
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_andi.webp') }}" alt="Andi" width="96" height="96" loading="lazy" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
-                        <div>
-                            <p class="font-black text-gray-900">Andi</p>
-                            <p class="text-sm font-bold text-gray-400">Owner Senja Coffee</p>
+                <!-- Audience 1 -->
+                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 group hover:shadow-2xl transition-all reveal stagger-1">
+                    <div class="mb-8">
+                        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8h13v5a5 5 0 01-5 5H8a5 5 0 01-5-5V8zm13 1h2a2 2 0 010 4h-2M5 21h12" /></svg>
                         </div>
                     </div>
+                    <h4 class="text-2xl font-black text-gray-900 mb-4">Kafe &amp; Kedai Kopi</h4>
+                    <p class="text-gray-600 leading-relaxed font-medium mb-6">
+                        Pesanan yang jarang selesai sekali jalan: satu meja menambah terus sampai pulang, dan tiap gelas punya pilihannya sendiri.
+                    </p>
+                    <ul class="space-y-2 text-sm font-bold text-gray-500">
+                        <li>Tagihan terbuka per meja, dengan umur yang dijaga</li>
+                        <li>Modifier per varian — ukuran, gula, topping</li>
+                        <li>Papan antrian pesanan untuk dapur</li>
+                    </ul>
                 </div>
 
-                <!-- Testimonial 2 -->
-                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 reveal stagger-2">
-                    <p class="text-xl text-gray-900 font-bold leading-relaxed mb-8">
-                        "Badge Helper-nya beneran ajaib. Saya nggak perlu lagi pusing liat grafik rumit, tinggal eksekusi saran dari SAPI."
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_santi.webp') }}" alt="Santi" width="96" height="96" loading="lazy" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
-                        <div>
-                            <p class="font-black text-gray-900">Santi</p>
-                            <p class="text-sm font-bold text-gray-400">Manajer Roti Enak</p>
+                <!-- Audience 2 -->
+                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 group hover:shadow-2xl transition-all reveal stagger-2">
+                    <div class="mb-8">
+                        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" /></svg>
                         </div>
                     </div>
+                    <h4 class="text-2xl font-black text-gray-900 mb-4">Toko Kelontong &amp; Retail</h4>
+                    <p class="text-gray-600 leading-relaxed font-medium mb-6">
+                        Barang banyak, perputaran cepat, dan modal gampang tertimbun di rak yang salah tanpa ada yang memberi tahu.
+                    </p>
+                    <ul class="space-y-2 text-sm font-bold text-gray-500">
+                        <li>Peringatan stok kritis, habis, dan dead stock</li>
+                        <li>Saran jual yang menyebut barang dan alasannya</li>
+                        <li>Katalog bervarian dengan SKU dan foto</li>
+                    </ul>
                 </div>
 
-                <!-- Testimonial 3 -->
-                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 reveal stagger-3">
-                    <p class="text-xl text-gray-900 font-bold leading-relaxed mb-8">
-                        "Fitur prediksi stoknya akurat banget. Modal saya jadi nggak tertimbun di barang yang nggak laku."
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_budi.webp') }}" alt="Budi" width="96" height="96" loading="lazy" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
-                        <div>
-                            <p class="font-black text-gray-900">Budi</p>
-                            <p class="text-sm font-bold text-gray-400">Toko Kelontong Modern</p>
+                <!-- Audience 3 -->
+                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 group hover:shadow-2xl transition-all reveal stagger-3">
+                    <div class="mb-8">
+                        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a5 5 0 00-10 0v2M5 9h14l1 12H4L5 9z" /></svg>
                         </div>
                     </div>
+                    <h4 class="text-2xl font-black text-gray-900 mb-4">Usaha dengan Beberapa Kasir</h4>
+                    <p class="text-gray-600 leading-relaxed font-medium mb-6">
+                        Begitu yang menjaga kasir bukan Anda sendiri, pertanyaannya berubah: uang di laci ini milik shift siapa, dan siapa yang mengubah apa.
+                    </p>
+                    <ul class="space-y-2 text-sm font-bold text-gray-500">
+                        <li>Sesi kas per kasir, buka sampai tutup</li>
+                        <li>Hak akses per modul untuk tiap peran</li>
+                        <li>Pesan mandiri untuk pelanggan, lewat MCP</li>
+                    </ul>
                 </div>
             </div>
         </div>
