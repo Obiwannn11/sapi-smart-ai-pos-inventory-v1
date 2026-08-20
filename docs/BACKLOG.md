@@ -99,6 +99,65 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 > **Catatan pemilik 2026-08-13 (penyisiran backlog)** — pemilik menanyakan empat fitur yang dikiranya mungkin terlewat dicatat; seluruhnya sudah **diperiksa terhadap kode**, dan hasilnya dua sudah tercatat, dua memang terlewat. **Sudah ada:** offline + printer Bluetooth + lapisan native adalah `[BL-016]` (Capacitor ada di sana sebagai opsi 2, dan lingkupnya sudah dikunci Android saja), sedangkan upsell dari sinyal stok sudah **selesai** lewat `[BL-017]`/`[BL-025]` — sisanya hanya bundling berdiskon yang menunggu `[BL-018]`. **Benar-benar terlewat:** upsell yang **ditargetkan manual oleh owner** — tiga strategi yang ada semuanya menurunkan saran dari data dan tidak ada satu pun tempat bagi owner menuliskan targetnya sendiri — jadi `[BL-074]`; dan **foto bukti pembayaran non-tunai**, yang nol kode (`transaction_payments` hanya punya `reference_code`), jadi `[BL-075]`. Satu hal yang mudah menyesatkan dan sudah ditulis di dalam `[BL-075]`: `invoices.proof_path` yang sudah ada itu bukti tenant membayar langganan SaaS, **bukan** bukti pelanggan membayar di kasir. `[BL-076]` lahir dari keputusan pemilik di hari yang sama — penyimpanan `[BL-075]` untuk sementara di disk server, dan pemindahannya ke object storage dicatat terpisah supaya "sementara" tidak diam-diam jadi permanen.
 
+### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
+- **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
+- **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
+- **Status:** Open — **butuh keputusan pemilik lebih dulu**: satu zona untuk seluruh aplikasi, atau satu zona per tenant
+- **Prioritas:** Medium sekarang (belum ada tenant sungguhan, dan data demo disemai per tanggal server sehingga selalu konsisten dengan dirinya sendiri); **High pada hari pertama ada toko yang buka sebelum pukul 08.00 waktu setempat**
+- **Area Terdampak:**
+  - `config/app.php:68` — `'timezone' => 'UTC'`, **ditulis mati**, bukan dari `env()`. Tidak ada `APP_TIMEZONE` di `.env`
+  - `app/Models/Transaction.php:161` — `effectiveDateSql()`: `COALESCE(occurred_at, created_at)`, keduanya tersimpan UTC
+  - `app/Http/Controllers/Owner/ReportController.php` — `daily()` dan `monthly()` mengelompokkan per tanggal dari SQL di atas
+  - `app/Http/Controllers/Owner/DashboardController.php` — kartu "Pendapatan Hari Ini" / "Transaksi Hari Ini"
+  - `app/Jobs/ComputeTenantMonthlyRevenue.php` + `app/Services/Pricing/MonthlyMetricResolver.php` — periode `YYYY-MM` yang jadi dasar bracket Harga Adaptif
+  - `database/seeders/DemoTransactionSeeder.php`, `database/seeders/CafeStudyCaseSeeder.php` — `Carbon::now()` juga UTC
+  - `resources/js/` — sisi peramban memakai tanggal **lokal peramban**; di situlah selisihnya jadi terlihat
+  - Tabel `tenants` — **tidak punya kolom zona waktu sama sekali**
+- **Deskripsi:**
+  Server berjalan di UTC dan tidak ada satu baris pun di `app/` yang mengonversi ke zona mana pun — pencarian `timezone`/`setTimezone`/`Asia/Jakarta` di seluruh `app/` mengembalikan nol hasil. Artinya "hari ini" yang dipakai laporan, dashboard, dan rekap bulanan adalah **hari UTC**, sementara tokonya hidup di WIB/WITA/WIT.
+
+  Akibat yang paling mudah dihitung: batas hari UTC jatuh pukul **07.00 WIB / 08.00 WITA / 09.00 WIT**. Penjualan antara tengah malam dan jam-jam itu masuk ke **laporan hari sebelumnya**. Untuk kafe yang buka pukul 07.00, itu berarti transaksi jam pertama tiap hari tercatat di hari yang salah — dan Laporan Harian adalah angka yang dipakai pemilik menutup harinya.
+
+  Gejalanya sudah terlihat tanpa perlu dicari: pada satu layar yang sama, topbar menulis "Jumat, 21 Agustus 2026" (tanggal lokal peramban) sedangkan pemilih tanggal Laporan Harian default ke "Kamis, 20 Agustus 2026" (tanggal server). Dua tanggal untuk satu saat yang sama, berselisih satu hari.
+- **Yang TIDAK terkena, dan alasannya — supaya lingkupnya tidak ditaksir terlalu besar:**
+  1. **Rekonsiliasi kas (`[BL-028]`)** memakai jendela sesi `opened_at`–`closed_at`, yaitu perbandingan antar-timestamp. Perbandingan timestamp tidak peduli zona.
+  2. **Umur tagihan terbuka 24 jam (`[BL-031]`)** berbasis durasi, bukan batas hari. Juga tidak peduli zona.
+  3. **Penjadwalan langganan** memakai `addMonthsNoOverflow` dari jangkar tanggal daftar — bergeser paling banyak beberapa jam, dan tidak melewati batas yang menentukan uang.
+
+  Yang benar-benar terkena adalah segala sesuatu yang **mengelompokkan per hari atau per bulan**: Laporan Harian, Laporan Bulanan, kartu "hari ini" di dashboard, dan `tenant_monthly_metrics` yang jadi dasar bracket Harga Adaptif.
+- **Yang perlu diputuskan sebelum ada kode:**
+  1. **Satu zona untuk seluruh aplikasi, atau satu zona per tenant?** `APP_TIMEZONE=Asia/Jakarta` adalah satu baris dan menutup sebagian besar kasus — tapi Indonesia punya tiga zona, dan produk ini dijual ke seluruh Indonesia. Tenant di Makassar akan salah satu jam, tenant di Jayapura dua jam. Kolom `tenants.timezone` menjawabnya dengan benar tapi menyeret setiap query pengelompokan harian untuk mengonversi lebih dulu.
+  2. **Nasib angka yang sudah tercatat.** Mengubah zona **mengelompokkan ulang riwayat yang sudah ada** — Laporan Harian kemarin bisa berubah angkanya sesudah perubahan ini mendarat. Untuk data demo itu tidak apa-apa; untuk tenant yang sudah menutup pembukuannya, itu perlu diberitahukan, bukan didiamkan.
+  3. **`tenant_monthly_metrics` ikut bergeser**, dan itu menyentuh harga. Periode `YYYY-MM` yang dihitung ulang dengan batas bulan bergeser 7–8 jam bisa memindahkan tenant ke bracket lain. Bila perubahannya dilakukan, penghitung ulang dan `PruneTenantMetrics` harus dijalankan bersama, bukan dibiarkan bercampur.
+- **Usulan Perbaikan:**
+  **(a)** Apa pun pilihannya, jadikan `config/app.php` membaca `env('APP_TIMEZONE', …)` lebih dulu. Nilai yang ditulis mati membuat lingkungan produksi tidak bisa berbeda dari lokal tanpa mengubah kode.
+  **(b)** **Satu tempat saja yang boleh menjawab "hari ini milik tenant ini"** — sebuah helper di sisi PHP, dipakai bersama oleh laporan, dashboard, dan penghitung metrik. Aturan ini sudah terbukti pada `Transaction::effectiveDateSql()` dan `Transaction::openBillCutoff()`; zona waktu punya bentuk masalah yang sama persis, dan dua definisi yang berselisih hanya akan terlihat pada angka laporan.
+  **(c)** **Sisi peramban ikut, di commit yang sama.** Selisih yang terlihat hari ini lahir justru karena satu sisi sudah lokal dan sisi lain belum. Memperbaiki server saja akan menukar arah selisihnya, bukan menghapusnya.
+  **(d)** **Jangan** menambal dengan mengurangi 7 jam di satu-dua query. Itu memperbaiki layar yang sedang dilihat dan meninggalkan sisanya berselisih dengan layar itu.
+
+---
+
+### [BL-083] Kartu Melayang di Hero Menjanjikan "Prediksi Stok Aman Hingga 14 Hari" yang Tidak Ada Mesinnya
+- **Ditemukan:** 2026-08-20 (saat memasang tangkapan layar baru `[BL-032]` butir (3) — kartunya melayang tepat di atas gambar yang sedang diganti)
+- **Sumber:** Kelanjutan langsung `[BL-032]` butir (1). Empat klaim karangan dibuang 2026-08-14, tapi penyisirannya berhenti pada teks bagian isi dan **tidak menyentuh dua kartu melayang di hero**
+- **Status:** Open — **butuh keputusan pemilik**, sama seperti `[BL-078]`: ini teks pemasaran, bukan cacat teknis
+- **Prioritas:** Medium — tidak ada angka yang salah, tapi ia berdiri di **layar pertama**, di atas lipatan, dan ia klaim yang bisa diperiksa ke kode. Persis kategori yang `[BL-032]`(1) bersihkan
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:196-197` — kartu "PREDIKSI STOK / Aman Hingga 14 Hari"
+  - `resources/views/public/landing.blade.php:209-212` — kartu "Badge Helper" dengan kutipan dan tombol "Eksekusi Sekarang"
+  - `app/Services/BadgeHelperService.php:26-110` — apa yang sebenarnya dihitung
+- **Deskripsi:**
+  **Kartu pertama menjanjikan ramalan; yang ada ambang tetap.** `BadgeHelperService` menghitung empat hal, semuanya perbandingan sederhana terhadap keadaan sekarang: stok ≤ 5 (Stok Kritis), stok ≤ 0 (Stok Habis), nol penjualan dalam 30 hari (Dead Stock), dan `expiry_date` yang sudah lewat. Tidak ada satu pun yang memproyeksikan berapa lama stok akan bertahan. "Aman Hingga 14 Hari" menyebut **horizon** — angka yang tidak pernah dihitung di mana pun.
+
+  **Kartu kedua jauh lebih dekat dengan kenyataan, dan sengaja dipisahkan dari yang pertama.** "Kopi Susu Gula Aren mulai sepi, beri diskon 15%?" kira-kira sama dengan badge Dead Stock, dan sejak `[BL-018]` diskon memang entitas sungguhan serta `[BL-074]` memberi owner cara menargetkan sarannya sendiri. Yang belum diperiksa adalah tombol "Eksekusi Sekarang": apakah benar ada satu jalan dari saran ke diskon terpasang dalam satu tekan. Bila tidak ada, yang perlu diubah tombolnya, bukan kalimatnya.
+- **Kenapa tidak dikerjakan sekalian:** menggantinya berarti menulis kalimat pemasaran baru, dan kalimat pengganti yang dikarang sendiri adalah cara paling halus mengulang kesalahan yang sedang diperbaiki — pelajaran yang baru saja terbukti di `[BL-078]`, ketika "prediksi stok" dan "barcode" nyaris ikut masuk ke bagian yang justru dibuat untuk berhenti mengarang.
+- **Usulan Perbaikan:**
+  **(a)** Ganti kartu pertama dengan yang benar-benar dihitung. Yang paling dekat dan tetap terdengar kuat: **"STOK KRITIS — 3 varian mendekati habis"**, karena itulah badge `low_stock` apa adanya. Bentuknya tidak berubah; janjinya berubah dari ramalan jadi peringatan.
+  **(b)** Periksa tombol "Eksekusi Sekarang" terhadap kode sebelum kartu kedua dinyatakan aman. Bila jalannya belum satu tekan, turunkan jadi label yang tidak menjanjikan tindakan.
+  **(c)** Sisir **seluruh** hero sekali lagi, bukan hanya dua kartu ini. `[BL-032]`(1) berhenti di teks bagian isi, dan itulah sebabnya keduanya bertahan enam hari lebih lama daripada empat klaim yang sudah dibuang.
+
+---
+
 ### [BL-081] Omzet Penentu Tarif Masih Terikat Bulan Kalender, Bukan Jendela yang Selalu Penuh
 - **Ditemukan:** 2026-08-20 (saat memilih opsi butir (b) `[BL-080]`; pemilik sempat mencondong ke sini sebelum ongkos persetujuan ulangnya terlihat)
 - **Sumber:** `[BL-080]` butir (b) opsi **(iv-b)**, sengaja tidak diambil dan dipisah supaya tidak hilang bersama entri yang ditutup
