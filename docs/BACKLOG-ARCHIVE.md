@@ -10,6 +10,49 @@
 
 ## Daftar Entri
 
+### [BL-089] Klaim Prediksi Stok Masih Berdiri di Tab Demo, FAQ, dan Label "Machine Learning"
+- **Ditemukan:** 2026-08-20 (butir (c) `[BL-083]` — menyisir hero ternyata membuka bahwa klaimnya jauh melampaui hero)
+- **Sumber:** Kelanjutan `[BL-083]`. Hero sudah dibersihkan; entri ini memuat sisanya, yang lingkupnya berbeda kelas
+- **Status:** **Selesai 2026-08-20** — dijawab pemilik: tab ketiga diganti **Saran Jual**, dan FAQ diganti penjelasan cara Badge Helper bekerja
+- **Status semula:** Open — butuh keputusan pemilik, dan keputusannya lebih besar daripada `[BL-078]` maupun `[BL-083]`: yang dipertaruhkan satu dari tiga pilar bagian Demo
+- **Prioritas:** Medium — sama seperti `[BL-083]`, tapi permukaannya jauh lebih luas dan salah satunya menyebut teknologi tertentu dengan nama
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:569` — judul panel: **"Prediksi Stok (Machine Learning)"**
+  - `resources/views/public/landing.blade.php:514` — tab demo ketiga berlabel "Prediksi Stok"
+  - `resources/views/public/landing.blade.php:574` — tombol "Jalankan Ulang Prediksi AI"
+  - `resources/views/public/landing.blade.php:1025-1029` — FAQ "Bagaimana cara AI memprediksi stok saya?" beserta jawabannya
+  - `resources/views/public/landing.blade.php:~1066` — `predictData`: stok sekarang, **stok terprediksi**, dan **sisa hari** per produk
+  - `resources/views/public/landing.blade.php:~1060` — `badgeTemplates`: "Habis dalam 2-3 hari", plus tombol "Pesan ke Supplier", "Promo Diskon", "Buat Bundle"
+  - `app/Services/BadgeHelperService.php` — apa yang sebenarnya ada
+  - `app/Jobs/RunAiAnalysisJob.php:142` — satu-satunya yang menyerempet proyeksi, dan itu **profit**, bukan stok
+- **Deskripsi:**
+  `[BL-083]` menutup dua kartu melayang di hero dengan asumsi itulah sisanya. Ternyata bukan. Sebutan ramalan stok berdiri di **empat tempat lain**, dan tiga di antaranya lebih tegas daripada kartu yang baru dicabut:
+
+  1. **"Machine Learning" disebut dengan nama.** Tidak ada model, tidak ada pelatihan, tidak ada pustaka ML di seluruh `composer.json`. Yang ada penyedia LLM (Anthropic, Gemini, OpenAI, SumoPod) untuk analisis teks. Menyebut teknologi tertentu adalah klaim yang paling mudah diperiksa orang luar, dan paling mahal bila keliru.
+  2. **Tab demonya interaktif dan memperagakan angka ramalan.** `predictData` memberi tiap produk "stok terprediksi" dan "sisa hari", dengan tombol "Jalankan Ulang Prediksi AI" yang membuat peragaannya terasa seperti perhitungan sungguhan. Ini bukan kalimat yang bisa diganti — ini satu dari tiga tab, dengan data dan interaksinya sendiri.
+  3. **FAQ menjelaskan CARA kerjanya.** "AI kami menganalisis data transaksi historis toko Anda selama 90 hari terakhir untuk menemukan pola musiman dan tren harian unik toko Anda." Kalimat itu menjelaskan mekanisme yang tidak ada — dan penjelasan mekanisme jauh lebih meyakinkan, karenanya jauh lebih menyesatkan, daripada slogan.
+  4. **Tombol aksi di peragaan badge** — "Pesan ke Supplier", "Promo Diskon", "Buat Bundle" — sama persis dengan "Eksekusi Sekarang" yang baru dicabut `[BL-083]` butir (b): tidak ada jalan satu tekan untuk satu pun dari ketiganya.
+- **Yang perlu diputuskan pemilik, dan kenapa ini bukan sekadar sunting teks:**
+  1. **Apakah prediksi stok akan dibangun?** Bila ya, ini bukan entri pemasaran melainkan entri fitur, dan halaman itu boleh tetap berdiri sampai fiturnya menyusul — asalkan diberi tanda "segera hadir", bukan dibiarkan tampak sudah jalan. Bila tidak, tab ketiga harus diganti dengan pilar yang benar-benar ada.
+  2. **Apa penggantinya bila dibongkar?** Tiga tab hari ini: Simulasi Kasir, Badge Helper AI, Prediksi Stok. Kandidat pengganti yang sudah nyata dan belum punya peragaan: Saran Jual berbasis aturan (`[BL-074]`), diskon dinamis dengan lantai untung (`[BL-018]`), atau tagihan terbuka berumur (`[BL-031]`).
+- **Usulan Perbaikan:**
+  **(a)** Apa pun keputusannya, **"(Machine Learning)" dicabut lebih dulu dan sendirian.** Ia klaim paling tegas, paling murah dibuang, dan tidak menunggu keputusan tentang tab.
+  **(b)** Jawaban FAQ diganti dengan yang benar-benar dikerjakan `BadgeHelperService`: ambang stok, dead stock 30 hari, dan kedaluwarsa. Pertanyaannya ikut berubah, karena "bagaimana cara AI memprediksi stok saya" tidak punya jawaban jujur.
+  **(c)** Tombol aksi di peragaan badge diturunkan jadi label, sama seperti `[BL-083]` butir (b) — atau dibangun jalannya. Keduanya sah; yang tidak sah adalah membiarkannya tampak bisa ditekan.
+  **(d)** **Jangan** menyimpan kata "prediksi" sambil membuang "Machine Learning". Yang menyesatkan bukan nama teknologinya melainkan janji horizonnya.
+
+---
+- **Hasil:**
+  **(a)** "(Machine Learning)" hilang bersama tabnya. Tab ketiga kini **Saran Jual** — satu-satunya pilar besar yang sudah jalan tapi belum pernah punya peragaan. Empat barisnya memetakan satu-satu ke strategi yang benar-benar ada di `app/Services/Upsell/Strategies/`, dan kode alasannya (`price_step`, `cooccurrence`, `dead_stock`, `owner_rule`) diambil dari konstanta `REASON_*` pada `UpsellEvent`, bukan istilah karangan. Bentuk barisnya mengikuti `Suggestion`: label, catatan alasan, dan tambahan rupiah.
+  **(b)** FAQ "Bagaimana cara AI memprediksi stok saya?" jadi "Bagaimana SAPI tahu stok saya bermasalah?", dan jawabannya menyebut keempat aturan `BadgeHelperService` apa adanya — di bawah ambang, habis, tak terjual 30 hari, lewat kedaluwarsa — lalu menutup dengan menyatakan terus terang bahwa ia bukan ramalan berapa hari lagi stok habis.
+  **(c)** Ketiga tombol aksi peragaan badge diturunkan jadi pil hitungan, bentuk yang memang dipakai `BadgeCard.vue`. Dikerjakan lebih dulu karena ia satu-satunya butir yang tidak menunggu keputusan.
+- **Butir (c) ternyata memuat tiga cacat, bukan satu.** Selain tombolnya: badge pertama menulis "Habis dalam 2-3 hari" — ramalan yang sama persis dengan yang baru dicabut `[BL-083]`; warnanya memakai merah/kuning padahal `severityClasses` di `BadgeCard.vue` memberi stok kritis `warning` (amber) dan dead stock `info`; dan badge ketiga berjudul **"Upsell"**, jenis yang tidak pernah dihasilkan `BadgeHelperService` sama sekali.
+- **Dua fitur yang disebut tombolnya ternyata nol kode, bukan sekadar tanpa jalan pintas.** Pencarian `supplier`/`purchase_order` dan `bundle` di seluruh `app/` dan `database/migrations/` mengembalikan **nol hasil**. "Pesan ke Supplier" dan "Buat Bundle" bukan tombol yang belum disambungkan; keduanya menyebut fitur yang tidak ada. Hanya "Promo Diskon" yang menunjuk sesuatu yang nyata (`owner/discount-rules`) tanpa jalan satu tekan.
+- **Satu klaim nyaris lahir lagi saat memperbaikinya, dan ini ketiga kalinya.** Contoh upsell sempat ditulis "sering dibeli bersama" — lalu diperiksa, dan ternyata keempat strategi yang ada adalah `UpsizeVariant`, `AttachModifier`, `PressedStock`, dan `ManualRule`. Diganti "tawarkan Double", yang memetakan ke `UpsizeVariantStrategy`. **Catatan yang menarik:** `UpsellEvent::REASON_COOCCURRENCE` ternyata memang ada, jadi ko-okurensi bukan karangan — yang keliru adalah menganggapnya strategi tersendiri. Pola yang sama sudah muncul di `[BL-078]` dan `[BL-083]`: penggantinya harus diperiksa ke kode dengan disiplin yang sama seperti yang diganti.
+- **Komentar penjelasnya harus jadi komentar Blade, bukan komentar JavaScript, dan itu ditemukan oleh testnya sendiri.** Rasional perbaikan mula-mula ditulis sebagai `/* … */` di dalam `<script>` — yang berarti frasa "Pesan ke Supplier" dan "Buat Bundle" tetap terkirim ke peramban dan test barunya gagal. Diubah jadi `{{-- … --}}` sehingga dibuang di server. Penjelasan ditujukan untuk pembaca kode, bukan untuk pengunjung.
+- **Testnya sekarang menjaga seluruh halaman, bukan hanya hero.** Catatan pada test `[BL-083]` yang menyatakan "sengaja hanya mengunci hero sampai `[BL-089]` diputuskan" ikut diperbarui, supaya tidak ada yang membaca batasan yang sudah tidak berlaku.
+- **Entri penutup di `docs/CHANGELOG.md`:** `[HOTFIX] Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089)`
+
 ### [BL-085] Grup "Keuangan" di Sidebar Menampung Alat Promosi Bersama Laporan Uang
 - **Ditemukan:** 2026-08-21
 - **Sumber:** Catatan pemilik — "saya rasa perlu mengatur menu untuk upsell dan diskon ini lainnya, karena menu nya tercampur sebagai keuangan dan saya rasa kurang cocok"

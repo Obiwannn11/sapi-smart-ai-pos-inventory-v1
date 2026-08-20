@@ -511,7 +511,7 @@
             <div class="flex flex-wrap justify-center gap-4 mb-10 reveal stagger-1">
                 <button onclick="showTab('pos')" id="tab-pos" class="demo-tab active-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Simulasi Kasir</button>
                 <button onclick="showTab('badge')" id="tab-badge" class="demo-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Badge Helper AI</button>
-                <button onclick="showTab('predict')" id="tab-predict" class="demo-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Prediksi Stok</button>
+                <button onclick="showTab('upsell')" id="tab-upsell" class="demo-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Saran Jual</button>
             </div>
 
             <!-- TAB 1: POS KASIR -->
@@ -562,20 +562,30 @@
                 </div>
             </div>
 
-            <!-- TAB 3: PREDIKSI STOK -->
-            <div id="panel-predict" class="demo-panel hidden">
+            {{--
+                Tab ini dulu "Prediksi Stok (Machine Learning)" dan memperagakan
+                sisa hari per produk. Tidak ada model, tidak ada pustaka ML, dan
+                tidak ada satu pun perhitungan horizon di basis kode. Diganti
+                Saran Jual, yang sungguh ada dan justru belum punya peragaan
+                (`[BL-089]`). Isinya mengikuti bentuk `Suggestion`: label, catatan
+                alasan, dan tambahan rupiah — dengan kode alasan yang memang
+                dipakai `UpsellEvent`.
+            --}}
+            <!-- TAB 3: SARAN JUAL -->
+            <div id="panel-upsell" class="demo-panel hidden">
                 <div class="bg-white rounded-[3rem] shadow-xl border border-gray-100 overflow-hidden">
                     <div class="bg-gray-900 px-8 py-5 flex items-center justify-between">
-                        <span class="text-white font-black text-lg">Prediksi Stok (Machine Learning)</span>
+                        <span class="text-white font-black text-lg">Saran Jual</span>
+                        <span class="text-white/50 font-bold text-xs uppercase tracking-widest">Muncul di layar kasir</span>
                     </div>
                     <div class="p-8 lg:p-12">
-                        <div class="grid md:grid-cols-3 gap-6 mb-10" id="predict-cards"></div>
-                        <div class="mt-8 flex items-center justify-center">
-                            <button onclick="runPrediction()" class="px-10 py-4 bg-primary text-white rounded-2xl font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 flex items-center gap-3">
-                                <svg class="w-5 h-5 animate-spin hidden" id="predict-spinner" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                Jalankan Ulang Prediksi AI
-                            </button>
-                        </div>
+                        <p class="text-gray-600 font-medium leading-relaxed mb-8">
+                            Saat kasir menambahkan barang, SAPI menurunkan saran yang menyebut barangnya — bukan grafik yang harus ditafsirkan sendiri. Keranjang di bawah berisi <span class="font-black text-gray-900">Espresso - Single</span>.
+                        </p>
+                        <div class="space-y-4" id="upsell-list"></div>
+                        <p class="mt-8 text-xs text-gray-400 font-bold text-center">
+                            Owner bisa menambahkan aturannya sendiri, dan aturan owner selalu menang slot.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -1022,11 +1032,11 @@
                 <!-- FAQ 2 -->
                 <div class="bg-gray-50 rounded-[2rem] border border-gray-100 overflow-hidden reveal stagger-2">
                     <button onclick="toggleFaq(2)" class="w-full px-8 py-6 flex items-center justify-between text-left hover:bg-white transition-all group">
-                        <span class="text-lg font-black text-gray-900">Bagaimana cara AI memprediksi stok saya?</span>
+                        <span class="text-lg font-black text-gray-900">Bagaimana SAPI tahu stok saya bermasalah?</span>
                         <svg id="faq-icon-2" class="w-6 h-6 text-gray-400 group-hover:text-primary transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div id="faq-ans-2" class="hidden px-8 pb-6 text-gray-600 font-medium leading-relaxed">
-                        AI kami menganalisis data transaksi historis toko Anda selama 90 hari terakhir untuk menemukan pola musiman dan tren harian unik toko Anda.
+                        SAPI memeriksa katalog Anda terus-menerus dan menandai empat hal: stok yang turun di bawah ambang, stok yang sudah habis, barang yang tidak terjual 30 hari terakhir, dan barang yang lewat tanggal kedaluwarsa. Aturannya sederhana dan bisa Anda periksa sendiri — bukan tebakan, dan bukan ramalan berapa hari lagi stok akan habis.
                     </div>
                 </div>
 
@@ -1056,16 +1066,39 @@
         { id: 6, name: 'Lemon Tea', price: 15000, emoji: '🍋', stock: 60 },
     ];
 
+    {{--
+        Peragaan ini dulu memajang tiga tombol aksi — "Pesan ke Supplier",
+        "Promo Diskon", "Buat Bundle" — dan tak satu pun punya jalan. Dua di
+        antaranya menunjuk fitur yang nol kode: pencarian `supplier` dan `bundle`
+        di seluruh `app/` dan `database/migrations/` tidak mengembalikan apa pun.
+        Ketiganya diturunkan jadi pil hitungan, bentuk yang memang dipakai
+        `BadgeCard.vue` (`[BL-089]` butir (c)).
+
+        Isinya ikut diluruskan ke apa yang benar-benar dihasilkan:
+          - "Habis dalam 2-3 hari" adalah ramalan, sama seperti kartu hero yang
+            dicabut `[BL-083]`. `BadgeHelperService` hanya membandingkan ambang.
+          - Warna mengikuti `severityClasses` di `BadgeCard.vue`: stok kritis
+            `warning` (amber), dead stock `info` (primary) — bukan merah/kuning.
+          - Badge "Upsell" bukan keluaran Badge Helper, dan contohnya dulu
+            "Bundle dengan Croissant?" padahal tidak ada bundling. Diganti
+            `UpsizeVariantStrategy`, satu dari empat strategi yang sungguh ada.
+    --}}
     const badgeTemplates = [
-        { type: 'danger', icon: '🔴', title: 'Stok Kritis', product: 'Croissant', detail: 'Sisa 8 pcs. Habis dalam 2-3 hari.', action: 'Pesan ke Supplier', actionClass: 'bg-red-100 text-red-700' },
-        { type: 'warning', icon: '🟡', title: 'Dead Stock', product: 'Lychee Soda', detail: 'Tidak laku 28 hari.', action: 'Promo Diskon', actionClass: 'bg-yellow-100 text-yellow-700' },
-        { type: 'info', icon: '🔵', title: 'Upsell', product: 'Kopi Susu', detail: 'Bundle dengan Croissant?', action: 'Buat Bundle', actionClass: 'bg-blue-100 text-blue-700' },
+        { icon: '🟡', title: 'Stok Kritis', detail: 'Croissant — sisa 3, di bawah ambang 5.', count: '3 varian', countClass: 'bg-amber-100 text-amber-800' },
+        { icon: '🔵', title: 'Dead Stock', detail: 'Lychee Soda — tidak terjual 28 hari terakhir.', count: '1 varian', countClass: 'bg-primary/10 text-primary' },
+        { icon: '✨', title: 'Saran Jual', detail: 'Espresso Single — tawarkan Double.', count: 'Upsize varian', countClass: 'bg-primary/10 text-primary' },
     ];
 
-    const predictData = [
-        { name: 'Kopi Susu', emoji: '☕', current: 45, predicted: 7, days: 6, status: 'warning' },
-        { name: 'Matcha Latte', emoji: '🍵', current: 12, predicted: 4, days: 3, status: 'danger' },
-        { name: 'Croissant', emoji: '🥐', current: 8, predicted: 3, days: 2, status: 'danger' },
+    {{--
+        Empat saran, satu per strategi yang benar-benar ada di
+        `app/Services/Upsell/Strategies/`. `reason` memakai kode `UpsellEvent`
+        apa adanya, dan `extra` adalah `extra_amount` pada `Suggestion`.
+    --}}
+    const upsellData = [
+        { label: 'Espresso - Double', note: 'Naik ukuran dari Single', reason: 'price_step', extra: 7000 },
+        { label: 'Tambah Extra Shot', note: 'Sering diambil bersama', reason: 'cooccurrence', extra: 5000 },
+        { label: 'Lychee Soda', note: 'Belum terjual 30 hari', reason: 'dead_stock', extra: 18000 },
+        { label: 'Kopi Susu Botol', note: 'Aturan owner: dorong bulan ini', reason: 'owner_rule', extra: 22000 },
     ];
 
     let cart = {};
@@ -1147,22 +1180,22 @@
             <div class="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center gap-4">
                 <span class="text-2xl">${b.icon}</span>
                 <div class="flex-1"><p class="font-black text-gray-900 text-sm">${b.title}</p><p class="text-xs text-gray-500">${b.detail}</p></div>
-                <button class="${b.actionClass} px-4 py-2 rounded-xl font-black text-xs">${b.action}</button>
+                <span class="${b.countClass} px-4 py-2 rounded-xl font-black text-xs">${b.count}</span>
             </div>
         `).join('');
     }
 
-    function renderPrediction() {
-        const grid = document.getElementById('predict-cards');
-        if(!grid) return;
-        grid.innerHTML = predictData.map(d => `
-            <div class="p-6 rounded-3xl border-2 bg-white flex flex-col gap-3">
-                <span class="text-2xl">${d.emoji}</span>
-                <p class="font-black text-gray-900 text-sm">${d.name}</p>
-                <div class="bg-gray-50 p-3 rounded-xl">
-                    <p class="text-[10px] font-black text-gray-400 uppercase">Estimasi Habis</p>
-                    <p class="text-sm font-black text-gray-900">${d.days} Hari</p>
+    function renderUpsell() {
+        const list = document.getElementById('upsell-list');
+        if(!list) return;
+        list.innerHTML = upsellData.map(u => `
+            <div class="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center gap-5">
+                <div class="flex-1">
+                    <p class="font-black text-gray-900 text-sm">${u.label}</p>
+                    <p class="text-xs text-gray-500">${u.note}</p>
                 </div>
+                <span class="bg-white border border-gray-200 text-gray-400 px-3 py-1 rounded-lg font-black text-[10px] uppercase tracking-wide">${u.reason}</span>
+                <span class="font-black text-primary text-sm whitespace-nowrap">+${formatRupiah(u.extra)}</span>
             </div>
         `).join('');
     }
@@ -1176,7 +1209,7 @@
         renderProducts();
         renderCart();
         renderBadges();
-        renderPrediction();
+        renderUpsell();
         setInterval(updateClock, 1000);
         updateClock();
 
@@ -1196,7 +1229,6 @@
     }
 
     function refreshBadges() { renderBadges(); }
-    function runPrediction() { renderPrediction(); }
     </script>
 
     <!-- Final CTA Section -->

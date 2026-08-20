@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-20 | HOTFIX | UI | Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089) |
 | 2026-08-21 | ADDITION | Kas | Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1) |
 | 2026-08-21 | REFACTOR | UI | Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085) |
 | 2026-08-20 | HOTFIX | UI | Hero Berhenti Menjanjikan Ramalan Stok dan Tombol yang Tidak Punya Jalan (BL-083) |
@@ -203,6 +204,23 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089)
+- **Tanggal:** 2026-08-20
+- **Fase Terkait:** Di Luar Fase — sisa `[BL-083]`, yang penyisiran hero-nya membuktikan klaim ramalan stok berdiri jauh di luar hero. Menutup `[BL-089]`
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak
+- **Deskripsi:** Tab demo ketiga "Prediksi Stok (Machine Learning)" diganti **Saran Jual**; jawaban FAQ tentang cara AI meramal stok diganti penjelasan cara `BadgeHelperService` bekerja; dan ketiga tombol aksi di peragaan Badge Helper diturunkan jadi pil hitungan.
+- **Alasan:** Tidak ada model, tidak ada pustaka ML, dan tidak ada satu pun perhitungan horizon di basis kode — yang ada empat perbandingan ambang. Menyebut teknologi tertentu dengan nama adalah klaim yang paling mudah diperiksa orang luar, dan jawaban FAQ yang menjelaskan **mekanisme** jauh lebih meyakinkan, karenanya jauh lebih menyesatkan, daripada slogan.
+
+- **Penggantinya dipilih karena sudah jalan dan belum pernah dipamerkan.** Saran Jual punya empat strategi (`UpsizeVariant`, `AttachModifier`, `PressedStock`, `ManualRule`) dan sejak `[BL-074]` owner bisa menargetkan sarannya sendiri. Peragaannya memakai bentuk `Suggestion` apa adanya — label, catatan, tambahan rupiah — dengan kode alasan diambil dari konstanta `REASON_*` pada `UpsellEvent`, dan sebuah test mengunci keempat kode itu benar-benar muncul di halaman.
+- **Butir (c) dikerjakan lebih dulu dan sendirian,** karena ia satu-satunya yang tidak menunggu keputusan pemilik. Ternyata ia memuat tiga cacat: tombol tanpa jalan, "Habis dalam 2-3 hari" (ramalan yang sama seperti kartu hero `[BL-083]`), dan badge berjudul "Upsell" — jenis yang tidak pernah dihasilkan `BadgeHelperService`. Warnanya juga diluruskan ke `severityClasses` milik `BadgeCard.vue`.
+- **Dua tombolnya menyebut fitur yang nol kode, bukan fitur tanpa jalan pintas.** `supplier`/`purchase_order` dan `bundle` tidak mengembalikan satu hasil pun di `app/` maupun `database/migrations/`.
+- **Klaim baru nyaris lahir untuk ketiga kalinya saat memperbaiki yang lama.** Contoh upsell sempat ditulis "sering dibeli bersama" sebelum diperiksa; diganti "tawarkan Double" yang memetakan ke `UpsizeVariantStrategy`. Pola yang sama terjadi di `[BL-078]` ("prediksi stok", "barcode") dan `[BL-083]`. Yang menggantikan sebuah karangan harus diperiksa sekeras yang diganti.
+- **Testnya menemukan bahwa komentar rasional ikut terkirim ke peramban.** Penjelasannya mula-mula `/* … */` di dalam `<script>`, sehingga frasa "Pesan ke Supplier" dan "Buat Bundle" tetap ada di HTML dan test gagal. Diubah jadi `{{-- … --}}`, yang dibuang Blade di server.
+- **Berkas:** `resources/views/public/landing.blade.php` — label tab, panel demo ketiga, `badgeTemplates`, `upsellData`, renderer, FAQ · `tests/Feature/Public/LandingClaimsTest.php` — dua test baru dan satu catatan diperbarui (74 tes lulus di `tests/Feature/Public`)
 
 ---
 

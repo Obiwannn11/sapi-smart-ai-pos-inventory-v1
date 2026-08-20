@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Plan;
+use App\Models\UpsellEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 use function Pest\Laravel\get;
@@ -115,10 +116,9 @@ test('hero tidak menjanjikan ramalan stok maupun tombol yang tidak punya jalan',
     // BadgeCard.vue hanya membuka-tutup, jadi tidak ada jalan satu tekan dari
     // saran ke diskon terpasang. Lihat [BL-083].
     //
-    // Yang dikunci di sini SENGAJA hanya hero. Sebutan prediksi di tab demo
-    // dan FAQ masih ada dan dicatat terpisah sebagai [BL-089]; menyapunya di
-    // test ini akan membuatnya lulus hanya setelah pekerjaan yang belum
-    // diputuskan pemilik ikut dikerjakan.
+    // Test ini semula sengaja hanya mengunci hero, karena sebutan prediksi di
+    // tab demo dan FAQ masih berdiri dan menunggu keputusan pemilik. Sejak
+    // [BL-089] ditutup, seluruh halaman dijaga oleh test di bawahnya.
     $html = get('/')->assertStatus(200)->getContent();
 
     foreach (['Aman Hingga 14 Hari', 'Eksekusi Sekarang', 'memprediksi stok Anda'] as $klaim) {
@@ -126,4 +126,43 @@ test('hero tidak menjanjikan ramalan stok maupun tombol yang tidak punya jalan',
     }
 
     expect($html)->toContain('varian mendekati habis');
+});
+
+test('tidak ada lagi janji ramalan stok di mana pun di landing', function () {
+    // [BL-089]: tab demo ketiga dulu berjudul "Prediksi Stok (Machine
+    // Learning)" dengan sisa hari per produk, dan FAQ menjelaskan mekanisme
+    // yang tidak ada. Tidak ada model, tidak ada pustaka ML, dan tidak ada satu
+    // pun perhitungan horizon di basis kode — yang ada ambang tetap di
+    // BadgeHelperService. Tab itu kini Saran Jual, yang memang sudah jalan.
+    $html = get('/')->assertStatus(200)->getContent();
+
+    foreach (['Machine Learning', 'Prediksi Stok', 'memprediksi', 'Estimasi Habis'] as $klaim) {
+        expect($html)->not->toContain($klaim);
+    }
+
+    // Dan tombol aksi peragaan yang tidak punya jalan sama sekali: pencarian
+    // supplier/bundle di app/ dan database/migrations/ mengembalikan nol.
+    foreach (['Pesan ke Supplier', 'Buat Bundle'] as $fiturHantu) {
+        expect($html)->not->toContain($fiturHantu);
+    }
+});
+
+test('tab demo ketiga memperagakan saran jual dengan kode alasan yang sungguh dipakai', function () {
+    // Empat baris peragaan memetakan satu-satu ke strategi di
+    // app/Services/Upsell/Strategies/, dan kode alasannya diambil dari
+    // konstanta REASON_* pada UpsellEvent — bukan istilah karangan.
+    $html = get('/')->assertStatus(200)->getContent();
+
+    expect($html)->toContain('Saran Jual');
+
+    $reasons = [
+        UpsellEvent::REASON_PRICE_STEP,
+        UpsellEvent::REASON_COOCCURRENCE,
+        UpsellEvent::REASON_DEAD_STOCK,
+        UpsellEvent::REASON_OWNER_RULE,
+    ];
+
+    foreach ($reasons as $reason) {
+        expect($html)->toContain($reason);
+    }
 });
