@@ -432,7 +432,41 @@ test('laporan memisahkan tingkat terima dari tingkat sukses tawar', function () 
         );
 });
 
-// ── Transaksi yang dibatalkan ([BL-092]) ──────────────────────────────────
+// ── Pemisahan sumber & transaksi yang dibatalkan ([BL-092]) ─────────────────
+
+test('laporan memisahkan performa saran otomatis dari aturan owner sendiri', function () {
+    $owner = User::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'role' => 'owner',
+    ]);
+
+    // Mesin: 1 diterima, 1 ditolak.
+    UpsellEvent::factory()->ofType(UpsellEvent::TYPE_ATTACH)->accepted(3000)->create(['tenant_id' => $this->tenant->id]);
+    UpsellEvent::factory()->ofType(UpsellEvent::TYPE_UPSIZE)->create([
+        'tenant_id' => $this->tenant->id,
+        'status' => UpsellEvent::STATUS_REJECTED,
+    ]);
+
+    // Aturan owner: 2 diterima, 0 ditolak.
+    UpsellEvent::factory()->count(2)->ofType(UpsellEvent::TYPE_MANUAL)->accepted(5000)->create([
+        'tenant_id' => $this->tenant->id,
+    ]);
+
+    actingAs($owner)
+        ->get('/owner/reports/upsell')
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.shown', 4)
+            ->where('summary.extra_revenue', 13000)
+            ->where('sources.auto.shown', 2)
+            ->where('sources.auto.accepted', 1)
+            ->where('sources.auto.offer_rate', 50)
+            ->where('sources.auto.extra_revenue', 3000)
+            ->where('sources.manual.shown', 2)
+            ->where('sources.manual.accepted', 2)
+            ->where('sources.manual.offer_rate', 100)
+            ->where('sources.manual.extra_revenue', 10000)
+        );
+});
 
 test('saran pada transaksi yang di-void tidak lagi dihitung sebagai upsell berhasil', function () {
     $owner = User::factory()->create([

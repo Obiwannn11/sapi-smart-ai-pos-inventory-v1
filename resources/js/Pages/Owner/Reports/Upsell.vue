@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { Deferred, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
@@ -12,6 +12,8 @@ defineOptions({ layout: OwnerLayout });
 const props = defineProps({
     filters: Object,
     summary: Object,
+    // Gabungan vs mesin vs aturan sendiri ([BL-092]).
+    sources: { type: Object, default: () => ({ auto: null, manual: null }) },
     // Ditunda ([BL-037]) — null selama rinciannya masih dimuat.
     byType: { type: Array, default: null },
     bySurface: { type: Array, default: null },
@@ -27,7 +29,40 @@ const TYPE_LABELS = {
     attach: 'Tambah add-on',
     pressed_stock: 'Barang tertekan',
     upsize: 'Naik ukuran',
+    // Tanpa baris ini tabelnya menampilkan kata "manual" mentah — satu-satunya
+    // jenis yang owner tulis sendiri justru yang paling tidak dikenali.
+    manual: 'Aturan Anda sendiri',
 };
+
+/**
+ * Tiga kolom perbandingan ([BL-092]).
+ *
+ * Kolom gabungan tetap ada dan tetap di depan: pertanyaan pertama owner selalu
+ * "fitur ini menghasilkan atau tidak", bukan "mesin atau saya yang menang".
+ */
+const sourceColumns = computed(() => [
+    {
+        key: 'combined',
+        title: 'Gabungan',
+        caption: 'Seluruh saran, dari sumber mana pun',
+        accent: 'text-gray-900',
+        summary: props.summary,
+    },
+    {
+        key: 'auto',
+        title: 'Otomatis (sistem)',
+        caption: 'Ditemukan dari stok, kedaluwarsa, dan riwayat penjualan',
+        accent: 'text-sky-700',
+        summary: props.sources?.auto,
+    },
+    {
+        key: 'manual',
+        title: 'Aturan Anda',
+        caption: 'Yang Anda tulis sendiri di halaman Aturan Saran Jual',
+        accent: 'text-emerald-700',
+        summary: props.sources?.manual,
+    },
+].filter((column) => column.summary));
 
 const SURFACE_LABELS = {
     pos: 'Kasir (POS)',
@@ -102,6 +137,54 @@ const applyFilter = () => {
             </div>
         </div>
 
+        <!-- Mesin vs aturan sendiri ([BL-092]). Berdampingan, bukan bergantian:
+             perbandingan yang menuntut owner mengingat angka dari layar
+             sebelumnya adalah perbandingan yang tidak pernah terjadi. -->
+        <div v-if="summary.shown > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-semibold text-gray-800">Otomatis vs Aturan Anda</h2>
+                <p class="text-xs text-gray-500 mt-0.5">
+                    Keduanya berebut slot yang sama di layar kasir — aturan Anda selalu mendapat slotnya lebih dulu.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+                <div v-for="column in sourceColumns" :key="column.key" class="p-5">
+                    <p :class="['text-sm font-semibold', column.accent]">{{ column.title }}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 min-h-8">{{ column.caption }}</p>
+
+                    <div v-if="column.summary.shown === 0" class="mt-3 text-xs text-gray-400">
+                        Belum ada saran dari sumber ini pada rentang ini.
+                    </div>
+
+                    <dl v-else class="mt-3 space-y-1.5 text-sm">
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Tampil</dt>
+                            <dd class="font-medium text-gray-800">{{ column.summary.shown }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Ditawarkan</dt>
+                            <dd class="font-medium text-gray-800">{{ column.summary.offered }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Diterima</dt>
+                            <dd class="font-medium text-gray-800">{{ column.summary.accepted }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Sukses tawar</dt>
+                            <dd class="font-semibold text-gray-900">
+                                {{ column.summary.offered > 0 ? column.summary.offer_rate + '%' : '—' }}
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-2 pt-1.5 border-t border-gray-100">
+                            <dt class="text-gray-500">Tambahan omzet</dt>
+                            <dd class="font-semibold text-gray-900">{{ formatCurrency(column.summary.extra_revenue) }}</dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
         <!-- Angka nol bukan kegagalan sistem; bedakan supaya owner tidak
              menyimpulkan fiturnya rusak. -->
         <div
@@ -110,7 +193,8 @@ const applyFilter = () => {
         >
             <p class="text-sm font-medium text-gray-700">Belum ada saran yang tercatat pada rentang ini.</p>
             <p class="mt-1 text-xs text-gray-500">
-                Saran baru tercatat saat transaksi benar-benar jadi — keranjang yang dibatalkan tidak dihitung.
+                Saran baru tercatat saat transaksi benar-benar jadi — keranjang yang dibatalkan dan transaksi
+                yang di-void tidak dihitung.
             </p>
         </div>
 

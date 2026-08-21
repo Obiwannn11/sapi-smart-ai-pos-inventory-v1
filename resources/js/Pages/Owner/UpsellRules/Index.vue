@@ -25,7 +25,35 @@ const props = defineProps({
     // Ditunda ([BL-037]) — null selama daftarnya masih dimuat.
     rules: { type: Array, default: null },
     variants: { type: Array, default: null },
+    // Pratinjau slot kasir ([BL-092]) — kelompok tunda tersendiri.
+    preview: { type: Object, default: null },
 });
+
+/**
+ * Label sumber tiap saran di pratinjau.
+ *
+ * Warnanya sengaja sama dengan strip di layar kasir: owner yang membandingkan
+ * layar ini dengan layar kasirnya tidak sedang membaca dua sistem berbeda.
+ */
+const SOURCE_BADGES = {
+    manual: { text: 'Aturan Anda', class: 'bg-emerald-100 text-emerald-700' },
+    attach: { text: 'Tambah add-on', class: 'bg-sky-100 text-sky-700' },
+    pressed_stock: { text: 'Barang tertekan', class: 'bg-amber-100 text-amber-800' },
+    upsize: { text: 'Naik ukuran', class: 'bg-violet-100 text-violet-700' },
+};
+
+const sourceBadge = (slot) => SOURCE_BADGES[slot.type] ?? { text: slot.type, class: 'bg-gray-100 text-gray-600' };
+
+const TYPE_NAMES = {
+    attach: 'tambah add-on',
+    pressed_stock: 'barang tertekan',
+    upsize: 'naik ukuran',
+    manual: 'aturan Anda sendiri',
+};
+
+const disabledTypeNames = computed(() =>
+    (props.preview?.disabled_types ?? []).map((type) => TYPE_NAMES[type] ?? type).join(', ')
+);
 
 const variantOptions = computed(() =>
     (props.variants ?? []).map((variant) => ({
@@ -374,6 +402,148 @@ const doDelete = () => {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </Deferred>
+        </div>
+
+        <!-- Pratinjau slot kasir ([BL-092]).
+             Tabel di atas hanya memperlihatkan separuh kenyataan — aturan yang
+             Anda tulis. Bagian ini memperlihatkan separuh lainnya: saran yang
+             ditemukan sistem dari stok, dan siapa yang sebenarnya mengisi
+             ketiga slot kasir hari ini. -->
+        <div class="mt-8">
+            <h2 class="text-lg font-semibold text-gray-900">Yang Muncul di Kasir Hari Ini</h2>
+            <p class="text-sm text-gray-500 mt-1 mb-4">
+                Aturan Anda dan saran otomatis sistem berebut slot yang sama. Daftar ini dihitung dengan cara
+                yang sama persis seperti layar kasir, memakai stok dan tanggal hari ini.
+            </p>
+
+            <Deferred data="preview">
+                <template #fallback>
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <SkeletonTable :rows="4" :columns="3" label="Menghitung saran yang muncul hari ini…" />
+                    </div>
+                </template>
+
+                <div class="space-y-4">
+                    <!-- Saklar mati adalah penjelasan pertama yang owner butuhkan,
+                         bukan daftar kosong tanpa sebab. -->
+                    <div v-if="!preview.enabled" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                        Saran jual sedang <strong>dimatikan seluruhnya</strong> di setelan sistem. Kasir tidak menerima
+                        saran apa pun, termasuk aturan yang Anda tulis di atas.
+                    </div>
+
+                    <div
+                        v-else-if="disabledTypeNames"
+                        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+                    >
+                        Jenis saran berikut sedang dimatikan di setelan sistem: <strong>{{ disabledTypeNames }}</strong>.
+                    </div>
+
+                    <!-- Tanpa pemicu: inilah yang dilihat kasir pada penjualan apa pun. -->
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="px-5 py-3 border-b border-gray-100">
+                            <h3 class="text-sm font-semibold text-gray-800">Pada setiap penjualan</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">
+                                Saran yang tidak menunggu barang pemicu — aturan tanpa pemicu, dan barang tertekan
+                                stok yang ditemukan sistem.
+                            </p>
+                        </div>
+
+                        <ul v-if="preview.cart_level.length > 0" class="divide-y divide-gray-100">
+                            <li
+                                v-for="(slot, idx) in preview.cart_level"
+                                :key="slot.key"
+                                :class="['flex items-start gap-3 px-5 py-3', slot.wins_slot ? '' : 'bg-gray-50/60']"
+                            >
+                                <span
+                                    :class="[
+                                        'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                                        slot.wins_slot ? 'bg-success/10 text-success' : 'bg-gray-200 text-gray-500',
+                                    ]"
+                                >
+                                    {{ idx + 1 }}
+                                </span>
+
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span :class="['rounded px-1.5 py-0.5 text-[10px] font-semibold', sourceBadge(slot).class]">
+                                            {{ sourceBadge(slot).text }}
+                                        </span>
+                                        <span :class="['text-sm font-medium', slot.wins_slot ? 'text-gray-900' : 'text-gray-500']">
+                                            {{ slot.label }}
+                                        </span>
+                                    </div>
+                                    <p class="mt-0.5 text-xs text-gray-500">{{ slot.note }}</p>
+                                </div>
+
+                                <span
+                                    :class="[
+                                        'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                                        slot.wins_slot ? 'bg-success/10 text-success' : 'bg-gray-200 text-gray-600',
+                                    ]"
+                                >
+                                    {{ slot.wins_slot ? 'Tampil' : 'Tergeser' }}
+                                </span>
+                            </li>
+                        </ul>
+
+                        <p v-else class="px-5 py-6 text-center text-sm text-gray-500">
+                            Tidak ada saran tanpa pemicu hari ini. Kasir hanya melihat saran saat barang pemicunya
+                            masuk keranjang.
+                        </p>
+                    </div>
+
+                    <!-- Berpemicu: satu baris per barang pemicu, isinya hasil
+                         perebutan slot untuk keranjang berisi barang itu saja. -->
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="px-5 py-3 border-b border-gray-100">
+                            <h3 class="text-sm font-semibold text-gray-800">Saat barang tertentu masuk keranjang</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">
+                                Isi kolom kanan adalah maksimal {{ preview.max_per_transaction }} saran yang menang slot
+                                bila keranjang hanya berisi barang di kolom kiri.
+                            </p>
+                        </div>
+
+                        <div v-if="preview.triggers.length > 0" class="overflow-x-auto">
+                            <table class="w-full">
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="trigger in preview.triggers" :key="trigger.variant_id" class="align-top">
+                                        <td class="px-5 py-3 text-sm text-gray-900 whitespace-nowrap w-1/3">
+                                            {{ trigger.label }}
+                                        </td>
+                                        <td class="px-5 py-3">
+                                            <div class="flex flex-wrap gap-1.5">
+                                                <span
+                                                    v-for="slot in trigger.slots.filter((s) => s.wins_slot)"
+                                                    :key="slot.key"
+                                                    :class="['inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs', sourceBadge(slot).class]"
+                                                    :title="slot.note"
+                                                >
+                                                    {{ slot.label }}
+                                                </span>
+                                            </div>
+                                            <p
+                                                v-if="trigger.slots.length > preview.max_per_transaction"
+                                                class="mt-1 text-[11px] text-gray-400"
+                                            >
+                                                {{ trigger.slots.length - preview.max_per_transaction }} saran lain tergeser batas
+                                                {{ preview.max_per_transaction }} slot.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <p v-else class="px-5 py-6 text-center text-sm text-gray-500">
+                            Belum ada saran berpemicu hari ini.
+                        </p>
+
+                        <p v-if="preview.triggers_truncated > 0" class="border-t border-gray-100 px-5 py-2.5 text-xs text-gray-500">
+                            {{ preview.triggers_truncated }} barang pemicu lain tidak ditampilkan di sini.
+                        </p>
+                    </div>
                 </div>
             </Deferred>
         </div>

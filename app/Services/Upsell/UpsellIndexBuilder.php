@@ -85,8 +85,38 @@ class UpsellIndexBuilder
      */
     public function forCart(Tenant $tenant, array $variantIds): array
     {
-        $index = $this->build($tenant);
+        return $this->pickForCart($this->build($tenant), $variantIds);
+    }
 
+    /**
+     * Perebutan slot untuk satu keranjang, di atas indeks yang SUDAH dirakit.
+     *
+     * Terpisah dari `forCart()` supaya pratinjau owner ([BL-092]) memakai kode
+     * pemilihan yang sama persis dengan kasir, bukan tiruannya — pratinjau yang
+     * menyimpang dari kenyataan lebih buruk daripada tidak ada pratinjau.
+     *
+     * @param  array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, mandatory: bool, generated_at: string}  $index
+     * @param  list<int>  $variantIds
+     * @return list<array<string, mixed>>
+     */
+    public function pickForCart(array $index, array $variantIds): array
+    {
+        return array_slice($this->rankForCart($index, $variantIds), 0, $index['max_per_transaction']);
+    }
+
+    /**
+     * Seluruh kandidat keranjang itu, terurut skor — TERMASUK yang kalah slot.
+     *
+     * Kasir tidak pernah melihat ekornya; pratinjau owner justru hidup dari
+     * ekor itu, karena pertanyaannya persis "apa yang tidak muncul gara-gara
+     * batas 3 ini?" ([BL-092]).
+     *
+     * @param  array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, mandatory: bool, generated_at: string}  $index
+     * @param  list<int>  $variantIds
+     * @return list<array<string, mixed>>
+     */
+    public function rankForCart(array $index, array $variantIds): array
+    {
         $picked = [];
 
         foreach ($variantIds as $variantId) {
@@ -113,7 +143,7 @@ class UpsellIndexBuilder
 
         usort($picked, fn (array $a, array $b) => $b['score'] <=> $a['score']);
 
-        return array_slice($picked, 0, $index['max_per_transaction']);
+        return $picked;
     }
 
     /**

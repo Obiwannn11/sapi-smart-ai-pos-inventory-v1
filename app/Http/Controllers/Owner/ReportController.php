@@ -541,6 +541,14 @@ class ReportController extends Controller
      * apakah saran ini menaikkan penjualan, atau hanya memperlambat antrean?
      * Rincian per jenis ada supaya jenis yang tidak pernah diterima bisa
      * dimatikan lewat `config/upsell.php`, bukan ditebak.
+     *
+     * Angkanya dipecah menjadi tiga kolom — gabungan, saran yang DITEMUKAN
+     * mesin, dan aturan yang DITULIS owner sendiri ([BL-092]). Rekap per jenis
+     * sebenarnya sudah memuat bahannya, tapi menuntut owner menjumlahkan tiga
+     * baris mesin di kepalanya untuk membandingkannya dengan satu baris manual
+     * adalah cara paling pasti membuat perbandingan itu tidak pernah dilakukan
+     * — padahal justru itu satu-satunya cara ia tahu tebakannya sendiri lebih
+     * baik atau lebih buruk daripada tebakan sistem.
      */
     public function upsell(Request $request): Response
     {
@@ -562,31 +570,29 @@ class ReportController extends Controller
             // diam-diam memperbaiki angka konversi.
             ->whereDoesntHave('transaction', fn ($query) => $query->where('status', Transaction::STATUS_VOIDED));
 
-        $shown = $scoped()->count();
-        $accepted = $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->count();
-        $rejected = $scoped()->where('status', UpsellEvent::STATUS_REJECTED)->count();
-        $extraRevenue = (float) $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->sum('extra_amount');
+        // Satu kali baca, dipakai tiga kali. Memisahkan mesin dari manual
+        // dengan tiga rombongan query terpisah akan mengalikan biaya halaman
+        // ini demi angka yang sumbernya sama persis.
+        $perType = $scoped()
+            ->selectRaw('type, COUNT(*) as shown')
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as accepted', [UpsellEvent::STATUS_ACCEPTED])
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as rejected', [UpsellEvent::STATUS_REJECTED])
+            ->selectRaw('SUM(CASE WHEN status = ? THEN extra_amount ELSE 0 END) as extra_revenue', [UpsellEvent::STATUS_ACCEPTED])
+            ->groupBy('type')
+            ->get();
 
-        // Dua angka berbeda, dan membedakannya adalah inti [BL-025]:
-        //
-        //   conversion_rate — dari SEMUA yang tampil. Menjawab "seberapa sering
-        //     saran berujung penjualan", termasuk yang cuma lewat.
-        //   offer_rate      — dari yang BENAR-BENAR ditawarkan ke pelanggan
-        //     (diterima + ditolak). Menjawab "kalau kasir menawarkan, seberapa
-        //     sering pelanggan mau" — dan hanya angka ini yang bisa menilai
-        //     sarannya sendiri, bukan kedisiplinan kasirnya.
-        $offered = $accepted + $rejected;
+        $summary = $this->upsellSummary($perType);
 
         return Inertia::render('Owner/Reports/Upsell', [
             'filters' => ['from' => $from, 'to' => $to],
-            'summary' => [
-                'shown' => $shown,
-                'accepted' => $accepted,
-                'rejected' => $rejected,
-                'offered' => $offered,
-                'conversion_rate' => $shown > 0 ? round($accepted / $shown * 100, 1) : 0,
-                'offer_rate' => $offered > 0 ? round($accepted / $offered * 100, 1) : 0,
-                'extra_revenue' => $extraRevenue,
+            'summary' => $summary,
+
+            // Dua sumber saran yang bersaing memperebutkan slot yang sama di
+            // layar kasir, jadi hanya berguna kalau bisa dibandingkan
+            // berdampingan ([BL-092]).
+            'sources' => [
+                'auto' => $this->upsellSummary($perType->where('type', '!=', UpsellEvent::TYPE_MANUAL)),
+                'manual' => $this->upsellSummary($perType->where('type', UpsellEvent::TYPE_MANUAL)),
             ],
             // --- Bagian yang ditunda ([BL-037]) ---
             // Ringkasan di atas sudah menjawab pertanyaan utama halaman ini;
@@ -604,6 +610,39 @@ class ReportController extends Controller
                 ->take(15)
                 ->get()),
         ]);
+    }
+
+    /**
+     * Ringkasan satu rombongan baris rekap per jenis.
+     *
+     * Dua angka berbeda di sini, dan membedakannya adalah inti [BL-025]:
+     *
+     *   conversion_rate — dari SEMUA yang tampil. Menjawab "seberapa sering
+     *     saran berujung penjualan", termasuk yang cuma lewat.
+     *   offer_rate      — dari yang BENAR-BENAR ditawarkan ke pelanggan
+     *     (diterima + ditolak). Menjawab "kalau kasir menawarkan, seberapa
+     *     sering pelanggan mau" — dan hanya angka ini yang bisa menilai
+     *     sarannya sendiri, bukan kedisiplinan kasirnya.
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $rows
+     * @return array{shown: int, accepted: int, rejected: int, offered: int, conversion_rate: float, offer_rate: float, extra_revenue: float}
+     */
+    private function upsellSummary($rows): array
+    {
+        $shown = (int) $rows->sum('shown');
+        $accepted = (int) $rows->sum('accepted');
+        $rejected = (int) $rows->sum('rejected');
+        $offered = $accepted + $rejected;
+
+        return [
+            'shown' => $shown,
+            'accepted' => $accepted,
+            'rejected' => $rejected,
+            'offered' => $offered,
+            'conversion_rate' => $shown > 0 ? round($accepted / $shown * 100, 1) : 0,
+            'offer_rate' => $offered > 0 ? round($accepted / $offered * 100, 1) : 0,
+            'extra_revenue' => (float) $rows->sum('extra_revenue'),
+        ];
     }
 
     /**

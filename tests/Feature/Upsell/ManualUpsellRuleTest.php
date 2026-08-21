@@ -22,7 +22,6 @@ use function Pest\Laravel\put;
  * tanggalnya benar-benar dihormati — termasuk aturan yang dijadwalkan dari
  * jauh hari.
  */
-
 beforeEach(function () {
     $this->tenant = Tenant::factory()->create();
     $this->owner = User::factory()->create([
@@ -350,4 +349,72 @@ test('owner tidak bisa menyentuh aturan tenant lain', function () {
     delete("/owner/upsell-rules/{$ruleOrangLain->id}")->assertNotFound();
 
     expect(UpsellRule::withoutGlobalScopes()->count())->toBe(1);
+});
+
+// --- Pratinjau slot kasir ([BL-092]) ---
+
+test('pratinjau memperlihatkan saran otomatis dan aturan manual dalam satu daftar', function () {
+    // Barang tertekan: kedaluwarsa dekat → ditemukan mesin, bukan ditulis owner.
+    makeRuleVariant($this->tenant, ['expiry_date' => now()->addDays(2)->toDateString()]);
+
+    $pilihanOwner = makeRuleVariant($this->tenant);
+
+    UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'trigger_variant_id' => null,
+        'suggested_variant_id' => $pilihanOwner->id,
+    ]);
+
+    get('/owner/upsell-rules')
+        ->assertInertia(fn ($page) => $page
+            ->component('Owner/UpsellRules/Index')
+            ->missing('preview')
+            ->loadDeferredProps('pratinjau', fn ($reload) => $reload
+                ->where('preview.enabled', true)
+                ->where('preview.max_per_transaction', config('upsell.max_per_transaction'))
+                // Kedua sumber berdampingan — inilah separuh kenyataan yang
+                // dulu tidak punya layar sama sekali.
+                ->where('preview.cart_level.0.is_manual', true)
+                ->where('preview.cart_level.0.wins_slot', true)
+                ->where('preview.cart_level.1.type', 'pressed_stock')
+                ->where('preview.cart_level.1.is_manual', false)
+            )
+        );
+});
+
+test('pratinjau menandai saran yang tergeser batas jumlah slot', function () {
+    config(['upsell.max_per_transaction' => 1]);
+
+    foreach (range(1, 3) as $i) {
+        $suggested = makeRuleVariant($this->tenant);
+
+        UpsellRule::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'trigger_variant_id' => null,
+            'suggested_variant_id' => $suggested->id,
+            'priority' => 10 - $i,
+        ]);
+    }
+
+    get('/owner/upsell-rules')
+        ->assertInertia(fn ($page) => $page
+            ->loadDeferredProps('pratinjau', fn ($reload) => $reload
+                ->where('preview.cart_level.0.wins_slot', true)
+                // Yang kalah tetap ditampilkan: pertanyaan owner justru "apa
+                // yang tidak muncul gara-gara batas ini?".
+                ->where('preview.cart_level.1.wins_slot', false)
+                ->where('preview.cart_level.2.wins_slot', false)
+            )
+        );
+});
+
+test('pratinjau menyebutkan jenis saran yang dimatikan lewat config', function () {
+    config(['upsell.types.pressed_stock' => false]);
+
+    get('/owner/upsell-rules')
+        ->assertInertia(fn ($page) => $page
+            ->loadDeferredProps('pratinjau', fn ($reload) => $reload
+                ->where('preview.disabled_types', ['pressed_stock'])
+            )
+        );
 });

@@ -5,8 +5,13 @@ namespace App\Http\Controllers\Owner;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUpsellRuleRequest;
 use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\Tenant;
+use App\Models\UpsellEvent;
 use App\Models\UpsellRule;
+use App\Services\Upsell\UpsellIndexBuilder;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -25,7 +30,9 @@ use Inertia\Response;
  */
 class UpsellRuleController extends Controller
 {
-    public function index(): Response
+    public function __construct(private UpsellIndexBuilder $upsellIndexBuilder) {}
+
+    public function index(Request $request): Response
     {
         return Inertia::render('Owner/UpsellRules/Index', [
             // Ditunda ([BL-037]): tombol tambah dan formulirnya sudah bisa
@@ -54,7 +61,128 @@ class UpsellRuleController extends Controller
                     'stock' => $variant->stock,
                 ]))
                 ->values()),
+
+            // Kelompok tersendiri, bukan menumpang daftar aturan ([BL-092]):
+            // merakit indeks menelusuri seluruh katalog, stok, dan riwayat
+            // penjualan — menyatukannya dengan tabel aturan berarti tabelnya
+            // ikut menunggu pekerjaan yang tidak ada hubungannya dengannya.
+            'preview' => Inertia::defer(fn () => $this->slotPreview($request->user()->tenant), 'pratinjau'),
         ]);
+    }
+
+    /**
+     * Apa yang BENAR-BENAR muncul di kasir hari ini, beserta yang tergeser.
+     *
+     * Halaman ini sebelumnya hanya memperlihatkan separuh kenyataan: aturan
+     * yang owner tulis sendiri, tanpa satu pun saran yang ditemukan mesin dari
+     * stok. Owner jadi tidak punya cara melihat siapa yang sedang mengisi tiga
+     * slot kasir — dan aturan yang tidak muncul terbaca sebagai fitur rusak,
+     * padahal ia hanya kalah skor atau stoknya habis ([BL-092]).
+     *
+     * Pemilihan slotnya memakai `UpsellIndexBuilder`, kode yang sama persis
+     * dengan yang dipakai kasir; yang berbeda hanya keranjang yang diandaikan.
+     *
+     * @return array{enabled: bool, max_per_transaction: int, disabled_types: list<string>, cart_level: list<array<string, mixed>>, triggers: list<array<string, mixed>>, triggers_truncated: int}
+     */
+    private function slotPreview(Tenant $tenant): array
+    {
+        $index = $this->upsellIndexBuilder->build($tenant);
+        $max = (int) $index['max_per_transaction'];
+
+        // Keranjang tanpa satu pun barang pemicu: hanya kandidat tanpa-pemicu
+        // yang berebut. Diurutkan di sini, bukan lewat `rankForCart()`, karena
+        // fungsi itu sengaja mengembalikan kosong untuk keranjang kosong —
+        // keranjang kosong memang tidak boleh memicu saran apa pun.
+        $cartLevel = $index['cart_level'];
+        usort($cartLevel, fn (array $a, array $b) => $b['score'] <=> $a['score']);
+
+        $triggerIds = array_map('intval', array_keys($index['by_variant']));
+
+        $labels = $this->variantLabels($triggerIds);
+
+        $triggers = [];
+
+        foreach ($triggerIds as $triggerId) {
+            $triggers[] = [
+                'variant_id' => $triggerId,
+                'label' => $labels[$triggerId] ?? "Varian #{$triggerId}",
+                'slots' => $this->asSlots($this->upsellIndexBuilder->rankForCart($index, [$triggerId]), $max),
+            ];
+        }
+
+        usort($triggers, fn (array $a, array $b) => strcmp($a['label'], $b['label']));
+
+        // Katalog besar bisa punya ratusan pemicu. Daftar sepanjang itu tidak
+        // dibaca siapa pun; jumlah sisanya tetap disebut supaya owner tahu
+        // yang dilihatnya belum seluruhnya.
+        $limit = 25;
+
+        return [
+            'enabled' => (bool) config('upsell.enabled', true),
+            'max_per_transaction' => $max,
+            'disabled_types' => $this->disabledTypes(),
+            'cart_level' => $this->asSlots($cartLevel, $max),
+            'triggers' => array_slice($triggers, 0, $limit),
+            'triggers_truncated' => max(0, count($triggers) - $limit),
+        ];
+    }
+
+    /**
+     * Tandai mana yang dapat slot dan mana yang tergeser batas tampilan.
+     *
+     * @param  list<array<string, mixed>>  $ranked
+     * @return list<array<string, mixed>>
+     */
+    private function asSlots(array $ranked, int $max): array
+    {
+        return array_values(array_map(fn (array $suggestion, int $position) => [
+            'key' => $suggestion['key'],
+            'type' => $suggestion['type'],
+            'reason' => $suggestion['reason'],
+            'label' => $suggestion['label'],
+            'note' => $suggestion['note'],
+            'extra_amount' => $suggestion['extra_amount'],
+            'is_manual' => $suggestion['type'] === UpsellEvent::TYPE_MANUAL,
+            'wins_slot' => $position < $max,
+        ], $ranked, array_keys($ranked)));
+    }
+
+    /**
+     * Nama varian pemicu, sekali query untuk seluruh daftar.
+     *
+     * @param  list<int>  $ids
+     * @return array<int, string>
+     */
+    private function variantLabels(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return ProductVariant::whereIn('id', $ids)
+            ->with('product:id,name')
+            ->get(['id', 'product_id', 'name'])
+            ->mapWithKeys(fn (ProductVariant $variant) => [
+                $variant->id => $variant->product !== null
+                    ? $variant->product->name.' - '.$variant->name
+                    : $variant->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * Jenis saran yang dimatikan lewat `config/upsell.php` — saklar darurat
+     * yang, kalau tidak disebutkan di layar, membuat owner mengira aturannya
+     * sendiri yang rusak.
+     *
+     * @return list<string>
+     */
+    private function disabledTypes(): array
+    {
+        return array_values(array_keys(array_filter(
+            (array) config('upsell.types', []),
+            fn ($enabled) => ! $enabled,
+        )));
     }
 
     public function store(StoreUpsellRuleRequest $request): RedirectResponse

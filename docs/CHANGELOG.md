@@ -61,8 +61,9 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
-| 2026-08-21 | HOTFIX | Upsell | Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
+| 2026-08-21 | HOTFIX | Upsell | Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3) |
+| 2026-08-21 | ADDITION | Upsell | Owner Melihat Saran Otomatis, Aturannya Sendiri, dan Siapa yang Mengisi Tiga Slot Kasir (BL-092 butir 1-2) |
 | 2026-08-21 | ADDITION | Kas | Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090) |
 | 2026-08-21 | REFACTOR | Kas | Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2) |
 | 2026-08-20 | HOTFIX | UI | Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089) |
@@ -228,6 +229,23 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 ---
 
+### [ADDITION] Owner Melihat Saran Otomatis, Aturannya Sendiri, dan Siapa yang Mengisi Tiga Slot Kasir (BL-092 butir 1-2)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — butir 1 dan 2 `[BL-092]`, kelanjutan `[BL-074]`
+- **Dampak:** Controller | Service | Frontend | Test
+- **Breaking Change:** Tidak. Prop `summary` laporan upsell tidak berubah bentuk; yang lahir satu prop `sources` di sampingnya dan satu kelompok tunda baru (`pratinjau`) di halaman aturan.
+- **Deskripsi:** Halaman **Aturan Saran Jual** mendapat bagian "Yang Muncul di Kasir Hari Ini": daftar saran tanpa pemicu (aturan pemilik **dan** barang tertekan stok yang ditemukan sistem) bertanda **Tampil**/**Tergeser**, ditambah tabel per barang pemicu berisi saran yang menang slot bila barang itu masuk keranjang. Laporan **Saran Jual** mendapat tiga kolom berdampingan: **Gabungan**, **Otomatis (sistem)**, dan **Aturan Anda**.
+- **Alasan:** Halaman aturan hanya memperlihatkan separuh kenyataan — aturan yang pemilik tulis sendiri, tanpa satu pun saran yang ditemukan mesin dari stok. Ia tidak punya cara melihat siapa yang sedang mengisi tiga slot kasir, dan aturan yang tidak muncul terbaca sebagai fitur rusak padahal ia hanya kalah skor atau stoknya habis. Rekap per jenis di laporan sudah memuat bahannya, tapi menuntut pemilik menjumlahkan tiga baris mesin di kepalanya untuk melawankannya dengan satu baris manual adalah cara paling pasti membuat perbandingan itu tidak pernah dilakukan.
+
+- **Pratinjaunya memakai kode pemilihan yang sama persis dengan kasir, bukan tiruannya.** `UpsellIndexBuilder::forCart()` dipecah jadi `rankForCart()` (seluruh kandidat, terurut skor) dan `pickForCart()` (potong sebanyak slot). Pratinjau yang menyimpang dari kenyataan lebih buruk daripada tidak ada pratinjau.
+- **Yang KALAH slot justru inti bagian ini.** Kasir tidak pernah melihat ekor daftarnya; pertanyaan pemilik persis "apa yang tidak muncul gara-gara batas 3 ini?" — jadi barisnya tetap dipajang, diredupkan, bertanda **Tergeser**.
+- **Jenis yang dimatikan lewat `config/upsell.php` disebutkan di layar.** Saklar darurat yang tidak kelihatan membuat pemilik menyimpulkan aturannya sendiri yang rusak.
+- **Kelompok tunda tersendiri (`pratinjau`), bukan menumpang daftar aturan.** Merakit indeks menelusuri seluruh katalog, stok, dan riwayat penjualan; menyatukannya berarti tabel aturan ikut menunggu pekerjaan yang tidak ada hubungannya dengannya.
+- **Kolom "Gabungan" tetap ada dan tetap di depan.** Pertanyaan pertama pemilik selalu "fitur ini menghasilkan atau tidak", bukan "mesin atau saya yang menang". Ketiganya dibaca dari satu query beragregat per jenis, bukan tiga rombongan query yang sumbernya sama persis.
+- **Daftar pemicu dipotong di 25 baris, dengan sisanya disebutkan.** Katalog besar bisa punya ratusan pemicu, dan daftar sepanjang itu tidak dibaca siapa pun.
+- **Berkas:** `app/Services/Upsell/UpsellIndexBuilder.php` — `rankForCart()`/`pickForCart()` · `app/Http/Controllers/Owner/UpsellRuleController.php` — `slotPreview()` · `app/Http/Controllers/Owner/ReportController.php` — `upsellSummary()`, prop `sources` · `resources/js/Pages/Owner/UpsellRules/Index.vue` · `resources/js/Pages/Owner/Reports/Upsell.vue` · `tests/Feature/Upsell/ManualUpsellRuleTest.php` (3 tes baru) · `tests/Feature/Upsell/UpsellEventTest.php` (1 tes baru)
+
+---
 
 ### [HOTFIX] Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089)
 - **Tanggal:** 2026-08-20

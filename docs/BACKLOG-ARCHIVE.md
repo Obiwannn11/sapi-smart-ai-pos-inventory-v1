@@ -31,6 +31,16 @@
   4. Peringatan di layar kasir **sebelum** batasnya lewat, bukan sesudah — sesi yang terlanjur ditutup sistem tidak bisa lagi dihitung uangnya.
 - **Catatan:** menutup paksa berarti uang fisiknya tidak pernah dihitung siapa pun. Itu kerugian yang diterima secara sadar sebagai ganti sesi yang menggantung selamanya, dan justru karena itu butir 2 tidak boleh dilonggarkan.
 
+### [BL-092] Saran Jual Hanya Terlihat Separuh oleh Pemilik, dan Penerimaan yang Salah Tidak Bisa Ditarik
+- **Ditemukan:** 2026-08-21 (dilaporkan pemilik saat memakai menu Saran Jual)
+- **Status:** **Selesai 2026-08-21** — ketiga butirnya, plus satu lubang yang ditemukan saat mengerjakannya (transaksi `voided`)
+- **Butir yang dilaporkan:**
+  1. Pemilik ingin melihat aturan yang aktif **otomatis** (dari stok) berdampingan dengan aturan yang ia pasang **manual** — halaman Aturan Saran Jual hanya memperlihatkan yang kedua.
+  2. Laporan Saran Jual harus menunjukkan performa **gabungan** dan masing-masing sumber, serta apa saja yang **dapat muncul** mengingat batas 3 saran per penjualan.
+  3. Saran yang terlanjur ditekan "Diterima" tidak bisa ditarik. Kasir yang salah pencet, atau yang pelanggannya membatalkan, terpaksa menghapus barisnya lalu menambah ulang — dan datanya jadi dobel.
+- **Temuan saat dikerjakan:** butir 3 punya dua bentuk, dan yang kedua hidup di server. `acceptedByKey` tidak pernah tahu barisnya dihapus, jadi `collectEvents()` tetap mengirim `accepted` beserta `extra_amount`; dan event yang menempel pada transaksi yang sudah di-**void** tetap ikut dihitung di laporan, sehingga transaksi yang dibatalkan lalu dimasukkan ulang menghitung saran yang sama dua kali.
+- **Ditutup oleh:** `[HOTFIX] Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3)` dan `[ADDITION] Owner Melihat Saran Otomatis, Aturannya Sendiri, dan Siapa yang Mengisi Tiga Slot Kasir (BL-092 butir 1-2)` di `docs/CHANGELOG.md`
+
 ### [BL-090] Angka Rekonsiliasi Tetap Dikirim ke Kasir — Penyembunyiannya Baru di Sisi Klien
 - **Ditemukan:** 2026-08-21 (dipecah dari `[BL-086]` saat ketiga butirnya selesai)
 - **Sumber:** Catatan di dalam `[BL-086]` sendiri — "butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan"
