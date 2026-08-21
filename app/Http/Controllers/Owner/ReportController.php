@@ -549,7 +549,18 @@ class ReportController extends Controller
 
         $scoped = fn () => UpsellEvent::query()
             ->whereDate('created_at', '>=', $from)
-            ->whereDate('created_at', '<=', $to);
+            ->whereDate('created_at', '<=', $to)
+            // Transaksi yang di-void bukan penjualan, jadi upsell di dalamnya
+            // bukan upsell yang berhasil ([BL-092]). Sebelum ini, kasir yang
+            // membatalkan lalu memasukkan ulang satu transaksi membuat saran
+            // yang sama terhitung DUA KALI — sekali pada transaksi yang sudah
+            // dibatalkan, sekali lagi pada penggantinya.
+            //
+            // `whereDoesntHave` sengaja, bukan join: `transaction_id` boleh
+            // NULL karena transaksi yang benar-benar dihapus melepasnya, dan
+            // migrasinya memilih itu justru supaya menghapus transaksi tidak
+            // diam-diam memperbaiki angka konversi.
+            ->whereDoesntHave('transaction', fn ($query) => $query->where('status', Transaction::STATUS_VOIDED));
 
         $shown = $scoped()->count();
         $accepted = $scoped()->where('status', UpsellEvent::STATUS_ACCEPTED)->count();

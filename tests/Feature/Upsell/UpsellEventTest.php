@@ -431,3 +431,48 @@ test('laporan memisahkan tingkat terima dari tingkat sukses tawar', function () 
             ->where('summary.offer_rate', 50)
         );
 });
+
+// ── Transaksi yang dibatalkan ([BL-092]) ──────────────────────────────────
+
+test('saran pada transaksi yang di-void tidak lagi dihitung sebagai upsell berhasil', function () {
+    $owner = User::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'role' => 'owner',
+    ]);
+
+    $dibatalkan = Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'status' => Transaction::STATUS_VOIDED,
+    ]);
+
+    $jadi = Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'status' => Transaction::STATUS_COMPLETED,
+    ]);
+
+    // Persis skenario "batalkan lalu masukkan ulang": saran yang sama tercatat
+    // dua kali, dan hanya satu di antaranya benar-benar terjadi.
+    UpsellEvent::factory()->accepted(7000)->create([
+        'tenant_id' => $this->tenant->id,
+        'transaction_id' => $dibatalkan->id,
+    ]);
+    UpsellEvent::factory()->accepted(7000)->create([
+        'tenant_id' => $this->tenant->id,
+        'transaction_id' => $jadi->id,
+    ]);
+
+    // Transaksinya sudah benar-benar terhapus — tetap dihitung, karena
+    // menghapus transaksi tidak boleh diam-diam memperbaiki angka konversi.
+    UpsellEvent::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'transaction_id' => null,
+    ]);
+
+    actingAs($owner)
+        ->get('/owner/reports/upsell')
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.shown', 2)
+            ->where('summary.accepted', 1)
+            ->where('summary.extra_revenue', 7000)
+        );
+});

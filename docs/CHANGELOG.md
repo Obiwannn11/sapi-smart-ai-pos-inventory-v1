@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-21 | HOTFIX | Upsell | Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
 | 2026-08-21 | ADDITION | Kas | Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090) |
 | 2026-08-21 | REFACTOR | Kas | Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2) |
@@ -209,6 +210,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ## Revision History
 
 ---
+
+### [HOTFIX] Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — butir 3 `[BL-092]`
+- **Dampak:** Frontend | Controller | Test
+- **Breaking Change:** Tidak. Tidak ada baris `upsell_events` yang diubah atau dihapus; yang berubah hanya baris mana yang ikut dihitung di laporan, dan apa yang dikirim POS saat checkout.
+- **Deskripsi:** Saran yang sudah ditekan "Diterima" kini tetap terlihat di strip kasir dengan tombol **Batalkan** — yang mengembalikan keranjang ke keadaan semula (add-on dilepas, naik ukuran dikembalikan ke varian lama, baris tambahan dikeluarkan) sekaligus mengembalikan saran itu ke keadaan menunggu keputusan. Penerimaan yang jejaknya hilang dari keranjang **menarik dirinya sendiri**. Di sisi laporan, event yang menempel pada transaksi berstatus `voided` tidak lagi dihitung.
+- **Alasan:** Sebelum ini "diterima" adalah keputusan sekali jalan. Salah pencet dan pelanggan yang berubah pikiran tidak punya jalan keluar selain menghapus barisnya dan memasukkan ulang secara manual — dan `acceptedByKey` tidak pernah tahu itu terjadi, sehingga `collectEvents()` tetap mengirim `status: accepted` beserta `extra_amount` untuk penjualan yang tidak pernah terjadi. Angka yang mengaku lebih besar dari kenyataan adalah cara tercepat membuat seluruh laporan ini tidak dipercaya.
+
+- **Tiga jenis saran menyentuh keranjang dengan tiga cara, jadi pembatalannya juga tiga.** Add-on melepas modifier dari barisnya; naik ukuran mengembalikan `variant_id`, nama, dan harga dari salinan yang disimpan **saat diterima** (tanpa salinan itu tidak ada apa pun untuk dikembalikan, karena naik ukuran menimpa barisnya); barang tertekan dan aturan pemilik menurunkan qty satu, atau mengeluarkan barisnya bila tinggal satu.
+- **Penarikan otomatis ada karena kasir tidak akan ingat menekan Batalkan lebih dulu.** Yang diingat orang saat antrean panjang hanya membereskan keranjangnya. `useUpsell` menerima satu callback `isApplied` dan memeriksa tiap penerimaan setiap kali keranjang berubah — composable-nya tetap tidak tahu apa-apa soal bentuk keranjang POS.
+- **Ditarik berarti KEMBALI MENUNGGU, bukan langsung "ditolak".** Salah pencet dan pelanggan yang membatalkan adalah dua peristiwa berbeda, dan hanya kasir yang tahu mana yang baru saja terjadi — ia menjawabnya lewat kedua tombol yang muncul kembali. Yang jejaknya hilang tanpa jawaban lanjutan tercatat `ignored`: tampil, tidak dijawab, nol rupiah. Tak satu pun dari keduanya menggelembungkan `offer_rate`.
+- **Transaksi yang di-void adalah bentuk kedua dari cacat yang sama, dan ia hidup di server.** Kasir yang membatalkan lalu memasukkan ulang satu transaksi membuat saran yang sama terhitung **dua kali**. Penyaringnya `whereDoesntHave`, bukan join: `transaction_id` boleh NULL karena transaksi yang benar-benar dihapus melepasnya — dan migrasinya memilih `nullOnDelete` justru supaya menghapus transaksi tidak diam-diam memperbaiki angka konversi. Event yatim itu tetap dihitung.
+- **Jenis `manual` akhirnya punya warnanya sendiri di strip kasir.** Sejak `[BL-074]` ia menumpang tampilan add-on karena `TONE` tidak punya barisnya, sehingga saran yang ditulis pemilik toko tampil sebagai tebakan mesin biasa — menghapus satu-satunya keterangan yang membuatnya layak diucapkan.
+- **Berkas:** `resources/js/composables/useUpsell.js` — `retract()`, `accepted`, penjaga `isApplied` · `resources/js/Components/UpsellStrip.vue` — daftar yang sudah diambil, tone `manual` · `resources/js/Pages/Cashier/POS.vue` — `undoUpsell()`, salinan pemulihan naik ukuran, `upsellStillApplied()` · `app/Http/Controllers/Owner/ReportController.php` — penyaring transaksi `voided` · `tests/Feature/Upsell/UpsellEventTest.php` (2 tes baru)
+
+---
+
 
 ### [HOTFIX] Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089)
 - **Tanggal:** 2026-08-20

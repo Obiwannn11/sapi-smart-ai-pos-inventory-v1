@@ -358,15 +358,44 @@ const removeCartItem = (index) => {
 };
 
 // --- Upsell ---
+
+/**
+ * Apakah jejak sebuah saran yang sudah diterima MASIH ada di keranjang?
+ *
+ * Dipakai untuk menarik sendiri penerimaan yang barisnya sudah dihapus kasir
+ * ([BL-092]). Tanpa pemeriksaan ini, "hapus lalu tambah ulang" — satu-satunya
+ * jalan keluar yang dulu tersedia — meninggalkan catatan upsell berhasil untuk
+ * penjualan yang dibatalkan.
+ */
+const upsellStillApplied = (suggestion) => {
+    if (suggestion.type === 'attach') {
+        return cart.value.some((line) =>
+            line.variant_id === suggestion.trigger_variant_id
+            && (line.modifiers ?? []).some((modifier) => modifier.id === suggestion.suggested_modifier_id)
+        );
+    }
+
+    // Naik ukuran menimpa varian barisnya, barang tertekan dan aturan pemilik
+    // menambah baris baru — ketiganya berujung pada varian yang sama di
+    // keranjang, jadi pemeriksaannya pun sama.
+    return cart.value.some((line) => line.variant_id === suggestion.suggested_variant_id);
+};
+
 const {
     suggestions: upsellSuggestions,
+    accepted: upsellAccepted,
     mandatory: upsellMandatory,
     unresolved: upsellUnresolved,
     accept: acceptUpsell,
     reject: rejectUpsell,
+    retract: retractUpsell,
     collectEvents: collectUpsellEvents,
     reset: resetUpsell,
-} = useUpsell(catalogUpsell, cart, { getVariantStock, getCartQtyForVariant });
+} = useUpsell(catalogUpsell, cart, {
+    getVariantStock,
+    getCartQtyForVariant,
+    isApplied: upsellStillApplied,
+});
 
 /**
  * Terapkan saran ke keranjang, lalu catat tambahan omzet yang BENAR-BENAR
@@ -412,11 +441,19 @@ const applyUpsell = (suggestion) => {
 
         const previousPrice = Number(line.unit_price);
 
+        // Salinan varian lama ikut disimpan: naik ukuran MENIMPA barisnya, jadi
+        // hanya inilah bekal yang dipunyai pembatalan nanti ([BL-092]).
+        const restore = {
+            variant_id: line.variant_id,
+            variant_name: line.variant_name,
+            unit_price: previousPrice,
+        };
+
         line.variant_id = suggestion.suggested_variant_id;
         line.variant_name = suggestion.suggested_variant_name ?? suggestion.label;
         line.unit_price = Number(suggestion.suggested_variant_price ?? previousPrice);
 
-        acceptUpsell(suggestion, (line.unit_price - previousPrice) * line.qty);
+        acceptUpsell(suggestion, (line.unit_price - previousPrice) * line.qty, restore);
 
         return;
     }
@@ -440,6 +477,53 @@ const applyUpsell = (suggestion) => {
     if (cart.value.length === before) return;
 
     acceptUpsell(suggestion, price);
+};
+
+/**
+ * Tarik kembali saran yang terlanjur diterima ([BL-092]).
+ *
+ * Membereskan KERANJANG dan CATATANNYA sekaligus. Membereskan salah satunya
+ * saja persis melahirkan masalah yang tombol ini ada untuk menutupnya: barang
+ * hilang dari struk tapi upsell-nya tetap tercatat berhasil, atau sebaliknya.
+ *
+ * Sarannya kembali menunggu keputusan, bukan langsung jadi "ditolak" — kasir
+ * yang salah pencet dan pelanggan yang membatalkan adalah dua hal berbeda, dan
+ * hanya kasir yang tahu mana yang baru saja terjadi.
+ */
+const undoUpsell = (suggestion) => {
+    if (suggestion.type === 'attach') {
+        const line = cart.value.find((item) =>
+            item.variant_id === suggestion.trigger_variant_id
+            && (item.modifiers ?? []).some((modifier) => modifier.id === suggestion.suggested_modifier_id)
+        );
+
+        if (line) {
+            line.modifiers = line.modifiers.filter((modifier) => modifier.id !== suggestion.suggested_modifier_id);
+        }
+    } else if (suggestion.type === 'upsize' && suggestion.restore) {
+        const line = cart.value.find((item) => item.variant_id === suggestion.suggested_variant_id);
+
+        if (line) {
+            line.variant_id = suggestion.restore.variant_id;
+            line.variant_name = suggestion.restore.variant_name;
+            line.unit_price = suggestion.restore.unit_price;
+        }
+    } else {
+        // Barang tertekan dan aturan pemilik menambah SATU baris berisi satu
+        // barang. Kalau kasir sempat menaikkan qty-nya, yang ditarik hanya
+        // barang yang datang dari saran ini.
+        const index = cart.value.findIndex((item) => item.variant_id === suggestion.suggested_variant_id);
+
+        if (index >= 0) {
+            if (cart.value[index].qty > 1) {
+                cart.value[index].qty -= 1;
+            } else {
+                cart.value.splice(index, 1);
+            }
+        }
+    }
+
+    retractUpsell(suggestion);
 };
 
 // --- Inline "Kosongkan" confirmation ---
@@ -1064,10 +1148,12 @@ onUnmounted(stopResizeCart);
                     <!-- Saran jual: strip tipis, bukan pop-up (lihat UpsellStrip.vue) -->
                     <UpsellStrip
                         :suggestions="upsellSuggestions"
+                        :accepted="upsellAccepted"
                         :disabled="processing"
                         :mandatory="upsellMandatory"
                         @accept="applyUpsell"
                         @reject="rejectUpsell"
+                        @retract="undoUpsell"
                     />
 
                     <!-- Sebab tombol bayar mati, bukan sekadar tombol kelabu -->

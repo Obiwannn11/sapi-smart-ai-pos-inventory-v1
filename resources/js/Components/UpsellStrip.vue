@@ -11,16 +11,23 @@
  * menerima, atau pelanggan menolak. Keduanya sama-sama menyelesaikan saran —
  * termasuk saat owner mewajibkannya. Yang tidak tersedia hanyalah melewatinya
  * tanpa menjawab ([BL-025]).
+ *
+ * Keputusan "diterima" TIDAK final. Yang sudah diambil tetap terlihat di bawah,
+ * lengkap dengan tombol batalkannya ([BL-092]): salah pencet dan pelanggan yang
+ * berubah pikiran terjadi tiap hari, dan penerimaan yang tidak bisa ditarik
+ * memaksa kasir menghapus barisnya diam-diam — sementara laporannya tetap
+ * mengaku upsell itu berhasil.
  */
 import { computed } from 'vue';
 
 const props = defineProps({
     suggestions: { type: Array, default: () => [] },
+    accepted: { type: Array, default: () => [] },
     disabled: { type: Boolean, default: false },
     mandatory: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['accept', 'reject']);
+const emit = defineEmits(['accept', 'reject', 'retract']);
 
 const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
 
@@ -45,16 +52,27 @@ const TONE = {
         button: 'bg-violet-600 hover:bg-violet-700',
         title: 'Naik ukuran',
     },
+    // Aturan yang ditulis pemilik ([BL-074]). Tanpa baris ini ia menyamar jadi
+    // add-on biasa, dan kasir kehilangan satu-satunya keterangan yang membuat
+    // saran itu layak diucapkan: ini permintaan pemilik toko, bukan tebakan.
+    manual: {
+        ring: 'border-emerald-200 bg-emerald-50',
+        chip: 'bg-emerald-100 text-emerald-700',
+        button: 'bg-emerald-600 hover:bg-emerald-700',
+        title: 'Pilihan pemilik',
+    },
 };
 
 const toneFor = (type) => TONE[type] ?? TONE.attach;
 
 const visible = computed(() => props.suggestions ?? []);
+
+const taken = computed(() => props.accepted ?? []);
 </script>
 
 <template>
-    <div v-if="visible.length > 0" class="space-y-1.5">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <div v-if="visible.length > 0 || taken.length > 0" class="space-y-1.5">
+        <p v-if="visible.length > 0" class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Saran untuk pelanggan
             <span v-if="mandatory" class="ml-1 rounded bg-amber-100 px-1 py-0.5 text-amber-800">Wajib dijawab</span>
         </p>
@@ -115,5 +133,37 @@ const visible = computed(() => props.suggestions ?? []);
                 </button>
             </div>
         </TransitionGroup>
+
+        <!-- Yang sudah diambil. Tetap terlihat justru supaya bisa ditarik lagi
+             ([BL-092]) — dan pembatalannya membereskan keranjang sekaligus
+             catatannya, bukan salah satunya saja. -->
+        <div v-if="taken.length > 0" class="space-y-1">
+            <div
+                v-for="suggestion in taken"
+                :key="suggestion.key"
+                class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5"
+            >
+                <svg class="h-3.5 w-3.5 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+
+                <span class="min-w-0 flex-1 truncate text-[11px] text-emerald-900">
+                    <span class="font-semibold">Diambil:</span> {{ suggestion.label }}
+                    <span v-if="Number(suggestion.actual_extra_amount) > 0" class="text-emerald-700">
+                        · +{{ formatCurrency(suggestion.actual_extra_amount) }}
+                    </span>
+                </span>
+
+                <button
+                    type="button"
+                    :disabled="disabled"
+                    class="shrink-0 rounded px-1.5 py-1 text-[11px] font-semibold text-emerald-800 underline-offset-2 transition hover:underline disabled:opacity-40"
+                    title="Batalkan — barangnya dikeluarkan lagi dari keranjang"
+                    @click="emit('retract', suggestion)"
+                >
+                    Batalkan
+                </button>
+            </div>
+        </div>
     </div>
 </template>

@@ -21,6 +21,14 @@
  *   dijawab tidak; yang kedua cuma lewat di layar kasir. Mencampur keduanya
  *   membuat angka konversi mengukur kedisiplinan kasir dan mutu saran
  *   sekaligus, sehingga tidak mengukur apa pun ([BL-025]).
+ *
+ *   DITERIMA BISA DITARIK KEMBALI, dan ikut tertarik sendiri saat jejaknya
+ *   hilang dari keranjang ([BL-092]). Tanpa ini, salah pencet atau pelanggan
+ *   yang berubah pikiran tidak punya jalan keluar selain menghapus barisnya
+ *   dan menambah ulang secara manual — dan penjualannya tercatat dua kali:
+ *   sekali sebagai barang yang benar-benar dijual, sekali lagi sebagai upsell
+ *   "berhasil" yang tidak pernah terjadi. Angka yang mengaku lebih besar dari
+ *   kenyataan adalah cara tercepat membuat seluruh laporan ini tidak dipercaya.
  */
 
 import { ref, computed, watch } from 'vue';
@@ -33,8 +41,11 @@ const EMPTY_INDEX = { by_variant: {}, cart_level: [], max_per_transaction: 2, ma
  * @param {object} options
  * @param {(variantId: number) => number} options.getVariantStock
  * @param {(variantId: number) => number} options.getCartQtyForVariant
+ * @param {(suggestion: object) => boolean} [options.isApplied] apakah jejak
+ *   saran yang diterima MASIH ada di keranjang. Composable ini tidak boleh tahu
+ *   bentuk keranjang POS, jadi pemeriksaannya dititipkan ke pemanggil.
  */
-export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }) {
+export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, isApplied = null }) {
     // DITOLAK pelanggan setelah ditawarkan — per keranjang, bukan per sesi.
     //
     // Dulu bernama "dismissed" dan bermakna "tutup saran ini". Sejak mode wajib
@@ -155,16 +166,63 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
      * @param {object} suggestion
      * @param {number} extraAmount tambahan omzet yang BENAR-BENAR terjadi
      *   (harga × qty), bukan angka indikatif dari indeks.
+     * @param {object|null} restore bekal untuk mengembalikan keranjang seperti
+     *   semula bila saran ini ditarik lagi. Hanya naik ukuran memerlukannya —
+     *   ia MENIMPA baris yang sudah ada, jadi tanpa salinan varian lamanya
+     *   pembatalan tidak punya apa pun untuk dikembalikan.
      */
-    const accept = (suggestion, extraAmount) => {
+    const accept = (suggestion, extraAmount, restore = null) => {
         const next = new Map(acceptedByKey.value);
-        next.set(suggestion.key, { ...suggestion, actual_extra_amount: extraAmount });
+        next.set(suggestion.key, { ...suggestion, actual_extra_amount: extraAmount, restore });
         acceptedByKey.value = next;
 
         if (!shownByKey.value.has(suggestion.key)) {
             shownByKey.value.set(suggestion.key, suggestion);
         }
     };
+
+    /**
+     * Batalkan penerimaan — saran kembali menunggu keputusan.
+     *
+     * Sengaja TIDAK langsung menjadi "ditolak": salah pencet dan pelanggan yang
+     * membatalkan adalah dua hal berbeda, dan hanya kasir yang tahu mana yang
+     * baru saja terjadi. Ia menjawabnya sendiri lewat kedua tombol yang muncul
+     * kembali ([BL-092]).
+     *
+     * Membereskan keranjangnya bukan urusan di sini — pemanggillah yang tahu
+     * apa yang dilakukan saran itu pada keranjangnya.
+     *
+     * @param {object|string} suggestion saran atau kuncinya
+     */
+    const retract = (suggestion) => {
+        const key = typeof suggestion === 'string' ? suggestion : suggestion.key;
+
+        if (!acceptedByKey.value.has(key)) return;
+
+        const next = new Map(acceptedByKey.value);
+        next.delete(key);
+        acceptedByKey.value = next;
+    };
+
+    /**
+     * Jejak yang hilang dari keranjang menarik penerimaannya sendiri.
+     *
+     * Inilah penjaga yang menutup jalan pintas lama: hapus barisnya, tambah
+     * ulang manual, dan upsell-nya tetap tercatat "berhasil". Kasir tidak harus
+     * ingat menekan Batalkan lebih dulu — yang diingat orang saat antrean
+     * panjang hanyalah membereskan keranjangnya.
+     */
+    if (isApplied) {
+        watch(
+            cart,
+            () => {
+                for (const [key, entry] of acceptedByKey.value) {
+                    if (!isApplied(entry)) retract(key);
+                }
+            },
+            { deep: true }
+        );
+    }
 
     /**
      * Payload yang menumpang checkout — satu jalur tulis untuk POS online,
@@ -200,6 +258,10 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
 
     return {
         suggestions,
+        // Yang sudah diambil, supaya strip bisa menawarkan pembatalannya —
+        // penerimaan yang tidak terlihat lagi adalah penerimaan yang tidak bisa
+        // dikoreksi ([BL-092]).
+        accepted: computed(() => [...acceptedByKey.value.values()]),
         mandatory,
         // Saran yang masih menunggu keputusan. Kosong = tidak ada yang menahan
         // tombol bayar; `suggestions` sendiri sudah membuang yang diterima
@@ -207,6 +269,7 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant }
         unresolved: suggestions,
         accept,
         reject,
+        retract,
         collectEvents,
         reset,
     };
