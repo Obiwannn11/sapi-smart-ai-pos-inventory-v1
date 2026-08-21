@@ -90,7 +90,20 @@ const formatDateTime = (datetime) => {
                                 <span v-else class="text-xs text-muted-foreground">—</span>
                             </td>
                             <td class="py-3 px-4 text-center">
+                                <!-- Sesi yang ditutup sistem ([BL-088]) dibedakan
+                                     dari yang ditutup kasir: uang fisiknya tidak
+                                     pernah dihitung siapa pun, jadi barisnya
+                                     bukan pertanggungjawaban melainkan sesuatu
+                                     yang perlu ditinjau. -->
                                 <span
+                                    v-if="cd.closed_by_system"
+                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive"
+                                    title="Ditutup otomatis setelah lewat batas umur sesi — uang fisiknya tidak pernah dihitung"
+                                >
+                                    Ditutup sistem
+                                </span>
+                                <span
+                                    v-else
                                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                                     :class="cd.closed_at ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success'"
                                 >

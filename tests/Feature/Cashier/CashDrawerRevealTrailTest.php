@@ -21,7 +21,7 @@ beforeEach(function () {
     ]);
 });
 
-function openDrawerFor(User $user, Tenant $tenant): CashDrawer
+function revealTrailDrawer(User $user, Tenant $tenant): CashDrawer
 {
     return CashDrawer::factory()->create([
         'tenant_id' => $tenant->id,
@@ -33,7 +33,7 @@ function openDrawerFor(User $user, Tenant $tenant): CashDrawer
 }
 
 test('membuka angka seharusnya meninggalkan satu baris pada sesi yang sedang berjalan', function () {
-    $drawer = openDrawerFor($this->cashier, $this->tenant);
+    $drawer = revealTrailDrawer($this->cashier, $this->tenant);
 
     $this->actingAs($this->cashier)
         ->post('/cashier/cash-drawer/reveal')
@@ -62,7 +62,7 @@ test('pembukaan berulang tercatat berulang', function () {
     // Klien menahan diri satu kali per pemuatan halaman, tapi servernya tidak
     // menganggap pengungkapan kedua sebagai duplikat: memuat ulang halaman
     // lalu membukanya lagi adalah peristiwa lain di jam yang lain.
-    openDrawerFor($this->cashier, $this->tenant);
+    revealTrailDrawer($this->cashier, $this->tenant);
 
     $this->actingAs($this->cashier)->post('/cashier/cash-drawer/reveal');
     $this->actingAs($this->cashier)->post('/cashier/cash-drawer/reveal');
@@ -76,8 +76,8 @@ test('jejaknya menempel pada laci kasir yang membukanya, bukan laci kasir lain',
         'role' => 'cashier',
     ]);
 
-    $otherDrawer = openDrawerFor($otherCashier, $this->tenant);
-    $ownDrawer = openDrawerFor($this->cashier, $this->tenant);
+    $otherDrawer = revealTrailDrawer($otherCashier, $this->tenant);
+    $ownDrawer = revealTrailDrawer($this->cashier, $this->tenant);
 
     $this->actingAs($this->cashier)->post('/cashier/cash-drawer/reveal');
 
@@ -88,7 +88,7 @@ test('jejaknya menempel pada laci kasir yang membukanya, bukan laci kasir lain',
 });
 
 test('daftar sesi kas pemilik membawa hitungan dan waktu pembukaan pertama', function () {
-    $drawer = openDrawerFor($this->cashier, $this->tenant);
+    $drawer = revealTrailDrawer($this->cashier, $this->tenant);
 
     CashDrawerReveal::create([
         'tenant_id' => $this->tenant->id,

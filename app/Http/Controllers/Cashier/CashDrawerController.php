@@ -42,6 +42,17 @@ class CashDrawerController extends Controller
             'reconciliation' => $openDrawer
                 ? $this->reconciliation->for($openDrawer)
                 : null,
+
+            // Umur sesi ([BL-088]). Dikirim sebagai DUA titik waktu, bukan
+            // sebagai "sisa berapa jam": angka sisa dihitung saat halaman
+            // dirender dan langsung basi pada tab yang dibiarkan terbuka
+            // semalaman — persis tab yang paling butuh peringatan ini.
+            'sessionLimit' => $openDrawer ? [
+                'hours' => CashDrawer::MAX_SESSION_HOURS,
+                'expires_at' => $openDrawer->opened_at->copy()->addHours(CashDrawer::MAX_SESSION_HOURS),
+                'warn_from' => $openDrawer->opened_at->copy()
+                    ->addHours(CashDrawer::MAX_SESSION_HOURS - CashDrawer::STALE_WARNING_HOURS),
+            ] : null,
         ]);
     }
 

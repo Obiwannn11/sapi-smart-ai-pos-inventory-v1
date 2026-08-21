@@ -62,3 +62,15 @@ Schedule::command('payment-proofs:prune-unclaimed')->dailyAt('03:50');
 // akan jadi "antara satu dan dua hari", dan kalimat di layar kasir yang
 // menyebut 24 jam jadi bohong. Ongkosnya satu query berindeks per jam.
 Schedule::command('open-bills:expire')->hourly();
+
+// Sesi kas yang lewat umurnya ([BL-088]).
+//
+// TIAP JAM, dan alasannya sama persis dengan tetangganya di atas: sapuan
+// harian membuat batas 24 jam berarti "antara satu dan dua hari", tergantung
+// sesi itu dibuka beberapa menit sebelum atau sesudah sapuan lewat — dan
+// peringatan di layar kasir yang menyebut sisa waktunya akan ikut berbohong.
+//
+// Digeser lima menit dari `open-bills:expire` bukan karena keduanya bentrok,
+// melainkan supaya keduanya tidak muncul sebagai satu lonjakan yang sama di
+// log ketika ada yang salah pada salah satunya.
+Schedule::command('cash-drawers:expire')->hourlyAt(5);

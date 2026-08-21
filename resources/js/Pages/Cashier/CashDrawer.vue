@@ -2,13 +2,15 @@
 import { router, Head, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
     openDrawer: Object,
     // Rekonsiliasi sesi berjalan dari CashDrawerReconciliation — null saat
     // belum ada sesi terbuka.
     reconciliation: { type: Object, default: null },
+    // Umur sesi ([BL-088]) — null saat belum ada sesi terbuka.
+    sessionLimit: { type: Object, default: null },
 });
 
 const openingAmount = ref(0);
@@ -39,6 +41,46 @@ const expectedAmount = computed(() => Number(props.reconciliation?.expected_amou
  * `index()` berhenti mengirimkannya sampai hitungan fisik disetorkan, dan itu
  * tercatat sebagai butir yang belum dikerjakan di `[BL-086]`.
  */
+/**
+ * Peringatan sebelum sesi ditutup paksa ([BL-088]).
+ *
+ * Sengaja dihitung dari jam DINDING yang berdetak, bukan sekali saat halaman
+ * dirender: tab kasir dibiarkan terbuka semalaman, dan justru tab itulah yang
+ * paling butuh peringatan ini. Satu menit sekali sudah cukup halus untuk
+ * hitungan berjam-jam, dan tidak menyalakan layar tiap detik.
+ */
+const now = ref(new Date());
+let clock = null;
+onMounted(() => { clock = setInterval(() => { now.value = new Date(); }, 60_000); });
+onUnmounted(() => { if (clock) clearInterval(clock); });
+
+const sessionWarning = computed(() => {
+    if (!props.sessionLimit) return null;
+
+    const expiresAt = new Date(props.sessionLimit.expires_at);
+    const warnFrom = new Date(props.sessionLimit.warn_from);
+
+    if (now.value < warnFrom) return null;
+
+    // Sudah lewat batas tapi sapuan per jam belum menyentuhnya. Keadaan ini
+    // nyata dan berumur paling lama satu jam — mendiamkannya berarti kasir
+    // menghitung uang untuk sesi yang akan ditutup sistem beberapa menit lagi.
+    if (now.value >= expiresAt) {
+        return { overdue: true, minutes: 0 };
+    }
+
+    return { overdue: false, minutes: Math.round((expiresAt - now.value) / 60_000) };
+});
+
+const formatCountdown = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+
+    if (hours > 0) return `${hours} jam ${rest} menit`;
+
+    return `${rest} menit`;
+};
+
 const showExpected = ref(false);
 
 /**
@@ -175,6 +217,29 @@ const goToPOS = () => {
                         </svg>
                     </div>
                     <h2 class="text-2xl font-semibold text-gray-800">Sesi Kas Aktif</h2>
+                </div>
+
+                <!-- Umur sesi ([BL-088]). Muncul empat jam sebelum batas, bukan
+                     sesudahnya: sesi yang terlanjur ditutup sistem tidak bisa
+                     lagi dihitung uangnya. -->
+                <div
+                    v-if="sessionWarning"
+                    class="mb-6 rounded-lg border px-4 py-3 text-sm leading-relaxed"
+                    :class="sessionWarning.overdue
+                        ? 'border-destructive/40 bg-destructive/10 text-foreground'
+                        : 'border-warning/40 bg-warning/10 text-foreground'"
+                    role="status"
+                >
+                    <template v-if="sessionWarning.overdue">
+                        <span class="font-semibold">Sesi ini sudah lewat {{ sessionLimit.hours }} jam.</span>
+                        Sistem akan menutupnya sendiri dalam waktu dekat, dan sesi yang ditutup sistem tercatat
+                        <span class="font-medium">tanpa hitungan uang fisik</span>. Tutup kas sekarang selagi masih bisa dihitung.
+                    </template>
+                    <template v-else>
+                        <span class="font-semibold">Sesi kas akan ditutup otomatis dalam {{ formatCountdown(sessionWarning.minutes) }}.</span>
+                        Sesi kas hanya berlaku {{ sessionLimit.hours }} jam. Kalau ditutup sistem, uang fisiknya tidak pernah tercatat
+                        dan selisihnya tidak bisa dipertanggungjawabkan siapa pun.
+                    </template>
                 </div>
 
                 <!-- Info Sesi -->

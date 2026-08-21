@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
 | 2026-08-21 | ADDITION | Kas | Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090) |
 | 2026-08-21 | REFACTOR | Kas | Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2) |
 | 2026-08-20 | HOTFIX | UI | Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089) |
@@ -241,6 +242,25 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Asumsi entri backlognya terbukti keliru, dan sisanya sengaja tidak dibongkar.** Sebutan ramalan stok masih berdiri di tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo — keputusan pemasaran, bukan konsekuensi teknis. Dicatat sebagai `[BL-089]`.
 - **Testnya sengaja hanya mengunci hero,** dengan alasan yang ditulis di dalam testnya sendiri: menyapu seluruh sebutan "prediksi" akan membuatnya gagal sampai `[BL-089]` dikerjakan, padahal `[BL-089]` menunggu keputusan pemilik.
 - **Berkas:** `resources/views/public/landing.blade.php` — paragraf hero, dua kartu melayang · `tests/Feature/Public/LandingClaimsTest.php` — satu test baru (72 tes lulus di `tests/Feature/Public`)
+
+---
+
+### [ADDITION] Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-088]`, entri terakhir dari catatan pemilik 2026-08-21 yang menyangkut kas
+- **Dampak:** Schema | Model | Service | Console | Controller | Frontend | Test
+- **Breaking Change:** Ya, tapi tidak untuk data yang ada. Sesi kas yang dulu hidup selamanya kini berhenti setelah **24 jam**. Kolomnya lahir `false` untuk seluruh baris lama, jadi tidak ada satu pun sesi yang statusnya berubah oleh pemasangan ini — yang berubah adalah nasib sesi yang menggantung sesudahnya.
+- **Deskripsi:** Sesi kas berumur `CashDrawer::MAX_SESSION_HOURS` (24 jam) sejak dibuka. Lewat itu `cash-drawers:expire` — terjadwal tiap jam pada menit ke-5 — menutupnya paksa: `closed_at` diisi, `closed_by_system` ditandai, `expected_amount` dicatat, dan `closing_amount` beserta `difference` **dibiarkan kosong**. Kasir diperingatkan di layar empat jam sebelum batasnya lewat, dan daftar Sesi Kas pemilik membedakan "Ditutup sistem" dari "Closed".
+- **Alasan:** Dilaporkan pemilik — "masa hidup kas cuma sehari dan auto close dan perlu perbaikan ketika lewat". Sebelum ini tidak ada satu pun tugas terjadwal yang menyentuh `cash_drawers`: kasir yang pulang tanpa menekan "Tutup Kas" meninggalkan sesi yang esok paginya MENOLAK dibuka lagi ("Anda masih memiliki sesi kas yang terbuka"), sementara rekonsiliasinya diam-diam menghitung penjualan dua hari sebagai isi satu laci.
+
+- **Sesi yang ditutup sistem tidak pernah mengaku sudah dihitung, dan itu butir yang tidak boleh dilonggarkan.** Mengisi `closing_amount` dengan `expected_amount` akan menghasilkan selisih nol yang rapi di setiap laporan — dan itu kebohongan yang persis sama dengan yang baru saja dilarang `[BL-086]`, hanya berpindah dari layar kasir ke basis data. `expected_amount` sebaliknya DIISI, karena ia angka milik sistem sendiri dan bukan pernyataan tentang uang fisik yang tidak pernah dihitung siapa pun.
+- **Ongkosnya nyata dan diterima sadar:** uang fisik sesi itu hilang dari pertanggungjawaban. Yang ditukar dengannya adalah sesi yang tidak menggantung selamanya dan tidak memblokir kas keesokan harinya. Justru karena ongkosnya nyata, penandanya harus jujur — di situlah butir di atas berdiri.
+- **`closed_by_system` jadi kolom sendiri, bukan diturunkan dari `closing_amount === null`.** Keduanya kebetulan sama hari ini. Menyandarkan artinya pada kebetulan itu berarti sesi mana pun yang kelak boleh ditutup tanpa hitungan — `[BL-087]` menyentuh wilayah yang sama — akan terbaca sebagai "ditutup sistem" tanpa satu baris kode pun berubah.
+- **Tiap jam, bukan harian, dan alasannya sama persis dengan `open-bills:expire`.** Sapuan harian membuat batas 24 jam berarti "antara satu dan dua hari", tergantung sesi itu lahir beberapa menit sebelum atau sesudah sapuan lewat — dan peringatan di layar kasir yang menyebut sisa waktunya akan ikut berbohong. Digeser ke menit ke-5 supaya kedua sapuan tidak muncul sebagai satu lonjakan yang sama di log ketika salah satunya bermasalah.
+- **Rekonsiliasi dihitung SEBELUM `closed_at` diisi.** Jendela sesi memakai `closed_at ?? now()`; menutup lebih dulu akan memotong jendela di titik yang sama dan menghasilkan angka yang benar hanya karena kebetulan urutan baris. Urutan itu ditulis eksplisit di servicenya supaya tidak ada yang "merapikannya" belakangan.
+- **Peringatannya muncul EMPAT JAM sebelum batas, bukan sesudah.** Peringatan yang datang setelah sesi tertutup tidak berguna: uangnya sudah tidak bisa dihitung. Empat jam dipilih karena ia lebih panjang dari sisa shift mana pun yang masuk akal. Ada pula keadaan kedua yang sengaja tidak didiamkan — sudah lewat 24 jam tapi sapuan per jam belum menyentuhnya — dan di sana kalimatnya berubah jadi ajakan menutup sekarang selagi masih bisa dihitung.
+- **Sisa waktunya dihitung dari jam dinding yang berdetak, bukan sekali saat halaman dirender.** Tab kasir dibiarkan terbuka semalaman, dan justru tab itulah yang paling butuh peringatan ini; angka sisa yang dihitung sekali akan basi persis di tempat ia paling dibutuhkan. Servernya karena itu mengirim dua TITIK WAKTU (`expires_at`, `warn_from`), bukan "sisa berapa jam".
+- **Berkas:** `database/migrations/2026_08_21_020320_add_closed_by_system_to_cash_drawers_table.php` (baru) · `app/Services/CashDrawerExpiryService.php` (baru) · `app/Console/Commands/ExpireCashDrawers.php` (baru) · `app/Models/CashDrawer.php` — `MAX_SESSION_HOURS`, `STALE_WARNING_HOURS`, `staleCutoff()`, `scopeStale()` · `routes/console.php` — `hourlyAt(5)` · `app/Http/Controllers/Cashier/CashDrawerController.php` — prop `sessionLimit` · `resources/js/Pages/Cashier/CashDrawer.vue` · `resources/js/Pages/Owner/CashDrawers/Index.vue` · `tests/Feature/Cashier/CashDrawerExpiryTest.php` (baru, 8 tes)
 
 ---
 

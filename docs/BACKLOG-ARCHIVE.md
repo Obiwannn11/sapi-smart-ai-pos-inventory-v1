@@ -10,6 +10,27 @@
 
 ## Daftar Entri
 
+### [BL-088] Sesi Kas Tidak Punya Umur, Tidak Pernah Ditutup Sendiri, dan Rekapnya Terus Membesar
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "masa hidup kas cuma sehari dan auto close dan perlu perbaikan ketika lewat"
+- **Status:** **Selesai 2026-08-21** — keempat butirnya. Lihat `[ADDITION] Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088)`
+- **Status semula:** Open
+- **Keputusan pemilik 2026-08-21:** batasnya **24 jam**, diambil dari kalimat pemilik sendiri di sumber entri ini ("masa hidup kas cuma sehari"). Ia tinggal di `CashDrawer::MAX_SESSION_HOURS`, mengikuti `Transaction::OPEN_BILL_LIFETIME_HOURS` — satu keputusan yang berlaku untuk seluruh aplikasi, bukan setelan per pemasangan.
+- **Prioritas:** Medium — belum merusak angka mana pun, tapi ia yang membuat `[BL-086]` tidak cukup sendirian: kasir yang lupa menutup kas tidak akan pernah sampai ke layar tutup kas, sebagus apa pun layar itu dibuat
+- **Area Terdampak:**
+  - `routes/console.php` — **tidak ada** satu pun jadwal yang menyentuh `cash_drawers`; yang berjalan tiap jam adalah `open-bills:expire`, dan itu tagihan terbuka, bukan sesi kas
+  - `app/Http/Controllers/Cashier/CashDrawerController.php:83` — satu-satunya penutup sesi adalah kasir menekan tombol
+  - `app/Services/CashDrawerReconciliation.php:190` — jendela sesi memakai `closed_at ?? Carbon::now()`, jadi sesi yang tak pernah ditutup menyerap seluruh penjualan hari-hari berikutnya
+  - `app/Http/Controllers/Cashier/CashDrawerController.php:63` — kasir hanya boleh punya satu sesi terbuka, sehingga sesi yang menggantung **memblokir** pembukaan kas keesokan harinya
+- **Deskripsi:** Sesi kas hidup sampai ada yang menutupnya, tanpa batas. Kasir yang pulang tanpa menekan "Tutup Kas" meninggalkan sesi yang esok paginya menolak dibuka lagi ("Anda masih memiliki sesi kas yang terbuka"), sementara rekonsiliasinya diam-diam menghitung penjualan dua hari sebagai isi satu laci. Selisih yang muncul di akhir bukan lagi selisih kas, melainkan selisih akumulasi — dan tidak ada tanda apa pun di layar yang mengatakan sesi itu sudah lewat hari.
+- **Dugaan Penyebab:** `cash_drawers` lahir dengan asumsi satu shift = satu hari kerja yang selalu ditutup manual (lihat `[SCHEMA] Penambahan Tabel cash_drawers`, 2026-03-06). Asumsi itu tidak pernah ditulis dan tidak punya penegak.
+- **Usulan Perbaikan:**
+  1. Command `cash-drawers:expire` terjadwal, menutup paksa sesi yang lewat batas umur. **Batasnya keputusan pemilik**, bukan angka yang boleh ditebak di sini — dan kalau dipilih 24 jam, jadwalnya harus **tiap jam** dengan alasan yang sama persis seperti `open-bills:expire`: sapuan harian membuat batas 24 jam berarti "antara satu dan dua hari".
+  2. Sesi yang ditutup sistem **tidak boleh mengaku sudah dihitung**: `closing_amount` dan `difference` dibiarkan `null` dengan penanda tersendiri (mis. `closed_by_system`), bukan diisi `expected_amount` supaya selisihnya nol. Selisih nol yang dikarang adalah kebohongan yang persis sama dengan yang dilarang `[BL-086]`.
+  3. Sesi yang lewat umur muncul di daftar Sesi Kas owner sebagai butuh ditinjau.
+  4. Peringatan di layar kasir **sebelum** batasnya lewat, bukan sesudah — sesi yang terlanjur ditutup sistem tidak bisa lagi dihitung uangnya.
+- **Catatan:** menutup paksa berarti uang fisiknya tidak pernah dihitung siapa pun. Itu kerugian yang diterima secara sadar sebagai ganti sesi yang menggantung selamanya, dan justru karena itu butir 2 tidak boleh dilonggarkan.
+
 ### [BL-090] Angka Rekonsiliasi Tetap Dikirim ke Kasir — Penyembunyiannya Baru di Sisi Klien
 - **Ditemukan:** 2026-08-21 (dipecah dari `[BL-086]` saat ketiga butirnya selesai)
 - **Sumber:** Catatan di dalam `[BL-086]` sendiri — "butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan"

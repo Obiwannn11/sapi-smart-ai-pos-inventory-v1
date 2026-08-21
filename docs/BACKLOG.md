@@ -105,25 +105,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
-### [BL-088] Sesi Kas Tidak Punya Umur, Tidak Pernah Ditutup Sendiri, dan Rekapnya Terus Membesar
-- **Ditemukan:** 2026-08-21
-- **Sumber:** Catatan pemilik — "masa hidup kas cuma sehari dan auto close dan perlu perbaikan ketika lewat"
-- **Status:** Open
-- **Prioritas:** Medium — belum merusak angka mana pun, tapi ia yang membuat `[BL-086]` tidak cukup sendirian: kasir yang lupa menutup kas tidak akan pernah sampai ke layar tutup kas, sebagus apa pun layar itu dibuat
-- **Area Terdampak:**
-  - `routes/console.php` — **tidak ada** satu pun jadwal yang menyentuh `cash_drawers`; yang berjalan tiap jam adalah `open-bills:expire`, dan itu tagihan terbuka, bukan sesi kas
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:83` — satu-satunya penutup sesi adalah kasir menekan tombol
-  - `app/Services/CashDrawerReconciliation.php:190` — jendela sesi memakai `closed_at ?? Carbon::now()`, jadi sesi yang tak pernah ditutup menyerap seluruh penjualan hari-hari berikutnya
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:63` — kasir hanya boleh punya satu sesi terbuka, sehingga sesi yang menggantung **memblokir** pembukaan kas keesokan harinya
-- **Deskripsi:** Sesi kas hidup sampai ada yang menutupnya, tanpa batas. Kasir yang pulang tanpa menekan "Tutup Kas" meninggalkan sesi yang esok paginya menolak dibuka lagi ("Anda masih memiliki sesi kas yang terbuka"), sementara rekonsiliasinya diam-diam menghitung penjualan dua hari sebagai isi satu laci. Selisih yang muncul di akhir bukan lagi selisih kas, melainkan selisih akumulasi — dan tidak ada tanda apa pun di layar yang mengatakan sesi itu sudah lewat hari.
-- **Dugaan Penyebab:** `cash_drawers` lahir dengan asumsi satu shift = satu hari kerja yang selalu ditutup manual (lihat `[SCHEMA] Penambahan Tabel cash_drawers`, 2026-03-06). Asumsi itu tidak pernah ditulis dan tidak punya penegak.
-- **Usulan Perbaikan:**
-  1. Command `cash-drawers:expire` terjadwal, menutup paksa sesi yang lewat batas umur. **Batasnya keputusan pemilik**, bukan angka yang boleh ditebak di sini — dan kalau dipilih 24 jam, jadwalnya harus **tiap jam** dengan alasan yang sama persis seperti `open-bills:expire`: sapuan harian membuat batas 24 jam berarti "antara satu dan dua hari".
-  2. Sesi yang ditutup sistem **tidak boleh mengaku sudah dihitung**: `closing_amount` dan `difference` dibiarkan `null` dengan penanda tersendiri (mis. `closed_by_system`), bukan diisi `expected_amount` supaya selisihnya nol. Selisih nol yang dikarang adalah kebohongan yang persis sama dengan yang dilarang `[BL-086]`.
-  3. Sesi yang lewat umur muncul di daftar Sesi Kas owner sebagai butuh ditinjau.
-  4. Peringatan di layar kasir **sebelum** batasnya lewat, bukan sesudah — sesi yang terlanjur ditutup sistem tidak bisa lagi dihitung uangnya.
-- **Catatan:** menutup paksa berarti uang fisiknya tidak pernah dihitung siapa pun. Itu kerugian yang diterima secara sadar sebagai ganti sesi yang menggantung selamanya, dan justru karena itu butir 2 tidak boleh dilonggarkan.
-
 ### [BL-087] Tidak Ada Cara Mencatat Uang Keluar atau Setoran di Tengah Sesi Kas
 - **Ditemukan:** 2026-08-21
 - **Sumber:** Catatan pemilik — "membuat button untuk meminta uang yang ada pada saat kas aktif sebelum tertutup"
@@ -639,6 +620,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-088` | Sesi kas tidak punya umur, tidak pernah ditutup sendiri, dan rekapnya terus membesar | 2026-08-21 (batas 24 jam, dari kalimat pemilik "masa hidup kas cuma sehari") | `[ADDITION] Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088)` |
 | `BL-090` | Angka rekonsiliasi tetap dikirim ke kasir — penyembunyiannya baru di sisi klien | 2026-08-21 (pemilik memilih bentuk (2): mencatat, bukan mencegah) | `[ADDITION] Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090)` |
 | `BL-086` | Layar tutup kas menyebutkan jawabannya sebelum kasir menghitung, dan dua alur berbeda menumpang satu halaman | 2026-08-21 (ketiga butirnya, plus satu lubang yang ditemukan saat mengerjakannya) | `[ADDITION] Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1)` + `[REFACTOR] Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2)` |
 | `BL-089` | Klaim prediksi stok masih berdiri di tab demo, FAQ, dan label "Machine Learning" | 2026-08-20 (dijawab pemilik: tab diganti **Saran Jual**, FAQ diganti cara Badge Helper bekerja; butir (c) dikerjakan lebih dulu karena tidak menunggu keputusan) | `[HOTFIX] Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089)` |
