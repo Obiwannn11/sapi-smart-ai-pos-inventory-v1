@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-21 | ADDITION | Kas | Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090) |
 | 2026-08-21 | REFACTOR | Kas | Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2) |
 | 2026-08-20 | HOTFIX | UI | Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089) |
 | 2026-08-21 | ADDITION | Kas | Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1) |
@@ -240,6 +241,25 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Asumsi entri backlognya terbukti keliru, dan sisanya sengaja tidak dibongkar.** Sebutan ramalan stok masih berdiri di tab demo interaktif berjudul "Prediksi Stok (Machine Learning)", tombol "Jalankan Ulang Prediksi AI", jawaban FAQ yang menjelaskan mekanismenya, dan `predictData` yang memperagakan sisa hari per produk. Itu satu dari tiga pilar bagian Demo — keputusan pemasaran, bukan konsekuensi teknis. Dicatat sebagai `[BL-089]`.
 - **Testnya sengaja hanya mengunci hero,** dengan alasan yang ditulis di dalam testnya sendiri: menyapu seluruh sebutan "prediksi" akan membuatnya gagal sampai `[BL-089]` dikerjakan, padahal `[BL-089]` menunggu keputusan pemilik.
 - **Berkas:** `resources/views/public/landing.blade.php` — paragraf hero, dua kartu melayang · `tests/Feature/Public/LandingClaimsTest.php` — satu test baru (72 tes lulus di `tests/Feature/Public`)
+
+---
+
+### [ADDITION] Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090)
+- **Tanggal:** 2026-08-21
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-090]`, sisa `[BL-086]` yang dipecah di hari yang sama
+- **Dampak:** Schema | Model | Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak. Tabel baru yang lahir kosong; tidak ada perilaku lama yang berubah selain munculnya satu kolom di daftar sesi kas pemilik.
+- **Deskripsi:** Setiap kali kasir menekan "Tampilkan uang seharusnya" di halaman sesi kas, satu baris tercatat di `cash_drawer_reveals` — laci mana, siapa, jam berapa. Daftar Sesi Kas milik pemilik mendapat kolom **"Angka Dibuka"**: jumlah pembukaan, dengan waktu pembukaan pertama di tooltip-nya.
+- **Alasan:** `[BL-086]` menyembunyikan angka "seharusnya di laci" di layar, tapi ia tetap ikut props Inertia dan terbaca dari devtools. Pemilik memilih **bentuk (2)** di antara dua yang ditawarkan `[BL-090]`: mencatat, bukan mencegah.
+
+- **Bentuk (1) ditolak, dan alasannya bukan kesulitan teknis.** Endpoint yang menahan angkanya sampai hitungan fisik masuk memang lebih ketat — tapi ia mematikan tombol "Tampilkan uang seharusnya" yang pemilik sendiri minta untuk peragaan di `[BL-086]`. Penjaga yang menghapus fitur yang diminta orang yang sama akan dicabut lagi pada peragaan berikutnya.
+- **Ini cara kasir sungguhan menyelesaikannya: penyimpangan tidak diblokir, ia jadi terlihat.** Membuka angkanya sah dan ada alasan wajar untuk melakukannya — mengecek laci di tengah shift, menjawab pertanyaan pemilik. Yang dijawab jejak ini hanya satu hal: apakah angkanya sudah terbaca sebelum uang fisik dihitung. Penilaiannya milik pemilik, dan **tidak ada satu pun tempat di kode ini yang menyebutnya pelanggaran**.
+- **Kasir diberi tahu SEBELUM menekan, bukan sesudah.** Kalimat di bawah tombolnya berbunyi "Boleh dibuka kalau memang perlu — pemilik akan melihat catatan bahwa angkanya dibuka." Jejak yang baru diketahui belakangan terasa seperti jebakan, dan kasir yang merasa dijebak berhenti mempercayai seluruh layar itu — termasuk bagian yang dibuat untuk melindunginya.
+- **Tabel tersendiri, bukan kolom penghitung di `cash_drawers`.** Yang ditanyakan pemilik saat curiga bukan "berapa kali" melainkan "kapan, dan oleh siapa". Penghitung menjawab yang pertama saja dan tidak bisa dibuat menjawab yang kedua tanpa migrasi kedua. `user_id`-nya pun disimpan terpisah dari `cash_drawers.user_id`: pemilik yang kelak membuka laci kasirnya akan tercatat sebagai dirinya sendiri.
+- **Klien menahan diri satu kali per pemuatan halaman; servernya tidak.** Menyalakan-mematikan bergantian akan menumpuk baris yang menjawab hal yang sama. Tapi `reveal()` tidak menganggap pengungkapan kedua sebagai duplikat — memuat ulang halaman lalu membukanya lagi adalah peristiwa lain di jam yang lain, dan itu justru yang ingin dilihat pemilik.
+- **Gagal mencatat tidak membatalkan apa pun.** Angkanya sudah terbuka di layar sebelum permintaannya dikirim; `reveal()` menjawab `back()` tanpa muatan dan diam saja bila tidak ada sesi terbuka. Permintaan yang datang terlambat — sesi baru ditutup di perangkat lain — bukan kesalahan pengguna, jadi bukan 4xx.
+- **Daftarnya memakai `withCount` + `withMin`, bukan memuat barisnya.** Yang dipajang hanya dua angka; memuat seluruh jejak untuk 25 sesi berarti puluhan baris yang tak satu pun ditampilkan. Yang ditampilkan waktu **pertama**, bukan terakhir: "kapan ia pertama tahu" menjawab apakah hitungannya sudah tercemar; pembukaan terakhir tidak.
+- **Berkas:** `database/migrations/2026_08_20_215535_create_cash_drawer_reveals_table.php` (baru) · `app/Models/CashDrawerReveal.php` (baru) · `app/Models/CashDrawer.php` — relasi `reveals()` · `app/Http/Controllers/Cashier/CashDrawerController.php` — `reveal()` · `routes/web.php` · `app/Http/Controllers/Owner/ReportController.php` — `cashDrawers()` · `resources/js/Pages/Cashier/CashDrawer.vue` · `resources/js/Pages/Owner/CashDrawers/Index.vue` · `tests/Feature/Cashier/CashDrawerRevealTrailTest.php` (baru, 5 tes)
 
 ---
 

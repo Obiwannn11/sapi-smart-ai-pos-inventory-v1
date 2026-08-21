@@ -369,6 +369,10 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
         // SEBELUM `{cashDrawer}/summary` bukan karena keduanya bentrok — segmen
         // `/summary` sudah membedakannya — melainkan supaya urutan bacanya
         // mengikuti urutan pemakaiannya: buka, tutup, lalu rekap.
+        // Jejak pengungkapan angka "seharusnya di laci" ([BL-090]). POST karena
+        // ia menulis, meski yang ditulis hanya sebaris catatan.
+        Route::post('/cash-drawer/reveal', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'reveal'])
+            ->name('cash-drawer.reveal');
         Route::get('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'showClose'])
             ->name('cash-drawer.close-form');
         Route::post('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'close'])

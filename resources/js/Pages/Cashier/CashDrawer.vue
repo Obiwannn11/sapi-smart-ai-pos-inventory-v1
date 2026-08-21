@@ -40,7 +40,38 @@ const expectedAmount = computed(() => Number(props.reconciliation?.expected_amou
  * tercatat sebagai butir yang belum dikerjakan di `[BL-086]`.
  */
 const showExpected = ref(false);
-const toggleExpected = () => { showExpected.value = !showExpected.value; };
+
+/**
+ * Membukanya sah, dan ia meninggalkan jejak ([BL-090]).
+ *
+ * Pemilik memilih mencatat alih-alih mencegah, jadi tombolnya tetap hidup dan
+ * yang berubah hanya: pemakaiannya terlihat. Kalimat di layar mengatakannya
+ * sebelum tombolnya ditekan — jejak yang baru diketahui belakangan terasa
+ * seperti jebakan, dan kasir yang merasa dijebak berhenti mempercayai
+ * seluruh layar ini.
+ *
+ * Dicatat sekali per pemuatan halaman, bukan sekali per klik: menyalakan dan
+ * mematikan bergantian akan menumpuk baris yang menjawab hal yang sama, dan
+ * yang ditanyakan pemilik adalah "apakah ia sudah melihat angkanya", bukan
+ * "berapa kali ia menekan tombolnya".
+ */
+const revealLogged = ref(false);
+
+const toggleExpected = () => {
+    showExpected.value = !showExpected.value;
+
+    if (showExpected.value && !revealLogged.value) {
+        revealLogged.value = true;
+        // `preserveState` supaya angkanya tidak berkedip tertutup lagi begitu
+        // jawabannya sampai, dan `only: []` supaya tidak ada prop yang ditarik
+        // ulang untuk sebuah permintaan yang tidak mengubah apa pun di layar.
+        router.post('/cashier/cash-drawer/reveal', {}, {
+            preserveState: true,
+            preserveScroll: true,
+            only: [],
+        });
+    }
+};
 
 
 const formatCurrency = (value) => {
@@ -190,6 +221,7 @@ const goToPOS = () => {
                         </div>
                         <p v-if="!showExpected" class="text-xs text-muted-foreground mt-1 leading-relaxed">
                             Disembunyikan supaya hitungan uang fisik Anda jujur. Hitung dulu isi laci, masukkan angkanya, dan ringkasan tutup kas akan membandingkannya sendiri.
+                            <span class="block mt-1">Boleh dibuka kalau memang perlu — pemilik akan melihat catatan bahwa angkanya dibuka.</span>
                         </p>
                     </div>
                 </div>

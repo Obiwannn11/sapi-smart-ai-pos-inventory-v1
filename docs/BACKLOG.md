@@ -105,50 +105,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
-### [BL-091] Seluruh Aplikasi Vue (1,1 MB, 56 Halaman) Dikirim ke Setiap Pengunjung Halaman Publik, lalu Gagal Mount
-- **Ditemukan:** 2026-08-20 (saat memverifikasi `[BL-089]` di peramban — dua error konsol muncul di landing padahal perubahannya seluruhnya Blade)
-- **Sumber:** Pengamatan langsung di konsol peramban, lalu ditelusuri ke `app.js` dan manifes build
-- **Status:** Open — **butuh keputusan pemilik**: memisahkan bundel atau membiarkannya sebagai ongkos yang disadari
-- **Prioritas:** Medium — tidak ada angka yang salah dan tidak ada data yang bocor, tapi ia menyentuh **halaman pertama yang dilihat calon klien**, dan produk ini dijual ke UMKM yang sebagian besar membukanya lewat ponsel dan kuota
-- **Area Terdampak:**
-  - `resources/views/public/landing.blade.php:19` — `@vite(['resources/css/app.css', 'resources/js/app.js'])`
-  - `resources/views/public/api-docs.blade.php`, `resources/views/public/docs/layout.blade.php`, `resources/views/welcome.blade.php` — ketiganya sama
-  - `resources/js/app.js:5` — `createInertiaApp({ … })` dijalankan tanpa syarat begitu berkasnya dimuat
-  - `resources/js/app.js:8` — `import.meta.glob('./Pages/**/*.vue', { eager: true })`
-  - `public/build/assets/app-*.js` — **1.104,9 KB** dalam satu berkas
-- **Deskripsi:**
-  Keempat halaman Blade publik memuat `app.js`, dan **tak satu pun punya elemen `#app`**. `createInertiaApp` tetap berjalan, tidak menemukan tempat mount, lalu melempar `TypeError: Cannot read properties of null (reading 'component')` — dua kali per kunjungan. Halamannya sendiri tetap tampil karena ia Blade murni; yang gagal hanya lapisan yang memang tidak punya urusan di sana.
-
-  Error konsolnya sebenarnya gejala yang paling ringan. Yang mahal adalah muatannya: `import.meta.glob` dipanggil dengan `eager: true`, sehingga **seluruh 56 halaman Vue** — dashboard owner, panel platform, kasir, langganan, laporan — dikompilasi menjadi satu bundel 1,1 MB. Bundel itu diunduh, diurai, dan dijalankan oleh setiap orang yang membuka halaman depan, termasuk yang belum punya akun dan tidak akan pernah melihat satu pun halaman di dalamnya.
-
-  Ironi yang membuatnya layak dicatat sekarang: `[BL-032]` dan `[BL-077]` menghabiskan pekerjaan nyata untuk menurunkan gambar landing dari 531 KB jadi 294 KB. Satu berkas JavaScript yang tidak dipakai halaman itu sama sekali berukuran **hampir empat kali lipat** seluruh penghematan tersebut.
-- **Kenapa ini belum pernah ketahuan:** halamannya tidak rusak. Tidak ada yang hilang, tidak ada tata letak yang bergeser, dan errornya hanya terlihat bila konsol dibuka. Satu-satunya yang mengeluh adalah pengunjung berkuota tipis, dan mereka tidak melapor — mereka pergi.
-- **Yang perlu diputuskan:**
-  1. **Apakah halaman publik butuh JavaScript dari `app.js` sama sekali?** Landing punya skrip sendiri di dalam Blade-nya (peragaan POS, tab demo, FAQ, `IntersectionObserver`) dan tidak memanggil apa pun dari bundel Inertia. Bila jawabannya tidak, entri ini selesai dengan memisahkan entry point — bukan dengan mengoptimalkan bundel.
-  2. **`app.css` ikut atau tidak?** Berbeda dengan JS, gaya Tailwind-nya memang dipakai halaman publik. Memisahkan JS tanpa menyeret CSS adalah bagian yang harus disengaja, bukan diasumsikan.
-- **Usulan Perbaikan:**
-  **(a)** **Cabut `resources/js/app.js` dari keempat Blade publik**, pertahankan `app.css`. Ini menutup error konsol dan seluruh 1,1 MB sekaligus, dan tidak menyentuh satu baris pun kode aplikasi. Kerjakan ini lebih dulu dan sendirian — sisanya perbaikan, yang ini penghapusan.
-  **(b)** Bila suatu saat halaman publik memang butuh sedikit JS terbundel, beri ia **entry point sendiri** di `vite.config.js` (mis. `resources/js/public.js`), jangan menumpang entry aplikasi.
-  **(c)** **`eager: true` layak ditinjau terpisah**, dan bukan bagian dari entri ini. Menggantinya dengan glob malas memecah bundel per halaman untuk pengguna yang sudah masuk juga — keuntungan nyata, tapi ia mengubah cara setiap halaman dimuat dan pantas diuji sendiri. Jangan digabung dengan (a): yang satu penghapusan tanpa risiko, yang lain perubahan perilaku pemuatan.
-  **(d)** Tambahkan penjaga sesudahnya — sebuah test yang memastikan HTML landing tidak memuat entry aplikasi. Tanpa itu, satu `@vite` yang disalin dari layout lain akan mengembalikannya tanpa ada yang menagih, persis seperti yang sudah terjadi pada `[BL-083]` dan `[BL-089]`.
-- **Catatan:** `welcome.blade.php` ikut terdaftar di atas, tapi periksa dulu apakah ia masih dirujuk rute mana pun. Bila tidak, ia berkas bawaan Laravel yang tertinggal dan lebih tepat dihapus daripada diperbaiki.
-
----
-
-### [BL-090] Angka Rekonsiliasi Tetap Dikirim ke Kasir — Penyembunyiannya Baru di Sisi Klien
-- **Ditemukan:** 2026-08-21 (dipecah dari `[BL-086]` saat ketiga butirnya selesai)
-- **Sumber:** Catatan di dalam `[BL-086]` sendiri — "butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan"
-- **Status:** Open — **butuh keputusan pemilik lebih dulu**: apakah yang diinginkan penegakan, atau cukup menghilangkan godaan
-- **Prioritas:** Low — bukan karena lubangnya kecil, melainkan karena orang yang mampu membuka devtools di tablet kasir bukan lagi persoalan yang bisa dijawab satu layar
-- **Area Terdampak:**
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:41` — `index()` mengirim `reconciliation` penuh ke setiap kasir yang membuka halaman kas
-  - `resources/js/Pages/Cashier/CashDrawer.vue` — `showExpected` hanya menahannya dari layar, bukan dari props
-- **Deskripsi:** `[BL-086]` menutup angka "seharusnya di laci" di layar, dan itu cukup untuk peragaan serta untuk menghilangkan godaan sehari-hari. Yang TIDAK berubah: angkanya tetap ikut props Inertia setiap kali halaman kas dibuka, jadi ia terbaca dari devtools peramban tanpa satu pun izin tambahan.
-- **Usulan Perbaikan:** `index()` berhenti mengirim `expected_amount`, `cash_in`, dan `change_out` sampai hitungan fisik disetorkan. Dua bentuk yang mungkin, dan keduanya menukar sesuatu:
-  1. **Endpoint terpisah** yang mengembalikan angkanya hanya setelah hitungan fisik dikirim. Paling ketat, tapi ia mematikan tombol "Tampilkan uang seharusnya" yang justru diminta pemilik untuk peragaan.
-  2. **Tetap dikirim, tapi pengungkapannya dicatat** — satu baris jejak "kasir X membuka angka seharusnya pada jam Y, sebelum menghitung". Tidak mencegah apa pun, tapi membuatnya terlihat, dan itu yang benar-benar dibutuhkan pemilik yang ingin tahu.
-- **Catatan:** bentuk (2) lebih dekat dengan cara masalah ini biasanya diselesaikan di kasir sungguhan — penyimpangan tidak diblokir, ia dicatat. Jangan pilih (1) hanya karena ia terdengar lebih aman: layar yang tidak bisa menunjukkan angkanya sama sekali akan membuat pemilik meminta jalan pintasnya kembali di peragaan berikutnya.
-
 ### [BL-088] Sesi Kas Tidak Punya Umur, Tidak Pernah Ditutup Sendiri, dan Rekapnya Terus Membesar
 - **Ditemukan:** 2026-08-21
 - **Sumber:** Catatan pemilik — "masa hidup kas cuma sehari dan auto close dan perlu perbaikan ketika lewat"
@@ -683,6 +639,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-090` | Angka rekonsiliasi tetap dikirim ke kasir — penyembunyiannya baru di sisi klien | 2026-08-21 (pemilik memilih bentuk (2): mencatat, bukan mencegah) | `[ADDITION] Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090)` |
 | `BL-086` | Layar tutup kas menyebutkan jawabannya sebelum kasir menghitung, dan dua alur berbeda menumpang satu halaman | 2026-08-21 (ketiga butirnya, plus satu lubang yang ditemukan saat mengerjakannya) | `[ADDITION] Angka yang Jadi Jawaban Disembunyikan Selama Sesi Berjalan (BL-086 butir 1)` + `[REFACTOR] Tutup Kas Punya Halamannya Sendiri, dan Angka yang Sudah Terbaca Tidak Bisa Disunting Diam-diam (BL-086 butir 2)` |
 | `BL-089` | Klaim prediksi stok masih berdiri di tab demo, FAQ, dan label "Machine Learning" | 2026-08-20 (dijawab pemilik: tab diganti **Saran Jual**, FAQ diganti cara Badge Helper bekerja; butir (c) dikerjakan lebih dulu karena tidak menunggu keputusan) | `[HOTFIX] Tab Demo Ketiga Berhenti Meramal dan Jadi Saran Jual yang Memang Sudah Jalan (BL-089)` |
 | `BL-085` | Grup "Keuangan" di sidebar menampung alat promosi bersama laporan uang | 2026-08-21 | `[REFACTOR] Aturan Saran Jual dan Diskon Keluar dari "Keuangan", Jadi Grup Sendiri (BL-085)` |

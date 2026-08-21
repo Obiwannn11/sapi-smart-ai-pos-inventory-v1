@@ -52,6 +52,11 @@ const formatDateTime = (datetime) => {
                             <th class="text-right py-3 px-4 text-gray-500 font-medium">Expected</th>
                             <th class="text-right py-3 px-4 text-gray-500 font-medium">Aktual</th>
                             <th class="text-right py-3 px-4 text-gray-500 font-medium">Selisih</th>
+                            <!-- [BL-090]: apakah kasir sudah membaca angka
+                                 "seharusnya di laci" sebelum menghitung. Bukan
+                                 pelanggaran — konteks untuk membaca selisih di
+                                 sebelahnya. -->
+                            <th class="text-center py-3 px-4 text-gray-500 font-medium">Angka Dibuka</th>
                             <th class="text-center py-3 px-4 text-gray-500 font-medium">Status</th>
                         </tr>
                     </thead>
@@ -73,6 +78,16 @@ const formatDateTime = (datetime) => {
                             </td>
                             <td class="py-3 px-4 text-right font-semibold" :class="cd.difference < 0 ? 'text-destructive' : cd.difference > 0 ? 'text-success' : 'text-muted-foreground'">
                                 {{ cd.difference !== null ? formatCurrency(cd.difference) : '-' }}
+                            </td>
+                            <td class="py-3 px-4 text-center">
+                                <span
+                                    v-if="cd.reveals_count > 0"
+                                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning/10 text-warning-foreground"
+                                    :title="`Pertama dibuka ${formatDateTime(cd.reveals_min_revealed_at)}`"
+                                >
+                                    {{ cd.reveals_count }}×
+                                </span>
+                                <span v-else class="text-xs text-muted-foreground">—</span>
                             </td>
                             <td class="py-3 px-4 text-center">
                                 <span

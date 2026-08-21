@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CloseCashDrawerRequest;
 use App\Http\Requests\OpenCashDrawerRequest;
 use App\Models\CashDrawer;
+use App\Models\CashDrawerReveal;
 use App\Services\CashDrawerReconciliation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
@@ -42,6 +43,44 @@ class CashDrawerController extends Controller
                 ? $this->reconciliation->for($openDrawer)
                 : null,
         ]);
+    }
+
+    /**
+     * Catat bahwa kasir membuka angka "seharusnya di laci" ([BL-090]).
+     *
+     * **Mencatat, bukan menolak** — itu keputusan pemilik 2026-08-21 di antara
+     * dua bentuk yang ditawarkan entri backlognya. Bentuk yang ditolak
+     * (endpoint yang menahan angkanya sampai hitungan fisik masuk) akan
+     * mematikan tombol peragaan yang pemilik sendiri minta; bentuk ini
+     * membiarkan tombolnya hidup dan membuat pemakaiannya terlihat.
+     *
+     * Dijawab `back()` tanpa muatan: klien sudah membuka angkanya sendiri dan
+     * tidak menunggu apa pun dari sini. Kegagalan mencatat tidak boleh
+     * membatalkan pengungkapan yang sudah terjadi di layar — jejak yang salah
+     * lebih buruk daripada jejak yang tidak lengkap.
+     */
+    public function reveal(): RedirectResponse
+    {
+        $user = Auth::user();
+
+        $openDrawer = $user
+            ? CashDrawer::where('user_id', $user->id)->whereNull('closed_at')->first()
+            : null;
+
+        // Tanpa sesi terbuka tidak ada angka yang bisa dibuka, jadi tidak ada
+        // yang perlu dicatat. Diam-diam saja: ini bukan kesalahan pengguna,
+        // melainkan permintaan yang datang terlambat (sesi baru saja ditutup
+        // di perangkat lain).
+        if ($openDrawer) {
+            CashDrawerReveal::create([
+                'tenant_id' => $openDrawer->tenant_id,
+                'cash_drawer_id' => $openDrawer->id,
+                'user_id' => $user->id,
+                'revealed_at' => now(),
+            ]);
+        }
+
+        return back();
     }
 
     /**

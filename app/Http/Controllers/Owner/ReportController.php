@@ -622,6 +622,13 @@ class ReportController extends Controller
             // tidak ada apa pun di layar ini yang bisa dikerjakan sebelum
             // barisnya sampai.
             'cashDrawers' => Inertia::defer(fn () => CashDrawer::with('user:id,name')
+                // Jejak pengungkapan angka seharusnya ([BL-090]). Dihitung di
+                // basis data, bukan dimuat barisnya: yang dipajang di daftar
+                // hanya "pernah dibuka berapa kali dan kapan pertama", dan
+                // memuat seluruh barisnya untuk 25 sesi berarti puluhan baris
+                // yang tak satu pun ditampilkan.
+                ->withCount('reveals')
+                ->withMin('reveals', 'revealed_at')
                 ->latest('opened_at')
                 ->paginate(25)),
         ]);

@@ -10,6 +10,22 @@
 
 ## Daftar Entri
 
+### [BL-090] Angka Rekonsiliasi Tetap Dikirim ke Kasir — Penyembunyiannya Baru di Sisi Klien
+- **Ditemukan:** 2026-08-21 (dipecah dari `[BL-086]` saat ketiga butirnya selesai)
+- **Sumber:** Catatan di dalam `[BL-086]` sendiri — "butir 1 tidak boleh dikerjakan sebagai penyembunyian di sisi klien saja kalau tujuannya penegakan sungguhan"
+- **Status:** **Selesai 2026-08-21** — pemilik memilih bentuk (2). Lihat `[ADDITION] Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090)`
+- **Status semula:** Open — butuh keputusan pemilik lebih dulu
+- **Keputusan pemilik 2026-08-21:** bentuk **(2)**, mencatat alih-alih mencegah. Bentuk (1) ditolak karena ia mematikan tombol peragaan yang pemilik sendiri minta di `[BL-086]`.
+- **Prioritas:** Low — bukan karena lubangnya kecil, melainkan karena orang yang mampu membuka devtools di tablet kasir bukan lagi persoalan yang bisa dijawab satu layar
+- **Area Terdampak:**
+  - `app/Http/Controllers/Cashier/CashDrawerController.php:41` — `index()` mengirim `reconciliation` penuh ke setiap kasir yang membuka halaman kas
+  - `resources/js/Pages/Cashier/CashDrawer.vue` — `showExpected` hanya menahannya dari layar, bukan dari props
+- **Deskripsi:** `[BL-086]` menutup angka "seharusnya di laci" di layar, dan itu cukup untuk peragaan serta untuk menghilangkan godaan sehari-hari. Yang TIDAK berubah: angkanya tetap ikut props Inertia setiap kali halaman kas dibuka, jadi ia terbaca dari devtools peramban tanpa satu pun izin tambahan.
+- **Usulan Perbaikan:** `index()` berhenti mengirim `expected_amount`, `cash_in`, dan `change_out` sampai hitungan fisik disetorkan. Dua bentuk yang mungkin, dan keduanya menukar sesuatu:
+  1. **Endpoint terpisah** yang mengembalikan angkanya hanya setelah hitungan fisik dikirim. Paling ketat, tapi ia mematikan tombol "Tampilkan uang seharusnya" yang justru diminta pemilik untuk peragaan.
+  2. **Tetap dikirim, tapi pengungkapannya dicatat** — satu baris jejak "kasir X membuka angka seharusnya pada jam Y, sebelum menghitung". Tidak mencegah apa pun, tapi membuatnya terlihat, dan itu yang benar-benar dibutuhkan pemilik yang ingin tahu.
+- **Catatan:** bentuk (2) lebih dekat dengan cara masalah ini biasanya diselesaikan di kasir sungguhan — penyimpangan tidak diblokir, ia dicatat. Jangan pilih (1) hanya karena ia terdengar lebih aman: layar yang tidak bisa menunjukkan angkanya sama sekali akan membuat pemilik meminta jalan pintasnya kembali di peragaan berikutnya.
+
 ### [BL-086] Layar Tutup Kas Menyebutkan Jawabannya Sebelum Kasir Menghitung, dan Dua Alur Berbeda Menumpang Satu Halaman
 - **Ditemukan:** 2026-08-21
 - **Sumber:** Catatan pemilik — "ada keliatan uang yang seharusnya di laci padahal itu owner saja yang liat, kasir sisa input yang nyata (agar tidak manipulatif), dan seharusnya ada flow tersendiri ketika mau tutup kas"
