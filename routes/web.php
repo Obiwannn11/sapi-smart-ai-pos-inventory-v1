@@ -373,12 +373,32 @@ Route::middleware(['auth', 'tenant', 'role:cashier,owner'])
         // ia menulis, meski yang ditulis hanya sebaris catatan.
         Route::post('/cash-drawer/reveal', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'reveal'])
             ->name('cash-drawer.reveal');
+        // Uang keluar-masuk laci di luar penjualan ([BL-087]). Kasir selalu
+        // boleh mencatat; yang bergantung pada ambang tenant hanyalah apakah
+        // angkanya langsung menggerakkan uang seharusnya di laci.
+        Route::post('/cash-drawer/movements', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'storeMovement'])
+            ->name('cash-drawer.movements.store');
         Route::get('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'showClose'])
             ->name('cash-drawer.close-form');
         Route::post('/cash-drawer/close', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'close'])
             ->name('cash-drawer.close');
         Route::get('/cash-drawer/{cashDrawer}/summary', [\App\Http\Controllers\Cashier\CashDrawerController::class, 'summary'])
             ->name('cash-drawer.summary');
+    });
+
+// --- Persetujuan mutasi kas ([BL-087]) ---
+// `role:owner` dengan alasan yang sama seperti kas negatif di bawah: MELIHAT
+// mutasi kas adalah soal laporan, MENYETUJUINYA adalah soal pertanggungjawaban.
+// Menggantungkannya pada izin modul `cash_drawer` akan memberi kuasa
+// menyetujui kepada setiap kasir yang boleh membuka sesi kas — yaitu justru
+// orang yang pengeluarannya sedang ditinjau.
+Route::middleware(['auth', 'tenant', 'role:owner'])
+    ->name('owner.cash-drawer-movements.')
+    ->group(function () {
+        Route::post('/owner/cash-drawer-movements/{movement}/approve', [\App\Http\Controllers\Owner\CashDrawerMovementController::class, 'approve'])
+            ->name('approve');
+        Route::post('/owner/cash-drawer-movements/{movement}/reject', [\App\Http\Controllers\Owner\CashDrawerMovementController::class, 'reject'])
+            ->name('reject');
     });
 
 // --- Void Transaction (owner only) ---

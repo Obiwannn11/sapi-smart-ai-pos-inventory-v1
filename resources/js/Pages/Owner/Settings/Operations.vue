@@ -20,6 +20,7 @@ const form = useForm({
     upsell_mandatory:      props.features.upsell_mandatory,
     order_identity_mode:   props.features.order_identity_mode ?? 'none',
     min_margin_percent:    props.features.min_margin_percent ?? 10,
+    cash_payout_approval_threshold: props.features.cash_payout_approval_threshold ?? 50000,
 });
 
 // Peringatan hanya relevan saat owner sedang MEMATIKAN fitur yang masih punya
@@ -170,6 +171,43 @@ const submit = () => {
                     <p class="mt-3 text-xs text-gray-500 leading-relaxed">
                         Hanya <strong>Anda</strong> yang bisa menjual di bawah lantai ini, dan setiap kali wajib menyertakan alasan yang ikut tercatat pada penjualannya.
                         Kasir tidak punya jalan ke sana sama sekali.
+                    </p>
+                </div>
+
+                <!-- Ambang persetujuan uang keluar laci ([BL-087]) -->
+                <div class="pt-5 border-t border-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900">Batas Uang Keluar Tanpa Persetujuan</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Kasir selalu boleh mencatat uang yang keluar dari laci — beli galon, setoran, tukar uang kecil.
+                        Yang diatur di sini: sampai berapa catatan itu langsung berlaku tanpa menunggu Anda.
+                    </p>
+
+                    <div class="flex items-center gap-3">
+                        <div class="relative w-44">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">Rp</span>
+                            <input
+                                v-model.number="form.cash_payout_approval_threshold"
+                                type="number"
+                                min="0"
+                                step="1000"
+                                class="w-full pl-9 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                            />
+                        </div>
+                        <p class="text-xs text-gray-500">
+                            Pengeluaran di atas
+                            <strong>Rp {{ Number(form.cash_payout_approval_threshold || 0).toLocaleString('id-ID') }}</strong>
+                            menunggu persetujuan Anda.
+                        </p>
+                    </div>
+
+                    <p v-if="form.errors.cash_payout_approval_threshold" class="mt-1.5 text-xs text-destructive">
+                        {{ form.errors.cash_payout_approval_threshold }}
+                    </p>
+
+                    <p class="mt-3 text-xs text-gray-500 leading-relaxed">
+                        Yang menunggu persetujuan <strong>tetap tercatat dan terlihat</strong>, tapi belum mengurangi uang yang seharusnya ada di laci —
+                        jadi ia tidak bisa dipakai menutupi selisih. Isi <strong>0</strong> kalau setiap pengeluaran harus lewat Anda.
+                        Setoran yang <em>masuk</em> ke laci tidak pernah menunggu persetujuan.
                     </p>
                 </div>
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Models\CashDrawer;
+use App\Models\CashDrawerMovement;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Transaction;
@@ -681,6 +682,18 @@ class ReportController extends Controller
                 ->withMin('reveals', 'revealed_at')
                 ->latest('opened_at')
                 ->paginate(25)),
+
+            // Mutasi kas yang menunggu keputusan pemilik ([BL-087]).
+            //
+            // TIDAK ditunda seperti daftar di atasnya, dan itu disengaja: ini
+            // satu-satunya hal di halaman ini yang menuntut TINDAKAN, dan
+            // sebuah tindakan yang baru muncul setelah kerangka pemuatan hilang
+            // akan terlewat oleh pemilik yang sudah selesai membaca. Ongkosnya
+            // satu query berindeks atas tabel yang biasanya kosong.
+            'pendingMovements' => CashDrawerMovement::pending()
+                ->with(['user:id,name', 'cashDrawer:id,opened_at'])
+                ->orderBy('created_at')
+                ->get(),
         ]);
     }
 }

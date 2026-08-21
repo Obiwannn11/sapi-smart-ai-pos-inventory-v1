@@ -112,4 +112,10 @@ class CashDrawer extends Model
     {
         return $this->hasMany(CashDrawerReveal::class);
     }
+
+    /** Uang keluar-masuk laci di luar penjualan ([BL-087]). */
+    public function movements(): HasMany
+    {
+        return $this->hasMany(CashDrawerMovement::class);
+    }
 }

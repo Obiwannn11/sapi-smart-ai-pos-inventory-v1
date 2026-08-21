@@ -76,7 +76,7 @@ class Tenant extends Model
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
-        'min_margin_percent',
+        'min_margin_percent', 'cash_payout_approval_threshold',
         'upsell_mandatory', 'order_identity_mode',
     ];
 
@@ -98,6 +98,7 @@ class Tenant extends Model
         'ai_enabled' => true,
         'payment_proof_enabled' => false,
         'min_margin_percent' => 10.00,
+        'cash_payout_approval_threshold' => 50000.00,
         'upsell_mandatory' => false,
         'order_identity_mode' => self::ORDER_IDENTITY_NONE,
     ];
@@ -112,6 +113,7 @@ class Tenant extends Model
             'ai_enabled' => 'boolean',
             'payment_proof_enabled' => 'boolean',
             'min_margin_percent' => 'decimal:2',
+            'cash_payout_approval_threshold' => 'decimal:2',
             'upsell_mandatory' => 'boolean',
             'is_demo' => 'boolean',
         ];

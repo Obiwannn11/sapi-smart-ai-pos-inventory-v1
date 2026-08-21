@@ -10,6 +10,21 @@
 
 ## Daftar Entri
 
+### [BL-087] Tidak Ada Cara Mencatat Uang Keluar atau Setoran di Tengah Sesi Kas
+- **Ditemukan:** 2026-08-21
+- **Sumber:** Catatan pemilik — "membuat button untuk meminta uang yang ada pada saat kas aktif sebelum tertutup"
+- **Status:** **Selesai 2026-08-21** — lihat `[ADDITION] Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087)`
+- **Status semula:** Open — butuh keputusan pemilik soal bentuknya sebelum ada baris kode
+- **Keputusan pemilik 2026-08-21, menjawab ketiga pertanyaan di bawah:** (a) **kasir** yang mencatat, selalu; (b) persetujuan **berambang** — di bawah Rp 50.000 langsung berlaku, di atasnya tercatat tapi belum menggerakkan `expected_amount` sampai pemilik menyetujuinya, dan **angkanya bisa diubah dari dashboard** (`tenants.cash_payout_approval_threshold`); (c) setoran **tidak menutup sesi** — menutup kas tetap tindakan tersendiri di halamannya sendiri (`[BL-086]`). Saran foto struk diterima tapi dipisah jadi `[BL-093]` karena retensinya belum diputuskan.
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Models/CashDrawer.php:14` — `$fillable` hanya mengenal modal awal, uang tutup, selisih, dan catatan; tidak ada tempat bagi uang yang keluar-masuk di tengah sesi
+  - `app/Services/CashDrawerReconciliation.php:73` — rumusnya `opening + cash_in − change_out`, dan ketiganya diturunkan dari transaksi penjualan; uang yang diambil pemilik dari laci tidak punya jalan masuk ke rumus ini
+  - `resources/js/Pages/Cashier/CashDrawer.vue` — tidak ada tombol apa pun selain "Lanjut ke POS" dan "Tutup Kas"
+- **Deskripsi:** Selama sesi berjalan, uang bisa keluar dari laci karena hal yang bukan kembalian — pemilik mengambil setoran, kasir membeli galon, uang kecil ditukar. Hari ini tidak ada tempat mencatatnya, sehingga uangnya menghilang sebagai **selisih kurang** di akhir shift dan kasir yang menanggung tuduhannya. Kebalikannya juga berlaku: menambah uang receh ke laci muncul sebagai selisih lebih.
+- **Usulan Perbaikan:** tabel `cash_drawer_movements` (`cash_drawer_id`, `type` = `payout`/`deposit`, `amount`, `reason`, `user_id`, `created_at`), tombolnya di halaman sesi kas, dan `expected_amount` jadi `opening + cash_in − change_out − payout + deposit`.
+- **Pertanyaan yang harus dijawab pemilik lebih dulu:** (a) siapa yang boleh mencatat pengeluaran — kasir sendiri, atau hanya owner? (b) apakah butuh persetujuan, atau cukup alasan tertulis? (c) apakah setoran ke pemilik **menutup** sesi, atau membiarkannya berjalan dengan modal berkurang? Jawaban (a) menentukan apakah ini fitur kas atau fitur pengawasan, dan itu perbedaan yang tidak bisa dibetulkan belakangan tanpa migrasi.
+
 ### [BL-088] Sesi Kas Tidak Punya Umur, Tidak Pernah Ditutup Sendiri, dan Rekapnya Terus Membesar
 - **Ditemukan:** 2026-08-21
 - **Sumber:** Catatan pemilik — "masa hidup kas cuma sehari dan auto close dan perlu perbaikan ketika lewat"

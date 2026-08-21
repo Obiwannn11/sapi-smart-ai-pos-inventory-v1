@@ -54,6 +54,11 @@ class SystemBehaviorController extends Controller
                 // `cost_price × (1 + margin/100)`, dan rumus diskon tidak
                 // pernah boleh turun di bawahnya.
                 'min_margin_percent' => (float) $tenant->min_margin_percent,
+                // Angka kebijakan kedua ([BL-087]): batas di mana uang yang KELUAR
+                // dari laci masih boleh dicatat kasir tanpa menunggu pemilik.
+                // Nilainya menentukan bentuk fiturnya, bukan cuma besarannya —
+                // 0 berarti setiap pengeluaran menunggu persetujuan.
+                'cash_payout_approval_threshold' => (float) $tenant->cash_payout_approval_threshold,
             ],
             'orderIdentityModes' => Tenant::orderIdentityModes(),
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
@@ -80,6 +85,10 @@ class SystemBehaviorController extends Controller
             // itu membuat fitur diskonnya tidak pernah bisa menawarkan apa pun,
             // dan owner akan menyimpulkan ia rusak.
             'min_margin_percent' => ['sometimes', 'numeric', 'min:0', 'max:90'],
+            // Tanpa batas atas yang masuk akal: ambang setinggi apa pun sah,
+            // itu hanya berarti pemilik memercayai kasirnya sepenuhnya. Yang
+            // dijaga cuma agar ia bukan angka negatif, yang tak punya arti.
+            'cash_payout_approval_threshold' => ['sometimes', 'numeric', 'min:0', 'max:99999999'],
             // `sometimes` dengan alasan yang sama seperti `business_type` di
             // halaman Profil: field yang tidak dikirim berarti "jangan sentuh",
             // bukan "kembalikan ke none".

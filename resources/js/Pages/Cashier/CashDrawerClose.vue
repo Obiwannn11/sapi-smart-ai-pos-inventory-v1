@@ -229,6 +229,17 @@ const closeCashDrawer = () => {
                             <span class="text-muted-foreground">Kembalian keluar</span>
                             <span class="font-medium text-destructive font-mono">−{{ formatCurrency(reconciliation?.change_out ?? 0) }}</span>
                         </div>
+                        <!-- Mutasi yang SUDAH berlaku ikut menghitung uang
+                             seharusnya ([BL-087]) — jadi ia duduk di ATAS garis
+                             itu, tidak seperti kas negatif di bawah. -->
+                        <div v-if="Number(reconciliation?.payout_total) > 0" class="flex justify-between text-sm">
+                            <span class="text-muted-foreground">Uang keluar laci</span>
+                            <span class="font-medium text-destructive font-mono">−{{ formatCurrency(reconciliation.payout_total) }}</span>
+                        </div>
+                        <div v-if="Number(reconciliation?.deposit_total) > 0" class="flex justify-between text-sm">
+                            <span class="text-muted-foreground">Setoran masuk laci</span>
+                            <span class="font-medium text-success font-mono">+{{ formatCurrency(reconciliation.deposit_total) }}</span>
+                        </div>
                         <div class="border-t border-border pt-3 flex justify-between text-sm">
                             <span class="text-muted-foreground font-medium">Seharusnya di laci</span>
                             <span class="font-semibold text-foreground font-mono">{{ formatCurrency(expectedAmount) }}</span>
@@ -270,6 +281,32 @@ const closeCashDrawer = () => {
                             </span>
                             <span class="text-destructive font-mono">−{{ formatCurrency(reconciliation.unsettled_cash) }}</span>
                         </div>
+                        <!-- Mutasi yang MASIH menunggu persetujuan pemilik
+                             ([BL-087]). Di bawah garis Selisih dan tidak ikut
+                             menghitungnya — pola yang sama dengan kas negatif
+                             di atas, dan alasan yang sama: uangnya memang sudah
+                             keluar dari laci, tapi sampai pemilik menyetujuinya
+                             ia belum jadi pengurang yang sah. Kasir tetap
+                             melihatnya supaya selisih kurang di layar ini punya
+                             keterangan. -->
+                        <div
+                            v-if="Number(reconciliation?.pending_payout_total) > 0 || Number(reconciliation?.pending_deposit_total) > 0"
+                            class="border-t border-border pt-3 flex justify-between text-xs"
+                        >
+                            <span class="text-muted-foreground">
+                                Menunggu persetujuan pemilik
+                                <span class="text-muted-foreground/60">
+                                    — {{ reconciliation.pending_movement_count }} catatan, belum mengubah angka di atas
+                                </span>
+                            </span>
+                            <span class="text-warning-foreground font-mono">
+                                −{{ formatCurrency(reconciliation.pending_payout_total) }}
+                                <template v-if="Number(reconciliation.pending_deposit_total) > 0">
+                                    / +{{ formatCurrency(reconciliation.pending_deposit_total) }}
+                                </template>
+                            </span>
+                        </div>
+
                         <!-- Non-tunai ditampilkan terpisah dan ditandai tegas:
                              kasir tidak boleh mencari uang QRIS di dalam laci. -->
                         <div

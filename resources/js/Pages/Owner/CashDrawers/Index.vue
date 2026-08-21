@@ -1,5 +1,6 @@
 <script setup>
-import { Deferred, Head, Link } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
@@ -8,7 +9,22 @@ defineOptions({ layout: OwnerLayout });
 const props = defineProps({
     // Ditunda ([BL-037]) — null selama daftar sesi kasnya masih dimuat.
     cashDrawers: { type: Object, default: null }, // paginated
+    // TIDAK ditunda: satu-satunya bagian halaman ini yang menuntut tindakan
+    // ([BL-087]).
+    pendingMovements: { type: Array, default: () => [] },
 });
+
+const reviewing = ref(null);
+
+const review = (movement, decision) => {
+    if (reviewing.value) return;
+    reviewing.value = movement.id;
+
+    router.post(`/owner/cash-drawer-movements/${movement.id}/${decision}`, {}, {
+        preserveScroll: true,
+        onFinish: () => { reviewing.value = null; },
+    });
+};
 
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -33,6 +49,55 @@ const formatDateTime = (datetime) => {
         <div>
             <h1 class="text-2xl font-bold text-gray-900">Riwayat Sesi Kas</h1>
             <p class="text-sm text-gray-500 mt-1">Semua sesi kas kasir</p>
+        </div>
+
+        <!-- Menunggu keputusan pemilik ([BL-087]).
+             Di ATAS daftar dan tidak ditunda: ini satu-satunya bagian halaman
+             ini yang menuntut tindakan, dan tindakan yang muncul belakangan
+             akan terlewat oleh pemilik yang sudah selesai membaca. -->
+        <div v-if="pendingMovements.length" class="bg-white rounded-xl shadow-sm border border-warning/40 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900">Uang Keluar Menunggu Persetujuan</h2>
+                <p class="text-xs text-gray-500 mt-0.5">
+                    Sampai Anda menyetujuinya, nominal ini <strong>belum</strong> mengurangi uang yang seharusnya ada di laci —
+                    jadi ia tidak bisa dipakai menutupi selisih.
+                </p>
+            </div>
+
+            <ul class="divide-y divide-gray-50">
+                <li v-for="movement in pendingMovements" :key="movement.id" class="px-5 py-3 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-800">
+                            <span class="font-semibold font-mono">
+                                {{ movement.type === 'payout' ? '−' : '+' }}{{ formatCurrency(movement.amount) }}
+                            </span>
+                            — {{ movement.reason }}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-0.5">
+                            {{ movement.user?.name || 'Kasir' }} · dicatat {{ formatDateTime(movement.created_at) }}
+                            · sesi dibuka {{ formatDateTime(movement.cash_drawer?.opened_at) }}
+                        </p>
+                    </div>
+                    <div class="flex gap-2 shrink-0">
+                        <button
+                            type="button"
+                            @click="review(movement, 'reject')"
+                            :disabled="reviewing === movement.id"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-foreground hover:bg-muted transition disabled:opacity-50"
+                        >
+                            Tolak
+                        </button>
+                        <button
+                            type="button"
+                            @click="review(movement, 'approve')"
+                            :disabled="reviewing === movement.id"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition disabled:opacity-50"
+                        >
+                            Setujui
+                        </button>
+                    </div>
+                </li>
+            </ul>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

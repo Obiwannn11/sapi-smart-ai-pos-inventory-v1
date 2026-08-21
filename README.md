@@ -94,7 +94,9 @@ Urutannya disengaja: akun yang alamatnya belum terbukti tidak perlu sampai ke pe
 - **Open bill** — simpan sebagai pending, lunasi kemudian
 - **Multi metode bayar** — tunai (dengan perhitungan kembalian), QRIS statis, transfer bank
 - **Edit transaksi** yang sudah selesai, dengan **koreksi stok otomatis** dan jejak perubahan (`transaction_edits`)
-- **Sesi kas** — buka kas, tutup kas dua langkah (ringkasan sistem lebih dulu, baru konfirmasi hitungan fisik), selisih terhitung otomatis
+- **Sesi kas** — buka kas di satu halaman, **tutup kas di halamannya sendiri** (`[BL-086]`). Uang yang seharusnya ada di laci **disembunyikan secara bawaan** supaya hitungan fisik kasir jujur; ada tombol membukanya, dan setiap pembukaan meninggalkan jejak yang dibaca pemilik (`[BL-090]`). Hitungan yang sudah melihat ringkasannya terkunci — mengubahnya menuntut menghitung ulang dari nol.
+- **Umur sesi kas 24 jam** (`[BL-088]`) — kasir diperingatkan empat jam sebelum batas; yang lewat ditutup `cash-drawers:expire` **tanpa mengaku sudah dihitung** (`closing_amount` dan selisihnya tetap kosong, ditandai `closed_by_system`).
+- **Uang keluar / masuk laci di luar penjualan** (`[BL-087]`) — kasir selalu boleh mencatatnya dengan alasan wajib. Di bawah ambang tenant (bawaan **Rp 50.000**, diatur di *Cara Kerja Sistem*) langsung berlaku; di atasnya tercatat dan terlihat tapi **belum mengurangi uang seharusnya** sampai pemilik menyetujuinya.
 - **Mode offline (PWA)** — transaksi tetap bisa dibuat saat jaringan mati, lalu disinkronkan. Transaksi yang bermasalah saat sinkronisasi masuk ke **Review Offline** milik owner, bukan ditelan diam-diam.
 - **Void transaksi** (owner-only)
 
@@ -103,7 +105,7 @@ Urutannya disengaja: akun yang alamatnya belum terbukti tidak perlu sampai ke pe
 - **Dashboard** — omzet, jumlah transaksi, rata-rata nota, produk terlaris, tren
 - **Master data** — produk, varian, kategori, group modifier, metode pembayaran
 - **Stok** — restock, penyesuaian, riwayat per varian, mutasi stok lengkap, badge stok rendah & mendekati kedaluwarsa
-- **Laporan** — laporan harian dengan filter tanggal, riwayat transaksi + detail, rekap sesi kas
+- **Laporan** — laporan harian dengan filter tanggal, riwayat transaksi + detail, rekap sesi kas (termasuk **persetujuan uang keluar laci** dan jejak siapa yang membuka angka seharusnya)
 - **Profit** — perhitungan margin berbasis `cost_price` per varian, termasuk proyeksi periode berikutnya
 - **Staf & RBAC** — kelola staf, susun role dengan modul terpilih (lihat [Kontrol Akses](#kontrol-akses))
 - **Analisis AI** — lihat [Analisis AI](#analisis-ai)
@@ -215,6 +217,9 @@ Dokumen persetujuannya terpisah per jalur (`resources/consents/`) dan **tidak pe
 | `platform:alert-failed-logins` | tiap jam |
 | `subscriptions:compute-revenue` | tanggal 1, 02:40 — **wajib sebelum** `advance-lifecycle` |
 | `subscriptions:prune-metrics` | tanggal 1, 04:30 |
+| `open-bills:expire` | tiap jam — tagihan terbuka lewat 24 jam jadi kas negatif (`[BL-031]`) |
+| `cash-drawers:expire` | tiap jam menit ke-5 — sesi kas lewat 24 jam ditutup sistem (`[BL-088]`) |
+| `payment-proofs:prune-unclaimed` | harian, 03:50 |
 
 `schedule:run` harus aktif di produksi agar semua ini berjalan.
 

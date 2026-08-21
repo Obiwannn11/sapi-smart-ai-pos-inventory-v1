@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Cashier;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CloseCashDrawerRequest;
 use App\Http\Requests\OpenCashDrawerRequest;
+use App\Http\Requests\StoreCashDrawerMovementRequest;
 use App\Models\CashDrawer;
+use App\Models\CashDrawerMovement;
 use App\Models\CashDrawerReveal;
 use App\Services\CashDrawerReconciliation;
 use Illuminate\Http\RedirectResponse;
@@ -53,6 +55,20 @@ class CashDrawerController extends Controller
                 'warn_from' => $openDrawer->opened_at->copy()
                     ->addHours(CashDrawer::MAX_SESSION_HOURS - CashDrawer::STALE_WARNING_HOURS),
             ] : null,
+
+            // Mutasi kas sesi ini ([BL-087]). Dikirim UTUH termasuk yang
+            // ditolak: kasir yang pengeluarannya tidak disetujui harus melihat
+            // penolakannya di layar yang sama tempat ia mencatatnya, bukan
+            // menemukannya sebagai selisih tak terjelaskan saat tutup kas.
+            'movements' => $openDrawer
+                ? $openDrawer->movements()->with('user:id,name')->latest('id')->get()
+                : [],
+
+            // Ambangnya ikut ke layar supaya kasir tahu SEBELUM mengetik bahwa
+            // nominal segini akan menunggu persetujuan. Angka yang baru
+            // diketahui sesudah tombol simpan ditekan terbaca sebagai
+            // penolakan, bukan sebagai aturan.
+            'payoutThreshold' => (float) Auth::user()->tenant->cash_payout_approval_threshold,
         ]);
     }
 
@@ -95,6 +111,59 @@ class CashDrawerController extends Controller
     }
 
     /**
+     * Catat uang keluar dari laci atau masuk ke laci di luar penjualan
+     * ([BL-087]).
+     *
+     * **Kasir selalu boleh mencatat.** Yang bergantung pada ambang tenant
+     * hanyalah apakah angkanya langsung menggerakkan `expected_amount` atau
+     * menunggu pemilik. Menolak pencatatannya justru akan mengosongkan catatan
+     * kas: kasir yang tidak bisa mencatat pengeluaran tetap mengeluarkan
+     * uangnya, dan selisihnya muncul di akhir shift tanpa keterangan apa pun —
+     * keadaan yang persis kita tinggalkan hari ini.
+     */
+    public function storeMovement(StoreCashDrawerMovementRequest $request): RedirectResponse
+    {
+        $user = Auth::user();
+
+        if (! $user?->isCashier()) {
+            abort(403, 'Hanya kasir yang dapat mencatat mutasi kas.');
+        }
+
+        $drawer = CashDrawer::where('user_id', $user->id)
+            ->whereNull('closed_at')
+            ->firstOrFail();
+
+        $amount = (float) $request->validated('amount');
+        $threshold = (float) $user->tenant->cash_payout_approval_threshold;
+
+        // Setoran MASUK laci tidak pernah menunggu persetujuan. Ambangnya ada
+        // untuk menahan uang yang KELUAR — menambah uang ke laci tidak bisa
+        // dipakai menutupi kekurangan, ia justru memperbesar tuntutan terhadap
+        // kasir sendiri.
+        $autoApproved = $request->validated('type') === CashDrawerMovement::TYPE_DEPOSIT
+            || $amount <= $threshold;
+
+        CashDrawerMovement::create([
+            'tenant_id' => $drawer->tenant_id,
+            'cash_drawer_id' => $drawer->id,
+            'user_id' => $user->id,
+            'type' => $request->validated('type'),
+            'amount' => $amount,
+            'reason' => $request->validated('reason'),
+            'status' => $autoApproved
+                ? CashDrawerMovement::STATUS_APPROVED
+                : CashDrawerMovement::STATUS_PENDING,
+            // Dibiarkan kosong saat otomatis — itulah yang membedakan
+            // persetujuan mesin dari persetujuan yang dibaca manusia.
+            'reviewed_at' => $autoApproved ? now() : null,
+        ]);
+
+        return back()->with('success', $autoApproved
+            ? 'Mutasi kas dicatat.'
+            : 'Mutasi kas dicatat dan menunggu persetujuan pemilik. Uang seharusnya di laci belum berubah.');
+    }
+
+    /**
      * Halaman tutup kas — hitungan fisik, ringkasan, lalu konfirmasi.
      *
      * **Halaman tersendiri, bukan bagian bawah halaman sesi ([BL-086] butir 2).**
@@ -126,6 +195,10 @@ class CashDrawerController extends Controller
         return Inertia::render('Cashier/CashDrawerClose', [
             'openDrawer' => $openDrawer,
             'reconciliation' => $this->reconciliation->for($openDrawer),
+            // Rincian mutasi ikut ke ringkasan ([BL-087]): angka gabungan
+            // "uang keluar Rp 150.000" tanpa barisnya tidak bisa
+            // dipertanggungjawabkan siapa pun sebulan kemudian.
+            'movements' => $openDrawer->movements()->with('user:id,name')->latest('id')->get(),
         ]);
     }
 

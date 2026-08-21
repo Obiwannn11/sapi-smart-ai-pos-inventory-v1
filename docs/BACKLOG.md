@@ -105,18 +105,48 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
-### [BL-087] Tidak Ada Cara Mencatat Uang Keluar atau Setoran di Tengah Sesi Kas
-- **Ditemukan:** 2026-08-21
-- **Sumber:** Catatan pemilik — "membuat button untuk meminta uang yang ada pada saat kas aktif sebelum tertutup"
-- **Status:** Open — **butuh keputusan pemilik soal bentuknya sebelum ada baris kode**
-- **Prioritas:** Medium
+### [BL-093] Pencatatan Uang Keluar Laci Belum Bisa Dilampiri Foto Struk
+- **Ditemukan:** 2026-08-21 (dipecah dari `[BL-087]` saat fiturnya mendarat)
+- **Sumber:** Saran di dalam pembahasan `[BL-087]` — foto struk sebagai pelengkap alasan tertulis, disetujui pemilik bersama bentuk fiturnya
+- **Status:** Open — **terhalang keputusan retensi, bukan kodenya**
+- **Prioritas:** Low — alasan tertulis sudah wajib dan sudah menutup sebagian besar gunanya; foto mengubah "katanya beli galon" jadi bisa diperiksa, dan itu berguna tapi bukan penentu
 - **Area Terdampak:**
-  - `app/Models/CashDrawer.php:14` — `$fillable` hanya mengenal modal awal, uang tutup, selisih, dan catatan; tidak ada tempat bagi uang yang keluar-masuk di tengah sesi
-  - `app/Services/CashDrawerReconciliation.php:73` — rumusnya `opening + cash_in − change_out`, dan ketiganya diturunkan dari transaksi penjualan; uang yang diambil pemilik dari laci tidak punya jalan masuk ke rumus ini
-  - `resources/js/Pages/Cashier/CashDrawer.vue` — tidak ada tombol apa pun selain "Lanjut ke POS" dan "Tutup Kas"
-- **Deskripsi:** Selama sesi berjalan, uang bisa keluar dari laci karena hal yang bukan kembalian — pemilik mengambil setoran, kasir membeli galon, uang kecil ditukar. Hari ini tidak ada tempat mencatatnya, sehingga uangnya menghilang sebagai **selisih kurang** di akhir shift dan kasir yang menanggung tuduhannya. Kebalikannya juga berlaku: menambah uang receh ke laci muncul sebagai selisih lebih.
-- **Usulan Perbaikan:** tabel `cash_drawer_movements` (`cash_drawer_id`, `type` = `payout`/`deposit`, `amount`, `reason`, `user_id`, `created_at`), tombolnya di halaman sesi kas, dan `expected_amount` jadi `opening + cash_in − change_out − payout + deposit`.
-- **Pertanyaan yang harus dijawab pemilik lebih dulu:** (a) siapa yang boleh mencatat pengeluaran — kasir sendiri, atau hanya owner? (b) apakah butuh persetujuan, atau cukup alasan tertulis? (c) apakah setoran ke pemilik **menutup** sesi, atau membiarkannya berjalan dengan modal berkurang? Jawaban (a) menentukan apakah ini fitur kas atau fitur pengawasan, dan itu perbedaan yang tidak bisa dibetulkan belakangan tanpa migrasi.
+  - `app/Services/PaymentProofService.php` — pola unggah-lalu-klaim yang bisa ditiru (`storePending()` / `claim()`), tapi seluruh `pathFor()`-nya terikat `TransactionPayment`
+  - `app/Services/ProofFileService.php` — penyimpanan, thumbnail, dan penghapusannya sudah umum dan bisa dipakai apa adanya
+  - `database/migrations/..._create_cash_drawer_movements_table.php` — belum punya kolom `proof_path`
+- **Deskripsi:** `[BL-087]` mewajibkan alasan tertulis, dan itu yang membedakan pencatatan dari uang yang hilang begitu saja. Yang belum ada: bukti yang bisa diperiksa. Untuk pengeluaran yang punya struk — galon, belanja bahan, parkir — foto mengubah keterangan jadi sesuatu yang bisa dicocokkan.
+- **Kenapa tidak ikut mendarat bersama `[BL-087]`:** jalur unggahnya menuntut direktori sendiri, mekanisme klaim berkas, dan **kebijakan retensi**. Yang terakhir belum pernah diputuskan untuk foto bukti mana pun — `[BL-075]` mendarat tanpa retensi dan `[BL-076]` masih memegang persoalan penyimpanannya. Menyelipkan satu jalur unggah lagi berarti menambah satu tumpukan berkas yang tak seorang pun tahu kapan boleh dihapus.
+- **Usulan Perbaikan:** kolom `proof_path` nullable pada `cash_drawer_movements`, tombol unggah opsional di modal pencatatan, dan pratinjaunya di daftar persetujuan pemilik — **setelah** retensi berkas bukti diputuskan di `[BL-076]`.
+
+### [BL-091] Seluruh Aplikasi Vue (1,1 MB, 56 Halaman) Dikirim ke Setiap Pengunjung Halaman Publik, lalu Gagal Mount
+- **Ditemukan:** 2026-08-20 (saat memverifikasi `[BL-089]` di peramban — dua error konsol muncul di landing padahal perubahannya seluruhnya Blade)
+- **Sumber:** Pengamatan langsung di konsol peramban, lalu ditelusuri ke `app.js` dan manifes build
+- **Status:** Open — **butuh keputusan pemilik**: memisahkan bundel atau membiarkannya sebagai ongkos yang disadari
+- **Prioritas:** Medium — tidak ada angka yang salah dan tidak ada data yang bocor, tapi ia menyentuh **halaman pertama yang dilihat calon klien**, dan produk ini dijual ke UMKM yang sebagian besar membukanya lewat ponsel dan kuota
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:19` — `@vite(['resources/css/app.css', 'resources/js/app.js'])`
+  - `resources/views/public/api-docs.blade.php`, `resources/views/public/docs/layout.blade.php`, `resources/views/welcome.blade.php` — ketiganya sama
+  - `resources/js/app.js:5` — `createInertiaApp({ … })` dijalankan tanpa syarat begitu berkasnya dimuat
+  - `resources/js/app.js:8` — `import.meta.glob('./Pages/**/*.vue', { eager: true })`
+  - `public/build/assets/app-*.js` — **1.104,9 KB** dalam satu berkas
+- **Deskripsi:**
+  Keempat halaman Blade publik memuat `app.js`, dan **tak satu pun punya elemen `#app`**. `createInertiaApp` tetap berjalan, tidak menemukan tempat mount, lalu melempar `TypeError: Cannot read properties of null (reading 'component')` — dua kali per kunjungan. Halamannya sendiri tetap tampil karena ia Blade murni; yang gagal hanya lapisan yang memang tidak punya urusan di sana.
+
+  Error konsolnya sebenarnya gejala yang paling ringan. Yang mahal adalah muatannya: `import.meta.glob` dipanggil dengan `eager: true`, sehingga **seluruh 56 halaman Vue** — dashboard owner, panel platform, kasir, langganan, laporan — dikompilasi menjadi satu bundel 1,1 MB. Bundel itu diunduh, diurai, dan dijalankan oleh setiap orang yang membuka halaman depan, termasuk yang belum punya akun dan tidak akan pernah melihat satu pun halaman di dalamnya.
+
+  Ironi yang membuatnya layak dicatat sekarang: `[BL-032]` dan `[BL-077]` menghabiskan pekerjaan nyata untuk menurunkan gambar landing dari 531 KB jadi 294 KB. Satu berkas JavaScript yang tidak dipakai halaman itu sama sekali berukuran **hampir empat kali lipat** seluruh penghematan tersebut.
+- **Kenapa ini belum pernah ketahuan:** halamannya tidak rusak. Tidak ada yang hilang, tidak ada tata letak yang bergeser, dan errornya hanya terlihat bila konsol dibuka. Satu-satunya yang mengeluh adalah pengunjung berkuota tipis, dan mereka tidak melapor — mereka pergi.
+- **Yang perlu diputuskan:**
+  1. **Apakah halaman publik butuh JavaScript dari `app.js` sama sekali?** Landing punya skrip sendiri di dalam Blade-nya (peragaan POS, tab demo, FAQ, `IntersectionObserver`) dan tidak memanggil apa pun dari bundel Inertia. Bila jawabannya tidak, entri ini selesai dengan memisahkan entry point — bukan dengan mengoptimalkan bundel.
+  2. **`app.css` ikut atau tidak?** Berbeda dengan JS, gaya Tailwind-nya memang dipakai halaman publik. Memisahkan JS tanpa menyeret CSS adalah bagian yang harus disengaja, bukan diasumsikan.
+- **Usulan Perbaikan:**
+  **(a)** **Cabut `resources/js/app.js` dari keempat Blade publik**, pertahankan `app.css`. Ini menutup error konsol dan seluruh 1,1 MB sekaligus, dan tidak menyentuh satu baris pun kode aplikasi. Kerjakan ini lebih dulu dan sendirian — sisanya perbaikan, yang ini penghapusan.
+  **(b)** Bila suatu saat halaman publik memang butuh sedikit JS terbundel, beri ia **entry point sendiri** di `vite.config.js` (mis. `resources/js/public.js`), jangan menumpang entry aplikasi.
+  **(c)** **`eager: true` layak ditinjau terpisah**, dan bukan bagian dari entri ini. Menggantinya dengan glob malas memecah bundel per halaman untuk pengguna yang sudah masuk juga — keuntungan nyata, tapi ia mengubah cara setiap halaman dimuat dan pantas diuji sendiri. Jangan digabung dengan (a): yang satu penghapusan tanpa risiko, yang lain perubahan perilaku pemuatan.
+  **(d)** Tambahkan penjaga sesudahnya — sebuah test yang memastikan HTML landing tidak memuat entry aplikasi. Tanpa itu, satu `@vite` yang disalin dari layout lain akan mengembalikannya tanpa ada yang menagih, persis seperti yang sudah terjadi pada `[BL-083]` dan `[BL-089]`.
+- **Catatan:** `welcome.blade.php` ikut terdaftar di atas, tapi periksa dulu apakah ia masih dirujuk rute mana pun. Bila tidak, ia berkas bawaan Laravel yang tertinggal dan lebih tepat dihapus daripada diperbaiki.
+
+---
 
 ### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
 - **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
@@ -620,6 +650,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-087` | Tidak ada cara mencatat uang keluar atau setoran di tengah sesi kas | 2026-08-21 (bentuk C+E: kasir selalu mencatat, efeknya tertahan di atas ambang Rp 50.000 yang bisa diubah pemilik) | `[ADDITION] Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087)` |
 | `BL-092` | Saran jual hanya terlihat separuh oleh pemilik, dan penerimaan yang salah tidak bisa ditarik | 2026-08-21 (ketiga butirnya, plus event pada transaksi `voided` yang ikut terhitung) | `[HOTFIX] Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3)` + `[ADDITION] Owner Melihat Saran Otomatis, Aturannya Sendiri, dan Siapa yang Mengisi Tiga Slot Kasir (BL-092 butir 1-2)` |
 | `BL-088` | Sesi kas tidak punya umur, tidak pernah ditutup sendiri, dan rekapnya terus membesar | 2026-08-21 (batas 24 jam, dari kalimat pemilik "masa hidup kas cuma sehari") | `[ADDITION] Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088)` |
 | `BL-090` | Angka rekonsiliasi tetap dikirim ke kasir — penyembunyiannya baru di sisi klien | 2026-08-21 (pemilik memilih bentuk (2): mencatat, bukan mencegah) | `[ADDITION] Membuka Angka Seharusnya Meninggalkan Jejak yang Dibaca Pemilik (BL-090)` |

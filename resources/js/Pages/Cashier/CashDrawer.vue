@@ -2,6 +2,7 @@
 import { router, Head, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
+import Modal from '@/Components/Modal.vue';
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
@@ -11,6 +12,9 @@ const props = defineProps({
     reconciliation: { type: Object, default: null },
     // Umur sesi ([BL-088]) — null saat belum ada sesi terbuka.
     sessionLimit: { type: Object, default: null },
+    // Mutasi kas sesi ini ([BL-087]).
+    movements: { type: Array, default: () => [] },
+    payoutThreshold: { type: Number, default: 0 },
 });
 
 const openingAmount = ref(0);
@@ -157,6 +161,70 @@ const openCashDrawer = () => {
 const goToPOS = () => {
     router.get('/cashier/pos');
 };
+
+/* ── Mutasi kas ([BL-087]) ──────────────────────────────────────────────── */
+
+const movementOpen = ref(false);
+const movementType = ref('payout');
+const movementAmount = ref(0);
+const movementAmountDisplay = ref('');
+const movementReason = ref('');
+const movementErrors = ref({});
+const savingMovement = ref(false);
+
+const openMovement = (type) => {
+    movementType.value = type;
+    movementAmount.value = 0;
+    movementAmountDisplay.value = '';
+    movementReason.value = '';
+    movementErrors.value = {};
+    movementOpen.value = true;
+};
+
+const onMovementInput = (event) => {
+    const raw = event.target.value.replace(/\D/g, '');
+    const num = Number(raw) || 0;
+    movementAmount.value = num;
+    movementAmountDisplay.value = num > 0 ? formatNumber(num) : '';
+    nextTick(() => { event.target.value = movementAmountDisplay.value; });
+};
+
+/**
+ * Apakah nominal yang sedang diketik akan menunggu persetujuan.
+ *
+ * Ditampilkan SELAGI mengetik, bukan sesudah menyimpan: aturan yang baru
+ * diketahui setelah tombol ditekan terbaca sebagai penolakan, bukan sebagai
+ * aturan — dan kasir akan menyimpulkan fiturnya rusak.
+ */
+const willWaitApproval = computed(() =>
+    movementType.value === 'payout' && movementAmount.value > props.payoutThreshold
+);
+
+const submitMovement = () => {
+    if (savingMovement.value) return;
+    savingMovement.value = true;
+    movementErrors.value = {};
+
+    router.post('/cashier/cash-drawer/movements', {
+        type: movementType.value,
+        amount: movementAmount.value,
+        reason: movementReason.value,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => { movementOpen.value = false; },
+        onError: (errors) => { movementErrors.value = errors; },
+        onFinish: () => { savingMovement.value = false; },
+    });
+};
+
+const movementLabel = (movement) => movement.type === 'payout' ? 'Uang keluar' : 'Setoran masuk';
+
+const movementStatusLabel = (movement) => {
+    if (movement.status === 'pending') return 'Menunggu persetujuan';
+    if (movement.status === 'rejected') return 'Ditolak pemilik';
+
+    return movement.reviewed_by ? 'Disetujui pemilik' : 'Berlaku';
+};
 </script>
 
 <template>
@@ -299,6 +367,66 @@ const goToPOS = () => {
                     Lanjut ke POS
                 </button>
 
+                <!-- Uang keluar-masuk laci ([BL-087]) -->
+                <div class="border-t border-border pt-4 mt-4 mb-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-foreground">Uang Keluar / Masuk Laci</h3>
+                        <span class="text-xs text-muted-foreground">
+                            Di atas {{ formatCurrency(payoutThreshold) }} perlu persetujuan
+                        </span>
+                    </div>
+
+                    <div class="flex gap-2 mb-3">
+                        <button
+                            type="button"
+                            @click="openMovement('payout')"
+                            class="flex-1 py-2 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition"
+                        >
+                            Catat Uang Keluar
+                        </button>
+                        <button
+                            type="button"
+                            @click="openMovement('deposit')"
+                            class="flex-1 py-2 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition"
+                        >
+                            Catat Setoran Masuk
+                        </button>
+                    </div>
+
+                    <!-- Termasuk yang ditolak: kasir harus melihat penolakannya
+                         di layar tempat ia mencatat, bukan menemukannya sebagai
+                         selisih tak terjelaskan saat tutup kas. -->
+                    <ul v-if="movements.length" class="space-y-1.5">
+                        <li
+                            v-for="movement in movements"
+                            :key="movement.id"
+                            class="flex items-start justify-between gap-3 text-xs"
+                        >
+                            <span class="text-muted-foreground">
+                                {{ movementLabel(movement) }} — {{ movement.reason }}
+                                <span
+                                    class="block"
+                                    :class="{
+                                        'text-warning-foreground': movement.status === 'pending',
+                                        'text-destructive': movement.status === 'rejected',
+                                        'text-muted-foreground/60': movement.status === 'approved',
+                                    }"
+                                >{{ movementStatusLabel(movement) }}</span>
+                            </span>
+                            <span
+                                class="font-mono shrink-0"
+                                :class="[
+                                    movement.status === 'rejected' ? 'line-through text-muted-foreground/50' : '',
+                                    movement.type === 'payout' ? 'text-destructive' : 'text-success',
+                                ]"
+                            >{{ movement.type === 'payout' ? '−' : '+' }}{{ formatCurrency(movement.amount) }}</span>
+                        </li>
+                    </ul>
+                    <p v-else class="text-xs text-muted-foreground">
+                        Belum ada uang keluar atau masuk di luar penjualan pada sesi ini.
+                    </p>
+                </div>
+
                 <!-- Tutup kas punya halamannya sendiri ([BL-086] butir 2).
                      Sengaja tautan sekunder, bukan tombol sebesar "Lanjut ke
                      POS": memeriksa sesi adalah hal yang dilakukan berkali-kali
@@ -312,5 +440,73 @@ const goToPOS = () => {
 
             </div>
         </main>
+
+        <!-- Pencatatan mutasi kas ([BL-087]) -->
+        <Modal
+            :show="movementOpen"
+            :title="movementType === 'payout' ? 'Catat Uang Keluar' : 'Catat Setoran Masuk'"
+            :description="movementType === 'payout'
+                ? 'Uang yang keluar dari laci dan bukan kembalian — setoran ke pemilik, beli galon, tukar uang kecil.'
+                : 'Uang yang masuk ke laci di luar penjualan — misalnya tambahan uang kecil.'"
+            @close="movementOpen = false"
+        >
+                <form @submit.prevent="submitMovement" class="space-y-4">
+                    <div>
+                        <label for="movement_amount" class="block text-sm font-medium text-foreground mb-1">Nominal (Rp)</label>
+                        <input
+                            id="movement_amount"
+                            type="text"
+                            inputmode="numeric"
+                            :value="movementAmountDisplay"
+                            @input="onMovementInput"
+                            placeholder="0"
+                            class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground"
+                            required
+                        />
+                        <p v-if="movementErrors.amount" class="mt-1 text-xs text-destructive">{{ movementErrors.amount }}</p>
+                    </div>
+
+                    <div>
+                        <label for="movement_reason" class="block text-sm font-medium text-foreground mb-1">Alasan</label>
+                        <input
+                            id="movement_reason"
+                            v-model="movementReason"
+                            type="text"
+                            maxlength="200"
+                            placeholder="Contoh: beli galon air"
+                            class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground placeholder:text-muted-foreground"
+                            required
+                        />
+                        <p v-if="movementErrors.reason" class="mt-1 text-xs text-destructive">{{ movementErrors.reason }}</p>
+                    </div>
+
+                    <!-- Diberitahukan SELAGI mengetik. Aturan yang baru diketahui
+                         sesudah tombol simpan ditekan terbaca sebagai penolakan. -->
+                    <p
+                        v-if="willWaitApproval"
+                        class="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-foreground"
+                    >
+                        Nominal ini di atas {{ formatCurrency(payoutThreshold) }}, jadi akan <strong>menunggu persetujuan pemilik</strong>.
+                        Catatannya tetap tersimpan dan terlihat, tapi uang yang seharusnya ada di laci belum berubah sampai disetujui.
+                    </p>
+
+                    <div class="flex gap-3 pt-1">
+                        <button
+                            type="button"
+                            @click="movementOpen = false"
+                            class="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition"
+                        >
+                            Batal
+                        </button>
+                        <button
+                            type="submit"
+                            :disabled="savingMovement"
+                            class="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition disabled:opacity-50"
+                        >
+                            {{ savingMovement ? 'Menyimpan...' : 'Simpan Catatan' }}
+                        </button>
+                    </div>
+                </form>
+        </Modal>
     </div>
 </template>

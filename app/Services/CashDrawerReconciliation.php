@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CashDrawer;
+use App\Models\CashDrawerMovement;
 use App\Models\Transaction;
 use App\Models\TransactionPayment;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,6 +54,12 @@ class CashDrawerReconciliation
      *     transaction_count: int,
      *     unsettled_cash: float,
      *     unsettled_count: int,
+     *     movement_net: float,
+     *     payout_total: float,
+     *     deposit_total: float,
+     *     pending_payout_total: float,
+     *     pending_deposit_total: float,
+     *     pending_movement_count: int,
      *     payment_summary: array<int, array{name: string, type: string, total: float}>,
      * }
      */
@@ -65,18 +72,61 @@ class CashDrawerReconciliation
         $changeOut = (float) $this->transactionsOf($drawer)->sum('change_amount');
         $openingAmount = (float) $drawer->opening_amount;
         $unsettled = $this->unsettledOf($drawer);
+        $movements = $this->movementsOf($drawer);
+
+        $approved = $movements->where('status', CashDrawerMovement::STATUS_APPROVED);
+        $pending = $movements->where('status', CashDrawerMovement::STATUS_PENDING);
+
+        $payoutTotal = (float) $approved->where('type', CashDrawerMovement::TYPE_PAYOUT)->sum('amount');
+        $depositTotal = (float) $approved->where('type', CashDrawerMovement::TYPE_DEPOSIT)->sum('amount');
+        $movementNet = $depositTotal - $payoutTotal;
 
         return [
             'opening_amount' => $openingAmount,
             'cash_in' => $cashIn,
             'change_out' => $changeOut,
-            'expected_amount' => $openingAmount + $cashIn - $changeOut,
+            // Mutasi yang SUDAH disetujui ikut rumusnya; yang masih menunggu
+            // sengaja tidak ([BL-087]). Lihat `movementsOf()`.
+            'expected_amount' => $openingAmount + $cashIn - $changeOut + $movementNet,
+            'movement_net' => $movementNet,
+            'payout_total' => $payoutTotal,
+            'deposit_total' => $depositTotal,
+            'pending_payout_total' => (float) $pending->where('type', CashDrawerMovement::TYPE_PAYOUT)->sum('amount'),
+            'pending_deposit_total' => (float) $pending->where('type', CashDrawerMovement::TYPE_DEPOSIT)->sum('amount'),
+            'pending_movement_count' => $pending->count(),
             'non_cash_in' => $nonCashIn,
             'transaction_count' => $this->transactionsOf($drawer)->count(),
             'unsettled_cash' => (float) $unsettled->sum('total_amount'),
             'unsettled_count' => $unsettled->count(),
             'payment_summary' => $paymentSummary,
         ];
+    }
+
+    /**
+     * Uang keluar-masuk laci di luar penjualan ([BL-087]).
+     *
+     * **Hanya yang berstatus `approved` yang masuk `expected_amount`.** Yang
+     * masih menunggu tampil sebagai baris tersendiri — pola yang sama persis
+     * dengan kas negatif di bawah ini: terlihat, dipertanggungjawabkan, tapi
+     * belum menggerakkan angka. Tanpa penahan itu, kasir yang lacinya kurang
+     * tinggal mencatat pengeluaran sebesar kekurangannya dan selisihnya jadi
+     * nol — `[BL-086]` dibatalkan dari sisi sebaliknya.
+     *
+     * Yang `rejected` tidak dihitung di mana pun kecuali sebagai riwayat.
+     *
+     * Tidak disaring jendela waktu: mutasi menempel langsung pada
+     * `cash_drawer_id`, jadi kepemilikannya eksplisit dan tidak perlu
+     * diturunkan dari `user_id` + rentang jam seperti transaksi. Inilah yang
+     * dulu diminta `[BL-028]` Tahap B untuk transaksi, dan di sini ia gratis
+     * karena tabelnya lahir sesudah pelajaran itu.
+     *
+     * @return \Illuminate\Support\Collection<int, CashDrawerMovement>
+     */
+    private function movementsOf(CashDrawer $drawer): \Illuminate\Support\Collection
+    {
+        return CashDrawerMovement::withoutGlobalScopes()
+            ->where('cash_drawer_id', $drawer->id)
+            ->get();
     }
 
     /**
