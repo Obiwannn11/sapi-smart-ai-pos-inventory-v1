@@ -4,6 +4,7 @@ import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import TransactionEditModal from '@/Components/TransactionEditModal.vue';
+import { BUSINESS_TZ, businessDateString, businessToday } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -19,6 +20,7 @@ const formatCurrency = (value) => {
 
 const formatDateTime = (datetime) => {
     return new Date(datetime).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'long',
         year: 'numeric',
@@ -51,11 +53,7 @@ const statusLabel = (status) => {
 const showVoidDialog = ref(false);
 const voidForm = useForm({});
 
-const isToday = () => {
-    const txDate = new Date(props.transaction.created_at).toDateString();
-    const today = new Date().toDateString();
-    return txDate === today;
-};
+const isToday = () => businessDateString(props.transaction.created_at) === businessToday();
 
 const canVoid = () => {
     return props.transaction.status === 'completed' && isToday();

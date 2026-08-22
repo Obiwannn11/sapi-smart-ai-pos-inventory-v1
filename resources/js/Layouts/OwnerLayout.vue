@@ -5,6 +5,7 @@ import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
 import { ref, computed, h, defineComponent } from 'vue';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
+import { BUSINESS_TZ } from '@/support/date';
 
 const page = usePage();
 const { auth } = page.props;
@@ -246,6 +247,7 @@ const breadcrumb = computed(() => {
 
 const todayLabel = computed(() =>
     new Date().toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         weekday: 'long',
         day: 'numeric',
         month: 'long',

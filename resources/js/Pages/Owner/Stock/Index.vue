@@ -4,6 +4,7 @@ import { Deferred, useForm, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
 import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
+import { BUSINESS_TZ, businessToday, parseDateOnly } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -103,21 +104,28 @@ const submitAdjust = () => {
 // --- Helpers ---
 const isLowStock = (stock) => stock > 0 && stock <= 5;
 const isOutOfStock = (stock) => stock === 0;
+// Kedaluwarsa adalah tanggal, bukan cap waktu: dibandingkan per HARI TOKO
+// ([BL-082]). Sebelumnya `new Date('2026-08-22')` diurai sebagai tengah malam
+// UTC lalu diadu dengan jam perangkat, sehingga barang yang kedaluwarsa hari
+// ini masih terhitung aman sampai pukul 08.00.
+const daysUntilExpiry = (expiryDate) =>
+    (parseDateOnly(expiryDate) - parseDateOnly(businessToday())) / 86400000;
+
 const isNearExpiry = (expiryDate) => {
     if (!expiryDate) return false;
-    const exp = new Date(expiryDate);
-    const now = new Date();
-    const diff = (exp - now) / (1000 * 60 * 60 * 24);
+    const diff = daysUntilExpiry(expiryDate);
+
     return diff >= 0 && diff <= 7;
 };
 const isExpired = (expiryDate) => {
     if (!expiryDate) return false;
-    return new Date(expiryDate) < new Date();
+
+    return daysUntilExpiry(expiryDate) < 0;
 };
 
 const formatDate = (date) => {
     if (!date) return '-';
-    return new Date(date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
+    return new Date(date).toLocaleDateString('id-ID', { timeZone: BUSINESS_TZ, year: 'numeric', month: 'short', day: 'numeric' });
 };
 </script>
 

@@ -11,6 +11,7 @@ import Button from '@/Components/Button.vue';
 import Modal from '@/Components/Modal.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import { formatRupiah, formatDate, inputClass } from '@/support/platform';
+import { businessDaysAhead, businessToday } from '@/support/date';
 
 const props = defineProps({
     plans: { type: Array, required: true },
@@ -195,18 +196,15 @@ const ruleMode = ref('create');
 const ruleTarget = ref(null);
 const showRuleForm = ref(false);
 
-const besok = () => {
-    const date = new Date();
-    date.setDate(date.getDate() + 1);
-
-    return date.toISOString().slice(0, 10);
-};
+// Hari toko, bukan hari UTC ([BL-082]): `toISOString()` menggeser tanggalnya
+// satu hari ke belakang sepanjang pukul 00.00–08.00 WITA.
+const besok = () => businessDaysAhead(1);
 
 const ruleForm = useForm({
     label: '',
     priority: 0,
     price: 0,
-    effective_from: new Date().toISOString().slice(0, 10),
+    effective_from: businessToday(),
     conditions: [],
 });
 

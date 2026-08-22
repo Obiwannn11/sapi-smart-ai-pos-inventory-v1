@@ -4,6 +4,7 @@ import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -64,6 +65,7 @@ const hasFilters = () => {
 const formatDate = (date) => {
     if (!date) return '-';
     return new Date(date).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         year: 'numeric', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit',
     });

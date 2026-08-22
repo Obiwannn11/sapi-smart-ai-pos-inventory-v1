@@ -11,6 +11,7 @@ import Button from '@/Components/Button.vue';
 import Modal from '@/Components/Modal.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import { formatDate, inputClass } from '@/support/platform';
+import { businessToday } from '@/support/date';
 
 const props = defineProps({
     policies: { type: Array, required: true },
@@ -68,7 +69,8 @@ const periodLabel = (policy) =>
 // --- Form kebijakan ---
 const showForm = ref(false);
 const editing = ref(null);
-const today = () => new Date().toISOString().slice(0, 10);
+// Hari toko, bukan hari UTC ([BL-082]).
+const today = () => businessToday();
 
 const form = useForm({
     label: '',

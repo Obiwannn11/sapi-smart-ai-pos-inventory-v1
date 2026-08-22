@@ -8,6 +8,8 @@
  * Chars-per-line: 58mm paper ≈ 32 cols, 80mm paper ≈ 48 cols (Font A).
  */
 
+import { BUSINESS_TZ } from '@/support/date';
+
 // ── Low-level command bytes ──────────────────────────────────────────────
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -88,6 +90,7 @@ function formatCurrency(value) {
 function formatDate(date) {
     if (!date) return '';
     return new Date(date).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -97,6 +100,7 @@ function formatDate(date) {
 function formatTime(date) {
     if (!date) return '';
     return new Date(date).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });

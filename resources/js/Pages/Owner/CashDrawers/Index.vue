@@ -3,6 +3,7 @@ import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -33,6 +34,7 @@ const formatCurrency = (value) => {
 const formatDateTime = (datetime) => {
     if (!datetime) return '-';
     return new Date(datetime).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',

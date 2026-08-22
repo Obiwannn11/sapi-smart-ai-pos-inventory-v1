@@ -5,6 +5,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import DatePicker from '@/Components/DatePicker.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -35,6 +36,7 @@ const formatCurrency = (value) => {
 
 const formatDateTime = (datetime) => {
     return new Date(datetime).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',

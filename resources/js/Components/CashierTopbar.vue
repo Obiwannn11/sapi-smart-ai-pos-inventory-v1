@@ -11,6 +11,7 @@ import { useInstallPrompt } from '@/composables/useInstallPrompt';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useFlash } from '@/composables/useFlash';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineProps({
     title: { type: String, default: 'SAPI POS' },
@@ -135,6 +136,7 @@ const tenantName = computed(() => page.props.auth?.tenant?.name ?? 'SAPI POS');
 const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
 
 const formatTime = (date) => new Date(date).toLocaleString('id-ID', {
+    timeZone: BUSINESS_TZ,
     hour: '2-digit',
     minute: '2-digit',
 });

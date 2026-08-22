@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { businessToday, parseDateOnly } from '@/support/date';
 
 const props = defineProps({
     modelValue: String, // YYYY-MM-DD
@@ -40,14 +41,11 @@ watch(open, (isOpen) => {
     }
 });
 
-const today = new Date();
-today.setHours(0, 0, 0, 0);
-
-const todayStr = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, '0'),
-    String(today.getDate()).padStart(2, '0'),
-].join('-');
+// Hari TOKO, bukan hari perangkat ([BL-082]). Tablet yang zonanya salah
+// dulu menandai kotak yang keliru sebagai "hari ini", dan nilai bawaan yang
+// dikirimnya ke Laporan Harian ikut salah bersamanya.
+const todayStr = businessToday();
+const today = parseDateOnly(todayStr);
 
 const parseDate = (str) => {
     if (!str) return new Date(today);

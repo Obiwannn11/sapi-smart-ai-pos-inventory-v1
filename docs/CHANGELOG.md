@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-22 | DECISION | Waktu | Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082) |
 | 2026-08-21 | ADDITION | Kas | Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
 | 2026-08-21 | HOTFIX | Upsell | Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3) |
@@ -210,6 +211,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082)
+- **Tanggal:** 2026-08-22
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-082]`
+- **Dampak:** Config | Service | Controller | Frontend | Test
+- **Breaking Change:** Tidak untuk data yang sudah tersimpan (lihat "Catatan Migrasi"), **ya** untuk arti `now()` di seluruh basis kode: sejak entri ini `now()` adalah waktu toko, bukan UTC.
+- **Keputusan pemilik 2026-08-22:** **satu zona untuk seluruh aplikasi**, `Asia/Makassar` (WITA), bukan satu zona per tenant. Nilainya dibaca dari `APP_TIMEZONE`, jadi produksi bisa berbeda dari lokal tanpa menyentuh kode.
+- **Deskripsi:** `config/app.php` berhenti menulis mati `'UTC'` dan membaca `env('APP_TIMEZONE', 'Asia/Makassar')`. Karena itu seluruh `now()`, `DATE()` pengelompokan, dan cap waktu yang ditulis Eloquent kini berada di jam toko. Di atasnya lahir `App\Services\BusinessClock` — satu-satunya tempat yang menyebut zona bisnis dan menjawab "hari ini", "minggu ini", "periode bulan ini". Sisi peramban ikut di commit yang sama lewat meta tag `business-timezone` dan `resources/js/support/date.js`.
+- **Alasan:** Server berjalan di UTC sementara tokonya tidak. Batas hari UTC jatuh pukul **08.00 WITA**, jadi penjualan antara tengah malam dan jam itu masuk ke **laporan hari sebelumnya** — dan Laporan Harian adalah angka yang dipakai pemilik menutup harinya. Gejalanya sudah terlihat tanpa dicari: pada satu layar yang sama, topbar menulis "Jumat, 21 Agustus" (tanggal peramban) sedangkan pemilih tanggal Laporan Harian default ke "Kamis, 20 Agustus" (tanggal server).
+
+- **Zonanya diubah di config, BUKAN dengan mengurangi delapan jam di beberapa kueri.** Tambalan per kueri memperbaiki layar yang sedang dilihat dan meninggalkan sisanya berselisih dengan layar itu — dan selisih antar-laporan jauh lebih mahal daripada selisih terhadap UTC, karena ia baru ketahuan saat dua angka diadu.
+- **`BusinessClock` tidak menghitung ulang apa pun, dan memang itu maksudnya.** Karena aplikasinya sudah berjalan di zona toko, ia hanya menamai maksudnya di titik-titik yang mengelompokkan per hari. Nilainya ada pada hari ketika zonanya harus jadi per tenant: yang perlu berubah hanya satu berkas, bukan setiap laporan.
+- **Satu lubang tidak ikut sembuh dengan mengubah config: cap waktu yang datang DARI perangkat.** Peramban mengirim instan UTC (`toISOString()` selalu berakhiran `Z`), Carbon mempertahankan zona asal string itu, dan Eloquent menyimpan kolom datetime dengan memformat objeknya apa adanya. Tanpa `BusinessClock::fromClient()`, penjualan offline pukul 09.00 WITA tersimpan sebagai `01:00` — persis kesalahan yang sedang diperbaiki, lewat pintu yang berbeda.
+- **Sisi peramban punya dua kesalahan yang berbeda, dan keduanya diperbaiki.** `new Date().toISOString().slice(0, 10)` adalah tanggal **UTC** — salah hari sepanjang pukul 00.00–08.00 WITA, dan ia jadi nilai bawaan tanggal berlaku aturan diskon, kuota AI, aturan harga, dan periode tagihan. `new Date().getFullYear()` dan kawan-kawannya adalah tanggal **perangkat** — benar hanya selama tablet tokonya disetel benar.
+- **Yang sengaja TIDAK dipaksa ke zona toko: tanggal yang dirakit dari komponen lokal.** `new Date(year, month - 1, day)` sudah tengah malam lokal; menambahkan `timeZone` justru memproyeksikannya ulang dan bisa menggeser labelnya satu hari. Konvensi ini sudah dipakai halaman tagihan sejak sebelum entri ini, dan tetap dipertahankan.
+- **Yang tidak terkena, dan alasannya:** rekonsiliasi kas membandingkan antar-timestamp (`opened_at`–`closed_at`); umur tagihan terbuka 24 jam berbasis durasi. Perbandingan timestamp dan durasi tidak peduli zona.
+- **Berkas:** `config/app.php`, `.env.example` — `APP_TIMEZONE` · `app/Services/BusinessClock.php` (baru) · `app/Http/Controllers/Owner/DashboardController.php`, `app/Http/Controllers/Owner/ReportController.php` — "hari ini"/rentang bawaan · `app/Services/TransactionService.php` — `parseOccurredAt()` · `resources/views/app.blade.php` — meta `business-timezone` · `resources/js/support/date.js` (baru) · 24 berkas Vue/JS: batas hari (`DatePicker`, `MonthPicker`, `GraceModal`, `Stock/Index`, `Transactions/Detail`, `DiscountRules`, `UpsellRules`, `AiAnalysis`, `AiQuota`, `PricingRules`, `Tenants/Show`, `Dashboard`, `Billing/Show`) dan tampilan yang dipatok ke zona toko · `tests/Feature/BusinessTimezoneTest.php` (6 tes baru)
+- **Catatan Migrasi:** **Tidak ada migrasi data, dan itu disengaja.** Kolom datetime menyimpan waktu polos tanpa zona; sesudah perubahan ini baris lama dibaca sebagai WITA. Karena pengelompokan harian dan bulanan bekerja pada string yang sama persis, **tidak satu pun angka laporan riwayat berubah** — termasuk `tenant_monthly_metrics` yang jadi dasar bracket Harga Adaptif, sehingga tidak ada penghitungan ulang yang perlu dijalankan. Yang bergeser hanya jendela yang dihitung dari `now()` ("hari ini", "7 hari terakhir"), dan hanya sekali, saat perubahan ini mendarat. Jam pada data demo yang lama ikut terbaca delapan jam lebih awal dari yang disemai; `php artisan db:seed` menyegarkannya bila jam demonya penting. Data tenant sungguhan belum ada saat entri ini ditulis — bila suatu hari ada, perubahan zona **harus** diberitahukan lebih dulu, bukan didiamkan.
 
 ---
 

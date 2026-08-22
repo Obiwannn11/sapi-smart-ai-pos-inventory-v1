@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import { businessToday, parseDateOnly } from '@/support/date';
 
 // Halaman ini terbuka untuk SEMUA pengguna tenant, bukan owner saja — begitu
 // tenant ditangguhkan setiap halaman lain mengarah ke sini. Cangkangnya tetap
@@ -66,7 +67,7 @@ const formatMonth = (value) => {
 const daysUntil = (value) => {
     const date = parseDate(value);
     if (!date) return null;
-    return Math.ceil((date - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    return Math.ceil((date - parseDateOnly(businessToday())) / 86400000);
 };
 
 /**

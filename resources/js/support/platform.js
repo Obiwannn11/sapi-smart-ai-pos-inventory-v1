@@ -6,6 +6,8 @@
  * satu berkas membuat "Masa tenggang" berbunyi sama di mana pun ia muncul.
  */
 
+import { BUSINESS_TZ } from '@/support/date';
+
 const rupiah = new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
@@ -23,6 +25,7 @@ export const formatDate = (value, fallback = '—') => {
     }
 
     return new Date(value).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: 'numeric',
         month: 'short',
         year: 'numeric',
@@ -36,6 +39,7 @@ export const formatPeriod = (value, fallback = '—') => {
     }
 
     return new Date(`${value}-01`).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         month: 'long',
         year: 'numeric',
     });

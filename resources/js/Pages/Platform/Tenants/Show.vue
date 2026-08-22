@@ -12,6 +12,7 @@ import FormField from '@/Components/Platform/FormField.vue';
 import TabNav from '@/Components/Platform/TabNav.vue';
 import Button from '@/Components/Button.vue';
 import Modal from '@/Components/Modal.vue';
+import { businessMonth } from '@/support/date';
 import {
     formatRupiah,
     formatDate,
@@ -161,7 +162,7 @@ const showInvoiceForm = ref(false);
 
 const invoiceForm = useForm({
     tenant_id: props.tenant.id,
-    period: new Date().toISOString().slice(0, 7),
+    period: businessMonth(),
     amount: '',
     due_date: '',
     amount_reason: '',

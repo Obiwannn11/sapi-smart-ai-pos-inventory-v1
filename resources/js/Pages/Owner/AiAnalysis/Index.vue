@@ -9,6 +9,7 @@ import Button from '@/Components/Button.vue';
 import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
 import SkeletonText from '@/Components/Skeleton/SkeletonText.vue';
 import { useAiQuota } from '@/composables/useAiQuota';
+import { BUSINESS_TZ, businessDaysAgo, businessToday } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -48,20 +49,12 @@ const statusMeta = {
 };
 
 // ── Create form ──────────────────────────────────────────────────────────────
-const toStr = (d) => [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
-].join('-');
-
-const today = new Date();
-const thirtyDaysAgo = new Date();
-thirtyDaysAgo.setDate(today.getDate() - 29);
-
+// Rentang bawaan dihitung dari hari TOKO ([BL-082]). Analisis yang dipesan
+// pukul 01.00 dulu meminta rentang yang berakhir kemarin.
 const form = useForm({
     type: 'general',
-    from: toStr(thirtyDaysAgo),
-    to: toStr(today),
+    from: businessDaysAgo(29),
+    to: businessToday(),
     prompt: '',
 });
 
@@ -123,6 +116,7 @@ const formatDate = (value) => {
         return '';
     }
     return new Date(value).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: 'numeric',
         month: 'short',
         year: 'numeric',

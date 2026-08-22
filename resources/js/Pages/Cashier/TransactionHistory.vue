@@ -9,6 +9,7 @@ import DatePicker from '@/Components/DatePicker.vue';
 import TransactionEditModal from '@/Components/TransactionEditModal.vue';
 import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
 import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
     transactions: { type: Object, default: null },
@@ -38,6 +39,7 @@ const formatCurrency = (value) => {
 
 const formatDate = (date) => {
     return new Date(date).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',

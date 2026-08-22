@@ -5,6 +5,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {{-- Zona waktu bisnis ([BL-082]). Sisi peramban memformat tanggal DARI
+         sini, bukan dari jam perangkat: satu instan yang sama harus terbaca
+         sebagai hari yang sama di layar kasir dan di Laporan Harian, meski
+         tablet tokonya disetel ke zona lain. --}}
+    <meta name="business-timezone" content="{{ config('app.timezone') }}">
     <title>{{ config('app.name', 'SAPI') }}</title>
 
     {{-- PWA --}}

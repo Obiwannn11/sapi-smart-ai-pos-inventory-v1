@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { Line } from 'vue-chartjs';
+import { BUSINESS_TZ } from '@/support/date';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -97,6 +98,7 @@ const chartOptions = computed(() => ({
                     if (!item) return '';
 
                     return new Date(item.date).toLocaleDateString('id-ID', {
+                        timeZone: BUSINESS_TZ,
                         weekday: 'long',
                         day: 'numeric',
                         month: 'long',

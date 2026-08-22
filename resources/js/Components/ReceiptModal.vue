@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { useThermalPrinter } from '@/composables/useThermalPrinter';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -22,6 +23,7 @@ const formatCurrency = (value) => {
 
 const formatDate = (date) => {
     return new Date(date).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'long',
         year: 'numeric',
@@ -30,6 +32,7 @@ const formatDate = (date) => {
 
 const formatTime = (date) => {
     return new Date(date).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });

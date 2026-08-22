@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -14,6 +15,7 @@ const formatCurrency = (value) => {
 
 const formatTime = (date) => {
     return new Date(date).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });

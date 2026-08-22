@@ -1071,7 +1071,12 @@ class TransactionService
         }
 
         try {
-            $occurredAt = Carbon::parse($value);
+            // Dibawa ke zona bisnis, bukan dipakai apa adanya ([BL-082]):
+            // peramban mengirim instan UTC (`toISOString()`), dan Eloquent
+            // menyimpan kolom datetime dengan memformat objeknya apa adanya.
+            // Tanpa ini, penjualan pukul 09.00 WITA tersimpan sebagai 01.00
+            // dan jatuh ke hari yang salah di Laporan Harian.
+            $occurredAt = BusinessClock::fromClient($value);
         } catch (\Exception $e) {
             throw new \Exception('Format waktu transaksi offline tidak sah.');
         }

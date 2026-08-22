@@ -18,6 +18,7 @@ import { useForm, usePage, Head } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 import PageHeader from '@/Components/Platform/PageHeader.vue';
 import Button from '@/Components/Button.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
     enabled: { type: Boolean, default: false },
@@ -77,7 +78,7 @@ const copyCodes = () => {
                         <h2 class="text-sm font-semibold text-foreground">Verifikasi Dua Langkah</h2>
                         <p class="mt-1 text-xs text-muted-foreground leading-relaxed">
                             <template v-if="enabled">
-                                Aktif sejak {{ new Date(confirmedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) }}.
+                                Aktif sejak {{ new Date(confirmedAt).toLocaleDateString('id-ID', { timeZone: BUSINESS_TZ, day: 'numeric', month: 'long', year: 'numeric' }) }}.
                                 Sisa {{ recoveryCodesRemaining }} kode pemulihan.
                             </template>
                             <template v-else>

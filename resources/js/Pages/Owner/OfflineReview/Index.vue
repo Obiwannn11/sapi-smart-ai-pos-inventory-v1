@@ -5,6 +5,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -22,6 +23,7 @@ const formatDateTime = (value) => {
     if (!value) return '—';
 
     return new Date(value).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         hour: '2-digit',

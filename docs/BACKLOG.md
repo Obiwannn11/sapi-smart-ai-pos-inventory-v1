@@ -148,44 +148,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
-- **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
-- **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
-- **Status:** Open — **butuh keputusan pemilik lebih dulu**: satu zona untuk seluruh aplikasi, atau satu zona per tenant
-- **Prioritas:** Medium sekarang (belum ada tenant sungguhan, dan data demo disemai per tanggal server sehingga selalu konsisten dengan dirinya sendiri); **High pada hari pertama ada toko yang buka sebelum pukul 08.00 waktu setempat**
-- **Area Terdampak:**
-  - `config/app.php:68` — `'timezone' => 'UTC'`, **ditulis mati**, bukan dari `env()`. Tidak ada `APP_TIMEZONE` di `.env`
-  - `app/Models/Transaction.php:161` — `effectiveDateSql()`: `COALESCE(occurred_at, created_at)`, keduanya tersimpan UTC
-  - `app/Http/Controllers/Owner/ReportController.php` — `daily()` dan `monthly()` mengelompokkan per tanggal dari SQL di atas
-  - `app/Http/Controllers/Owner/DashboardController.php` — kartu "Pendapatan Hari Ini" / "Transaksi Hari Ini"
-  - `app/Jobs/ComputeTenantMonthlyRevenue.php` + `app/Services/Pricing/MonthlyMetricResolver.php` — periode `YYYY-MM` yang jadi dasar bracket Harga Adaptif
-  - `database/seeders/DemoTransactionSeeder.php`, `database/seeders/CafeStudyCaseSeeder.php` — `Carbon::now()` juga UTC
-  - `resources/js/` — sisi peramban memakai tanggal **lokal peramban**; di situlah selisihnya jadi terlihat
-  - Tabel `tenants` — **tidak punya kolom zona waktu sama sekali**
-- **Deskripsi:**
-  Server berjalan di UTC dan tidak ada satu baris pun di `app/` yang mengonversi ke zona mana pun — pencarian `timezone`/`setTimezone`/`Asia/Jakarta` di seluruh `app/` mengembalikan nol hasil. Artinya "hari ini" yang dipakai laporan, dashboard, dan rekap bulanan adalah **hari UTC**, sementara tokonya hidup di WIB/WITA/WIT.
-
-  Akibat yang paling mudah dihitung: batas hari UTC jatuh pukul **07.00 WIB / 08.00 WITA / 09.00 WIT**. Penjualan antara tengah malam dan jam-jam itu masuk ke **laporan hari sebelumnya**. Untuk kafe yang buka pukul 07.00, itu berarti transaksi jam pertama tiap hari tercatat di hari yang salah — dan Laporan Harian adalah angka yang dipakai pemilik menutup harinya.
-
-  Gejalanya sudah terlihat tanpa perlu dicari: pada satu layar yang sama, topbar menulis "Jumat, 21 Agustus 2026" (tanggal lokal peramban) sedangkan pemilih tanggal Laporan Harian default ke "Kamis, 20 Agustus 2026" (tanggal server). Dua tanggal untuk satu saat yang sama, berselisih satu hari.
-- **Yang TIDAK terkena, dan alasannya — supaya lingkupnya tidak ditaksir terlalu besar:**
-  1. **Rekonsiliasi kas (`[BL-028]`)** memakai jendela sesi `opened_at`–`closed_at`, yaitu perbandingan antar-timestamp. Perbandingan timestamp tidak peduli zona.
-  2. **Umur tagihan terbuka 24 jam (`[BL-031]`)** berbasis durasi, bukan batas hari. Juga tidak peduli zona.
-  3. **Penjadwalan langganan** memakai `addMonthsNoOverflow` dari jangkar tanggal daftar — bergeser paling banyak beberapa jam, dan tidak melewati batas yang menentukan uang.
-
-  Yang benar-benar terkena adalah segala sesuatu yang **mengelompokkan per hari atau per bulan**: Laporan Harian, Laporan Bulanan, kartu "hari ini" di dashboard, dan `tenant_monthly_metrics` yang jadi dasar bracket Harga Adaptif.
-- **Yang perlu diputuskan sebelum ada kode:**
-  1. **Satu zona untuk seluruh aplikasi, atau satu zona per tenant?** `APP_TIMEZONE=Asia/Jakarta` adalah satu baris dan menutup sebagian besar kasus — tapi Indonesia punya tiga zona, dan produk ini dijual ke seluruh Indonesia. Tenant di Makassar akan salah satu jam, tenant di Jayapura dua jam. Kolom `tenants.timezone` menjawabnya dengan benar tapi menyeret setiap query pengelompokan harian untuk mengonversi lebih dulu.
-  2. **Nasib angka yang sudah tercatat.** Mengubah zona **mengelompokkan ulang riwayat yang sudah ada** — Laporan Harian kemarin bisa berubah angkanya sesudah perubahan ini mendarat. Untuk data demo itu tidak apa-apa; untuk tenant yang sudah menutup pembukuannya, itu perlu diberitahukan, bukan didiamkan.
-  3. **`tenant_monthly_metrics` ikut bergeser**, dan itu menyentuh harga. Periode `YYYY-MM` yang dihitung ulang dengan batas bulan bergeser 7–8 jam bisa memindahkan tenant ke bracket lain. Bila perubahannya dilakukan, penghitung ulang dan `PruneTenantMetrics` harus dijalankan bersama, bukan dibiarkan bercampur.
-- **Usulan Perbaikan:**
-  **(a)** Apa pun pilihannya, jadikan `config/app.php` membaca `env('APP_TIMEZONE', …)` lebih dulu. Nilai yang ditulis mati membuat lingkungan produksi tidak bisa berbeda dari lokal tanpa mengubah kode.
-  **(b)** **Satu tempat saja yang boleh menjawab "hari ini milik tenant ini"** — sebuah helper di sisi PHP, dipakai bersama oleh laporan, dashboard, dan penghitung metrik. Aturan ini sudah terbukti pada `Transaction::effectiveDateSql()` dan `Transaction::openBillCutoff()`; zona waktu punya bentuk masalah yang sama persis, dan dua definisi yang berselisih hanya akan terlihat pada angka laporan.
-  **(c)** **Sisi peramban ikut, di commit yang sama.** Selisih yang terlihat hari ini lahir justru karena satu sisi sudah lokal dan sisi lain belum. Memperbaiki server saja akan menukar arah selisihnya, bukan menghapusnya.
-  **(d)** **Jangan** menambal dengan mengurangi 7 jam di satu-dua query. Itu memperbaiki layar yang sedang dilihat dan meninggalkan sisanya berselisih dengan layar itu.
-
----
-
 ### [BL-081] Omzet Penentu Tarif Masih Terikat Bulan Kalender, Bukan Jendela yang Selalu Penuh
 - **Ditemukan:** 2026-08-20 (saat memilih opsi butir (b) `[BL-080]`; pemilik sempat mencondong ke sini sebelum ongkos persetujuan ulangnya terlihat)
 - **Sumber:** `[BL-080]` butir (b) opsi **(iv-b)**, sengaja tidak diambil dan dipisah supaya tidak hilang bersama entri yang ditutup
@@ -650,6 +612,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-082` | Seluruh aplikasi berjalan di UTC padahal tokonya tidak — "hari ini" bergeser 7–8 jam dari hari toko | 2026-08-22 (keputusan pemilik: **satu zona untuk seluruh aplikasi**, `Asia/Makassar`/WITA, lewat `APP_TIMEZONE`) | `[DECISION] Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082)` |
 | `BL-087` | Tidak ada cara mencatat uang keluar atau setoran di tengah sesi kas | 2026-08-21 (bentuk C+E: kasir selalu mencatat, efeknya tertahan di atas ambang Rp 50.000 yang bisa diubah pemilik) | `[ADDITION] Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087)` |
 | `BL-092` | Saran jual hanya terlihat separuh oleh pemilik, dan penerimaan yang salah tidak bisa ditarik | 2026-08-21 (ketiga butirnya, plus event pada transaksi `voided` yang ikut terhitung) | `[HOTFIX] Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3)` + `[ADDITION] Owner Melihat Saran Otomatis, Aturannya Sendiri, dan Siapa yang Mengisi Tiga Slot Kasir (BL-092 butir 1-2)` |
 | `BL-088` | Sesi kas tidak punya umur, tidak pernah ditutup sendiri, dan rekapnya terus membesar | 2026-08-21 (batas 24 jam, dari kalimat pemilik "masa hidup kas cuma sehari") | `[ADDITION] Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088)` |

@@ -11,6 +11,7 @@ use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\TransactionPayment;
 use App\Models\UpsellEvent;
+use App\Services\BusinessClock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -24,7 +25,7 @@ class ReportController extends Controller
      */
     public function daily(Request $request): Response
     {
-        $date = $request->input('date', now()->toDateString());
+        $date = $request->input('date', BusinessClock::today());
 
         // Summary transaksi.
         // whereEffectiveDate, bukan created_at: penjualan offline dibuat di server
@@ -286,7 +287,7 @@ class ReportController extends Controller
             }
         }
 
-        return Carbon::now()->startOfMonth();
+        return BusinessClock::now()->startOfMonth();
     }
 
     /**
@@ -553,8 +554,8 @@ class ReportController extends Controller
      */
     public function upsell(Request $request): Response
     {
-        $from = $request->input('from', now()->subDays(29)->toDateString());
-        $to = $request->input('to', now()->toDateString());
+        $from = $request->input('from', BusinessClock::daysAgo(29));
+        $to = $request->input('to', BusinessClock::today());
 
         $scoped = fn () => UpsellEvent::query()
             ->whereDate('created_at', '>=', $from)

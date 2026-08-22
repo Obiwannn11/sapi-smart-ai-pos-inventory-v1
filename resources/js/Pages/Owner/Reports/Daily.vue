@@ -7,6 +7,7 @@ import DatePicker from '@/Components/DatePicker.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -28,6 +29,7 @@ const formatCurrency = (value) => {
 
 const formatTime = (datetime) => {
     return new Date(datetime).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });

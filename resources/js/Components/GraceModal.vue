@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { usePage, Link } from '@inertiajs/vue3';
 import Modal from '@/Components/Modal.vue';
+import { businessToday } from '@/support/date';
 
 /**
  * Peringatan tenggat yang menghalangi layar, untuk tahap `intensive` dan
@@ -42,7 +43,7 @@ const isLocked = computed(() => stage.value === 'locked');
  * Kunci penutupan, berumur satu hari kalender. Tanggalnya ikut di dalam kunci
  * supaya "jangan ganggu lagi" berarti hari ini, bukan selamanya.
  */
-const dismissKey = computed(() => `grace-modal:${new Date().toDateString()}`);
+const dismissKey = computed(() => `grace-modal:${businessToday()}`);
 
 const dismissed = ref(
     typeof window !== 'undefined' &&

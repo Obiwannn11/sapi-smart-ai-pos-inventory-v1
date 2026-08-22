@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { Bar } from 'vue-chartjs';
+import { BUSINESS_TZ } from '@/support/date';
 import {
     Chart as ChartJS,
     BarElement,
@@ -38,7 +39,7 @@ const chartColors = computed(() => {
 const chartData = computed(() => {
     const labels = props.data.map((d) => {
         const date = new Date(d.date);
-        return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+        return date.toLocaleDateString('id-ID', { timeZone: BUSINESS_TZ, day: '2-digit', month: 'short' });
     });
 
     return {

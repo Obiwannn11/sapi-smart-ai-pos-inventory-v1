@@ -19,6 +19,7 @@
  */
 
 import { ref, computed } from 'vue';
+import { BUSINESS_TZ } from '@/support/date';
 import {
     CATALOG_STORE,
     SNAPSHOT_KEY,
@@ -80,6 +81,7 @@ export function useCatalogCache() {
         if (!cachedAt.value) return null;
 
         return new Date(cachedAt.value).toLocaleTimeString('id-ID', {
+            timeZone: BUSINESS_TZ,
             hour: '2-digit',
             minute: '2-digit',
         });

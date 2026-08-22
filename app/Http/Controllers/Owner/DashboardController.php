@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Transaction;
 use App\Models\TransactionPayment;
 use App\Services\BadgeHelperService;
+use App\Services\BusinessClock;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -21,7 +22,7 @@ class DashboardController extends Controller
     public function index(Request $request): Response
     {
         $tenant = auth()->user()->tenant;
-        $today = now()->toDateString();
+        $today = BusinessClock::today();
 
         // --- Metrics Hari Ini ---
         // Tanggal efektif, bukan created_at: penjualan offline kemarin yang baru
@@ -50,7 +51,7 @@ class DashboardController extends Controller
             ->get();
 
         // --- Metrics Minggu Ini ---
-        $weekStart = now()->startOfWeek()->toDateString();
+        $weekStart = BusinessClock::startOfWeek();
         $weekRevenue = Transaction::where('status', Transaction::STATUS_COMPLETED)
             ->whereEffectiveFrom($weekStart)
             ->sum('total_amount');
@@ -91,7 +92,7 @@ class DashboardController extends Controller
                 $effectiveDate = Transaction::effectiveDateSql();
 
                 return Transaction::where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveFrom(now()->subDays(6)->toDateString())
+                    ->whereEffectiveFrom(BusinessClock::daysAgo(6))
                     ->selectRaw("DATE({$effectiveDate}) as date, COUNT(*) as count, SUM(total_amount) as revenue")
                     ->groupByRaw("DATE({$effectiveDate})")
                     ->orderBy('date')

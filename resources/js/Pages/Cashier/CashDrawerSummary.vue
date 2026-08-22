@@ -3,6 +3,7 @@ import { router, Head } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
+import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
     cashDrawer: Object,
@@ -19,6 +20,7 @@ const formatCurrency = (value) => {
 
 const formatDate = (date) => {
     return new Date(date).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',

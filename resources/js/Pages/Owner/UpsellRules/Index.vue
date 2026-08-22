@@ -18,6 +18,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import { businessToday } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -79,7 +80,10 @@ const variantLabel = (variant) => {
 const dormantReason = (rule) => {
     if (!rule.is_active) return 'Dimatikan';
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Hari toko ([BL-082]): `toISOString()` memberi tanggal UTC, sehingga
+    // sepanjang pukul 00.00–08.00 WITA aturan yang mulai hari ini masih
+    // dilaporkan "Belum mulai".
+    const today = businessToday();
 
     if (rule.starts_on && rule.starts_on.slice(0, 10) > today) {
         return 'Belum mulai';

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { businessMonth, parseDateOnly } from '@/support/date';
 
 const props = defineProps({
     modelValue: String, // YYYY-MM
@@ -40,8 +41,9 @@ watch(open, (isOpen) => {
     }
 });
 
-const now = new Date();
-const currentMonthStr = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0')].join('-');
+// Bulan TOKO ([BL-082]); lihat DatePicker untuk alasan yang sama.
+const currentMonthStr = businessMonth();
+const now = parseDateOnly(`${currentMonthStr}-01`);
 
 const parseMonth = (str) => {
     if (!str) return { year: now.getFullYear(), month: now.getMonth() };

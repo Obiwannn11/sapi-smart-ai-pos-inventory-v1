@@ -10,6 +10,7 @@ import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
 import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 import SkeletonChart from '@/Components/Skeleton/SkeletonChart.vue';
 import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
+import { BUSINESS_TZ, businessToday, parseDateOnly } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -27,6 +28,7 @@ const formatCurrency = (value) => {
 
 const formatTime = (datetime) => {
     return new Date(datetime).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });
@@ -34,6 +36,7 @@ const formatTime = (datetime) => {
 
 const formatDate = (datetime) => {
     return new Date(datetime).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
     });
@@ -59,7 +62,7 @@ const formatCalendarDate = (value) => {
 const daysUntil = (value) => {
     if (!value) return null;
     const [year, month, day] = value.split('-').map(Number);
-    return Math.ceil((new Date(year, month - 1, day) - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    return Math.ceil((new Date(year, month - 1, day) - parseDateOnly(businessToday())) / 86400000);
 };
 
 /**

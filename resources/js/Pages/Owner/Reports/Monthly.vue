@@ -7,6 +7,7 @@ import MonthPicker from '@/Components/MonthPicker.vue';
 import TrendChart from '@/Components/TrendChart.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -27,6 +28,7 @@ const selectedMonth = ref(props.month);
 const formatCurrency = (value) => 'Rp ' + Math.round(Number(value)).toLocaleString('id-ID');
 
 const formatDayLabel = (date) => new Date(date).toLocaleDateString('id-ID', {
+    timeZone: BUSINESS_TZ,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
