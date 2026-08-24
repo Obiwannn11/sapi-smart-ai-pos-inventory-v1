@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
 | 2026-08-22 | DECISION | Waktu | Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082) |
 | 2026-08-21 | ADDITION | Kas | Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
@@ -211,6 +212,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091)
+- **Tanggal:** 2026-08-24
+- **Fase Terkait:** Di Luar Fase — butir (a) dan (d) `[BL-091]`, entrinya selesai
+- **Dampak:** Frontend | Test
+- **Breaking Change:** Tidak. Tidak ada satu baris pun kode aplikasi yang disentuh; yang hilang hanya satu argumen `@vite` dan satu berkas Blade yang tak pernah dirujuk rute mana pun.
+- **Deskripsi:** `resources/js/app.js` dicabut dari `resources/views/public/landing.blade.php`, menyisakan `resources/css/app.css`. `resources/views/welcome.blade.php` dihapus. Dua penjaga baru memastikan keduanya tidak kembali.
+- **Alasan:** Halaman Blade publik memuat entry point Inertia padahal tak satu pun punya elemen mount. `createInertiaApp` tetap berjalan, tidak menemukan `#app`, lalu melempar `TypeError: Cannot read properties of null (reading 'component')` dua kali per kunjungan. Errornya gejala paling ringan; yang mahal adalah muatannya — `import.meta.glob(..., eager: true)` menjadikan seluruh 56 halaman Vue satu bundel **1.117 KB**, dan bundel itu diunduh serta diurai oleh setiap orang yang membuka halaman depan, termasuk yang belum punya akun dan tidak akan pernah melihat satu pun halaman di dalamnya.
+
+- **Ini penghapusan, bukan optimasi — dan itu yang membuatnya layak berdiri sendiri.** `[BL-032]` dan `[BL-077]` menghabiskan pekerjaan nyata menurunkan gambar landing dari 531 KB jadi 294 KB. Satu berkas JavaScript yang tidak dipakai halaman itu sama sekali berukuran hampir **empat kali lipat** seluruh penghematan tersebut, dan menutupnya menuntut satu argumen `@vite` dicabut.
+- **`app.css` sengaja ditahan.** Berbeda dengan JS-nya, gaya Tailwind halaman publik memang berasal dari sana. Memisahkan JS tanpa ikut menyeret CSS adalah bagian yang harus disengaja, bukan diasumsikan — dan penjaganya melarang entry JS-nya saja, bukan `@vite` secara keseluruhan.
+- **Dari empat Blade yang dicatat entrinya, hanya dua yang masih melanggar.** `api-docs.blade.php` dan `docs/layout.blade.php` sudah bersih sendiri di `9fd2fd5`/`e93ba1a` tanpa pernah tercatat. Itu justru alasan penjaganya ada: yang diperbaiki diam-diam bisa kembali diam-diam.
+- **Usulan (b) entrinya — entry point `public.js` tersendiri — dibatalkan saat dikerjakan.** Landing tidak memanggil apa pun dari bundel Inertia: peragaan POS, tab demo, FAQ, dan `IntersectionObserver`-nya inline di Blade, dengan Alpine dari CDN. Entry point baru akan lahir kosong. Bila suatu saat memang dibutuhkan, catatannya tetap ada di arsip `[BL-091]`.
+- **`welcome.blade.php` dihapus, bukan ditambal.** Ia halaman starter bawaan Laravel — tidak dirujuk satu pun rute, controller, atau test, dan isinya ~30 KB CSS Tailwind inline. Menambal `@vite`-nya berarti merawat halaman yang tak pernah dibuka siapa pun; yang ia tinggalkan cuma contoh salin-tempel yang salah untuk orang berikutnya.
+- **Penjaganya sempat lulus terhadap pelanggaran yang sengaja dibuat.** Versi pertama tes HTML mencari `/build/assets/app-*.js`, dan tidak menemukannya — karena `public/hot` ada, Vite merender URL dev server (`.../resources/js/app.js`). Penjaga yang hanya tahu satu dari dua bentuk itu akan diam persis di lingkungan tempat orang bekerja sehari-hari. Versi yang mendarat memeriksa keduanya, dan **kedua penjaga dibuktikan gagal lebih dulu** dengan mengembalikan `app.js` ke landing sebelum dinyatakan bekerja.
+- **Butir (c) — `eager: true` — TIDAK ikut, sesuai perintah entrinya sendiri.** Ia memecah bundel per halaman untuk pengguna yang sudah masuk, tapi mengubah cara setiap halaman dimuat dan pantas diuji sendiri. Dicatat sebagai `[BL-094]`.
+- **File Terdampak:**
+  - `resources/views/public/landing.blade.php` — `@vite(['resources/css/app.css'])`, tanpa `app.js`
+  - `resources/views/welcome.blade.php` — **dihapus**
+  - `tests/Feature/Public/PublicBundleSeparationTest.php` — **baru**, 4 tes: pemindaian sumber seluruh Blade di `resources/views/public/`, plus HTML `/`, `/api-docs`, `/dokumentasi`
+- **Catatan Migrasi:** Tidak ada. `npm run build` berikutnya tidak berubah bentuknya — `resources/js/app.js` tetap entry point aplikasi untuk `app.blade.php`.
 
 ---
 

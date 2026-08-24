@@ -118,33 +118,24 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Kenapa tidak ikut mendarat bersama `[BL-087]`:** jalur unggahnya menuntut direktori sendiri, mekanisme klaim berkas, dan **kebijakan retensi**. Yang terakhir belum pernah diputuskan untuk foto bukti mana pun — `[BL-075]` mendarat tanpa retensi dan `[BL-076]` masih memegang persoalan penyimpanannya. Menyelipkan satu jalur unggah lagi berarti menambah satu tumpukan berkas yang tak seorang pun tahu kapan boleh dihapus.
 - **Usulan Perbaikan:** kolom `proof_path` nullable pada `cash_drawer_movements`, tombol unggah opsional di modal pencatatan, dan pratinjaunya di daftar persetujuan pemilik — **setelah** retensi berkas bukti diputuskan di `[BL-076]`.
 
-### [BL-091] Seluruh Aplikasi Vue (1,1 MB, 56 Halaman) Dikirim ke Setiap Pengunjung Halaman Publik, lalu Gagal Mount
-- **Ditemukan:** 2026-08-20 (saat memverifikasi `[BL-089]` di peramban — dua error konsol muncul di landing padahal perubahannya seluruhnya Blade)
-- **Sumber:** Pengamatan langsung di konsol peramban, lalu ditelusuri ke `app.js` dan manifes build
-- **Status:** Open — **butuh keputusan pemilik**: memisahkan bundel atau membiarkannya sebagai ongkos yang disadari
-- **Prioritas:** Medium — tidak ada angka yang salah dan tidak ada data yang bocor, tapi ia menyentuh **halaman pertama yang dilihat calon klien**, dan produk ini dijual ke UMKM yang sebagian besar membukanya lewat ponsel dan kuota
+### [BL-094] `eager: true` Menyatukan 56 Halaman Vue Jadi Satu Bundel untuk Pengguna yang Sudah Masuk
+- **Ditemukan:** 2026-08-24 (butir (c) `[BL-091]`, sengaja dipisahkan saat entri itu dikerjakan)
+- **Sumber:** Butir (c) `[BL-091]` — "layak ditinjau terpisah, dan bukan bagian dari entri ini"
+- **Status:** Open
+- **Prioritas:** Low — sesudah `[BL-091]`, tak seorang pun yang belum punya akun menanggungnya lagi. Yang tersisa hanya ongkos muat pertama bagi pengguna yang memang akan memakai aplikasinya
 - **Area Terdampak:**
-  - `resources/views/public/landing.blade.php:19` — `@vite(['resources/css/app.css', 'resources/js/app.js'])`
-  - `resources/views/public/api-docs.blade.php`, `resources/views/public/docs/layout.blade.php`, `resources/views/welcome.blade.php` — ketiganya sama
-  - `resources/js/app.js:5` — `createInertiaApp({ … })` dijalankan tanpa syarat begitu berkasnya dimuat
   - `resources/js/app.js:8` — `import.meta.glob('./Pages/**/*.vue', { eager: true })`
-  - `public/build/assets/app-*.js` — **1.104,9 KB** dalam satu berkas
+  - `vite.config.js` — tidak ada pemecahan chunk yang disetel sendiri hari ini
+  - `public/build/assets/app-*.js` — **1.117 KB** dalam satu berkas
 - **Deskripsi:**
-  Keempat halaman Blade publik memuat `app.js`, dan **tak satu pun punya elemen `#app`**. `createInertiaApp` tetap berjalan, tidak menemukan tempat mount, lalu melempar `TypeError: Cannot read properties of null (reading 'component')` — dua kali per kunjungan. Halamannya sendiri tetap tampil karena ia Blade murni; yang gagal hanya lapisan yang memang tidak punya urusan di sana.
+  `eager: true` membuat Vite mengompilasi seluruh 56 halaman ke dalam bundel entry alih-alih memecahnya jadi chunk per halaman. Kasir yang seharian hanya membuka satu layar tetap mengunduh panel platform, laporan, dan langganan pada muat pertama.
 
-  Error konsolnya sebenarnya gejala yang paling ringan. Yang mahal adalah muatannya: `import.meta.glob` dipanggil dengan `eager: true`, sehingga **seluruh 56 halaman Vue** — dashboard owner, panel platform, kasir, langganan, laporan — dikompilasi menjadi satu bundel 1,1 MB. Bundel itu diunduh, diurai, dan dijalankan oleh setiap orang yang membuka halaman depan, termasuk yang belum punya akun dan tidak akan pernah melihat satu pun halaman di dalamnya.
-
-  Ironi yang membuatnya layak dicatat sekarang: `[BL-032]` dan `[BL-077]` menghabiskan pekerjaan nyata untuk menurunkan gambar landing dari 531 KB jadi 294 KB. Satu berkas JavaScript yang tidak dipakai halaman itu sama sekali berukuran **hampir empat kali lipat** seluruh penghematan tersebut.
-- **Kenapa ini belum pernah ketahuan:** halamannya tidak rusak. Tidak ada yang hilang, tidak ada tata letak yang bergeser, dan errornya hanya terlihat bila konsol dibuka. Satu-satunya yang mengeluh adalah pengunjung berkuota tipis, dan mereka tidak melapor — mereka pergi.
-- **Yang perlu diputuskan:**
-  1. **Apakah halaman publik butuh JavaScript dari `app.js` sama sekali?** Landing punya skrip sendiri di dalam Blade-nya (peragaan POS, tab demo, FAQ, `IntersectionObserver`) dan tidak memanggil apa pun dari bundel Inertia. Bila jawabannya tidak, entri ini selesai dengan memisahkan entry point — bukan dengan mengoptimalkan bundel.
-  2. **`app.css` ikut atau tidak?** Berbeda dengan JS, gaya Tailwind-nya memang dipakai halaman publik. Memisahkan JS tanpa menyeret CSS adalah bagian yang harus disengaja, bukan diasumsikan.
+  Menggantinya dengan glob malas (`{ eager: false }` + `resolvePageComponent`) memecah bundelnya per halaman — keuntungan nyata, tapi ia mengubah **cara setiap halaman dimuat**: resolusi komponen jadi asinkron, dan tiap perpindahan halaman menambah satu permintaan jaringan yang sebelumnya tidak ada.
+- **Kenapa dipisah dari `[BL-091]`:** yang di sana penghapusan tanpa risiko — satu argumen `@vite` dicabut, tidak ada perilaku yang berubah. Yang ini perubahan perilaku pemuatan pada **setiap** halaman aplikasi, dan pantas diuji sendiri alih-alih menumpang commit yang tidak menanggung risikonya.
 - **Usulan Perbaikan:**
-  **(a)** **Cabut `resources/js/app.js` dari keempat Blade publik**, pertahankan `app.css`. Ini menutup error konsol dan seluruh 1,1 MB sekaligus, dan tidak menyentuh satu baris pun kode aplikasi. Kerjakan ini lebih dulu dan sendirian — sisanya perbaikan, yang ini penghapusan.
-  **(b)** Bila suatu saat halaman publik memang butuh sedikit JS terbundel, beri ia **entry point sendiri** di `vite.config.js` (mis. `resources/js/public.js`), jangan menumpang entry aplikasi.
-  **(c)** **`eager: true` layak ditinjau terpisah**, dan bukan bagian dari entri ini. Menggantinya dengan glob malas memecah bundel per halaman untuk pengguna yang sudah masuk juga — keuntungan nyata, tapi ia mengubah cara setiap halaman dimuat dan pantas diuji sendiri. Jangan digabung dengan (a): yang satu penghapusan tanpa risiko, yang lain perubahan perilaku pemuatan.
-  **(d)** Tambahkan penjaga sesudahnya — sebuah test yang memastikan HTML landing tidak memuat entry aplikasi. Tanpa itu, satu `@vite` yang disalin dari layout lain akan mengembalikannya tanpa ada yang menagih, persis seperti yang sudah terjadi pada `[BL-083]` dan `[BL-089]`.
-- **Catatan:** `welcome.blade.php` ikut terdaftar di atas, tapi periksa dulu apakah ia masih dirujuk rute mana pun. Bila tidak, ia berkas bawaan Laravel yang tertinggal dan lebih tepat dihapus daripada diperbaiki.
+  **(a)** Pakai `resolvePageComponent` dari `laravel-vite-plugin/inertia-helpers` dengan glob malas, bukan merakit `import()` sendiri.
+  **(b)** Ukur sesudahnya, jangan diasumsikan: catat ukuran entry dan jumlah chunk sebelum/sesudah. Pemecahan chunk yang menghasilkan 56 permintaan kecil pada sambungan lambat bisa lebih buruk daripada satu bundel besar yang sudah di-cache.
+  **(c)** Perhatikan bilah kemajuan `[BL-037]` (`delay: 500`): resolusi asinkron menambah jeda yang sebelumnya nol, dan alasan bilah itu "jarang terlihat" ditulis dari keadaan yang sekarang akan berubah.
 
 ---
 
@@ -183,7 +174,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-079] `business_type` Masih Boleh Kosong Padahal Ia Sudah Jadi Dimensi Harga
 - **Ditemukan:** 2026-08-15 (butir (d) `[BL-071]`, sengaja dipisahkan)
 - **Sumber:** Butir (d) entri `[BL-071]` — "tinjau juga apakah `business_type` masih layak `nullable` sekarang setelah ia jadi dimensi harga sungguhan"
-- **Status:** Open
+- **Status:** Open — **sebagian dijawab 2026-08-24 (opsi iii).** Tebakannya sudah dicabut; pertanyaan "wajibkan atau tidak" sengaja masih ditahan
 - **Prioritas:** Low — tidak ada tagihan yang salah karenanya: yang kosong jatuh ke bawaan netral, bukan ke `null`, dan pemiliknya bisa memperbaikinya sendiri dari Pengaturan
 - **Area Terdampak:**
   - `app/Http/Controllers/Auth/AuthController.php` — `register()`: `business_type` divalidasi `nullable`, dan yang kosong diisi `Tenant::BUSINESS_TYPE_DEFAULT`
@@ -197,32 +188,12 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   2. **Nasib tenant yang sudah terlanjur berbawaan.** Mewajibkan di formulir tidak menyentuh yang sudah ada; kalau jawabannya penting, ia butuh permintaan susulan di aplikasi, bukan migrasi yang menebak.
 - **Usulan Perbaikan:**
   **(a)** Jangan dikerjakan sebelum ada aturan harga yang benar-benar bersyarat `business_type` — sebelum itu ia menambah gesekan tanpa menukar apa pun.
-  **(b)** Bila dikerjakan, sebutkan **kenapa** ditanyakan tepat di formulirnya ("dipakai menentukan tarif"), jangan sekadar mencabut label "(opsional)". Pertanyaan wajib tanpa alasan yang terbaca justru ditebak-tebak jawabannya.
-
-### [BL-077] Kompres/Resize/WEBP Otomatis Baru Ada di Foto Produk — Tiga Jalur Gambar Lain Melewatinya
-- **Ditemukan:** 2026-08-14
-- **Sumber:** Pertanyaan pemilik — "apakah ada auto compress resize dan convert ke webp untuk gambar" — lalu ditelusuri ke seluruh jalur gambar di basis kode
-- **Status:** Open — **butir (a) dan (b) SELESAI 2026-08-19**. Yang tersisa hanya butir (c): pipeline aset statis di waktu build
-- **Prioritas:** Low — tidak ada angka yang salah dan tidak ada data yang bocor karenanya; yang terkena hanya biaya jaringan dan disk. Turun tetap di Low sejak 2026-08-19: dua jalur gambar yang benar-benar dipakai pengguna sudah tertutup, dan yang tersisa hanya disiplin memasukkan aset baru
-- **Area Terdampak:**
-  - `app/Services/ImageService.php:57-64` — **sudah ada dan sudah benar**: `cover(800,800)` + `cover(200,200)`, `toWebp(quality: 80)`, dua rendition, disk privat
-  - `app/Http/Controllers/Owner/ProductController.php:52,97` — satu-satunya pemanggil `ImageService::upload()`
-  - `app/Http/Controllers/Billing/UpgradeController.php:113,123` — bukti transfer langganan: `->store('proofs','local')` **apa adanya**, tanpa resize, tanpa konversi, sampai 4 MB per berkas
-  - `app/Http/Requests/StoreProductRequest.php:22`, `UpdateProductRequest.php:22` — batas unggah 5 MB; seluruh 5 MB itu tetap menyeberangi jaringan sebelum dikecilkan di server
-  - `vite.config.js:7-14` — tidak ada plugin gambar; aset statis dipakai apa adanya
-  - `public/Stock-Management.png` (160 KB), `public/Dashboard-owner.png` (140 KB), `public/sapi-logo.png` (92 KB), `public/Product-List.png` (96 KB) — tangkapan layar landing masih PNG
-  - `resources/js/` — **tidak ada** `canvas`/`toBlob`/`createImageBitmap` di mana pun; kompresi sisi peramban belum pernah ditulis
-- **Deskripsi:**
-  Jawaban singkatnya: **ada, tapi hanya untuk foto produk.** `ImageService` melakukan ketiganya sekaligus — potong persegi 800px, turunkan thumbnail 200px, konversi WEBP kualitas 80 — dan itu berjalan otomatis pada setiap simpan/ubah produk. Yang perlu diluruskan adalah anggapan bahwa itu berlaku menyeluruh; ia tidak. Tiga jalur gambar lain tidak menyentuhnya sama sekali:
-  1. **Bukti transfer langganan.** `UpgradeController` menyimpan berkas mentah. Validasinya menerima `pdf` di samping `jpg|jpeg|png`, jadi ini **bukan** kasus "tinggal panggil `ImageService`" — sebuah PDF tidak bisa dilewatkan ke encoder WEBP, dan mengubahnya jadi gambar berarti kehilangan berkas aslinya. Jalur ini butuh percabangan berdasarkan tipe berkas, bukan penambalan satu baris.
-  2. **Sisi peramban, semua unggahan.** Foto 12 MP dari kamera ponsel dikirim utuh lebih dulu, baru dikecilkan setelah sampai. Untuk owner yang mengunggah katalog sambil online ini masih dapat diterima. Untuk `[BL-075]` butir (e) ia **tidak** dapat diterima, dan di sana alasannya sudah ditulis panjang: gambar masuk outbox IndexedDB sebelum ada server yang bisa mengecilkannya.
-  3. **Aset statis landing.** Tidak ada pipeline sama sekali. Bukti bahwa ini terasa: perbaikan avatar testimoni 1,8 MB → 5 KB pada `[BL-032]` dikerjakan **manual sekali jalan**; tidak ada yang mencegah berkas berat berikutnya masuk dengan cara yang sama.
-- **Usulan Perbaikan:**
-  ~~**(a) Kerjakan sisi peramban lebih dulu, bukan sisi server.** Kompresi sebelum unggah menguntungkan ketiga jalur sekaligus dan merupakan prasyarat `[BL-075]`, sementara dua sisanya hanya merapikan yang sudah bekerja. Bentuknya satu composable `useImageCompressor` di atas `createImageBitmap` + `canvas.toBlob('image/webp')`, dipakai `ProductForm` sekarang dan `PaymentModal` nanti.~~ — **selesai 2026-08-19.** Composable-nya ada di `resources/js/composables/useImageCompressor.js` dan dipakai `ImageUpload.vue`; `PaymentModal` menyusul bersama `[BL-075]`. Satu berkas yang belum ikut: pemilih bukti transfer di `Billing/Show.vue`, karena berkas itu sedang punya perubahan `[BL-061]` yang belum di-commit.
-  ~~**(b) Jangan sentuh `ImageService` untuk mendukung bukti transfer.** Kelas itu tegas: produk, persegi, dua rendition, disk privat. Bukti bayar bukan persegi dan bisa berupa PDF. Percabangannya di pemanggil — bila `mime` gambar, kompresi; bila PDF, simpan apa adanya.~~ — **selesai 2026-08-19**, tapi percabangannya berakhir di `app/Services/ProofFileService.php`, **bukan** di pemanggil. Alasannya: `[BL-075]` akan jadi pemanggil kedua, dan aturan "PDF disalin apa adanya" yang ditulis dua kali adalah aturan yang suatu saat akan berbeda di satu tempat. Kelas itu memakai `scaleDown()` (rasio dijaga, tidak memotong), bukan `cover()`.
-  **(c) Aset statis diselesaikan di waktu build, bukan dengan disiplin manusia.** Satu plugin Vite pengonversi gambar menutup celahnya permanen; menambahkannya berarti mengubah dependensi, jadi butuh persetujuan lebih dulu.
-  **(d) Yang sengaja TIDAK diusulkan:** AVIF, `srcset` multi-lebar, dan rendition ketiga. WEBP 800/200 sudah memadai untuk kisi POS dan kartu produk; menambah format berarti menambah cabang penyajian di `MediaController` demi keuntungan yang belum ada yang mengeluhkan ketiadaannya.
-- **Catatan:** `QUALITY`, `MAIN_SIZE`, dan `THUMB_SIZE` adalah konstanta kelas (`ImageService.php:33-37`), bukan konfigurasi — sama seperti `DISK` pada `[BL-076]`(a). Bila suatu saat ketiganya perlu berbeda per lingkungan, kerjakan bersama entri itu, jangan sendiri-sendiri.
+  ~~**(b)** Bila dikerjakan, sebutkan **kenapa** ditanyakan tepat di formulirnya ("dipakai menentukan tarif"), jangan sekadar mencabut label "(opsional)". Pertanyaan wajib tanpa alasan yang terbaca justru ditebak-tebak jawabannya.~~ — **dikerjakan 2026-08-24.**
+- **Keputusan pemilik 2026-08-24 (opsi iii) — apa yang sudah tertutup, dan apa yang sengaja belum:**
+  **Tertutup:** layar pendaftaran berhenti menyembunyikan bawaannya. Pilihan kosongnya kini berbunyi "Belum yakin — disamakan dengan Lainnya", dan satu baris di atas pemilihnya menyebut kenapa pertanyaannya diajukan. Dikunci empat tes di `tests/Feature/Auth/BusinessTypeOptionalityTest.php`.
+  **Belum, dan itu disengaja:** kolomnya TETAP `nullable`, karena usulan (a) di atas belum terpenuhi — **belum ada satu pun aturan di `pricing_rules` yang bersyarat `business_type`** (diperiksa ulang 2026-08-24). Dua pertanyaan asli entri ini masih berdiri apa adanya.
+  **Satu hal yang ditemukan saat mengerjakannya dan belum pernah tercatat:** `app/Http/Controllers/Owner/Settings/BusinessProfileController.php` sudah memvalidasi `business_type` sebagai `required`, sementara pendaftaran menerima kosong — **wajib saat diubah, opsional saat dibuat.** Ketidakkonsistenan ini dibiarkan sadar, karena menyeragamkannya berarti menjawab pertanyaan yang sedang ditahan. Jangan "dirapikan" tanpa keputusan.
+- **Entri terkait di `CHANGELOG.md`:** `[DECISION] Jenis Usaha Tetap Opsional, tapi Bawaannya Berhenti Ditebakkan Diam-diam (BL-079)`
 
 ### [BL-051] Tenant yang Sudah Ditangguhkan Tidak Punya Tagihan untuk Dibayar
 - **Ditemukan:** 2026-08-07 (saat meninjau `renewPeriod()` × `[BL-044]`)
@@ -261,41 +232,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(a)** `ActiveSeatsResolver` berhenti memakai puncak dan membaca pemakaian aktif apa adanya. Paling sederhana, dan konsisten dengan `[BL-053]` yang sudah mencabut peran puncak dari penagihan. Konsekuensinya harga bisa turun-naik tiap bulan mengikuti jumlah staf — yang memang maksudnya, tapi harus disengaja.
   **(b)** Puncaknya dipertahankan tapi diberi umur: diturunkan ke pemakaian aktif saat pemeriksaan omzet bulanan berjalan (`subscriptions:compute-revenue`), sehingga ia mengukur puncak SATU BULAN, bukan sepanjang masa. Menjaga penutup akal-akalannya sambil tetap memberi jalan turun.
   **Jangan** menambah reset kedua di tempat lain tanpa menghapus yang lama — dua penurun puncak yang berjalan di jadwal berbeda akan membuat harga tenant bergantung pada peristiwa mana yang kebetulan terjadi lebih dulu.
-
----
-
-### [BL-072] Enam Commit Berturut-turut Tidak Bisa Boot — `git bisect` dan `git revert` Menyesatkan di Rentang Itu
-- **Ditemukan:** 2026-08-08
-- **Sumber:** Percobaan menulis ulang riwayat jadi commit atomik; ditemukan karena commit hasil pecahannya gagal menjalankan tes dengan sebab yang bukan berasal dari pecahannya
-- **Status:** Open — **cacat riwayat, bukan cacat kode.** `HEAD` sehat: 879 tes lulus (diverifikasi ulang 2026-08-14; 786 saat entri ini ditulis 2026-08-08)
-- **Prioritas:** Low selama tak ada yang menyusuri riwayat; **High begitu ada yang perlu `bisect` atau `revert` di rentang ini**
-- **Area Terdampak:**
-  - Commit `2ffd393` sampai `329f592` (enam commit berurutan). Sembuh di `342082c`.
-  - `app/Http/Middleware/HandleInertiaRequests.php` — memanggil `App\Models\PaymentAttempt`
-  - `app/Services/SubscriptionService.php` — meng-*import* `App\Services\Pricing\AdaptiveEligibility`
-  - `app/Http/Controllers/Billing/SubscriptionController.php` — men-*type-hint* `App\Services\Billing\Gateways\PaymentGatewayManager`
-- **Deskripsi:**
-  Enam commit berturut-turut memanggil kelas yang berkasnya belum ada. Ketiganya baru lahir bersamaan di `342082c`, yang pesannya sendiri mengakuinya: *"ship the payment gateway and eligibility service HEAD already imports"*.
-
-  | Commit | `PaymentAttempt` | `AdaptiveEligibility` | `PaymentGatewayManager` |
-  |---|---|---|---|
-  | `b3a0686` | ok | ok | ok |
-  | `2ffd393` | **menggantung** | ok | ok |
-  | `c0add23` | **menggantung** | ok | ok |
-  | `18553be` | **menggantung** | **menggantung** | **menggantung** |
-  | `bc24576` | **menggantung** | **menggantung** | **menggantung** |
-  | `f963d94` | **menggantung** | **menggantung** | **menggantung** |
-  | `329f592` | **menggantung** | **menggantung** | **menggantung** |
-  | `342082c` | ok | ok | ok |
-
-  Karena `HandleInertiaRequests` dipakai SETIAP halaman, akibatnya bukan sekadar satu fitur mati: di seluruh rentang itu tidak ada satu pun halaman Inertia yang bisa dirender. Diverifikasi, bukan disimpulkan — checkout ke `c0add23` lalu menjalankan `tests/Feature/Subscription` menghasilkan 25 kegagalan, semuanya `Error: Class "App\Models\PaymentAttempt" not found`.
-- **Kenapa ini berbahaya justru karena tidak terlihat:** `HEAD` hijau, jadi tidak ada yang menagih. Yang menabraknya adalah orang yang datang belakangan dengan pertanyaan wajar — "commit mana yang memecahkan ini?" — lalu `git bisect` menjawab dengan menunjuk commit yang salah, karena setiap commit di rentang itu gagal untuk sebab yang sama sekali berbeda dari yang sedang dicari. `git revert 342082c` juga akan **mematikan `HEAD`**, bukan sekadar mencabut payment gateway: ia membawa pergi tiga kelas yang dipanggil commit-commit di bawahnya.
-- **Sebabnya, supaya tidak berulang:** commit dibuat per "sesi kerja", bukan per perubahan yang berdiri sendiri — pemakai sebuah kelas ikut ter-*commit* lebih dulu daripada kelasnya. Dua commit teratas juga mencampur beberapa concern: `342082c` menggabungkan payment gateway `[BL-059]` dengan `AdaptiveEligibility` dan `PricingService` (24 berkas), dan `a6b45d1` menggabungkan seat bulanan `[BL-053]`, perbaikan `[BL-058]`, serta dokumentasi.
-- **Usulan Perbaikan:**
-  **(a)** **Jangan `bisect` melintasi rentang ini.** Pakai `git bisect skip` untuk `2ffd393`..`329f592`, atau batasi rentangnya ke `342082c..HEAD`.
-  **(b)** **Jangan `revert 342082c`.** Bila payment gateway memang perlu dicabut, cabut lewat commit baru yang membuang pemakainya lebih dulu, bukan dengan membalik commit yang memuat kelasnya.
-  **(c)** Merapikannya berarti menulis ulang **8 commit** dengan basis `b3a0686` — sudah dicoba dan dihentikan 2026-08-08 atas keputusan pemilik. Alasannya: sebagian besar isinya pekerjaan sesi lain, dan menyusun keadaan antaranya menuntut menafsirkan maksud tiap hunk milik orang lain. Riwayat yang ditulis ulang berdasarkan tafsiran bukan riwayat yang lebih bisa dipercaya. Tetap layak dikerjakan bila suatu saat rentang ini benar-benar perlu ditelusuri.
-  **(d)** Aturan ke depan, dan inilah yang sebenarnya menutup entri ini: **satu commit = satu perubahan yang bisa boot sendiri.** Kelas dan pemakainya masuk di commit yang sama, atau kelasnya lebih dulu. Uji cepatnya satu perintah — `git stash && php artisan route:list` sebelum `commit`.
 
 ---
 
@@ -612,6 +548,9 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-091` | Seluruh aplikasi Vue (1,1 MB, 56 halaman) dikirim ke setiap pengunjung halaman publik, lalu gagal mount | 2026-08-24 (butir (a) dan (d); butir (b) dibatalkan karena halaman publik tidak butuh JS terbundel sama sekali, butir (c) dipisah jadi `[BL-094]`) | `[HOTFIX] Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091)` |
+| `BL-077` | Kompres/resize/WEBP otomatis baru ada di foto produk — tiga jalur gambar lain melewatinya | 2026-08-24 (butir (c); usulan plugin Vite dibatalkan dengan alasan — Vite tidak pernah memproses `public/`) | `[REFACTOR] Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077)` |
+| `BL-072` | Enam commit berturut-turut tidak bisa boot — `git bisect` dan `git revert` menyesatkan di rentang itu | 2026-08-24 (butir (d); butir (c) tetap ditolak, riwayatnya dibiarkan rusak dengan sengaja) | `[ADDITION] Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072)` |
 | `BL-082` | Seluruh aplikasi berjalan di UTC padahal tokonya tidak — "hari ini" bergeser 7–8 jam dari hari toko | 2026-08-22 (keputusan pemilik: **satu zona untuk seluruh aplikasi**, `Asia/Makassar`/WITA, lewat `APP_TIMEZONE`) | `[DECISION] Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082)` |
 | `BL-087` | Tidak ada cara mencatat uang keluar atau setoran di tengah sesi kas | 2026-08-21 (bentuk C+E: kasir selalu mencatat, efeknya tertahan di atas ambang Rp 50.000 yang bisa diubah pemilik) | `[ADDITION] Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087)` |
 | `BL-092` | Saran jual hanya terlihat separuh oleh pemilik, dan penerimaan yang salah tidak bisa ditarik | 2026-08-21 (ketiga butirnya, plus event pada transaksi `voided` yang ikut terhitung) | `[HOTFIX] Saran yang Terlanjur Diterima Bisa Ditarik Lagi, dan Transaksi yang Di-void Berhenti Mengaku Berhasil (BL-092 butir 3)` + `[ADDITION] Owner Melihat Saran Otomatis, Aturannya Sendiri, dan Siapa yang Mengisi Tiga Slot Kasir (BL-092 butir 1-2)` |

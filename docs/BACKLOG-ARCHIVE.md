@@ -10,6 +10,106 @@
 
 ## Daftar Entri
 
+### [BL-091] Seluruh Aplikasi Vue (1,1 MB, 56 Halaman) Dikirim ke Setiap Pengunjung Halaman Publik, lalu Gagal Mount
+- **Ditemukan:** 2026-08-20 (saat memverifikasi `[BL-089]` di peramban — dua error konsol muncul di landing padahal perubahannya seluruhnya Blade)
+- **Sumber:** Pengamatan langsung di konsol peramban, lalu ditelusuri ke `app.js` dan manifes build
+- **Status:** **Selesai 2026-08-24** — lihat `[HOTFIX] Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091)`
+- **Status semula:** Open — butuh keputusan pemilik: memisahkan bundel atau membiarkannya sebagai ongkos yang disadari
+- **Keputusan pemilik 2026-08-24, menjawab kedua pertanyaan di bawah:** (1) halaman publik **tidak** butuh JavaScript apa pun dari `app.js` — landing punya skripnya sendiri di dalam Blade dan Alpine dari CDN, jadi entri ini selesai dengan mencabut entry point, bukan mengoptimalkan bundel; (2) `app.css` **tetap**, karena gaya Tailwind-nya memang dipakai halaman publik. `welcome.blade.php` **dihapus** — tidak ada satu pun rute, controller, atau test yang merujuknya
+- **Yang ternyata berbeda dari entri saat dikerjakan:** dari empat Blade yang terdaftar, hanya **dua** yang masih memuat `app.js` — `api-docs.blade.php` dan `docs/layout.blade.php` sudah bersih sendiri di `9fd2fd5`/`e93ba1a` tanpa pernah tercatat. Yang tersisa hanya `landing.blade.php` (satu argumen `@vite`) dan `welcome.blade.php` (dihapus). Butir **(b)** karenanya **dibatalkan** — tidak ada satu baris pun JS terbundel yang dibutuhkan halaman publik, jadi entry point `public.js` akan lahir kosong. Butir **(c)** dipisah jadi `[BL-094]` persis seperti yang diperintahkan entri ini sendiri
+- **Yang ditemukan saat menulis penjaganya (butir d):** penjaga HTML-nya mula-mula **lulus padahal `app.js` sengaja dikembalikan** — karena `public/hot` ada, Vite merender URL dev server (`.../resources/js/app.js`) alih-alih berkas build ber-hash yang dicari regex-nya. Penjaga yang hanya tahu satu dari dua bentuk itu akan diam di lingkungan yang lain. Versi yang mendarat memeriksa keduanya, dan kedua penjaga sudah dibuktikan gagal lebih dulu terhadap kondisi yang dijaganya
+- **Prioritas:** Medium — tidak ada angka yang salah dan tidak ada data yang bocor, tapi ia menyentuh **halaman pertama yang dilihat calon klien**, dan produk ini dijual ke UMKM yang sebagian besar membukanya lewat ponsel dan kuota
+- **Area Terdampak:**
+  - `resources/views/public/landing.blade.php:19` — `@vite(['resources/css/app.css', 'resources/js/app.js'])`
+  - `resources/views/public/api-docs.blade.php`, `resources/views/public/docs/layout.blade.php`, `resources/views/welcome.blade.php` — ketiganya sama
+  - `resources/js/app.js:5` — `createInertiaApp({ … })` dijalankan tanpa syarat begitu berkasnya dimuat
+  - `resources/js/app.js:8` — `import.meta.glob('./Pages/**/*.vue', { eager: true })`
+  - `public/build/assets/app-*.js` — **1.104,9 KB** dalam satu berkas
+- **Deskripsi:**
+  Keempat halaman Blade publik memuat `app.js`, dan **tak satu pun punya elemen `#app`**. `createInertiaApp` tetap berjalan, tidak menemukan tempat mount, lalu melempar `TypeError: Cannot read properties of null (reading 'component')` — dua kali per kunjungan. Halamannya sendiri tetap tampil karena ia Blade murni; yang gagal hanya lapisan yang memang tidak punya urusan di sana.
+
+  Error konsolnya sebenarnya gejala yang paling ringan. Yang mahal adalah muatannya: `import.meta.glob` dipanggil dengan `eager: true`, sehingga **seluruh 56 halaman Vue** — dashboard owner, panel platform, kasir, langganan, laporan — dikompilasi menjadi satu bundel 1,1 MB. Bundel itu diunduh, diurai, dan dijalankan oleh setiap orang yang membuka halaman depan, termasuk yang belum punya akun dan tidak akan pernah melihat satu pun halaman di dalamnya.
+
+  Ironi yang membuatnya layak dicatat sekarang: `[BL-032]` dan `[BL-077]` menghabiskan pekerjaan nyata untuk menurunkan gambar landing dari 531 KB jadi 294 KB. Satu berkas JavaScript yang tidak dipakai halaman itu sama sekali berukuran **hampir empat kali lipat** seluruh penghematan tersebut.
+- **Kenapa ini belum pernah ketahuan:** halamannya tidak rusak. Tidak ada yang hilang, tidak ada tata letak yang bergeser, dan errornya hanya terlihat bila konsol dibuka. Satu-satunya yang mengeluh adalah pengunjung berkuota tipis, dan mereka tidak melapor — mereka pergi.
+- **Yang perlu diputuskan:**
+  1. **Apakah halaman publik butuh JavaScript dari `app.js` sama sekali?** Landing punya skrip sendiri di dalam Blade-nya (peragaan POS, tab demo, FAQ, `IntersectionObserver`) dan tidak memanggil apa pun dari bundel Inertia. Bila jawabannya tidak, entri ini selesai dengan memisahkan entry point — bukan dengan mengoptimalkan bundel.
+  2. **`app.css` ikut atau tidak?** Berbeda dengan JS, gaya Tailwind-nya memang dipakai halaman publik. Memisahkan JS tanpa menyeret CSS adalah bagian yang harus disengaja, bukan diasumsikan.
+- **Usulan Perbaikan:**
+  **(a)** **Cabut `resources/js/app.js` dari keempat Blade publik**, pertahankan `app.css`. Ini menutup error konsol dan seluruh 1,1 MB sekaligus, dan tidak menyentuh satu baris pun kode aplikasi. Kerjakan ini lebih dulu dan sendirian — sisanya perbaikan, yang ini penghapusan.
+  **(b)** Bila suatu saat halaman publik memang butuh sedikit JS terbundel, beri ia **entry point sendiri** di `vite.config.js` (mis. `resources/js/public.js`), jangan menumpang entry aplikasi.
+  **(c)** **`eager: true` layak ditinjau terpisah**, dan bukan bagian dari entri ini. Menggantinya dengan glob malas memecah bundel per halaman untuk pengguna yang sudah masuk juga — keuntungan nyata, tapi ia mengubah cara setiap halaman dimuat dan pantas diuji sendiri. Jangan digabung dengan (a): yang satu penghapusan tanpa risiko, yang lain perubahan perilaku pemuatan.
+  **(d)** Tambahkan penjaga sesudahnya — sebuah test yang memastikan HTML landing tidak memuat entry aplikasi. Tanpa itu, satu `@vite` yang disalin dari layout lain akan mengembalikannya tanpa ada yang menagih, persis seperti yang sudah terjadi pada `[BL-083]` dan `[BL-089]`.
+- **Catatan:** `welcome.blade.php` ikut terdaftar di atas, tapi periksa dulu apakah ia masih dirujuk rute mana pun. Bila tidak, ia berkas bawaan Laravel yang tertinggal dan lebih tepat dihapus daripada diperbaiki.
+
+---
+
+### [BL-077] Kompres/Resize/WEBP Otomatis Baru Ada di Foto Produk — Tiga Jalur Gambar Lain Melewatinya
+- **Ditemukan:** 2026-08-14
+- **Sumber:** Pertanyaan pemilik — "apakah ada auto compress resize dan convert ke webp untuk gambar" — lalu ditelusuri ke seluruh jalur gambar di basis kode
+- **Status:** **Selesai 2026-08-24** — lihat `[REFACTOR] Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077)`
+- **Status semula:** Open — butir (a) dan (b) selesai 2026-08-19; yang tersisa hanya butir (c): pipeline aset statis di waktu build
+- **Prioritas:** Low — tidak ada angka yang salah dan tidak ada data yang bocor karenanya; yang terkena hanya biaya jaringan dan disk. Turun tetap di Low sejak 2026-08-19: dua jalur gambar yang benar-benar dipakai pengguna sudah tertutup, dan yang tersisa hanya disiplin memasukkan aset baru
+- **Area Terdampak:**
+  - `app/Services/ImageService.php:57-64` — **sudah ada dan sudah benar**: `cover(800,800)` + `cover(200,200)`, `toWebp(quality: 80)`, dua rendition, disk privat
+  - `app/Http/Controllers/Owner/ProductController.php:52,97` — satu-satunya pemanggil `ImageService::upload()`
+  - `app/Http/Controllers/Billing/UpgradeController.php:113,123` — bukti transfer langganan: `->store('proofs','local')` **apa adanya**, tanpa resize, tanpa konversi, sampai 4 MB per berkas
+  - `app/Http/Requests/StoreProductRequest.php:22`, `UpdateProductRequest.php:22` — batas unggah 5 MB; seluruh 5 MB itu tetap menyeberangi jaringan sebelum dikecilkan di server
+  - `vite.config.js:7-14` — tidak ada plugin gambar; aset statis dipakai apa adanya
+  - `public/Stock-Management.png` (160 KB), `public/Dashboard-owner.png` (140 KB), `public/sapi-logo.png` (92 KB), `public/Product-List.png` (96 KB) — tangkapan layar landing masih PNG
+  - `resources/js/` — **tidak ada** `canvas`/`toBlob`/`createImageBitmap` di mana pun; kompresi sisi peramban belum pernah ditulis
+- **Deskripsi:**
+  Jawaban singkatnya: **ada, tapi hanya untuk foto produk.** `ImageService` melakukan ketiganya sekaligus — potong persegi 800px, turunkan thumbnail 200px, konversi WEBP kualitas 80 — dan itu berjalan otomatis pada setiap simpan/ubah produk. Yang perlu diluruskan adalah anggapan bahwa itu berlaku menyeluruh; ia tidak. Tiga jalur gambar lain tidak menyentuhnya sama sekali:
+  1. **Bukti transfer langganan.** `UpgradeController` menyimpan berkas mentah. Validasinya menerima `pdf` di samping `jpg|jpeg|png`, jadi ini **bukan** kasus "tinggal panggil `ImageService`" — sebuah PDF tidak bisa dilewatkan ke encoder WEBP, dan mengubahnya jadi gambar berarti kehilangan berkas aslinya. Jalur ini butuh percabangan berdasarkan tipe berkas, bukan penambalan satu baris.
+  2. **Sisi peramban, semua unggahan.** Foto 12 MP dari kamera ponsel dikirim utuh lebih dulu, baru dikecilkan setelah sampai. Untuk owner yang mengunggah katalog sambil online ini masih dapat diterima. Untuk `[BL-075]` butir (e) ia **tidak** dapat diterima, dan di sana alasannya sudah ditulis panjang: gambar masuk outbox IndexedDB sebelum ada server yang bisa mengecilkannya.
+  3. **Aset statis landing.** Tidak ada pipeline sama sekali. Bukti bahwa ini terasa: perbaikan avatar testimoni 1,8 MB → 5 KB pada `[BL-032]` dikerjakan **manual sekali jalan**; tidak ada yang mencegah berkas berat berikutnya masuk dengan cara yang sama.
+- **Usulan Perbaikan:**
+  ~~**(a) Kerjakan sisi peramban lebih dulu, bukan sisi server.** Kompresi sebelum unggah menguntungkan ketiga jalur sekaligus dan merupakan prasyarat `[BL-075]`, sementara dua sisanya hanya merapikan yang sudah bekerja. Bentuknya satu composable `useImageCompressor` di atas `createImageBitmap` + `canvas.toBlob('image/webp')`, dipakai `ProductForm` sekarang dan `PaymentModal` nanti.~~ — **selesai 2026-08-19.** Composable-nya ada di `resources/js/composables/useImageCompressor.js` dan dipakai `ImageUpload.vue`; `PaymentModal` menyusul bersama `[BL-075]`. Satu berkas yang belum ikut: pemilih bukti transfer di `Billing/Show.vue`, karena berkas itu sedang punya perubahan `[BL-061]` yang belum di-commit.
+  ~~**(b) Jangan sentuh `ImageService` untuk mendukung bukti transfer.** Kelas itu tegas: produk, persegi, dua rendition, disk privat. Bukti bayar bukan persegi dan bisa berupa PDF. Percabangannya di pemanggil — bila `mime` gambar, kompresi; bila PDF, simpan apa adanya.~~ — **selesai 2026-08-19**, tapi percabangannya berakhir di `app/Services/ProofFileService.php`, **bukan** di pemanggil. Alasannya: `[BL-075]` akan jadi pemanggil kedua, dan aturan "PDF disalin apa adanya" yang ditulis dua kali adalah aturan yang suatu saat akan berbeda di satu tempat. Kelas itu memakai `scaleDown()` (rasio dijaga, tidak memotong), bukan `cover()`.
+  **(c) Aset statis diselesaikan di waktu build, bukan dengan disiplin manusia.** Satu plugin Vite pengonversi gambar menutup celahnya permanen; menambahkannya berarti mengubah dependensi, jadi butuh persetujuan lebih dulu.
+  **(d) Yang sengaja TIDAK diusulkan:** AVIF, `srcset` multi-lebar, dan rendition ketiga. WEBP 800/200 sudah memadai untuk kisi POS dan kartu produk; menambah format berarti menambah cabang penyajian di `MediaController` demi keuntungan yang belum ada yang mengeluhkan ketiadaannya.
+- **Catatan:** `QUALITY`, `MAIN_SIZE`, dan `THUMB_SIZE` adalah konstanta kelas (`ImageService.php:33-37`), bukan konfigurasi — sama seperti `DISK` pada `[BL-076]`(a). Bila suatu saat ketiganya perlu berbeda per lingkungan, kerjakan bersama entri itu, jangan sendiri-sendiri.
+- **SELESAI 2026-08-24 — seluruh butirnya tertutup.** Butir (a) dan (b) mendarat 2026-08-19; butir (c) ditutup hari ini, tapi **tidak dengan bentuk yang diusulkan**. Usulan plugin Vite DIBATALKAN: Vite hanya memproses aset yang di-`import` lewat bundel, sedangkan berkas di `public/` disalin apa adanya dan tidak pernah disentuhnya — plugin itu akan menambah dependensi yang tidak menyentuh satu pun berkas yang jadi alasan entri ini ditulis. Penggantinya `tests/Feature/Public/StaticAssetBudgetTest.php` (3 penjaga, tanpa dependensi baru). Dua berkas yatim dihapus, dan `sapi-logo.png` ternyata masih terdaftar di `SHELL_ASSETS` service worker — nyaris dihapus sebagai yatim, yang akan menggagalkan seluruh install SW. Entri penutup: `[REFACTOR] Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077)`.
+
+---
+
+### [BL-072] Enam Commit Berturut-turut Tidak Bisa Boot — `git bisect` dan `git revert` Menyesatkan di Rentang Itu
+- **Ditemukan:** 2026-08-08
+- **Sumber:** Percobaan menulis ulang riwayat jadi commit atomik; ditemukan karena commit hasil pecahannya gagal menjalankan tes dengan sebab yang bukan berasal dari pecahannya
+- **Status:** **Selesai 2026-08-24** — lihat `[ADDITION] Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072)`
+- **Status semula:** Open — cacat riwayat, bukan cacat kode. `HEAD` sehat: 879 tes lulus (diverifikasi ulang 2026-08-14; 786 saat entri ini ditulis 2026-08-08; 1.210 pada 2026-08-24)
+- **Prioritas:** Low selama tak ada yang menyusuri riwayat; **High begitu ada yang perlu `bisect` atau `revert` di rentang ini**
+- **Area Terdampak:**
+  - Commit `2ffd393` sampai `329f592` (enam commit berurutan). Sembuh di `342082c`.
+  - `app/Http/Middleware/HandleInertiaRequests.php` — memanggil `App\Models\PaymentAttempt`
+  - `app/Services/SubscriptionService.php` — meng-*import* `App\Services\Pricing\AdaptiveEligibility`
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — men-*type-hint* `App\Services\Billing\Gateways\PaymentGatewayManager`
+- **Deskripsi:**
+  Enam commit berturut-turut memanggil kelas yang berkasnya belum ada. Ketiganya baru lahir bersamaan di `342082c`, yang pesannya sendiri mengakuinya: *"ship the payment gateway and eligibility service HEAD already imports"*.
+
+  | Commit | `PaymentAttempt` | `AdaptiveEligibility` | `PaymentGatewayManager` |
+  |---|---|---|---|
+  | `b3a0686` | ok | ok | ok |
+  | `2ffd393` | **menggantung** | ok | ok |
+  | `c0add23` | **menggantung** | ok | ok |
+  | `18553be` | **menggantung** | **menggantung** | **menggantung** |
+  | `bc24576` | **menggantung** | **menggantung** | **menggantung** |
+  | `f963d94` | **menggantung** | **menggantung** | **menggantung** |
+  | `329f592` | **menggantung** | **menggantung** | **menggantung** |
+  | `342082c` | ok | ok | ok |
+
+  Karena `HandleInertiaRequests` dipakai SETIAP halaman, akibatnya bukan sekadar satu fitur mati: di seluruh rentang itu tidak ada satu pun halaman Inertia yang bisa dirender. Diverifikasi, bukan disimpulkan — checkout ke `c0add23` lalu menjalankan `tests/Feature/Subscription` menghasilkan 25 kegagalan, semuanya `Error: Class "App\Models\PaymentAttempt" not found`.
+- **Kenapa ini berbahaya justru karena tidak terlihat:** `HEAD` hijau, jadi tidak ada yang menagih. Yang menabraknya adalah orang yang datang belakangan dengan pertanyaan wajar — "commit mana yang memecahkan ini?" — lalu `git bisect` menjawab dengan menunjuk commit yang salah, karena setiap commit di rentang itu gagal untuk sebab yang sama sekali berbeda dari yang sedang dicari. `git revert 342082c` juga akan **mematikan `HEAD`**, bukan sekadar mencabut payment gateway: ia membawa pergi tiga kelas yang dipanggil commit-commit di bawahnya.
+- **Sebabnya, supaya tidak berulang:** commit dibuat per "sesi kerja", bukan per perubahan yang berdiri sendiri — pemakai sebuah kelas ikut ter-*commit* lebih dulu daripada kelasnya. Dua commit teratas juga mencampur beberapa concern: `342082c` menggabungkan payment gateway `[BL-059]` dengan `AdaptiveEligibility` dan `PricingService` (24 berkas), dan `a6b45d1` menggabungkan seat bulanan `[BL-053]`, perbaikan `[BL-058]`, serta dokumentasi.
+- **Usulan Perbaikan:**
+  **(a)** **Jangan `bisect` melintasi rentang ini.** Pakai `git bisect skip` untuk `2ffd393`..`329f592`, atau batasi rentangnya ke `342082c..HEAD`.
+  **(b)** **Jangan `revert 342082c`.** Bila payment gateway memang perlu dicabut, cabut lewat commit baru yang membuang pemakainya lebih dulu, bukan dengan membalik commit yang memuat kelasnya.
+  **(c)** Merapikannya berarti menulis ulang **8 commit** dengan basis `b3a0686` — sudah dicoba dan dihentikan 2026-08-08 atas keputusan pemilik. Alasannya: sebagian besar isinya pekerjaan sesi lain, dan menyusun keadaan antaranya menuntut menafsirkan maksud tiap hunk milik orang lain. Riwayat yang ditulis ulang berdasarkan tafsiran bukan riwayat yang lebih bisa dipercaya. Tetap layak dikerjakan bila suatu saat rentang ini benar-benar perlu ditelusuri.
+  **(d)** Aturan ke depan, dan inilah yang sebenarnya menutup entri ini: **satu commit = satu perubahan yang bisa boot sendiri.** Kelas dan pemakainya masuk di commit yang sama, atau kelasnya lebih dulu. Uji cepatnya satu perintah — `git stash && php artisan route:list` sebelum `commit`.
+- **SELESAI 2026-08-24 — ditutup lewat butir (d), bukan (c).** Butir (c) (menulis ulang 8 commit) **tetap ditolak** sesuai keputusan pemilik 2026-08-08. Peringatan butir (a) dan (b) pindah ke `CLAUDE.md` supaya terbaca oleh orang yang belum tahu harus mencarinya, dan aturan butir (d) kini punya pemeriksa: `composer run check:boot` → `tests/Feature/CommitBootabilityTest.php`. **Satu koreksi terhadap entri ini sendiri:** uji cepat yang disarankannya, `php artisan route:list`, DICOBA dan tidak menangkap cacatnya — sebuah `use` hanyalah alias di waktu kompilasi dan tidak pernah memicu autoloader. Penjaganya karena itu menyisir impor, bukan menjalankan aplikasi. Riwayatnya sendiri tetap rusak selamanya; yang berubah hanya bahwa orang berikutnya diperingatkan sebelum tersesat. Entri penutup: `[ADDITION] Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072)`.
+
+---
+
 ### [BL-082] Seluruh Aplikasi Berjalan di UTC Padahal Tokonya Tidak — "Hari Ini" Bergeser 7–8 Jam dari Hari Toko
 - **Ditemukan:** 2026-08-20 (saat mengambil ulang tangkapan layar `[BL-032]` butir (3); terlihat karena topbar menulis "Jumat, 21 Agustus" sementara pemilih tanggal Laporan Harian di layar yang sama default ke "Kamis, 20 Agustus")
 - **Sumber:** Pengamatan langsung di aplikasi berjalan, lalu ditelusuri ke konfigurasinya
