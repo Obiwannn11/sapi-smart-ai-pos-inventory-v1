@@ -62,6 +62,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
+| 2026-08-24 | REFACTOR | Infra | Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077) |
 | 2026-08-22 | DECISION | Waktu | Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082) |
 | 2026-08-21 | ADDITION | Kas | Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
@@ -235,6 +236,25 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/views/welcome.blade.php` — **dihapus**
   - `tests/Feature/Public/PublicBundleSeparationTest.php` — **baru**, 4 tes: pemindaian sumber seluruh Blade di `resources/views/public/`, plus HTML `/`, `/api-docs`, `/dokumentasi`
 - **Catatan Migrasi:** Tidak ada. `npm run build` berikutnya tidak berubah bentuknya — `resources/js/app.js` tetap entry point aplikasi untuk `app.blade.php`.
+
+---
+
+### [REFACTOR] Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077)
+- **Tanggal:** 2026-08-24
+- **Fase Terkait:** Di Luar Fase — menutup butir (c) `[BL-077]`, entrinya selesai
+- **Dampak:** Aset | PWA | Test
+- **Breaking Change:** Tidak. Tidak ada berkas yang masih dirujuk halaman mana pun yang dihapus.
+- **Deskripsi:** `public/Feature-Showcase.png` (44 KB) dan `public/sapi-logo.png` (92 KB) dihapus, `SHELL_ASSETS` service worker dibersihkan dari yang kedua, dan `CACHE_VERSION` naik `v2` → `v3`. Sebagai gantinya lahir `tests/Feature/Public/StaticAssetBudgetTest.php` dengan tiga penjaga: tidak ada raster non-WEBP baru di `public/`, tidak ada aset melewati 120 KB, dan setiap berkas yang diprecache service worker benar-benar ada.
+- **Alasan:** Butir (c) entrinya mengeluh bahwa aset statis tidak punya pipeline sama sekali — yang berarti setiap perbaikan dikerjakan manual sekali jalan, dan tidak ada yang mencegah berkas berat berikutnya masuk dengan cara yang sama.
+
+- **Usulan asli entrinya — satu plugin Vite pengonversi gambar — DIBATALKAN, dan alasannya bukan soal dependensi.** Vite hanya memproses aset yang di-`import` lewat bundel. Berkas di `public/` disalin apa adanya dan **tidak pernah disentuh Vite**. Plugin itu akan menambah dependensi yang tidak menyentuh satu pun berkas yang jadi alasan entrinya ditulis. Yang benar-benar berlaku untuk `public/` adalah pemeriksaan, bukan pipeline.
+- **Empat dari enam berkas yang didaftarkan entrinya ternyata sudah beres.** `Stock-Management`, `Dashboard-owner`, `Product-List`, ditambah `POS-Interface` dan `Reports-Daily`, seluruhnya sudah WEBP sejak 2026-08-21 — sekali lagi secara manual. Yang tersisa hanya dua berkas, dan keduanya tidak dirujuk satu halaman pun.
+- **`sapi-logo.png` ternyata BUKAN berkas yatim, dan hampir dihapus sebagai yatim.** Ia terdaftar di `SHELL_ASSETS` pada `public/sw.js`. `cache.addAll()` bersifat semua-atau-tidak: satu 404 di sana **menggagalkan seluruh install service worker**, dan aplikasi kehilangan shell offline-nya — tanpa satu pun pesan error yang terlihat pengguna, karena halamannya tetap normal selama online. Yang menagihnya baru kasir yang kehilangan sinyal. Jadi 92 KB itu bukan sekadar menganggur; ia diunduh setiap install untuk gambar yang tidak pernah dirender halaman mana pun (`offline.html` memakai `/icons/icon-192.png`, dan manifes hanya menyebut `/icons/*`).
+- **Penjaga ketiga lahir langsung dari nyaris-celaka itu**, dan itu yang membuatnya layak ada: ia membaca `SHELL_ASSETS` dari `sw.js` lalu menuntut tiap entrinya benar-benar ada di disk. Kesalahan ini tidak mungkin ditangkap tes lain — tidak ada tes yang meng-install service worker.
+- **`icons/` dan `favicon.ico` sengaja dikecualikan, bukan terlewat.** `manifest.webmanifest` menuliskan `"type": "image/png"` untuk ketiga ikonnya, dan dukungan WEBP untuk ikon PWA maupun favicon masih timpang antar peramban. Alasannya ditulis di dalam `excludedAssetPaths()` supaya pengecualian berikutnya tidak ditambahkan tanpa alasan.
+- **Ketiga penjaga diuji dengan cara dilanggar**, bukan hanya dijalankan: satu PNG 195 KB disusupkan ke `public/` dan satu entri palsu ditambahkan ke `SHELL_ASSETS`; ketiganya gagal dengan pesan yang menyebut berkas dan jalan keluarnya, lalu keadaan dikembalikan. Penjaga yang tidak pernah terbukti bisa gagal tidak menjaga apa pun.
+- **Berkas:** `public/Feature-Showcase.png`, `public/sapi-logo.png` (dihapus) · `public/sw.js` — `SHELL_ASSETS`, `CACHE_VERSION` `v2`→`v3` · `tests/Feature/Public/StaticAssetBudgetTest.php` (baru, 3 tes)
+- **Catatan Migrasi:** Tidak ada migrasi data. `CACHE_VERSION` yang naik membuat peramban pengguna membuang shell lama dan mengunduh ulang yang baru pada kunjungan berikutnya — ini memang yang diinginkan, karena entri `/sapi-logo.png` di cache lama menunjuk berkas yang sudah tidak ada.
 
 ---
 

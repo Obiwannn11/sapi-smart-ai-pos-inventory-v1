@@ -3,7 +3,7 @@
  *
  * Scope: "/" (served from public root so it can control the whole app).
  * Strategy:
- *   - Precache a minimal app shell (offline page, logo, manifest, icons).
+ *   - Precache a minimal app shell (offline page, manifest, icons).
  *   - Cache-first for hashed build assets under /build/assets/** (immutable).
  *   - Network-first for navigations, falling back to a cached copy for
  *     offline-capable routes, then to /offline.html.
@@ -24,15 +24,21 @@
  * refresh of the precached shell when these files change.
  */
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = `sapi-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `sapi-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `sapi-pages-${CACHE_VERSION}`;
 
+/**
+ * Keep this list to files the offline shell actually RENDERS. `cache.addAll()`
+ * is all-or-nothing: one 404 here rejects the whole install and the app loses
+ * its offline shell entirely, silently. `/sapi-logo.png` sat here until
+ * `[BL-077]` — 92 KB precached on every install for an image no page has ever
+ * displayed. `StaticAssetBudgetTest` now fails if an entry stops existing.
+ */
 const SHELL_ASSETS = [
     '/offline.html',
     '/manifest.webmanifest',
-    '/sapi-logo.png',
     '/icons/icon-192.png',
     '/icons/icon-512.png',
 ];
