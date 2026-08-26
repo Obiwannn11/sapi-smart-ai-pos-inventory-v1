@@ -63,6 +63,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 |---|---|---|---|
 | 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
 | 2026-08-24 | REFACTOR | Infra | Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077) |
+| 2026-08-24 | ADDITION | Infra | Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072) |
 | 2026-08-22 | DECISION | Waktu | Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082) |
 | 2026-08-21 | ADDITION | Kas | Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
@@ -255,6 +256,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Ketiga penjaga diuji dengan cara dilanggar**, bukan hanya dijalankan: satu PNG 195 KB disusupkan ke `public/` dan satu entri palsu ditambahkan ke `SHELL_ASSETS`; ketiganya gagal dengan pesan yang menyebut berkas dan jalan keluarnya, lalu keadaan dikembalikan. Penjaga yang tidak pernah terbukti bisa gagal tidak menjaga apa pun.
 - **Berkas:** `public/Feature-Showcase.png`, `public/sapi-logo.png` (dihapus) · `public/sw.js` — `SHELL_ASSETS`, `CACHE_VERSION` `v2`→`v3` · `tests/Feature/Public/StaticAssetBudgetTest.php` (baru, 3 tes)
 - **Catatan Migrasi:** Tidak ada migrasi data. `CACHE_VERSION` yang naik membuat peramban pengguna membuang shell lama dan mengunduh ulang yang baru pada kunjungan berikutnya — ini memang yang diinginkan, karena entri `/sapi-logo.png` di cache lama menunjuk berkas yang sudah tidak ada.
+
+---
+
+### [ADDITION] Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072)
+- **Tanggal:** 2026-08-24
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-072]` lewat butir (d)
+- **Dampak:** Dokumentasi | Tooling | Test
+- **Breaking Change:** Tidak.
+- **Keputusan pemilik 2026-08-24:** entri ini ditutup dengan butir (d) — aturan ke depan beserta penjaganya. Butir (c), menulis ulang delapan commit, **tetap ditolak** sesuai keputusan 2026-08-08.
+- **Deskripsi:** Peringatan tentang rentang `2ffd393`..`329f592` pindah dari `docs/BACKLOG.md` ke `CLAUDE.md`, bersama aturan "kelas dan pemakainya masuk di commit yang sama, atau kelasnya lebih dulu". Aturan itu kini punya pemeriksa: `composer run check:boot`, yang menjalankan `tests/Feature/CommitBootabilityTest.php`.
+- **Alasan:** Rentang itu tetap tidak bisa boot selamanya, dan itu disengaja. Yang bisa diperbaiki adalah nasib orang yang menyusurinya: `git bisect` di sana menunjuk commit yang salah, dan `git revert 342082c` akan mematikan `HEAD`. Peringatan itu sebelumnya terkubur di baris 267 sebuah berkas 726 baris yang aturannya sendiri melarang dibaca utuh — jadi ia hanya akan ditemukan oleh orang yang sudah tahu harus mencarinya.
+
+- **Uji cepat yang disarankan entrinya sendiri — `php artisan route:list` — DICOBA dan TIDAK MENANGKAP CACATNYA.** Cacat aslinya ditirukan persis (impor digantung di `HandleInertiaRequests`), dan `route:list` tetap keluar dengan status 0. Sebabnya ada di PHP, bukan di Laravel: sebuah `use` hanyalah alias di waktu kompilasi dan tidak pernah memicu autoloader sampai kelasnya benar-benar dipakai. Kalau butir (d) dipasang apa adanya, yang mendarat adalah penjaga yang tidak bisa gagal.
+- **Karena itu penjaganya membaca impornya, bukan menjalankan aplikasinya.** `CommitBootabilityTest` menyisir setiap `use` tingkat atas di `app/`, `database/`, `routes/`, dan `config/`, lalu menuntut sasarannya bisa dimuat sebagai kelas, interface, trait, atau enum. Ia melaporkan `berkas:baris → kelas`, jadi yang gagal langsung menunjuk tempatnya.
+- **Penjaganya diuji dengan menirukan cacat aslinya**, bukan hanya dijalankan pada kode yang sehat: satu impor menggantung disuntikkan ke `HandleInertiaRequests`, tes gagal dan menyebut berkas beserta nomor barisnya, lalu berkasnya dikembalikan.
+- **`use function` dan `use const` sengaja dilewati**, dan `use` yang menjorok di badan kelas ikut terlewat karena polanya menempel di awal baris. Yang pertama mengimpor simbol yang bukan kelas; yang kedua pemakaian trait, bukan impor namespace. Keduanya akan jadi laporan palsu, dan penjaga yang sering salah lapor akan dimatikan orang.
+- **`vendor/` di luar sisiran** — isinya bukan yang kita commit, dan impor bersyarat untuk paket opsional di sana akan melaporkan kegagalan yang bukan kegagalan.
+- **Yang TIDAK berubah, dan perlu disadari:** riwayatnya tetap rusak. Entri ini tidak menyembuhkan satu commit pun; ia mencegah cacat yang sama lahir lagi, dan memastikan orang berikutnya diperingatkan **sebelum** tersesat, bukan sesudah.
+- **Berkas:** `CLAUDE.md` — aturan commit atomik + blok peringatan riwayat · `composer.json` — skrip `check:boot` · `tests/Feature/CommitBootabilityTest.php` (baru)
+- **Catatan Migrasi:** Tidak ada. `composer run check:boot` dijalankan manual sebelum commit; belum dipasang sebagai hook maupun langkah CI — repositori ini belum punya workflow tes, dan menambahkannya keputusan tersendiri.
 
 ---
 
