@@ -60,6 +60,16 @@ class AuthController extends Controller
             // pendaftaran tidak dijegal pertanyaan yang jawabannya bisa "belum
             // jelas" — yang kosong jatuh ke bawaan netral, bukan ke `null`, dan
             // pemiliknya bisa memperbaikinya sendiri dari Pengaturan.
+            //
+            // `[BL-079]` meninjau ulang `nullable` ini setelah kolomnya jadi
+            // dimensi harga, dan pemilik memilih MEMPERTAHANKANNYA (opsi iii,
+            // 2026-08-24): belum ada satu pun aturan di `pricing_rules` yang
+            // bersyarat `business_type`, jadi mewajibkannya menaikkan gesekan
+            // pendaftaran tanpa menukar apa pun. Yang diperbaiki adalah
+            // tebakannya — layar pendaftaran kini menyebut bahwa yang kosong
+            // disamakan dengan "Lainnya", dan menyebut kenapa ditanyakan.
+            // Pertanyaan "wajibkan?" tetap terbuka sampai ada aturan harga
+            // pertama yang benar-benar memakai dimensi ini.
             'business_type' => ['nullable', Rule::in(array_keys(config('pricing-dimensions.business_type.options', [])))],
             'name' => 'required|string|max:255',
             'email' => 'required|email|max:255|unique:users,email',

@@ -64,6 +64,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
 | 2026-08-24 | REFACTOR | Infra | Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077) |
 | 2026-08-24 | ADDITION | Infra | Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072) |
+| 2026-08-24 | DECISION | Auth | Jenis Usaha Tetap Opsional, tapi Bawaannya Berhenti Ditebakkan Diam-diam (BL-079) |
 | 2026-08-22 | DECISION | Waktu | Seluruh Aplikasi Berjalan di Jam Toko (WITA), dan Satu Tempat Saja yang Menjawab "Hari Ini" (BL-082) |
 | 2026-08-21 | ADDITION | Kas | Uang Keluar Laci Punya Tempat Mencatatnya, dan Efeknya yang Ditahan — Bukan Pencatatannya (BL-087) |
 | 2026-08-21 | ADDITION | Kas | Sesi Kas Punya Umur, dan yang Lewat Ditutup Sistem Tanpa Mengaku Sudah Dihitung (BL-088) |
@@ -276,6 +277,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 - **Yang TIDAK berubah, dan perlu disadari:** riwayatnya tetap rusak. Entri ini tidak menyembuhkan satu commit pun; ia mencegah cacat yang sama lahir lagi, dan memastikan orang berikutnya diperingatkan **sebelum** tersesat, bukan sesudah.
 - **Berkas:** `CLAUDE.md` — aturan commit atomik + blok peringatan riwayat · `composer.json` — skrip `check:boot` · `tests/Feature/CommitBootabilityTest.php` (baru)
 - **Catatan Migrasi:** Tidak ada. `composer run check:boot` dijalankan manual sebelum commit; belum dipasang sebagai hook maupun langkah CI — repositori ini belum punya workflow tes, dan menambahkannya keputusan tersendiri.
+
+---
+
+### [DECISION] Jenis Usaha Tetap Opsional, tapi Bawaannya Berhenti Ditebakkan Diam-diam (BL-079)
+- **Tanggal:** 2026-08-24
+- **Fase Terkait:** Di Luar Fase — menjawab sebagian `[BL-079]`; entrinya **tetap terbuka**
+- **Dampak:** Frontend | Controller | Test
+- **Breaking Change:** Tidak. Validasi, kolom, dan nilai tersimpan tidak berubah sama sekali.
+- **Keputusan pemilik 2026-08-24:** opsi **(iii)** — `business_type` tetap opsional saat mendaftar, tapi layarnya berhenti menyembunyikan apa yang sebenarnya tersimpan.
+- **Deskripsi:** Pilihan kosong di formulir daftar berganti dari "Belum ditentukan" menjadi "Belum yakin — disamakan dengan Lainnya", dan di atas pemilihnya ditambahkan satu baris yang menyebut kenapa pertanyaannya diajukan serta bahwa jawabannya bisa diubah dari Pengaturan. Tidak ada validasi yang diketatkan dan tidak ada migrasi.
+- **Alasan:** Sejak `pricing_rules` bisa bersyarat jenis usaha, tenant yang membiarkannya kosong dinilai sebagai `lainnya` — jawaban yang **ditebakkan untuknya**, bukan yang ia pilih. "Belum ditentukan" dan "Lainnya" adalah dua pilihan berbeda di layar yang mendarat di nilai tersimpan yang sama, dan tidak ada apa pun yang mengatakannya.
+
+- **Mewajibkannya ditolak, dan usulan (a) entrinya sendiri yang jadi alasannya:** jangan dikerjakan sebelum ada aturan harga yang benar-benar bersyarat `business_type`. Diperiksa saat entri ini dikerjakan — **belum ada satu pun**. Mewajibkan sekarang berarti menaikkan gesekan pendaftaran demi dimensi yang belum menentukan tarif siapa pun.
+- **Aplikasi ini sudah tidak konsisten dengan dirinya sendiri, dan itu TIDAK diseragamkan di sini.** `BusinessProfileController` sudah memvalidasi `business_type` sebagai `required`, sementara pendaftaran menerima kosong — wajib saat diubah, opsional saat dibuat. Menyeragamkannya berarti memilih salah satu arah, dan arah itu persis pertanyaan yang sedang ditahan. Dibiarkan sadar, dan dicatat di sini supaya tidak "dirapikan" tanpa keputusan.
+- **Kenapa entrinya tetap terbuka:** yang terjawab hanya "layarnya berbohong atau tidak". Pertanyaan aslinya — wajibkan atau tidak, dan apa nasib tenant yang sudah terlanjur berbawaan — menunggu aturan harga pertama yang memakai dimensi ini.
+- **Empat tes mengunci kedua sisi keputusan sekaligus** — bahwa mendaftar tanpa menjawab tetap boleh, bahwa yang kosong mendarat di bawaan dan bukan `null`, bahwa layarnya menyebut nama bawaan itu, dan bahwa jenis usaha di luar katalog tetap ditolak. Tes ketiga membaca nama bawaannya dari `config('pricing-dimensions')`, bukan menuliskannya, jadi ia ikut benar bila bawaan itu suatu saat diganti.
+- **Berkas:** `resources/js/Pages/Auth/Register.vue` — label pilihan kosong + baris penjelasan · `app/Http/Controllers/Auth/AuthController.php` — catatan keputusan pada aturan validasinya · `tests/Feature/Auth/BusinessTypeOptionalityTest.php` (baru, 4 tes)
+- **Catatan Migrasi:** Tidak ada. Tenant yang sudah tersimpan sebagai `lainnya` dibiarkan apa adanya — memindahkannya berarti menebak jawaban yang tidak pernah diberikan, dan itu persis kesalahan yang sedang diperbaiki.
 
 ---
 

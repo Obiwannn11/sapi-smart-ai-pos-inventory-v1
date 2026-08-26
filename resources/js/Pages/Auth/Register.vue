@@ -211,6 +211,20 @@ const submit = () => {
                             Jenis Usaha
                             <span class="font-normal text-muted-foreground">(opsional)</span>
                         </label>
+                        <!--
+                            `[BL-079]` opsi (iii). Kolom ini TETAP opsional —
+                            mewajibkannya menaikkan gesekan pendaftaran demi
+                            dimensi harga yang belum dipakai satu aturan pun.
+                            Yang dicabut adalah tebakannya: "Belum ditentukan"
+                            dulu diam-diam tersimpan sebagai `lainnya`, jadi
+                            sebagian tenant bisa masuk kelompok tarif lewat
+                            jawaban yang tak pernah mereka berikan. Sekarang
+                            layarnya menyebut hasilnya, dan menyebut kenapa
+                            pertanyaannya diajukan.
+                        -->
+                        <p class="text-xs text-muted-foreground mb-1.5">
+                            Dipakai menyiapkan fitur awal, dan kelak bisa ikut menentukan tarif langganan Anda. Bisa diubah kapan saja lewat Pengaturan.
+                        </p>
                         <select
                             id="register-business-type"
                             v-model="form.business_type"
@@ -225,7 +239,7 @@ const submit = () => {
                                     : 'border-border hover:border-muted-foreground/35 focus:ring-ring'
                             ]"
                         >
-                            <option value="">Belum ditentukan</option>
+                            <option value="">Belum yakin — disamakan dengan "Lainnya"</option>
                             <option v-for="(label, value) in businessTypes" :key="value" :value="value">
                                 {{ label }}
                             </option>
