@@ -10,6 +10,54 @@
 
 ## Daftar Entri
 
+### [BL-095] Cold Start Offline Membuka POS yang Tidak Pernah Bisa Menjual — Katalog Tertahan Selamanya di Kerangka
+- **Ditemukan:** 2026-08-26 (spike Tahap 1 `[BL-016]`)
+- **Sumber:** Gerbang keputusan Tahap 1 `[BL-016]` D2. **Diuji, bukan disimpulkan:** Chrome sungguhan, service worker terpasang, lalu server benar-benar dimatikan sampai `curl` menjawab *connection refused*
+- **Status:** **Selesai 2026-08-26** — lihat `[HOTFIX] Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096)`
+- **Status semula:** Open
+- **Yang mendarat, dan satu butir yang sengaja TIDAK dikerjakan:** butir (a), (c), dan (d) dikerjakan seperti tertulis. Butir **(b) ditolak sadar** — menggantungkan `catalogReady` pada ketersediaan snapshot akan membuat katalog basi terlihat oleh kasir yang **sedang online** selagi prop tertundanya masih di jalan, yaitu menukar satu cacat dengan cacat yang lebih berbahaya: harga basi. Yang benar ternyata membiarkan `catalogReady` apa adanya dan **membuat `isOnline` jujur**
+- **Kebutuhan yang baru terlihat saat dikerjakan:** penandaan offline yang dilakukan sendiri **tidak punya jalan pulang**. `markOnline()` sudah diekspor sejak lama tapi tak pernah dipanggil dari mana pun, dan peristiwa `online` milik peramban tidak menyala karena antarmuka jaringan memang tidak pernah putus — yang tadi mati cuma servernya. Karena itu ikut mendarat pendengar `success` dan penyelidik berkala 60 detik (`router.reload({ only: ['products', 'upsell'] })`). Tanpa keduanya, perbaikan ini justru akan mengunci kasir di mode tunai sampai ia kebetulan berpindah halaman
+- **Prioritas:** High — ia mematikan satu-satunya janji yang membuat POS berguna saat internet putus, dan ia berlaku pada **PWA hari ini**, bukan hanya pada rencana Capacitor
+- **Area Terdampak:**
+  - `resources/js/Pages/Cashier/POS.vue:78-80` — `catalogReady` memilih sumber katalog dari `isOnline`
+  - `resources/js/Pages/Cashier/POS.vue:103` — `loadSnapshot()` dipanggil saat mount **hanya jika** sudah offline
+  - `resources/js/Pages/Cashier/POS.vue:129-136` — `watch(isOnline)` yang seharusnya menarik snapshot tidak pernah menyala
+  - `resources/js/composables/useOnlineStatus.js:16` — `isOnline` bersandar pada `navigator.onLine`
+  - `app/Http/Controllers/Cashier/POSController.php:83` — `products` dikirim sebagai `Inertia::defer()`
+- **Deskripsi:** Saat aplikasi dibuka dari keadaan mati sementara server tidak terjangkau, service worker **berhasil** menyajikan dokumen POS dari cache — cangkang, kategori, keranjang, tombol BAYAR, semuanya tampil. Yang tidak pernah datang adalah produknya: rak menampilkan "Memuat katalog produk…" selamanya, jadi kasir memandang POS yang kelihatan hidup tapi tidak bisa dipakai menjual satu gelas pun.
+
+  Rantai sebabnya melibatkan tiga keputusan yang masing-masing benar sendiri-sendiri:
+  1. `products` adalah **prop tertunda** (`Inertia::defer()`, konsekuensi `[BL-037]`), jadi ia **tidak ikut** di dalam dokumen yang disimpan service worker. Dokumen cache hanya membawa `deferredProps: { default: ["products","upsell"] }`.
+  2. Permintaan susulan untuk prop tertunda itu gagal — server memang tidak ada.
+  3. **Tidak ada yang memberi tahu aplikasi bahwa ia offline.** `navigator.onLine` tetap `true` (antarmuka jaringan hidup; yang mati cuma servernya), jadi `isOnline` tetap `true`, `catalogReady` jatuh ke cabang `Array.isArray(props.products)` yang bernilai `false`, `watch(isOnline)` tak pernah menyala, dan `loadSnapshot()` tak pernah dipanggil.
+
+  **Snapshot katalognya sendiri baik-baik saja.** IndexedDB berisi satu record lengkap dengan keempat produk. Ia hanya tidak pernah dibaca. Dibuktikan dengan memaksa satu peristiwa `offline` ke `window`: seketika itu juga spanduk "Mode Offline · Katalog per 17.28 — stok indikatif, hanya tunai." muncul dan seluruh produk terpasang. Jadi seluruh mesin offline sudah benar; yang putus hanya pemicunya.
+- **Ironi yang layak dicatat:** `useOnlineStatus.js` sudah menuliskan sebabnya sebagai peringatan — *"it says nothing about whether our server is reachable… Treat it as a hint for UI, never as proof a request will succeed"* — lengkap dengan `markOffline()` sebagai jalan keluarnya. Jalur prop tertunda hanyalah satu-satunya pengirim permintaan yang tidak pernah memanggilnya.
+- **Usulan Perbaikan:**
+  **(a)** Panggil `markOffline()` saat permintaan prop tertunda gagal. Ini perbaikan terkecil yang menutup lubangnya, dan ia memakai mekanisme yang sudah ada.
+  **(b)** Jangan gantungkan `catalogReady` pada `isOnline` sendirian. Snapshot yang ada di IndexedDB selalu sah dipakai begitu prop-nya tidak datang — apa pun kata `navigator.onLine`.
+  **(c)** Pertimbangkan memanggil `loadSnapshot()` tanpa syarat saat mount. Ongkosnya satu pembacaan IndexedDB; imbalannya katalog tidak pernah bergantung pada tebakan konektivitas.
+  **(d)** Uji regresinya dengan server yang benar-benar mati, bukan dengan `navigator.onLine` yang dipalsukan — justru selisih antara keduanya yang melahirkan cacat ini.
+
+### [BL-096] Cold Start Offline di `/` Berujung Halaman Buntu — Tidak Ada Jalan Menuju POS
+- **Ditemukan:** 2026-08-26 (spike Tahap 1 `[BL-016]`)
+- **Sumber:** Gerbang keputusan Tahap 1 `[BL-016]` D2, diuji bersama `[BL-095]`
+- **Status:** **Selesai 2026-08-26** — lihat `[HOTFIX] Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096)`
+- **Status semula:** Open
+- **Yang mendarat:** butir (a). Butir **(c) tidak dikerjakan** — sesudah (a) ada, mengalihkan navigasi akar dari dalam `sw.js` hanya menghemat satu ketukan sambil menambah cabang pada berkas yang paling sulit diuji di proyek ini. Butir (b) bukan pekerjaan kode; ia catatan yang menunggu `[BL-016]` benar-benar dikerjakan
+- **Satu hal yang nyaris terlewat, dan ia menentukan apakah perbaikan ini sampai ke siapa pun:** `offline.html` terdaftar di `SHELL_ASSETS`, dan shell hanya diprecache ulang ketika `CACHE_VERSION` berubah. Tanpa menaikkannya ke `v4`, setiap pemasangan yang sudah ada akan terus menyajikan halaman buntu yang lama — selamanya, tanpa satu pun pesan yang terlihat
+- **Prioritas:** Medium untuk PWA; **naik jadi prasyarat** begitu `[BL-016]` dikerjakan, karena `server.url` Capacitor menentukan alamat mana yang dibuka saat aplikasi dinyalakan
+- **Area Terdampak:**
+  - `public/sw.js:52` — `OFFLINE_CAPABLE_ROUTES = ['/cashier/pos']`, hanya satu rute
+  - `public/sw.js:141-147` — cadangan terakhir selalu `/offline.html`
+  - `public/offline.html:47` — satu-satunya tombolnya `location.reload()`
+- **Deskripsi:** Dibuka offline di `/cashier/pos`, POS tersaji dari cache. Dibuka offline di `/` — yang merupakan **alamat bawaan** kalau seseorang menaruh URL server apa adanya — yang muncul adalah `offline.html`: "Anda sedang offline", dengan satu tombol "Coba lagi" yang hanya memuat ulang halaman yang sama. Tidak ada tautan menuju POS, padahal POS-nya ada di cache dan siap dibuka. Kasir yang tidak hafal alamatnya berhenti di situ.
+- **Kenapa ini penting justru untuk `[BL-016]`:** rencana D1.1 memilih cangkang yang **menunjuk `server.url`, bukan membundel aset**. Kalau `server.url` diisi akar situs, setiap penyalaan aplikasi dalam keadaan offline mendarat di halaman buntu ini — dan itu persis kegagalan yang gerbang keputusan Tahap 1 diminta mengawasi.
+- **Usulan Perbaikan:**
+  **(a)** Beri `offline.html` satu tautan ke `/cashier/pos`. Ini perbaikan termurah dan menolong pengguna PWA hari ini juga.
+  **(b)** Saat `[BL-016]` dikerjakan, isi `server.url` Capacitor sampai ke `/cashier/pos`, jangan berhenti di akar.
+  **(c)** Pertimbangkan agar service worker mengalihkan navigasi akar ke salinan POS yang ada di cache ketika jaringan gagal — sedikit lebih rumit dari (a), tapi ia menutup jalur mana pun yang dipakai orang untuk masuk.
+
 ### [BL-091] Seluruh Aplikasi Vue (1,1 MB, 56 Halaman) Dikirim ke Setiap Pengunjung Halaman Publik, lalu Gagal Mount
 - **Ditemukan:** 2026-08-20 (saat memverifikasi `[BL-089]` di peramban — dua error konsol muncul di landing padahal perubahannya seluruhnya Blade)
 - **Sumber:** Pengamatan langsung di konsol peramban, lalu ditelusuri ke `app.js` dan manifes build

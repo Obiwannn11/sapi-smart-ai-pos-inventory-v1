@@ -25,7 +25,13 @@
         img { width: 72px; height: 72px; margin-bottom: 20px; }
         h1 { font-size: 20px; margin: 0 0 8px; }
         p { font-size: 14px; line-height: 1.5; color: #5b6b64; margin: 0 0 24px; }
-        button {
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: stretch;
+        }
+        button, .btn {
             appearance: none;
             border: 0;
             background: #0d9668;
@@ -35,16 +41,35 @@
             padding: 11px 22px;
             border-radius: 10px;
             cursor: pointer;
+            text-decoration: none;
+            display: block;
         }
-        button:hover { background: #0b8259; }
+        button:hover, .btn:hover { background: #0b8259; }
+        .btn-secondary {
+            background: transparent;
+            color: #0d9668;
+            border: 1px solid #cfe6dc;
+        }
+        .btn-secondary:hover { background: #eef7f3; }
     </style>
 </head>
 <body>
     <div class="card">
         <img src="/icons/icon-192.png" alt="SAPI POS">
         <h1>Anda sedang offline</h1>
-        <p>Tidak ada koneksi internet. Periksa jaringan Anda, lalu coba muat ulang halaman.</p>
-        <button onclick="location.reload()">Coba lagi</button>
+        <p>Tidak ada koneksi internet. Kasir tetap bisa dibuka dan menerima pembayaran tunai — penjualannya tersimpan lalu terkirim saat sinyal kembali.</p>
+        <!--
+            Tautan kasir ini bukan hiasan ([BL-096]). Halaman ini adalah cadangan
+            terakhir service worker untuk SETIAP rute yang tidak tercache — akar
+            situs termasuk. Tanpa tautan ini, kasir yang membuka aplikasi dari
+            keadaan mati mendarat di sini dan berhenti, padahal /cashier/pos ada
+            di cache dan siap dibuka. Jangan cabut tanpa menyediakan jalan lain
+            menuju POS.
+        -->
+        <div class="actions">
+            <a class="btn" href="/cashier/pos">Buka Kasir</a>
+            <button class="btn-secondary" onclick="location.reload()">Coba lagi</button>
+        </div>
     </div>
 </body>
 </html>

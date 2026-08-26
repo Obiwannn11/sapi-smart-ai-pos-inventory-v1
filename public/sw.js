@@ -24,7 +24,11 @@
  * refresh of the precached shell when these files change.
  */
 
-const CACHE_VERSION = 'v3';
+// v4 — `offline.html` mendapat tautan "Buka Kasir" (`[BL-096]`). Ia terdaftar
+// di SHELL_ASSETS, dan shell hanya diprecache ulang saat versi ini berubah;
+// tanpa naik versi, setiap pemasangan yang sudah ada akan terus menyajikan
+// halaman buntu yang lama dan perbaikannya tidak pernah sampai ke siapa pun.
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `sapi-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `sapi-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `sapi-pages-${CACHE_VERSION}`;

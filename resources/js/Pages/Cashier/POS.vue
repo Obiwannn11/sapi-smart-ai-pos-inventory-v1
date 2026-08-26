@@ -38,7 +38,7 @@ const { show: showFlash } = useFlash();
 // the props when offline because the page itself may have been served from the
 // service worker's cache — those props are stale and, unlike the snapshot, we
 // cannot tell the cashier how old they are.
-const { isOnline, markOffline } = useOnlineStatus();
+const { isOnline, markOffline, markOnline } = useOnlineStatus();
 const { snapshot, loaded: snapshotLoaded, loadSnapshot, saveSnapshot, cachedAtLabel } = useCatalogCache();
 
 const usingCachedCatalog = computed(() => !isOnline.value && snapshot.value !== null);
@@ -100,11 +100,45 @@ const {
 } = useOfflineQueue();
 
 onMounted(() => {
-    if (!isOnline.value) loadSnapshot();
+    // Dibaca TANPA SYARAT, sengaja ([BL-095]). Sebelumnya pembacaan ini
+    // digantungkan pada `!isOnline`, dan itu justru melewatkan keadaan yang
+    // paling membutuhkannya: cold start saat server tak terjangkau, ketika
+    // `navigator.onLine` masih berkata `true` sehingga cabang ini tak pernah
+    // dimasuki. Ongkosnya satu pembacaan IndexedDB; imbalannya snapshot sudah
+    // siap di memori pada detik `isOnline` jatuh, tanpa kedipan kerangka.
+    // Aman dijalankan saat online: `usingCachedCatalog` tetap `false`, jadi
+    // snapshot lama tidak pernah ikut terlihat selama propsnya masih datang.
+    loadSnapshot();
 
     refreshQueue().then(() => {
         if (isOnline.value) flush();
     });
+});
+
+/**
+ * Jaga agar `isOnline` jujur ([BL-095]).
+ *
+ * `navigator.onLine` hanya melaporkan ada-tidaknya antarmuka jaringan — ia
+ * tetap `true` saat servernya yang mati, captive portal, atau uplink putus.
+ * Konsekuensinya baru terasa pada cold start offline: dokumen POS disajikan
+ * service worker dari cache, `products` yang berstatus prop tertunda tidak
+ * pernah sampai, permintaan susulannya gagal diam-diam, dan tidak ada satu pun
+ * yang memberi tahu halaman ini bahwa ia offline. Rak produk lalu menahan
+ * kerangka selamanya — POS yang terlihat hidup tapi tidak bisa menjual.
+ *
+ * `exception` adalah peristiwa Inertia untuk kegagalan XHR tak terduga
+ * (termasuk jaringan terputus), dan `success` adalah bukti paling murah bahwa
+ * server kembali terjangkau. Keduanya dipasang berpasangan supaya penandaan
+ * offline selalu punya jalan pulang: sebelum ini `markOnline()` tidak pernah
+ * dipanggil dari mana pun, sehingga sekali ditandai offline hanya peristiwa
+ * `online` milik peramban yang bisa memulihkannya.
+ */
+const stopExceptionListener = router.on('exception', () => markOffline());
+const stopSuccessListener = router.on('success', () => markOnline());
+
+onUnmounted(() => {
+    stopExceptionListener();
+    stopSuccessListener();
 });
 
 /**
@@ -148,7 +182,26 @@ let syncTimer = null;
 
 onMounted(() => {
     syncTimer = setInterval(() => {
-        if (isOnline.value) flush();
+        if (isOnline.value) {
+            flush();
+
+            return;
+        }
+
+        // Ditandai offline sendiri, tapi peramban tetap mengaku punya jaringan
+        // ([BL-095]). Keadaan ini tidak punya peristiwa pemulih: `online` hanya
+        // menyala kalau antarmuka jaringan benar-benar berubah, dan di sini ia
+        // memang tidak pernah putus — yang tadi mati cuma servernya. Tanpa
+        // penyelidik berkala ini, kasir bisa terkunci di mode tunai sampai ia
+        // berpindah halaman, walau servernya sudah pulih semenit setelah jatuh.
+        //
+        // Satu muat ulang parsial cukup jadi ketukan pintu: kalau server sudah
+        // kembali, `success` menyala dan `markOnline()` melepas kuncinya sambil
+        // sekalian menyegarkan katalog; kalau belum, `exception` menyala dan
+        // keadaannya tinggal seperti semula.
+        if (navigator.onLine) {
+            router.reload({ only: ['products', 'upsell'] });
+        }
     }, SYNC_INTERVAL_MS);
 });
 

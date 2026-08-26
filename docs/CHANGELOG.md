@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-26 | HOTFIX | PWA | Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096) |
 | 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
 | 2026-08-24 | REFACTOR | Infra | Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077) |
 | 2026-08-24 | ADDITION | Infra | Riwayat yang Tidak Bisa Boot Dibiarkan, Peringatannya yang Dipindah ke Tempat Terbaca (BL-072) |
@@ -215,6 +216,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096)
+- **Tanggal:** 2026-08-26
+- **Fase Terkait:** Di Luar Fase — temuan spike Tahap 1 `[BL-016]`; menutup `[BL-095]` dan `[BL-096]`
+- **Dampak:** Frontend | PWA | Test
+- **Breaking Change:** Tidak. Tidak ada skema, endpoint, maupun kontrak prop yang berubah. `CACHE_VERSION` naik `v3` → `v4`, jadi cache shell/aset/halaman lama dibuang sekali saat service worker berikutnya aktif — perilaku yang memang dirancang untuk itu.
+- **Deskripsi:** Saat aplikasi dinyalakan dari keadaan mati sementara server tidak terjangkau, POS tampil utuh lalu **tidak bisa dipakai menjual apa pun**: rak produk menahan "Memuat katalog produk…" selamanya. Sekarang katalog cadangan terbaca, spanduk "Mode Offline" muncul dengan jam katalognya, dan aplikasi memulihkan dirinya sendiri begitu server kembali. Halaman offline juga tidak lagi buntu.
+- **Alasan:** Ditemukan saat menguji gerbang keputusan Tahap 1 `[BL-016]` — dan hanya bisa ditemukan dengan mematikan servernya sungguhan. Rantai sebabnya tiga keputusan yang masing-masing benar sendiri-sendiri, dan hanya salah ketika bertemu.
+
+- **Sebabnya bukan mesin offline yang rusak — mesinnya utuh, pemicunya yang tidak pernah menyala.** `products` adalah prop tertunda (`Inertia::defer()`, konsekuensi `[BL-037]`), jadi ia tidak ikut di dokumen yang disimpan service worker; permintaan susulannya gagal karena server memang tidak ada; dan **tidak ada satu pun yang memberi tahu halaman bahwa ia offline** — `navigator.onLine` tetap `true` karena antarmuka jaringan tidak pernah putus, yang mati cuma servernya. Akibatnya `isOnline` tetap `true`, `watch(isOnline)` tidak pernah menyala, dan `loadSnapshot()` tidak pernah dipanggil. Snapshot katalognya sendiri lengkap di IndexedDB sepanjang waktu — ia hanya tidak pernah dibaca.
+- **Peringatannya sudah tertulis di kode, bertahun sebelum gejalanya muncul.** `useOnlineStatus.js` menyebut `navigator.onLine` "never as proof a request will succeed" dan menyediakan `markOffline()` sebagai jalan keluarnya. Jalur prop tertunda hanyalah satu-satunya pengirim permintaan yang tidak pernah memanggilnya.
+- **Usulan (b) entrinya ditolak sadar saat dikerjakan.** `[BL-095]`(b) mengusulkan `catalogReady` tidak lagi bergantung pada `isOnline`, melainkan pada ketersediaan snapshot. Itu akan memperlihatkan **katalog basi kepada kasir yang sedang online** selagi prop tertundanya masih di jalan — menukar POS yang tidak bisa menjual dengan POS yang menjual di harga lama. Yang benar ternyata membiarkan `catalogReady` apa adanya dan membuat `isOnline` jujur.
+- **Menambah pemicu offline tanpa jalan pulang akan melahirkan cacat kedua.** `markOnline()` sudah diekspor sejak lama tapi **tidak pernah dipanggil dari mana pun**, dan `online` milik peramban tidak akan menyala pada kasus ini karena jaringannya tidak pernah putus. Tanpa pemulih, perbaikan ini akan mengunci kasir di mode tunai sampai ia kebetulan berpindah halaman. Karena itu ikut mendarat pendengar `success` dan penyelidik berkala 60 detik yang mengetuk pintu dengan satu muat ulang parsial.
+- **`CACHE_VERSION` naik bukan sebagai kerapian, melainkan syarat sampainya perbaikan.** `offline.html` terdaftar di `SHELL_ASSETS`, dan shell hanya diprecache ulang saat versi cache berubah. Tanpa naik ke `v4`, setiap pemasangan yang sudah ada akan terus menyajikan halaman buntu yang lama — selamanya, tanpa satu pun pesan yang terlihat.
+- **Diverifikasi dengan server yang benar-benar mati, bukan `navigator.onLine` yang dipalsukan** — justru selisih antara keduanya yang melahirkan cacat ini. Ketiga jalurnya dibuktikan di Chrome sungguhan: cold start offline di `/cashier/pos` memuat katalog dari snapshot (`navigator.onLine` tetap `true` selama itu), cold start di `/` mendarat di halaman offline lalu tombol "Buka Kasir" membuka POS yang berfungsi, dan penyelidik 60 detik memulihkan keadaan setelah server dihidupkan lagi tanpa satu pun peristiwa `online`.
+- **Batas yang jujur soal testnya:** `tests/Feature/OfflineColdStartTest.php` adalah penjaga **teks sumber**, bukan uji perilaku — proyek ini tidak punya pelari uji JavaScript, dan polanya mengikuti `StaticAssetBudgetTest` yang sudah menjaga `sw.js` dengan cara sama. Ia mencegah bentuk lamanya kembali; ia tidak membuktikan perilakunya. Pembuktian perilaku menuntut peramban dengan servernya dimatikan, dan itu dikerjakan manual.
+- **File Terdampak:**
+  - `resources/js/Pages/Cashier/POS.vue` — `loadSnapshot()` jadi tanpa syarat; pendengar `exception`/`success` dipasang dan dilepas di `onUnmounted`; penyelidik pemulihan di interval 60 detik
+  - `public/offline.html` — tautan "Buka Kasir" ke `/cashier/pos`, dan kalimatnya berhenti menyuruh orang menunggu koneksi
+  - `public/sw.js` — `CACHE_VERSION` `v3` → `v4`
+  - `tests/Feature/OfflineColdStartTest.php` — **baru**, 6 tes
+- **Catatan Migrasi:** Tidak ada tindakan manual. Pengguna yang sudah memasang PWA akan mendapat shell `v4` saat service worker berikutnya aktif; katalog dan antrean penjualan di IndexedDB **tidak** tersentuh oleh pergantian versi cache.
 
 ---
 
