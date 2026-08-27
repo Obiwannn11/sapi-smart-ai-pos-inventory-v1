@@ -19,6 +19,7 @@ import { useCatalogCache } from '@/composables/useCatalogCache';
 import { useOfflineQueue } from '@/composables/useOfflineQueue';
 import { requestPersistentStorage } from '@/services/offlineDb';
 import { useUpsell } from '@/composables/useUpsell';
+import { applyTax } from '@/support/tax';
 
 const props = defineProps({
     categories: Array,
@@ -29,6 +30,9 @@ const props = defineProps({
     cashDrawer: Object,
     tenantName: { type: String, default: 'SAPI POS' },
     upsell: { type: Object, default: null },
+    // Konteks pajak toko ([BL-065]). Eager, bukan ditunda: keranjang harus
+    // bisa menunjukkan totalnya sejak barang pertama masuk.
+    tax: { type: Object, default: null },
 });
 
 const { show: showFlash } = useFlash();
@@ -61,6 +65,14 @@ const catalogPaymentMethods = computed(() =>
 // harga sama sekali.
 const catalogUpsell = computed(() =>
     usingCachedCatalog.value ? (snapshot.value.upsell ?? null) : (props.upsell ?? null)
+);
+
+// Konteks pajak mengikuti jalur yang sama seperti katalog: props saat online,
+// snapshot saat tidak. Bedanya dari upsell, yang basi di sini BUKAN sekadar
+// jadi tidak relevan — ia membuat kasir menghitung total yang berbeda dari
+// server, dan penjualannya mendarat sebagai needs_review ([BL-065]).
+const taxContext = computed(() =>
+    usingCachedCatalog.value ? (snapshot.value.tax ?? null) : (props.tax ?? null)
 );
 
 /**
@@ -165,6 +177,7 @@ watch(() => props.products, (products) => {
         categories: props.categories,
         paymentMethods: props.paymentMethods,
         upsell: props.upsell,
+        tax: props.tax,
     });
 }, { immediate: true });
 
@@ -325,7 +338,9 @@ const filteredProducts = computed(() => {
 });
 
 // --- Cart Logic ---
-const cartTotal = computed(() => {
+// Jumlah baris keranjang, apa adanya, sebelum pajak disentuh. Ini `$base`
+// yang sama seperti yang dikembalikan processItems() di server.
+const cartBase = computed(() => {
     return cart.value.reduce((total, item) => {
         let itemPrice = Number(item.unit_price);
         if (item.modifiers && item.modifiers.length > 0) {
@@ -334,6 +349,17 @@ const cartTotal = computed(() => {
         return total + (itemPrice * item.qty);
     }, 0);
 });
+
+// Aturannya dipinjam dari `@/support/tax`, cerminan `TaxCalculator` di server
+// ([BL-065]). Menuliskannya ulang di sini berarti salinan ketiga, dan salinan
+// yang menyimpang tidak muncul sebagai galat — ia muncul sebagai penjualan
+// offline yang mendarat needs_review satu per satu.
+const cartTotals = computed(() => applyTax(cartBase.value, taxContext.value ?? {}));
+
+// Yang dibayar pelanggan. Nama lamanya dipertahankan karena inilah arti yang
+// dipakai seluruh pemanggilnya — tombol bayar, modal pembayaran, dan payload
+// offline semuanya bicara tentang uang yang berpindah tangan.
+const cartTotal = computed(() => cartTotals.value.total);
 
 const cartItemCount = computed(() => {
     return cart.value.reduce((sum, item) => sum + item.qty, 0);
@@ -1237,6 +1263,18 @@ onUnmounted(stopResizeCart);
                         Diskon yang sudah disetujui pemilik berlaku otomatis. Harga di bawah batas untung hanya bisa ditetapkan pemilik.
                     </p>
 
+                    <!-- Pembagian pajak hanya muncul kalau ada pajaknya; toko
+                         yang tidak memungut melihat baris Total seperti dulu. -->
+                    <template v-if="cartTotals.tax > 0">
+                        <div class="flex items-center justify-between text-xs text-gray-500">
+                            <span>Subtotal</span>
+                            <span>{{ formatCurrency(cartTotals.subtotal) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-xs text-gray-500">
+                            <span>{{ (taxContext?.label || 'Pajak') }} {{ Number(taxContext?.rate || 0) }}%</span>
+                            <span>{{ formatCurrency(cartTotals.tax) }}</span>
+                        </div>
+                    </template>
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-600">Total</span>
                         <span class="text-xl font-bold text-gray-800">{{ formatCurrency(cartTotal) }}</span>

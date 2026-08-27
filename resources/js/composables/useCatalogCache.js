@@ -39,13 +39,20 @@ export function useCatalogCache() {
      * must stay identical to the props. Vue refs/proxies cannot be structured-
      * cloned into IndexedDB, hence the JSON round-trip to get plain objects.
      */
-    async function saveSnapshot({ products, categories, paymentMethods, upsell = null }) {
+    async function saveSnapshot({ products, categories, paymentMethods, upsell = null, tax = null }) {
         if (!isOfflineStorageSupported()) return false;
 
         const record = {
             products: toPlain(products ?? []),
             categories: toPlain(categories ?? []),
             paymentMethods: toPlain(paymentMethods ?? []),
+            // Konteks pajak ikut, dan ini BUKAN kenyamanan ([BL-065]).
+            // Berbeda dari saran upsell yang basi paling buruk jadi tidak
+            // relevan, tarif pajak yang tidak ikut membuat kasir offline
+            // menghitung total tanpa pajak sementara server menghitung
+            // dengan pajak — dan setiap penjualan offline mendarat sebagai
+            // needs_review sampai seseorang menyadarinya.
+            tax: tax === null ? null : toPlain(tax),
             // Indeks saran upsell ikut menumpang snapshot ini. Ia sengaja
             // dianggap sama umurnya dengan katalog: saran basi paling buruk
             // hanya jadi tidak relevan, sedangkan HARGA basi akan merugikan —

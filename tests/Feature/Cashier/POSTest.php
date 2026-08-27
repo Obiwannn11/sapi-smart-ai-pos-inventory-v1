@@ -846,3 +846,52 @@ test('kurang bayar diukur terhadap total yang sudah berpajak', function () {
     expect(Transaction::where('tenant_id', $tenant->id)->where('status', 'completed')->exists())
         ->toBeFalse();
 });
+
+test('layar kasir menerima konteks pajak toko', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_INCLUSIVE, 10);
+    $tenant->update(['tax_label' => 'PB1']);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // Eager, bukan ditunda, dan ikut snapshot katalog: kasir offline harus
+    // menghitung total yang sama dengan yang akan dihitung server saat
+    // sinkronisasi, atau tiap penjualan offline mendarat needs_review.
+    get('/cashier/pos')
+        ->assertStatus(200)
+        ->assertInertia(fn ($page) => $page
+            ->where('tax.enabled', true)
+            ->where('tax.mode', Tenant::TAX_MODE_INCLUSIVE)
+            // 10, bukan 10.0: tarif bulat menyeberang JSON sebagai integer.
+            // Klien membungkusnya dengan Number(), jadi keduanya sama saja di
+            // sana — tapi tesnya harus menyatakan yang benar-benar dikirim.
+            ->where('tax.rate', 10)
+            ->where('tax.label', 'PB1')
+        );
+});
+
+test('layar kasir tetap menerima konteks pajak saat pajak mati', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // Propnya tetap ada dengan enabled=false, bukan hilang — snapshot katalog
+    // yang menyimpan `tax: null` tidak bisa dibedakan dari snapshot lama yang
+    // memang belum pernah punya kolomnya.
+    get('/cashier/pos')
+        ->assertStatus(200)
+        ->assertInertia(fn ($page) => $page->where('tax.enabled', false));
+});

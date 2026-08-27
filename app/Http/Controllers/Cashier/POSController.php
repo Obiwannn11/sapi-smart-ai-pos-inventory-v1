@@ -69,6 +69,17 @@ class POSController extends Controller
             // ditunda: modal pembayaran harus tahu jawabannya sebelum kasir
             // menekan Bayar, dan jawabannya satu boolean.
             'paymentProofEnabled' => $user->tenant->payment_proof_enabled,
+            // Konteks pajak ([BL-065]). Eager dan ikut snapshot katalog, bukan
+            // ditunda: kasir offline harus bisa menghitung total yang sama
+            // dengan yang akan dihitung server saat sinkronisasi. Tanpa ini
+            // tiap penjualan offline milik tenant berpajak akan mendarat
+            // sebagai needs_review.
+            'tax' => [
+                'enabled' => $user->tenant->tax_enabled,
+                'mode' => $user->tenant->tax_mode,
+                'rate' => (float) $user->tenant->tax_rate,
+                'label' => $user->tenant->tax_label,
+            ],
 
             // --- Katalog dan indeks upsell: ditunda ([BL-037]) ---
             // Keduanya kueri terberat di halaman ini (produk membawa varian,
