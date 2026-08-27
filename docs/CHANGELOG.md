@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-28 | SCHEMA | Pajak | Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065) |
 | 2026-08-28 | ADDITION | PWA | Antrean Penjualan Offline Berhenti Bergantung pada Tab yang Terbuka (BL-016 Bagian B) |
 | 2026-08-26 | HOTFIX | PWA | Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096) |
 | 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
@@ -217,6 +218,43 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [SCHEMA] Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065)
+- **Tanggal:** 2026-08-28
+- **Fase Terkait:** Di Luar Fase — `[BL-065]`, dikerjakan setelah kedelapan keputusan bentuknya diambil pemilik (commit `aa1aceb`)
+- **Dampak:** Migration, Model, Service, Controller, Route, Frontend
+- **Breaking Change:** Tidak — `total_amount` tetap berarti "yang dibayar pelanggan", dan bawaan pajak **mati** sehingga tenant yang tidak menyalakannya tidak melihat perubahan apa pun. Seluruh 1.274 tes lolos.
+- **Deskripsi:**
+  Tenant kini bisa memungut pajak pada setiap penjualan, dengan dua mode: **exclusive** (pajak ditambahkan di atas harga — yang dibayar pelanggan naik, pendapatan toko tetap) dan **inclusive** (harga katalog sudah mengandungnya — yang dibayar pelanggan tidak berubah, pendapatan toko yang turun). Struk mencetak pembagiannya, dan angkanya bisa dijumlahkan ulang oleh pelanggan yang berdiri di depan kasir.
+
+  `transactions` mendapat `subtotal_amount` dan `tax_amount` di samping `total_amount`, plus tiga kolom yang **membekukan** setelan pajak pada saat penjualan (`tax_rate`, `tax_mode`, `tax_label`) — sehingga struk yang dicetak ulang berbulan-bulan kemudian menghasilkan angka yang sama dengan kertas yang dibawa pulang, walau tarifnya sudah berubah.
+- **Alasan:**
+  Sebelum ini tidak ada pajak sama sekali — nol kata di seluruh `app/`, `config/`, dan migrasi. Aplikasi mengasumsikan harga jual adalah angka final dan tidak punya cara menyatakan berapa bagian dari angka itu yang sebetulnya milik negara atau daerah. Tenant yang omzetnya melewati Rp 4,8 miliar wajib memungut PPN, dan rumah makan/kafe memungut PBJT daerah; keduanya tidak punya tempat untuk dinyatakan.
+- **Keputusan yang menentukan bentuknya** (lengkap dengan alasan menolak alternatifnya di `docs/BACKLOG.md` `[BL-065]`):
+  1. **Satu tarif per tenant, bukan per produk** — aritmetika keranjang hidup di banyak tempat, tiga di antaranya JavaScript dan satu berjalan offline. Per-produk bisa ditambahkan kelak tanpa membongkar apa pun (`products.tax_exempt` nullable); kebalikannya tidak.
+  2. **Menyalakan pajak selalu boleh**; **mematikan dan menukar mode terkunci** setelah penjualan berpajak pertama — bukan sejak sakelarnya dinyalakan, sehingga tenant yang berubah pikiran sebelum menjual apa pun tidak terjebak.
+  3. **Tarif dan label TIDAK dikunci** — tarif memang berubah di dunia nyata (PPN pernah naik 10% → 11%; PBJT beda tiap Perda), dan tarif berbeda tidak membuat angka lama tidak sebanding.
+  4. **Label ditanyakan, tidak ditebak dari `business_type`** — mengulangi kesalahan yang baru diperbaiki `[BL-079]`, kali ini dengan hasil tebakan yang tercetak di struk pelanggan.
+  5. **Bracket Harga Adaptif tetap memakai `total_amount`** — nol perubahan pada dua belas tempat penjumlahan yang sudah ada. Ongkosnya diterima sadar: tenant mode exclusive ditagih atas ~11% uang yang bukan miliknya. Bisa dibalik kelak tanpa migrasi karena kolomnya sudah ditulis.
+  6. **Pembulatan menjaga `subtotal + pajak = total` tepat** — selalu pajak yang dibulatkan ke rupiah penuh, angka ketiga hasil pengurangan. Jangkarnya berbeda per mode: subtotal di exclusive (harga katalog itu nyata), total di inclusive (uang yang berpindah tangan itu nyata).
+- **File Terdampak:**
+  - `database/migrations/2026_08_28_030340_add_tax_columns_to_tenants_table.php` — `tax_enabled` (default **false**), `tax_mode`, `tax_rate`, `tax_label` (nullable, tanpa default)
+  - `database/migrations/2026_08_28_030340_add_tax_columns_to_transactions_table.php` — `subtotal_amount`, `tax_amount`, plus tiga kolom konteks beku; backfill `subtotal_amount = total_amount` (benar untuk seluruh masa sebelum pajak ada, diverifikasi atas 8.185 baris)
+  - `app/Services/TaxCalculator.php` — **baru**, satu-satunya tempat aritmetika pajak hidup di sisi PHP
+  - `resources/js/support/tax.js` — **baru**, cerminannya di sisi klien; kasir offline mencetak struk sebelum server melihat penjualannya, jadi salinan kedua tak terhindarkan — salinan ketiga dan keempat yang dihindari
+  - `app/Services/TransactionService.php` — keempat jalur penulis (checkout, self-order, commit offline) memakai kalkulatornya; di `checkout()` total berpajak menggantikan angka dasar **sebelum** pemeriksaan cukup-bayar
+  - `app/Services/TransactionEditService.php` — recalc memakai konteks **beku pada transaksi**, bukan setelan tenant hari ini
+  - `app/Http/Controllers/Owner/Settings/TaxSettingsController.php` — **baru**, endpoint tulis tersendiri berikut penguncian
+  - `routes/web.php` — `PATCH settings/operations/tax`
+  - `resources/js/Pages/Owner/Settings/Operations.vue` — kartu pajak dengan contoh yang menunjukkan **siapa menanggung**, bukan seberapa besar
+  - `resources/js/Components/ReceiptModal.vue`, `resources/js/services/escpos.js`, `resources/js/Components/TransactionSuccessModal.vue` — berhenti menjumlahkan baris item sebagai subtotal
+  - `resources/js/Pages/Cashier/POS.vue`, `resources/js/composables/useCatalogCache.js`, `app/Http/Controllers/Cashier/POSController.php` — konteks pajak ikut snapshot katalog offline
+  - `app/Http/Controllers/Api/V1/Mobile/MobileTransactionController.php` — struk mobile membawa ketiga angkanya
+- **Jebakan yang sudah dicatat di `[BL-065]`:** `updateOrCreate` di `ComputeTenantMonthlyRevenue.php:114` akan menimpa metrik bulan lampau bila dasar bracket kelak dipindah — kalau diganti, ganti maju saja. `CashDrawerReconciliation.php:99` harus tetap `total_amount`: uang fisik di laci memang sejumlah itu.
+- **Catatan Migrasi:** `php artisan migrate`. Tidak ada langkah manual — pajak lahir mati untuk semua tenant, dan transaksi lama terisi `subtotal_amount = total_amount`, `tax_amount = 0`.
+- **Yang belum termasuk:** laporan pajak terpungut sebagai angka kedua di laporan harian/bulanan (`[BL-065]` butir (e), menunggu bersama `[BL-063]`), service charge, dan dasar perhitungan margin di `ProfitService` — ketiganya sengaja dibiarkan terbuka dan tercatat di entri backlognya.
 
 ---
 

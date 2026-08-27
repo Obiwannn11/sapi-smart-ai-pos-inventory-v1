@@ -266,10 +266,13 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-065] Pajak/PPN — Bentuknya Sudah Diputuskan, Tinggal Dikerjakan
+### [BL-065] Pajak/PPN — Terpasang di Kasir; Sisa Laporannya
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"
-- **Status:** Open — **keputusan pemilik lengkap 2026-08-28; siap dikerjakan, belum ada kode**
+- **Status:** Open — **pajaknya sudah berjalan sejak 2026-08-28; yang tersisa adalah laporannya**
+  > **SELESAI 2026-08-28 — kedelapan keputusan di bawah sudah terpasang.** Lihat `[SCHEMA] Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065)` di `docs/CHANGELOG.md`. Tenant bisa menyalakan pajak (bawaan mati), memilih mode sekali, dan struknya mencetak pembagiannya — layar, termal, dan mobile.
+  >
+  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Butir **(e)** — laporan harian/bulanan menampilkan omzet dan pajak terpungut sebagai dua angka — belum tersentuh, dan pemilik yang memungut pajak butuh angka kedua itu untuk menyetorkannya. Dua hal di *Yang sengaja dibiarkan terbuka* juga masih terbuka.
 - **Prioritas:** Medium (naik ke High bila ada calon klien yang wajib memungut PPN)
 - **Batas lingkup — ditegaskan pemilik 2026-08-28:**
   Entri ini **hanya** tentang pajak pada transaksi **tenant → pembeli di kasir**. Pajak atas tagihan **platform → tenant** (`invoices`, langganan SaaS) **tidak termasuk** dan sengaja tidak dibahas: fiturnya diutamakan ada di klien, bukan di akun platform. Jangan menyelundupkan PPN langganan ke dalam pekerjaan ini — dasar hukum, siapa yang memungut, dan tabelnya semuanya berbeda.
@@ -310,7 +313,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
      - **Inclusive:** jangkar `total_amount` (uang yang berpindah tangan itu nyata) → bulatkan pajak → `subtotal = total − pajak`
 
      Membulatkan per item ditolak: pelanggan memverifikasi struk dari angka yang **tercetak**, jadi tarif dikali subtotal tercetak harus sama persis dengan pajak tercetak. Tidak membulatkan sama sekali ditolak di kasir, bukan di kode — total berakhir di Rp 14.985 dan laci tidak punya uangnya.
-- **Usulan Perbaikan (bentuknya sudah terkunci oleh keputusan di atas):**
+- **Usulan Perbaikan** — (a)-(d) dan (f) **sudah mendarat 2026-08-28**; **(e) belum**:
   **(a)** `transactions` mendapat `subtotal_amount` dan `tax_amount`, dengan `total_amount` **tetap** berarti "yang dibayar pelanggan" — kolom yang sudah dibaca 12 tempat jangan berubah maknanya. Migrasi mengisi transaksi lama dengan `subtotal_amount = total_amount`, `tax_amount = 0`, yang memang benar untuk masa sebelum pajak ada.
   **(b)** `tenants` mendapat `tax_enabled` (default **false**), `tax_mode`, `tax_rate`, `tax_label` — sejajar dengan `*_enabled` lain — dan keempatnya **dibekukan per transaksi**, sama seperti `invoices.pricing_context` membekukan konteks tagihan. Struk lama harus tetap bisa dicetak ulang dengan angka yang sama walau tarifnya sudah berubah.
   **(c)** Struk menampilkan Subtotal → *label* (tarif%) → TOTAL untuk mode exclusive, dan Subtotal → TOTAL dengan catatan "termasuk *label* Rp X" untuk mode inclusive.
