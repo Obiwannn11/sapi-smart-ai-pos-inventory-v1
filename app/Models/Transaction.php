@@ -70,7 +70,8 @@ class Transaction extends Model
 
     protected $fillable = [
         'tenant_id', 'user_id', 'code', 'client_uuid', 'status',
-        'total_amount', 'change_amount', 'notes',
+        'subtotal_amount', 'tax_amount', 'total_amount', 'change_amount', 'notes',
+        'tax_rate', 'tax_mode', 'tax_label',
         'source', 'order_type', 'fulfillment_status',
         'queue_number', 'sort_index', 'preparing_at', 'ready_at',
         'customer_name', 'table_number',
@@ -82,8 +83,11 @@ class Transaction extends Model
     protected function casts(): array
     {
         return [
+            'subtotal_amount' => 'decimal:2',
+            'tax_amount' => 'decimal:2',
             'total_amount' => 'decimal:2',
             'change_amount' => 'decimal:2',
+            'tax_rate' => 'decimal:2',
             'edited_at' => 'datetime',
             'occurred_at' => 'datetime',
             'unsettled_at' => 'datetime',

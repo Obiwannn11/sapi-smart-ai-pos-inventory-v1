@@ -71,6 +71,20 @@ class Tenant extends Model
     /** Kode panggil, dialokasikan sistem — kasir tidak mengetik apa pun. */
     public const ORDER_IDENTITY_CODE = 'code';
 
+    // --- Mode pajak ([BL-065]) ---
+
+    /**
+     * Pajak DITAMBAHKAN di atas harga katalog; yang dibayar pelanggan naik,
+     * pendapatan toko tetap.
+     */
+    public const TAX_MODE_EXCLUSIVE = 'exclusive';
+
+    /**
+     * Harga katalog SUDAH mengandung pajak; yang dibayar pelanggan tidak
+     * berubah, pendapatan toko turun sebesar pajak yang harus disetor.
+     */
+    public const TAX_MODE_INCLUSIVE = 'inclusive';
+
     protected $fillable = [
         'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'is_demo', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
@@ -78,6 +92,7 @@ class Tenant extends Model
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
         'min_margin_percent', 'cash_payout_approval_threshold',
         'upsell_mandatory', 'order_identity_mode',
+        'tax_enabled', 'tax_mode', 'tax_rate', 'tax_label',
     ];
 
     protected $hidden = ['ai_api_key'];
@@ -101,6 +116,12 @@ class Tenant extends Model
         'cash_payout_approval_threshold' => 50000.00,
         'upsell_mandatory' => false,
         'order_identity_mode' => self::ORDER_IDENTITY_NONE,
+        'tax_enabled' => false,
+        'tax_mode' => self::TAX_MODE_EXCLUSIVE,
+        'tax_rate' => 0,
+        // `tax_label` sengaja tidak punya bawaan — lihat migrasinya. Menebak
+        // kata yang tercetak di struk adalah kesalahan yang `[BL-079]` baru
+        // saja hentikan.
     ];
 
     protected function casts(): array
@@ -116,6 +137,8 @@ class Tenant extends Model
             'cash_payout_approval_threshold' => 'decimal:2',
             'upsell_mandatory' => 'boolean',
             'is_demo' => 'boolean',
+            'tax_enabled' => 'boolean',
+            'tax_rate' => 'decimal:2',
         ];
     }
 
@@ -157,6 +180,36 @@ class Tenant extends Model
             self::ORDER_IDENTITY_TABLE => 'Nomor meja',
             self::ORDER_IDENTITY_CODE => 'Kode panggil (otomatis)',
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function taxModes(): array
+    {
+        return [
+            self::TAX_MODE_EXCLUSIVE => 'Dibebankan ke pembeli (ditambahkan di atas harga)',
+            self::TAX_MODE_INCLUSIVE => 'Sudah termasuk di harga jual',
+        ];
+    }
+
+    /**
+     * Apakah sakelar dan mode pajak sudah terkunci ([BL-065] butir 3 & 4).
+     *
+     * Terkunci begitu ada SATU transaksi yang membawa konteks pajak beku —
+     * bukan begitu pajak dinyalakan. Tenant yang menyalakannya lalu berubah
+     * pikiran sebelum menjual apa pun tidak terjebak; yang terkunci hanya
+     * yang sudah benar-benar memungut dari pelanggan.
+     *
+     * Yang dikunci HANYA `tax_enabled` dan `tax_mode` — keduanya mengubah
+     * ARTI angka uang yang sudah tercatat. `tax_rate` dan `tax_label` tetap
+     * bebas berubah dan berlaku maju: tarif memang berubah di dunia nyata
+     * (PPN pernah naik 10% → 11%, dan tarif PBJT berbeda tiap Perda), dan
+     * tarif yang berbeda tidak membuat angka lama tidak sebanding.
+     */
+    public function taxLocked(): bool
+    {
+        return $this->transactions()->whereNotNull('tax_mode')->exists();
     }
 
     /**
