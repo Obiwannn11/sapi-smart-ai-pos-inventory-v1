@@ -469,3 +469,62 @@ it('mencegah owner tenant lain menandai transaksi ini', function () {
 
     expect($transaction->fresh()->sync_status)->toBe(Transaction::SYNC_NEEDS_REVIEW);
 });
+
+// ── Pajak ([BL-065]) ────────────────────────────────────────────────────────
+
+it('memajaki penjualan offline dengan setelan tenant saat sinkronisasi', function () {
+    $ctx = makeOfflineContext();
+    $ctx['tenant']->update([
+        'tax_enabled' => true,
+        'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+        'tax_rate' => 11,
+        'tax_label' => 'PPN',
+    ]);
+
+    // Perangkat menghitung total yang sama seperti server: 50.000 + 11%.
+    $transaction = commitOffline($ctx, offlinePayload($ctx, [
+        'total_amount' => 55500,
+        'payments' => [['payment_method_id' => $ctx['cash']->id, 'amount' => 55500]],
+    ]));
+
+    expect((float) $transaction->subtotal_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(5500.0)
+        ->and((float) $transaction->total_amount)->toBe(55500.0)
+        // Cocok dengan hitungan perangkat, jadi tidak perlu ditinjau.
+        ->and($transaction->sync_status)->toBeNull();
+});
+
+it('menandai needs_review saat perangkat memakai tarif yang sudah berubah', function () {
+    $ctx = makeOfflineContext();
+    $ctx['tenant']->update([
+        'tax_enabled' => true,
+        'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+        'tax_rate' => 11,
+        'tax_label' => 'PPN',
+    ]);
+
+    // Perangkat seharian offline masih memakai tarif lama 10% dan mengirim
+    // 55.000. Server menghitung 55.500. Selisihnya tidak ditolak — penjualan
+    // ini sudah terjadi secara fisik dan struknya sudah dibawa pulang — tapi
+    // pemilik harus melihatnya.
+    $transaction = commitOffline($ctx, offlinePayload($ctx, [
+        'total_amount' => 55000,
+        'payments' => [['payment_method_id' => $ctx['cash']->id, 'amount' => 55000]],
+    ]));
+
+    expect($transaction->sync_status)->toBe(Transaction::SYNC_NEEDS_REVIEW)
+        // Yang tercatat tetap hitungan SERVER, bukan hitungan perangkat.
+        ->and((float) $transaction->total_amount)->toBe(55500.0);
+});
+
+it('tidak memajaki penjualan offline milik tenant tanpa pajak', function () {
+    $ctx = makeOfflineContext();
+
+    $transaction = commitOffline($ctx, offlinePayload($ctx, ['total_amount' => 50000]));
+
+    expect((float) $transaction->total_amount)->toBe(50000.0)
+        ->and((float) $transaction->subtotal_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(0.0)
+        ->and($transaction->tax_mode)->toBeNull()
+        ->and($transaction->sync_status)->toBeNull();
+});

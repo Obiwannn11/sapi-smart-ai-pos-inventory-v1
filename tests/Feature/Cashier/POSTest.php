@@ -682,3 +682,167 @@ test('another cashier open bills stay out of this cashier topbar', function () {
 
     get('/cashier/pos')->assertInertia(fn ($page) => $page->count('cashier.openBills', 0));
 });
+
+/**
+ * Pajak di kasir ([BL-065]).
+ *
+ * Yang dijaga di kedua tes berikut bukan cuma besar pajaknya, melainkan
+ * SIAPA yang menanggungnya — itulah satu-satunya beda nyata antara kedua
+ * mode, dan satu-satunya yang bisa membuat pemilik toko marah kalau keliru.
+ */
+function enableTax(Tenant $tenant, string $mode, float $rate = 11): void
+{
+    $tenant->update([
+        'tax_enabled' => true,
+        'tax_mode' => $mode,
+        'tax_rate' => $rate,
+        'tax_label' => 'PPN',
+    ]);
+}
+
+test('mode exclusive menaikkan yang dibayar pelanggan, bukan pendapatan toko', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_EXCLUSIVE);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // 2 x 25.000 = 50.000, ditambah PPN 11% = 5.500.
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 55500,
+        ]],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::where('tenant_id', $tenant->id)->firstOrFail();
+
+    expect((float) $transaction->subtotal_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(5500.0)
+        ->and((float) $transaction->total_amount)->toBe(55500.0)
+        // Konteksnya dibekukan, supaya struk bisa dicetak ulang dengan angka
+        // yang sama walau tarifnya berubah nanti.
+        ->and((float) $transaction->tax_rate)->toBe(11.0)
+        ->and($transaction->tax_mode)->toBe(Tenant::TAX_MODE_EXCLUSIVE)
+        ->and($transaction->tax_label)->toBe('PPN');
+});
+
+test('mode inclusive tidak mengubah yang dibayar pelanggan', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_INCLUSIVE);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 50000,
+        ]],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::where('tenant_id', $tenant->id)->firstOrFail();
+
+    // Pelanggan tetap membayar 50.000 — yang berubah adalah berapa dari
+    // angka itu yang benar-benar milik toko.
+    expect((float) $transaction->total_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(4955.0)
+        ->and((float) $transaction->subtotal_amount)->toBe(45045.0)
+        ->and((float) $transaction->subtotal_amount + (float) $transaction->tax_amount)
+        ->toBe((float) $transaction->total_amount);
+});
+
+test('tenant tanpa pajak tidak membekukan konteks apa pun', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 50000,
+        ]],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::where('tenant_id', $tenant->id)->firstOrFail();
+
+    expect((float) $transaction->total_amount)->toBe(50000.0)
+        ->and((float) $transaction->subtotal_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(0.0)
+        ->and($transaction->tax_mode)->toBeNull()
+        // Dan karena tidak ada konteks beku, tenant ini belum terkunci.
+        ->and($tenant->taxLocked())->toBeFalse();
+});
+
+test('kurang bayar diukur terhadap total yang sudah berpajak', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_EXCLUSIVE);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // Membayar 50.000 untuk tagihan yang kini 55.500 harus DITOLAK. Kalau
+    // pemeriksaannya memakai angka sebelum pajak, kasir menerima kurang
+    // bayar tanpa pernah tahu.
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 50000,
+        ]],
+    ])->assertSessionHas('error');
+
+    expect(Transaction::where('tenant_id', $tenant->id)->where('status', 'completed')->exists())
+        ->toBeFalse();
+});

@@ -25,6 +25,7 @@ class TransactionService
         private QueueNumberAllocator $queueNumberAllocator,
         private PaymentProofService $paymentProofs,
         private DiscountService $discounts,
+        private TaxCalculator $tax,
     ) {}
 
     /**
@@ -152,15 +153,26 @@ class TransactionService
                 $this->assignQueuePosition($transaction);
             }
 
-            $totalAmount = 0;
-
             // 4. Simpan items + modifiers (SNAPSHOT) + deduct stok
-            $totalAmount = $this->processItems($transaction, $data['items'], deductStock: true);
+            $baseAmount = $this->processItems($transaction, $data['items'], deductStock: true);
 
-            // 5. Update total from DB-verified prices
-            $transaction->update([
-                'total_amount' => $totalAmount,
-            ]);
+            // 5. Update total from DB-verified prices, lalu pajaknya ([BL-065]).
+            //    Konteks pajak DIBEKUKAN di sini, bukan dibaca ulang nanti:
+            //    struk yang dicetak ulang berbulan-bulan kemudian harus
+            //    menghasilkan angka yang sama dengan kertas yang dipegang
+            //    pelanggan, walau tarifnya sudah berubah sejak itu.
+            $taxColumns = $this->tax->columnsFor(
+                $baseAmount,
+                $this->tax->contextFor($user->tenant),
+            );
+
+            $transaction->update($taxColumns);
+
+            // Mulai titik ini `$totalAmount` berarti YANG DIBAYAR PELANGGAN,
+            // sudah termasuk pajak. Pemeriksaan cukup-bayar dan kembalian di
+            // bawah bersandar padanya — memakai angka sebelum pajak di sana
+            // berarti kasir menerima kurang bayar tanpa menyadarinya.
+            $totalAmount = $taxColumns['total_amount'];
 
             // 5b. Nasib saran upsell yang dilihat kasir pada keranjang ini.
             //     Dicatat sebelum cabang open bill agar tagihan tertunda tidak
@@ -251,11 +263,15 @@ class TransactionService
 
             // Simpan items + modifiers (SNAPSHOT) — TANPA deduct stok
             // Hanya cek ketersediaan, tidak dikurangi
-            $totalAmount = $this->processItems($transaction, $data['items'], deductStock: false);
+            $baseAmount = $this->processItems($transaction, $data['items'], deductStock: false);
 
-            $transaction->update([
-                'total_amount' => $totalAmount,
-            ]);
+            // Pesanan mandiri dipajaki dengan aturan yang sama seperti kasir
+            // ([BL-065]) — pelanggan yang memesan sendiri membayar pajak yang
+            // sama dengan pelanggan yang dilayani kasir.
+            $transaction->update($this->tax->columnsFor(
+                $baseAmount,
+                $this->tax->contextFor($user->tenant),
+            ));
 
             $this->upsellEventRecorder->record(
                 $transaction,
@@ -810,11 +826,24 @@ class TransactionService
                 'table_number' => $data['table_number'] ?? null,
             ]);
 
-            [$totalAmount, $needsReview] = $this->processOfflineItems(
+            [$baseAmount, $needsReview] = $this->processOfflineItems(
                 $transaction,
                 $data['items'],
                 $tenantId,
             );
+
+            // Pajak dihitung ulang di server dengan setelan tenant SEKARANG
+            // ([BL-065]). Perangkat yang seharian offline mungkin memakai
+            // tarif yang sudah berubah; kalau begitu totalnya meleset dan
+            // penjualan ini jatuh ke needs_review lewat penjaga di bawah —
+            // mekanisme yang memang sudah ada untuk kasus persis ini, jadi
+            // tidak perlu konsep baru.
+            $taxColumns = $this->tax->columnsFor(
+                $baseAmount,
+                $this->tax->contextFor($cashier->tenant),
+            );
+
+            $totalAmount = $taxColumns['total_amount'];
 
             // Total SELALU dihitung ulang dari item. `total_amount` kiriman client
             // hanya dipakai sebagai cross-check — kalau beda, ada yang salah di
@@ -825,8 +854,7 @@ class TransactionService
 
             $totalPaid = collect($payments)->sum('amount');
 
-            $transaction->update([
-                'total_amount' => $totalAmount,
+            $transaction->update($taxColumns + [
                 'change_amount' => max(0, $totalPaid - $totalAmount),
                 'sync_status' => $needsReview ? Transaction::SYNC_NEEDS_REVIEW : null,
             ]);

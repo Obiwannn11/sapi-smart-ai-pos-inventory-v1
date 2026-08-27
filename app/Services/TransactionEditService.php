@@ -15,6 +15,7 @@ class TransactionEditService
     public function __construct(
         private StockService $stockService,
         private PaymentProofService $paymentProofs,
+        private TaxCalculator $tax,
     ) {}
 
     /**
@@ -97,7 +98,19 @@ class TransactionEditService
 
             $transaction->items()->each(fn ($i) => $i->modifiers()->delete());
             $transaction->items()->delete();
-            $totalAmount = $this->rebuildItems($transaction, $data['items'], $priceMemory);
+            $baseAmount = $this->rebuildItems($transaction, $data['items'], $priceMemory);
+
+            // Pajak dihitung ulang dari konteks yang DIBEKUKAN pada transaksi
+            // ini, bukan dari setelan tenant hari ini ([BL-065]). Mengoreksi
+            // qty penjualan bulan lalu tidak boleh diam-diam memungutnya
+            // ulang dengan tarif yang baru berlaku minggu ini — dan tarif
+            // memang berubah: PPN pernah naik 10% → 11%.
+            $taxColumns = $this->tax->columnsFor(
+                $baseAmount,
+                $this->tax->contextOf($transaction),
+            );
+
+            $totalAmount = $taxColumns['total_amount'];
 
             // 5. Rebuild payments + recompute change
             //
@@ -146,8 +159,7 @@ class TransactionEditService
             }
 
             // 6. Update header
-            $transaction->update([
-                'total_amount' => $totalAmount,
+            $transaction->update($taxColumns + [
                 'change_amount' => max(0, $totalPaid - $totalAmount),
                 'notes' => $data['notes'] ?? $transaction->notes,
                 'edited_at' => now(),
@@ -275,6 +287,11 @@ class TransactionEditService
     private function snapshot(Transaction $transaction): array
     {
         return [
+            // Subtotal dan pajak ikut dicatat, bukan cuma totalnya: kalau
+            // suatu hari sebuah edit menggeser pembagian antara pendapatan
+            // toko dan pajak terutang, jejaknya harus bisa dibaca dari sini.
+            'subtotal_amount' => (string) $transaction->subtotal_amount,
+            'tax_amount' => (string) $transaction->tax_amount,
             'total_amount' => (string) $transaction->total_amount,
             'change_amount' => (string) $transaction->change_amount,
             'items' => $transaction->items->map(fn ($i) => [
