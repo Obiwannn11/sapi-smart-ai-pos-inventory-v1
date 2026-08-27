@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useThermalPrinter } from '@/composables/useThermalPrinter';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 import { BUSINESS_TZ } from '@/support/date';
+import { receiptTotals, taxLine } from '@/support/tax';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -38,10 +39,13 @@ const formatTime = (date) => {
     });
 };
 
-const subtotal = computed(() => {
-    if (!props.transaction?.items) return 0;
-    return props.transaction.items.reduce((sum, item) => sum + Number(item.subtotal), 0);
-});
+// Subtotal datang dari kolom yang dibekukan server, BUKAN dari penjumlahan
+// baris item ([BL-065]). Di mode pajak inclusive `unit_price` sudah
+// mengandung pajak, sehingga jumlah baris adalah TOTAL — menjumlahkannya
+// sebagai subtotal akan mencetak struk yang tidak bisa dijumlahkan ulang.
+const totals = computed(() => receiptTotals(props.transaction));
+const subtotal = computed(() => totals.value.subtotal);
+const tax = computed(() => taxLine(totals.value));
 
 const totalPaid = computed(() => {
     if (!props.transaction?.payments) return 0;
@@ -176,9 +180,20 @@ const printThermal = async () => {
                                     <span class="text-gray-500">Subtotal</span>
                                     <span>{{ formatCurrency(subtotal) }}</span>
                                 </div>
+                                <!-- Mode exclusive: pajak baris tersendiri yang menaikkan total -->
+                                <div v-if="tax && tax.inline" class="flex justify-between">
+                                    <span class="text-gray-500">{{ tax.text }}</span>
+                                    <span>{{ formatCurrency(tax.amount) }}</span>
+                                </div>
                                 <div class="flex justify-between font-bold text-sm border-t border-gray-300 pt-1 mt-1">
                                     <span>TOTAL</span>
                                     <span>{{ formatCurrency(transaction.total_amount) }}</span>
+                                </div>
+                                <!-- Mode inclusive: total tidak berubah, jadi yang perlu
+                                     dinyatakan adalah bahwa ia sudah mengandung pajak -->
+                                <div v-if="tax && !tax.inline" class="flex justify-between text-gray-500">
+                                    <span>{{ tax.text }}</span>
+                                    <span>{{ formatCurrency(tax.amount) }}</span>
                                 </div>
                             </div>
 

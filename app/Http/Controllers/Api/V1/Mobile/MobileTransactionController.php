@@ -58,6 +58,8 @@ class MobileTransactionController extends Controller
                 'message' => 'Transaksi berhasil.',
                 'transaction_id' => $transaction->id,
                 'code' => $transaction->code,
+                'subtotal_amount' => $transaction->subtotal_amount,
+                'tax_amount' => $transaction->tax_amount,
                 'total_amount' => $transaction->total_amount,
                 'change_amount' => $transaction->change_amount,
                 'status' => $transaction->status,
@@ -215,6 +217,15 @@ class MobileTransactionController extends Controller
                     'code' => $transaction->code,
                     'date' => $transaction->created_at->format('d/m/Y H:i'),
                     'cashier' => $transaction->user->name,
+                    // Pembagian pajaknya ikut ([BL-065]). Menjumlahkan baris
+                    // item TIDAK bisa menggantikannya: di mode inclusive
+                    // `unit_price` sudah mengandung pajak, sehingga jumlah
+                    // baris adalah total, bukan subtotal.
+                    'subtotal_amount' => $transaction->subtotal_amount,
+                    'tax_amount' => $transaction->tax_amount,
+                    'tax_rate' => $transaction->tax_rate,
+                    'tax_mode' => $transaction->tax_mode,
+                    'tax_label' => $transaction->tax_label,
                     'total_amount' => $transaction->total_amount,
                     'change_amount' => $transaction->change_amount,
                     'status' => $transaction->status,

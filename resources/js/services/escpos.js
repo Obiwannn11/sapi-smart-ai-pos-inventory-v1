@@ -9,6 +9,7 @@
  */
 
 import { BUSINESS_TZ } from '@/support/date';
+import { receiptTotals, taxLine } from '@/support/tax';
 
 // ── Low-level command bytes ──────────────────────────────────────────────
 const ESC = 0x1b;
@@ -174,11 +175,25 @@ export function buildReceipt(transaction, options = {}) {
     b.line(divider(width));
 
     // ── Totals ──
-    const subtotal = items.reduce((sum, it) => sum + Number(it.subtotal || 0), 0);
-    b.line(twoCols('Subtotal', formatCurrency(subtotal), width));
+    //
+    // Subtotal dibaca dari kolom transaksi, tidak dijumlahkan dari baris
+    // item ([BL-065]): di mode pajak inclusive `unit_price` sudah mengandung
+    // pajak, jadi jumlah baris adalah TOTAL. Kertas yang tidak bisa
+    // dijumlahkan ulang oleh pelanggan adalah keluhan yang paling cepat
+    // datang, dan di sini ia sudah terlanjur tercetak.
+    const totals = receiptTotals(transaction);
+    const tax = taxLine(totals);
+
+    b.line(twoCols('Subtotal', formatCurrency(totals.subtotal), width));
+    if (tax && tax.inline) {
+        b.line(twoCols(tax.text, formatCurrency(tax.amount), width));
+    }
     b.raw(CMD.boldOn);
-    b.line(twoCols('TOTAL', formatCurrency(transaction.total_amount), width));
+    b.line(twoCols('TOTAL', formatCurrency(totals.total), width));
     b.raw(CMD.boldOff);
+    if (tax && !tax.inline) {
+        b.line(twoCols(tax.text, formatCurrency(tax.amount), width));
+    }
     b.line(divider(width));
 
     // ── Payments ──

@@ -1,11 +1,18 @@
 <script setup>
 import { computed } from 'vue';
 import { BUSINESS_TZ } from '@/support/date';
+import { receiptTotals, taxLine } from '@/support/tax';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
     transaction: Object,
 });
+
+// Layar konfirmasi kasir menampilkan pembagian yang sama dengan struknya
+// ([BL-065]) — kasir yang ditanya pelanggan "kok segini?" harus melihat
+// angka yang sama dengan yang dipegang penanya.
+const totals = computed(() => receiptTotals(props.transaction));
+const tax = computed(() => taxLine(totals.value));
 
 const emit = defineEmits(['close', 'print']);
 
@@ -148,9 +155,23 @@ const print = () => emit('print');
 
                         <!-- Totals -->
                         <div class="pt-3 mt-1 border-t border-dashed border-gray-200 space-y-1.5">
+                            <template v-if="tax">
+                                <div class="flex justify-between text-xs text-gray-500">
+                                    <span>Subtotal</span>
+                                    <span>{{ formatCurrency(totals.subtotal) }}</span>
+                                </div>
+                                <div v-if="tax.inline" class="flex justify-between text-xs text-gray-500">
+                                    <span>{{ tax.text }}</span>
+                                    <span>{{ formatCurrency(tax.amount) }}</span>
+                                </div>
+                            </template>
                             <div class="flex justify-between text-base font-bold text-gray-800">
                                 <span>Total</span>
                                 <span>{{ formatCurrency(transaction.total_amount) }}</span>
+                            </div>
+                            <div v-if="tax && !tax.inline" class="flex justify-between text-xs text-gray-500">
+                                <span>{{ tax.text }}</span>
+                                <span>{{ formatCurrency(tax.amount) }}</span>
                             </div>
                             <div
                                 v-for="payment in transaction.payments"
