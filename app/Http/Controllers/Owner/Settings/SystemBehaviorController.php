@@ -60,6 +60,20 @@ class SystemBehaviorController extends Controller
                 // 0 berarti setiap pengeluaran menunggu persetujuan.
                 'cash_payout_approval_threshold' => (float) $tenant->cash_payout_approval_threshold,
             ],
+            // Pajak punya endpoint tulisnya sendiri (`TaxSettingsController`),
+            // tapi dibaca di sini supaya halamannya tetap satu GET ([BL-065]).
+            'tax' => [
+                'tax_enabled' => $tenant->tax_enabled,
+                'tax_mode' => $tenant->tax_mode,
+                'tax_rate' => (float) $tenant->tax_rate,
+                'tax_label' => $tenant->tax_label,
+                // Bukan turunan dari `tax_enabled`: yang mengunci adalah
+                // adanya penjualan berpajak, bukan sakelarnya. Tenant yang
+                // menyalakan pajak lalu berubah pikiran sebelum menjual apa
+                // pun harus tetap bisa membatalkannya.
+                'locked' => $tenant->taxLocked(),
+            ],
+            'taxModes' => Tenant::taxModes(),
             'orderIdentityModes' => Tenant::orderIdentityModes(),
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
             // masih ada pekerjaan berjalan di baliknya.

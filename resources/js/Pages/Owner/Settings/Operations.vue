@@ -10,6 +10,8 @@ const props = defineProps({
     features: Object,
     orderIdentityModes: { type: Object, default: () => ({}) },
     featureWarnings: Object,
+    tax: { type: Object, default: () => ({}) },
+    taxModes: { type: Object, default: () => ({}) },
 });
 
 const form = useForm({
@@ -48,6 +50,57 @@ const identityModeHint = computed(() => ({
 
 const submit = () => {
     form.patch('/owner/settings/operations', { preserveScroll: true });
+};
+
+// --- Pajak ([BL-065]) ---
+//
+// Form dan endpoint TERPISAH dari yang di atas: dua field di bawah terkunci
+// setelah penjualan berpajak pertama, dan penguncian yang berbagi request
+// dengan sakelar fitur lain akan tergoda dilonggarkan supaya form lain tetap
+// bisa menyimpan.
+const taxForm = useForm({
+    tax_enabled: props.tax.tax_enabled ?? false,
+    tax_mode:    props.tax.tax_mode ?? 'exclusive',
+    tax_rate:    props.tax.tax_rate ?? 0,
+    tax_label:   props.tax.tax_label ?? '',
+});
+
+const taxLocked = computed(() => props.tax.locked === true);
+
+// Contoh dihitung dari angka bulat yang mudah dicek ulang di kepala. Yang
+// ditunjukkan bukan besar pajaknya, melainkan SIAPA yang menanggungnya —
+// itulah satu-satunya beda nyata antara kedua mode.
+const taxExample = computed(() => {
+    const rate = Number(taxForm.tax_rate) || 0;
+    const price = 10000;
+
+    if (rate <= 0) {
+        return null;
+    }
+
+    if (taxForm.tax_mode === 'inclusive') {
+        const tax = Math.round(price * rate / (100 + rate));
+
+        return {
+            paid: price,
+            tax,
+            income: price - tax,
+        };
+    }
+
+    const tax = Math.round(price * rate / 100);
+
+    return {
+        paid: price + tax,
+        tax,
+        income: price,
+    };
+});
+
+const rupiah = (value) => Number(value || 0).toLocaleString('id-ID');
+
+const submitTax = () => {
+    taxForm.patch('/owner/settings/operations/tax', { preserveScroll: true });
 };
 </script>
 
@@ -291,6 +344,143 @@ const submit = () => {
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                         </svg>
                         {{ form.processing ? 'Menyimpan...' : 'Simpan Cara Kerja' }}
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Pajak ([BL-065]) — kartu & endpoint tersendiri -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+            <form @submit.prevent="submitTax" class="space-y-5">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">Pajak</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Bawaannya <strong>mati</strong>, dan untuk sebagian besar usaha memang itu yang benar.
+                        Kewajiban memungut PPN baru muncul setelah omzet setahun melewati <strong>Rp 4,8 miliar</strong>;
+                        di bawah itu Anda berstatus pengusaha kecil dan tidak wajib memungut apa pun.
+                        Rumah makan dan kafe memungut <strong>PBJT</strong> daerah, bukan PPN — tarif dan batasnya ditetapkan Perda setempat.
+                    </p>
+
+                    <label
+                        class="flex gap-3 p-3 rounded-lg border border-gray-200"
+                        :class="taxLocked ? 'bg-gray-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'"
+                    >
+                        <input
+                            v-model="taxForm.tax_enabled"
+                            type="checkbox"
+                            :disabled="taxLocked"
+                            class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring disabled:opacity-50"
+                        />
+                        <span class="text-sm">
+                            <span class="font-medium text-gray-900 block">Pungut pajak pada setiap penjualan</span>
+                            <span class="text-xs text-gray-500">
+                                Struk akan menampilkan pajaknya sebagai baris tersendiri, dan laporan memisahkan
+                                omzet dari pajak yang harus Anda setorkan.
+                            </span>
+                        </span>
+                    </label>
+
+                    <p v-if="taxForm.errors.tax_enabled" class="mt-1.5 text-xs text-destructive">
+                        {{ taxForm.errors.tax_enabled }}
+                    </p>
+                </div>
+
+                <div v-if="taxForm.tax_enabled" class="space-y-4 pt-1">
+                    <!-- Jenis pajak: ditanyakan, tidak pernah ditebak -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-900 mb-1">Jenis Pajak</label>
+                        <p class="text-xs text-gray-500 mb-2">
+                            Kata ini yang <strong>tercetak di struk pelanggan</strong>, dan keduanya menyebut dasar hukum yang berbeda.
+                        </p>
+                        <select
+                            v-model="taxForm.tax_label"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            :class="{ 'border-red-300': taxForm.errors.tax_label }"
+                        >
+                            <option value="">— pilih —</option>
+                            <option value="PPN">PPN — pajak pusat, untuk usaha yang sudah dikukuhkan PKP</option>
+                            <option value="PB1">PB1 / PBJT — pajak daerah, untuk rumah makan dan kafe</option>
+                        </select>
+                        <p v-if="taxForm.errors.tax_label" class="mt-1 text-xs text-red-600">
+                            {{ taxForm.errors.tax_label }}
+                        </p>
+                    </div>
+
+                    <!-- Mode: yang menentukan siapa menanggung -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-900 mb-1">Cara Membebankan</label>
+                        <select
+                            v-model="taxForm.tax_mode"
+                            :disabled="taxLocked"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-gray-50 disabled:text-gray-500"
+                            :class="{ 'border-red-300': taxForm.errors.tax_mode }"
+                        >
+                            <option v-for="(label, value) in taxModes" :key="value" :value="value">
+                                {{ label }}
+                            </option>
+                        </select>
+                        <p v-if="taxForm.errors.tax_mode" class="mt-1 text-xs text-red-600">
+                            {{ taxForm.errors.tax_mode }}
+                        </p>
+                    </div>
+
+                    <!-- Tarif: tidak pernah terkunci -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-900 mb-1">Tarif</label>
+                        <div class="flex items-center gap-3">
+                            <div class="relative w-32">
+                                <input
+                                    v-model.number="taxForm.tax_rate"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.5"
+                                    class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                />
+                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
+                            </div>
+                            <p class="text-xs text-gray-500">
+                                PPN saat ini <strong>11%</strong>. PBJT paling tinggi <strong>10%</strong>, sesuai Perda daerah Anda.
+                            </p>
+                        </div>
+                        <p v-if="taxForm.errors.tax_rate" class="mt-1.5 text-xs text-destructive">
+                            {{ taxForm.errors.tax_rate }}
+                        </p>
+                    </div>
+
+                    <!-- Akibatnya, dalam angka -->
+                    <div v-if="taxExample" class="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 text-xs text-gray-600 leading-relaxed">
+                        Barang berharga <strong>Rp {{ rupiah(10000) }}</strong>:
+                        pelanggan membayar <strong>Rp {{ rupiah(taxExample.paid) }}</strong>,
+                        pajak yang Anda setorkan <strong>Rp {{ rupiah(taxExample.tax) }}</strong>,
+                        pendapatan Anda <strong>Rp {{ rupiah(taxExample.income) }}</strong>.
+                    </div>
+                </div>
+
+                <!-- Penguncian: dijelaskan sebagai sebab, bukan sebagai larangan -->
+                <div v-if="taxLocked" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                    <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <span>
+                        Sakelar dan cara membebankan <strong>terkunci</strong> karena sudah ada penjualan yang memungut pajak.
+                        Mengubahnya sekarang membuat omzet sebelum dan sesudahnya tidak bisa dibandingkan.
+                        <strong>Tarif dan jenis pajak tetap bisa diubah</strong> dan berlaku untuk penjualan berikutnya.
+                        Butuh membuka yang terkunci — misalnya usaha Anda berhenti wajib memungut? Hubungi operator.
+                    </span>
+                </div>
+
+                <div class="flex justify-end pt-2">
+                    <button
+                        type="submit"
+                        :disabled="taxForm.processing"
+                        class="inline-flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                    >
+                        <svg v-if="taxForm.processing" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                        </svg>
+                        {{ taxForm.processing ? 'Menyimpan...' : 'Simpan Pajak' }}
                     </button>
                 </div>
             </form>

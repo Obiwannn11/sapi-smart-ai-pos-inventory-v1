@@ -300,6 +300,13 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::patch('settings/operations', [\App\Http\Controllers\Owner\Settings\SystemBehaviorController::class, 'update'])
             ->name('settings.operations.update');
 
+        // Pajak menumpang halaman yang sama tapi TIDAK endpoint yang sama
+        // ([BL-065]). Dua field di baliknya terkunci setelah penjualan
+        // berpajak pertama, dan penguncian yang berbagi request dengan
+        // sakelar fitur lain akan tergoda dilonggarkan.
+        Route::patch('settings/operations/tax', [\App\Http\Controllers\Owner\Settings\TaxSettingsController::class, 'update'])
+            ->name('settings.operations.tax.update');
+
         Route::get('settings/integrations', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'index'])
             ->name('settings.integrations.index');
         Route::patch('settings/integrations', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'update'])
