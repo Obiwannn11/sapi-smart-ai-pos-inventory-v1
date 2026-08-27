@@ -19,6 +19,11 @@
  *   impossible timestamp) must not retry forever; after MAX_ATTEMPTS it is
  *   parked as `failed` and surfaced to a human rather than silently spinning.
  *
+ *   A flush that never runs. Everything above only happens while this page is
+ *   open. Background Sync (services/backgroundSync.js) hands the browser a
+ *   second, tab-less chance to get the rows out — it does not replace any of
+ *   this, and reconcile below stays the only writer of the outbox.
+ *
  * Rows are never deleted on logout — see services/offlineSession.js.
  */
 
@@ -32,6 +37,7 @@ import {
     isOfflineStorageSupported,
 } from '@/services/offlineDb';
 import { getDeviceId } from '@/services/deviceId';
+import { rememberSyncCredentials, requestOutboxSync } from '@/services/backgroundSync';
 
 const MAX_ATTEMPTS = 5;
 
@@ -123,6 +129,16 @@ export function useOfflineQueue() {
         const ok = await writeRecord(OUTBOX_STORE, record);
         if (ok) {
             await refresh();
+
+            // Serahkan salinan cadangan ke peramban ([BL-016] B.1). Dilakukan
+            // di sini, bukan saat halaman dimuat, karena inilah saat pertama
+            // ada sesuatu untuk disinkronkan — dan saat kedua nilainya pasti
+            // benar. Sengaja tidak di-`await`: penjualan tidak boleh menunggu
+            // perkara yang gagalnya pun tidak mengubah apa pun.
+            rememberSyncCredentials({
+                cashierId: currentCashierId.value,
+                csrfToken: csrfToken(),
+            }).then(() => requestOutboxSync());
         }
 
         return ok;
@@ -189,6 +205,12 @@ export function useOfflineQueue() {
             // Network died mid-flush. Rows stay queued; client_uuid makes the
             // retry safe even if the server did process them.
             console.warn('[offlineQueue] flush failed:', err);
+
+            // Titipkan percobaan berikutnya ke peramban ([BL-016] B.1). Kalau
+            // tab ini keburu ditutup — dan tutup toko adalah persis saat itu
+            // terjadi — service worker yang meneruskannya.
+            requestOutboxSync();
+
             lastResult.value = { ok: false, reason: 'network' };
 
             return lastResult.value;

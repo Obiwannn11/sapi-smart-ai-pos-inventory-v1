@@ -9,6 +9,7 @@
  * What gets cleared:
  *   - PAGE_CACHE in the service worker (authenticated HTML: props, CSRF, name)
  *   - the catalog snapshot (tenant-scoped prices and stock)
+ *   - the Background Sync credentials (this cashier's id and CSRF token)
  *
  * What deliberately survives:
  *   - the IndexedDB outbox. It holds sales that already happened in the real
@@ -18,6 +19,7 @@
  */
 
 import { CATALOG_STORE, SNAPSHOT_KEY, deleteRecord } from '@/services/offlineDb';
+import { forgetSyncCredentials } from '@/services/backgroundSync';
 
 /**
  * Ask the service worker to drop its private page cache.
@@ -60,5 +62,10 @@ export async function clearPrivateOfflineData() {
     await Promise.allSettled([
         clearServiceWorkerPageCache(),
         deleteRecord(CATALOG_STORE, SNAPSHOT_KEY),
+        // Tanpa ini, service worker akan terus mencoba mengirimkan baris atas
+        // nama kasir yang sudah pergi — dan sesinya sudah tidak ada, jadi yang
+        // didapatnya hanya 401 berulang. Barisnya sendiri tetap tinggal, dan
+        // akan tersinkron begitu pemiliknya masuk lagi.
+        forgetSyncCredentials(),
     ]);
 }

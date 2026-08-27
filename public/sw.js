@@ -11,13 +11,18 @@
  *
  * Offline transactions are deliberately NOT queued here. The app layer owns the
  * outbox (IndexedDB) so it keeps full control over idempotency and stock
- * conflicts — see docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md.
+ * conflicts — see docs/phases-2/PHASE-PWA_Offline-Transaction-Sync.md. Since
+ * `[BL-016]` B.1 this worker does POST queued rows on a Background Sync, but it
+ * still never WRITES to the outbox: it pushes and forgets, and the app does the
+ * bookkeeping. See the sync handler at the bottom of this file.
  *
  * PRIVACY: PAGE_CACHE stores authenticated HTML (Inertia props, CSRF token,
  * the cashier's name). It is per-device, not per-user, so it MUST be cleared on
  * logout — otherwise the next user on a shared till could open the POS offline
  * and see the previous user's cached page. The app posts CLEAR_PRIVATE_CACHES
- * before logging out. The IndexedDB outbox is intentionally NOT cleared there:
+ * before logging out. SYNC_META_CACHE is private too, but the page deletes that
+ * one itself — `caches` is reachable from the window, so it needs no round trip
+ * through here. The IndexedDB outbox is intentionally NOT cleared by either:
  * it holds un-synced sales that must survive a logout.
  *
  * NOTE: this is a hand-written SW (not Workbox). Bump CACHE_VERSION to force a
@@ -32,6 +37,15 @@ const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `sapi-shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `sapi-assets-${CACHE_VERSION}`;
 const PAGE_CACHE = `sapi-pages-${CACHE_VERSION}`;
+
+/**
+ * Deliberately NOT versioned, and deliberately spared by the activate sweep
+ * below. It holds what the Background Sync handler needs to send the outbox
+ * (see the bottom of this file); wiping it on a version bump would silently
+ * disarm background syncing until the next sale is rung up. Its contents are
+ * per-user, so logout clears it — services/offlineSession.js.
+ */
+const SYNC_META_CACHE = 'sapi-sync-meta';
 
 /**
  * Keep this list to files the offline shell actually RENDERS. `cache.addAll()`
@@ -75,7 +89,10 @@ self.addEventListener('activate', (event) => {
             .then((keys) =>
                 Promise.all(
                     keys
-                        .filter((key) => ![SHELL_CACHE, ASSET_CACHE, PAGE_CACHE].includes(key))
+                        .filter(
+                            (key) =>
+                                ![SHELL_CACHE, ASSET_CACHE, PAGE_CACHE, SYNC_META_CACHE].includes(key),
+                        )
                         .map((key) => caches.delete(key)),
                 ),
             )
@@ -168,3 +185,212 @@ self.addEventListener('message', (event) => {
         }),
     );
 });
+
+/* -------------------------------------------------------------------------
+ * Background Sync — `[BL-016]` Bagian B.1
+ *
+ * The hole: `useOfflineQueue.flush()` only runs while the POS page is open. A
+ * cashier who sells offline and then closes the tab at closing time leaves that
+ * money sitting in IndexedDB until somebody opens the POS again. Here the
+ * browser wakes us once it believes connectivity is back, tab or no tab.
+ *
+ * THIS HANDLER PUSHES AND FORGETS. It POSTs the queued rows and stops — no
+ * reconcile, no attempt counter, no deletes, not a single write to the outbox.
+ * That restraint is the whole design:
+ *
+ *   - `client_uuid` makes a re-send free. The server dedups, so when the app
+ *     next opens, its own flush sends the same rows, gets `duplicate` back, and
+ *     clears them. The sale reached the server hours earlier, which is the part
+ *     that mattered.
+ *   - The queue's rules (MAX_ATTEMPTS, `failed` parking, per-row verdicts) stay
+ *     in exactly one place. A copy of them here would rot, and it would rot in
+ *     the file this project has no test runner for.
+ *
+ * Two values it cannot work out alone — the logged-in cashier and a CSRF token
+ * — are left behind by the page in SYNC_META_CACHE. The reasoning is written
+ * out in resources/js/services/backgroundSync.js; the short version is that a
+ * worker has no session to ask and no `document` to read a meta tag from, and
+ * that a cache avoids the IndexedDB migration that would otherwise be able to
+ * stall a sale.
+ *
+ * NOT TESTABLE FROM THE SUITE. There is no JavaScript test runner here, and a
+ * real exercise means a real browser: queue a sale offline, close every tab,
+ * restore the network, and watch the request arrive. Guards in
+ * `OfflineDurabilityTest` only keep the two sides from drifting apart.
+ * ------------------------------------------------------------------------- */
+
+/** Keep in step with resources/js/services/backgroundSync.js. */
+const OUTBOX_SYNC_TAG = 'sapi-outbox-sync';
+
+/** Keep in step with resources/js/services/offlineDb.js. */
+const OUTBOX_DB_NAME = 'sapi-pos';
+const OUTBOX_STORE = 'outbox';
+
+/** Keep in step with resources/js/services/backgroundSync.js. */
+const SYNC_CREDENTIALS_KEY = '/__sapi/sync-credentials';
+
+/** Keep in step with SyncOfflineTransactionsRequest::MAX_BATCH_SIZE. */
+const OUTBOX_BATCH_SIZE = 50;
+
+const OUTBOX_SYNC_ENDPOINT = '/cashier/transactions/sync';
+
+self.addEventListener('sync', (event) => {
+    if (event.tag !== OUTBOX_SYNC_TAG) return;
+
+    // Throwing from here is how we ask for a retry: the browser re-fires the
+    // event later with backoff. Everything a retry cannot fix (no credentials,
+    // empty queue, dead session) resolves quietly instead.
+    event.waitUntil(pushOutboxToServer());
+});
+
+async function pushOutboxToServer() {
+    const credentials = await readSyncCredentials();
+
+    // Nobody is logged in — cleared at logout. The rows stay put and go out
+    // when their owner signs back in.
+    if (!credentials) return;
+
+    const db = await openOutboxDb();
+    if (!db) return;
+
+    try {
+        const rows = await readAllFrom(db, OUTBOX_STORE);
+
+        // The same two filters the page applies: only rows still queued, and
+        // only rows belonging to the cashier whose session we are about to
+        // borrow. Sending someone else's would file their sales under the wrong
+        // name and the wrong shift report.
+        const batch = rows
+            .filter((row) => row.status === 'queued' && row.cashier_id === credentials.cashier_id)
+            .slice(0, OUTBOX_BATCH_SIZE);
+
+        if (batch.length === 0) return;
+
+        const response = await fetch(OUTBOX_SYNC_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': credentials.csrf_token,
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ transactions: batch.map(toSyncPayload) }),
+        });
+
+        // Session or token gone. A retry would fail identically, so let it rest
+        // — the rows are untouched and the page deals with it at next login.
+        if (response.status === 401 || response.status === 419) return;
+
+        if (!response.ok) {
+            throw new Error(`[sw] outbox sync rejected: HTTP ${response.status}`);
+        }
+
+        // Deliberately nothing here. See the push-and-forget note above.
+    } finally {
+        db.close();
+    }
+}
+
+/**
+ * Strip queue bookkeeping — the server only wants the transaction itself.
+ * Mirrors `toPayload()` in resources/js/composables/useOfflineQueue.js, and
+ * `OfflineDurabilityTest` fails if the two field lists drift apart.
+ */
+function toSyncPayload(entry) {
+    return {
+        client_uuid: entry.client_uuid,
+        occurred_at: entry.occurred_at,
+        device_id: entry.device_id,
+        total_amount: entry.total_amount,
+        notes: entry.notes,
+        items: entry.items,
+        payments: entry.payments,
+        customer_name: entry.customer_name ?? null,
+        table_number: entry.table_number ?? null,
+        upsell_events: entry.upsell_events ?? [],
+    };
+}
+
+/**
+ * Open the app's database WITHOUT naming a version.
+ *
+ * That detail is load-bearing. Passing the version would make this worker
+ * responsible for running migrations, and it holds no copy of the schema — an
+ * upgrade from here would produce a database with missing stores. Opening
+ * version-less attaches to whatever the app has already built, and if the app
+ * has never run, `onupgradeneeded` fires on an empty database and we walk away.
+ *
+ * Resolves null rather than rejecting: a sync that cannot read storage has
+ * nothing to retry.
+ */
+function openOutboxDb() {
+    return new Promise((resolve) => {
+        let request;
+
+        try {
+            request = indexedDB.open(OUTBOX_DB_NAME);
+        } catch (err) {
+            resolve(null);
+
+            return;
+        }
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+        request.onupgradeneeded = () => {
+            // No database yet, so no outbox either. Abort so we do not leave an
+            // empty one behind for the app to inherit.
+            try {
+                request.transaction.abort();
+            } catch (err) {
+                // Aborting is best-effort; resolving null is what matters.
+            }
+
+            resolve(null);
+        };
+    });
+}
+
+/**
+ * The cashier id and CSRF token the page left behind, or null when there is
+ * nothing usable there. Never throws: a sync that cannot read them has nothing
+ * to retry.
+ */
+async function readSyncCredentials() {
+    try {
+        const cache = await caches.open(SYNC_META_CACHE);
+        const stored = await cache.match(SYNC_CREDENTIALS_KEY);
+
+        if (!stored) return null;
+
+        const credentials = await stored.json();
+
+        if (!credentials || !credentials.cashier_id || !credentials.csrf_token) return null;
+
+        return credentials;
+    } catch (err) {
+        return null;
+    }
+}
+
+/** Read a whole store, or an empty list. Read-only, like everything here. */
+function readAllFrom(db, storeName) {
+    return new Promise((resolve) => {
+        if (!db.objectStoreNames.contains(storeName)) {
+            resolve([]);
+
+            return;
+        }
+
+        try {
+            const request = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
+
+            request.onsuccess = () => resolve(request.result ?? []);
+            request.onerror = () => resolve([]);
+        } catch (err) {
+            resolve([]);
+        }
+    });
+}

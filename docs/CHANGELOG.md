@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-28 | ADDITION | PWA | Antrean Penjualan Offline Berhenti Bergantung pada Tab yang Terbuka (BL-016 Bagian B) |
 | 2026-08-26 | HOTFIX | PWA | Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096) |
 | 2026-08-24 | HOTFIX | Publik | Halaman Depan Berhenti Mengunduh Seluruh Aplikasi Vue yang Tidak Dipakainya (BL-091) |
 | 2026-08-24 | REFACTOR | Infra | Dua Aset Yatim Dibuang, dan Celah yang Selama Ini Ditambal Manusia Dijaga Test (BL-077) |
@@ -216,6 +217,39 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Antrean Penjualan Offline Berhenti Bergantung pada Tab yang Terbuka (BL-016 Bagian B)
+- **Tanggal:** 2026-08-28
+- **Fase Terkait:** Di Luar Fase — dua "perbaikan murah" `[BL-016]` Bagian B; entrinya **tetap Open** (bagian printer tidak tersentuh)
+- **Dampak:** Frontend, Service Worker
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Transaksi offline sudah bekerja sejak PHASE PWA (2026-07-16); yang belum ada adalah jaminannya. `[BL-016]` Bagian B mencatat dua janji yang tidak bisa diberikan peramban, dan keduanya kini ditambal sejauh yang bisa ditambal tanpa lapisan native:
+
+  **(B.1) Sinkronisasi tidak lagi menuntut tab POS terbuka.** Sebelum ini `flush()` hanya jalan selama halaman POS hidup — kasir yang menutup tab saat tutup toko meninggalkan penjualan menggantung sampai ada orang membuka POS lagi. Service worker kini mendaftarkan Background Sync dan mengirimkan antrean saat peramban merasa jaringan kembali, ada tab atau tidak.
+
+  **(B.2) IndexedDB diminta jadi persisten.** `navigator.storage.persist()` dipanggil saat POS dibuka. Tanpa itu antrean berstatus "sebisanya": tekanan penyimpanan atau satu ketukan "Hapus data penjelajahan" membuangnya tanpa jejak — dan antrean adalah **satu-satunya data di aplikasi ini yang belum punya salinan di server**.
+- **Alasan:**
+  Keduanya sudah tertulis di `[BL-016]` sebagai pekerjaan yang **tidak menunggu lapisan native** dan sebaiknya dikerjakan lebih dulu, karena keduanya mengecilkan kerugian bila native ditunda. Keduanya juga tetap berguna bagi pengguna PWA yang tidak akan memasang APK — dan pengguna itu tidak akan pernah hilang. Perlu ditegaskan supaya tidak salah dibaca: **ini tidak menutup lubangnya**, hanya memperkecil jendela kehilangan penjualan.
+- **Tiga keputusan yang menentukan bentuknya, dan alasannya:**
+  1. **Service worker MENGIRIM lalu MELUPAKAN — ia tidak pernah menulis ke outbox.** Tidak ada rekonsiliasi, penghitung percobaan, maupun penghapusan baris di sana. `client_uuid` membuat pengiriman ulang gratis: server men-dedup, jadi saat aplikasi dibuka lagi, `flush()` miliknya sendiri mengirim baris yang sama, menerima `duplicate`, lalu membereskannya di satu-satunya tempat yang memang memilikinya. Yang penting sudah terjadi — uangnya sampai ke server berjam-jam sebelumnya. Menyalin aturan antrean (MAX_ATTEMPTS, parkir `failed`, vonis per baris) ke `sw.js` akan menaruh salinan kedua di berkas yang tidak dijangkau pelari uji mana pun.
+  2. **Penjaga atribusi ikut diberlakukan di service worker.** Server mengkredit penjualan tersinkron ke pengguna yang sedang terautentikasi, dan outbox bisa memuat baris beberapa kasir yang bergantian memakai satu mesin. Karena itu halaman menitipkan `cashier_id` dan token CSRF, dan worker menyaring dengan dua syarat yang sama seperti halaman. Tanpa itu, penjualan A bisa masuk ke nama dan laporan shift B.
+  3. **Titipan itu tinggal di Cache API, bukan IndexedDB.** Menambah store berarti menaikkan `DB_VERSION`, dan upgrade IndexedDB **tertahan selama masih ada tab lain yang memegang versi lama**. Tahanan itu akan mendarat di `enqueue()` — satu-satunya panggilan di aplikasi ini yang tidak boleh menggantung, karena ada kasir berdiri menunggu transaksinya selesai. Cache tidak punya skema dan tidak punya migrasi, jadi risikonya bukan diperkecil melainkan tidak ada. Versi skema IndexedDB **tetap v1**.
+- **File Terdampak:**
+  - `resources/js/services/backgroundSync.js` — **baru.** Tag sync, titipan kredensial, dan pendaftaran sync. Seluruh alasan di atas ditulis di kepala berkasnya
+  - `public/sw.js` — handler `sync` (kirim-lalu-lupakan), pembacaan outbox **read-only** tanpa menyebut versi DB, dan `SYNC_META_CACHE` yang sengaja **tidak berversi** serta dikecualikan dari sapuan `activate`
+  - `resources/js/services/offlineDb.js` — `requestPersistentStorage()`
+  - `resources/js/Pages/Cashier/POS.vue` — memanggilnya saat mount
+  - `resources/js/composables/useOfflineQueue.js` — menitipkan kredensial dan mendaftarkan sync saat penjualan masuk antrean, dan saat `flush()` gagal karena jaringan
+  - `resources/js/services/offlineSession.js` — kredensial ikut dibersihkan saat logout; baris outbox tetap **tidak** disentuh
+  - `tests/Feature/OfflineDurabilityTest.php` — **baru.** 9 penjaga
+- **Yang dijaga test, dan yang tidak — ditulis apa adanya:**
+  `public/sw.js` berkas tulisan tangan di luar bundel: ia tidak bisa meng-`import` apa pun dari `resources/js`, jadi setiap nama yang dipakai bersama **disalin, bukan dibagi**. Penjaga di `OfflineDurabilityTest` menahan persis kelas kegagalan itu — tag sync, nama cache, kunci kredensial, nama store outbox, bentuk payload, batas batch, dan daftar cache yang dikecualikan `activate`. Semuanya gagal **tanpa satu pun pesan error** kalau meleset: halaman mendaftarkan tag yang tidak didengar siapa pun, dan pengiriman di latar berhenti tanpa ada yang tahu.
+  Yang **tidak** bisa dijaga dari sini: perilaku Background Sync itu sendiri. Proyek ini tidak punya pelari uji JavaScript, dan uji yang sesungguhnya menuntut peramban sungguhan — jual offline, **tutup semua tab**, nyalakan jaringan, lalu tunggu permintaannya datang. Itu belum dilakukan.
+- **Catatan Migrasi:** Tidak ada. `CACHE_VERSION` sengaja **tidak** dinaikkan: `SHELL_ASSETS` tidak berubah, dan menaikkannya justru akan membuang `PAGE_CACHE` — perangkat yang sedang offline saat pembaruan datang akan kehilangan salinan POS-nya. `sw.js` yang berubah isinya sudah cukup membuat peramban memasang worker baru dengan sendirinya.
+- **Yang TETAP terbuka di `[BL-016]`:** seluruh bagian printer (High), dan Bagian B tidak berubah statusnya jadi selesai — Background Sync **tidak tersedia di WebView Android**, sehingga cangkang Capacitor nanti tetap menuntut aplikasi dibuka; menutupnya betul-betul butuh `WorkManager` di sisi native (`[BL-016]` D5).
 
 ---
 

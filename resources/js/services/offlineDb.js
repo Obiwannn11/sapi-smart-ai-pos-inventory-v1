@@ -153,3 +153,55 @@ export async function readAll(store, { index = null, query = null } = {}) {
         return [];
     }
 }
+
+/**
+ * Ask the browser to make this origin's storage persistent — `[BL-016]` B.2.
+ *
+ * By default IndexedDB is "best effort": storage pressure or a tap on "Clear
+ * browsing data" evicts it without warning or trace. For every other kind of
+ * data here that is merely annoying (the catalog snapshot re-downloads), but
+ * the outbox is the one thing in this application with NO copy on the server —
+ * evicting it destroys sales that already happened in the real world.
+ *
+ * Chrome grants this silently from engagement heuristics (installed PWA,
+ * bookmarked, frequent visits) and never prompts, so this is safe to call on
+ * every POS open. Firefox prompts, which is why it is called from the POS and
+ * not at app boot: the cashier screen is the only place where the answer is
+ * worth a question.
+ *
+ * A denial is NOT a failure to report to the cashier — nothing they can do
+ * about it, and offline selling still works exactly as before. It only means
+ * the eviction window stays open, which is the situation today anyway.
+ *
+ * @returns {Promise<boolean>} whether storage is persistent afterwards.
+ */
+export async function requestPersistentStorage() {
+    try {
+        // Absent on older browsers and in insecure contexts. Optional chaining
+        // is not enough here: reading `navigator.storage` can itself throw when
+        // storage is blocked by policy, same as `indexedDB` above.
+        if (typeof navigator === 'undefined' || !navigator.storage?.persist) {
+            return false;
+        }
+
+        // Already granted (an earlier visit, or an installed PWA). Asking again
+        // would be harmless but pointless.
+        if (await navigator.storage.persisted?.()) {
+            return true;
+        }
+
+        const granted = await navigator.storage.persist();
+
+        if (!granted) {
+            console.warn(
+                '[offlineDb] persistent storage denied — the outbox can still be evicted',
+            );
+        }
+
+        return granted;
+    } catch (err) {
+        console.warn('[offlineDb] persistent storage request failed:', err);
+
+        return false;
+    }
+}

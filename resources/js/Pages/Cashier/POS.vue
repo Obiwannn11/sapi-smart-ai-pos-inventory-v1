@@ -17,6 +17,7 @@ import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useCatalogCache } from '@/composables/useCatalogCache';
 import { useOfflineQueue } from '@/composables/useOfflineQueue';
+import { requestPersistentStorage } from '@/services/offlineDb';
 import { useUpsell } from '@/composables/useUpsell';
 
 const props = defineProps({
@@ -100,6 +101,13 @@ const {
 } = useOfflineQueue();
 
 onMounted(() => {
+    // Minta penyimpanan yang tidak boleh diusir peramban ([BL-016] B.2).
+    // Layar inilah satu-satunya tempat yang pantas menanyakannya: outbox adalah
+    // satu-satunya data di aplikasi ini yang belum punya salinan di server, dan
+    // dari sinilah ia terisi. Jawabannya tidak ditunggu dan tidak ditampilkan —
+    // ditolak pun keadaannya tetap seperti hari ini, bukan lebih buruk.
+    requestPersistentStorage();
+
     // Dibaca TANPA SYARAT, sengaja ([BL-095]). Sebelumnya pembacaan ini
     // digantungkan pada `!isOnline`, dan itu justru melewatkan keadaan yang
     // paling membutuhkannya: cold start saat server tak terjangkau, ketika
