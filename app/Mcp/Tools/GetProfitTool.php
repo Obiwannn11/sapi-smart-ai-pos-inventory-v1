@@ -10,7 +10,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[IsReadOnly]
-#[Description('Ringkasan profit tenant pada rentang tanggal: revenue, COGS, gross profit, margin, proyeksi periode berikutnya, dan margin per item. Semua angka teragregasi (tanpa data pelanggan).')]
+#[Description('Ringkasan profit tenant pada rentang tanggal: revenue (dibayar pelanggan, termasuk pajak), net_revenue (pendapatan toko), pajak terpungut, COGS, gross profit, margin, proyeksi periode berikutnya, dan margin per item. Margin dihitung dari net_revenue, bukan revenue. Semua angka teragregasi (tanpa data pelanggan).')]
 class GetProfitTool extends BusinessDataTool
 {
     public function __construct(private ProfitService $profit) {}

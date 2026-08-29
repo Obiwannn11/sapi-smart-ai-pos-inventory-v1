@@ -136,3 +136,96 @@ test('overallProfit returns zeros when there are no sales', function () {
         ->and($result['gross_profit'])->toBe(0.0)
         ->and($result['margin_pct'])->toBe(0.0);
 });
+
+// --- Margin di bawah pajak ([BL-065]) ---
+
+/**
+ * Helper: penjualan berpajak, satu item, dengan konteks pajak dibekukan.
+ *
+ * `$base` diperlakukan seperti di kasir — subtotal di mode exclusive, total di
+ * mode inclusive — dan barisnya memakai harga katalog yang dilihat pelanggan.
+ */
+function makeTaxedSale(ProductVariant $variant, int $qty, int $base, string $mode): Transaction
+{
+    $transaction = Transaction::factory()->taxed($base, 11, $mode)->create([
+        'tenant_id' => test()->tenant->id,
+        'user_id' => test()->owner->id,
+        'status' => Transaction::STATUS_COMPLETED,
+        'code' => 'TRX-'.fake()->unique()->numerify('########'),
+    ]);
+
+    $transaction->items()->create([
+        'product_variant_id' => $variant->id,
+        'variant_name' => $variant->name,
+        'qty' => $qty,
+        'unit_price' => $base / $qty,
+        'subtotal' => $base,
+    ]);
+
+    return $transaction;
+}
+
+test('overallProfit measures margin against the shop revenue, not the tax on top of it', function () {
+    // Exclusive 11% atas subtotal 50.000: pelanggan membayar 55.500, tapi
+    // 5.500-nya tidak pernah jadi milik toko. COGS 30.000 → margin tetap 40%.
+    makeTaxedSale($this->variant, qty: 2, base: 50000, mode: Tenant::TAX_MODE_EXCLUSIVE);
+
+    $result = $this->service->overallProfit(now()->subDay(), now()->addDay());
+
+    expect($result['revenue'])->toBe(55500.0)
+        ->and($result['net_revenue'])->toBe(50000.0)
+        ->and($result['tax'])->toBe(5500.0)
+        ->and($result['gross_profit'])->toBe(20000.0)
+        // Memakai yang dibayar pelanggan akan melaporkan 45,95%.
+        ->and($result['margin_pct'])->toBe(40.0);
+});
+
+test('overallProfit sees the margin drop that inclusive tax hides', function () {
+    // Inclusive 11%: pelanggan tetap membayar 50.000 seperti sebelum pajak
+    // menyala, jadi `total_amount` tidak bergerak sama sekali — dan margin
+    // akan terbaca 40% seperti dulu kalau dihitung dari sana. Padahal 4.955
+    // dari angka itu kini milik negara.
+    makeTaxedSale($this->variant, qty: 2, base: 50000, mode: Tenant::TAX_MODE_INCLUSIVE);
+
+    $result = $this->service->overallProfit(now()->subDay(), now()->addDay());
+
+    expect($result['revenue'])->toBe(50000.0)
+        ->and($result['net_revenue'])->toBe(45045.0)
+        ->and($result['tax'])->toBe(4955.0)
+        ->and($result['gross_profit'])->toBe(15045.0)
+        ->and($result['margin_pct'])->toBe(33.40);
+});
+
+test('profitByProduct agrees with the overall summary under exclusive tax', function () {
+    makeTaxedSale($this->variant, qty: 2, base: 50000, mode: Tenant::TAX_MODE_EXCLUSIVE);
+
+    $overall = $this->service->overallProfit(now()->subDay(), now()->addDay());
+    $row = $this->service->profitByProduct(now()->subDay(), now()->addDay())->first();
+
+    // Dua angka margin untuk periode yang sama dikirim berdampingan ke model;
+    // keduanya harus sepakat.
+    expect($row['net_revenue'])->toBe(50000.0)
+        ->and($row['margin_pct'])->toBe($overall['margin_pct']);
+});
+
+test('profitByProduct carves inclusive tax out of the catalog price', function () {
+    makeTaxedSale($this->variant, qty: 2, base: 50000, mode: Tenant::TAX_MODE_INCLUSIVE);
+
+    $overall = $this->service->overallProfit(now()->subDay(), now()->addDay());
+    $row = $this->service->profitByProduct(now()->subDay(), now()->addDay())->first();
+
+    // Harga katalog apa adanya tetap dibawa; yang jadi dasar margin yang bersih.
+    expect($row['revenue'])->toBe(50000.0)
+        ->and($row['net_revenue'])->toBe(45045.05)
+        ->and($row['margin_pct'])->toBe($overall['margin_pct']);
+});
+
+test('profitByProduct leaves untaxed sales exactly as recorded', function () {
+    makeCompletedSale($this->variant, qty: 2, subtotal: 50000);
+
+    $row = $this->service->profitByProduct(now()->subDay(), now()->addDay())->first();
+
+    expect($row['revenue'])->toBe(50000.0)
+        ->and($row['net_revenue'])->toBe(50000.0)
+        ->and($row['margin_pct'])->toBe(40.0);
+});

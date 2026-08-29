@@ -119,9 +119,12 @@ class AiContextService
     /**
      * Ringkas baris yang tidak muat jadi satu agregat berbentuk sama.
      *
-     * Bentuknya sengaja meniru baris biasa — `qty`, `revenue`, `cogs`,
-     * `margin`, `margin_pct` — supaya model tidak perlu diajari membaca dua
-     * bentuk yang berbeda untuk data yang sama.
+     * Bentuknya sengaja meniru baris biasa — `qty`, `revenue`, `net_revenue`,
+     * `cogs`, `margin`, `margin_pct` — supaya model tidak perlu diajari
+     * membaca dua bentuk yang berbeda untuk data yang sama. Marginnya
+     * diturunkan dari `net_revenue`, sama seperti barisnya ([BL-065]):
+     * agregat yang memakai dasar berbeda dari barisnya akan terbaca seperti
+     * ekor katalog yang lebih sehat daripada isinya.
      *
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<string, mixed>
@@ -129,16 +132,18 @@ class AiContextService
     private function summarize(Collection $rows): array
     {
         $revenue = (float) $rows->sum('revenue');
+        $netRevenue = (float) $rows->sum('net_revenue');
         $cogs = (float) $rows->sum('cogs');
-        $margin = $revenue - $cogs;
+        $margin = $netRevenue - $cogs;
 
         return [
             'variants' => $rows->count(),
             'qty' => (int) $rows->sum('qty'),
             'revenue' => $revenue,
+            'net_revenue' => $netRevenue,
             'cogs' => $cogs,
             'margin' => $margin,
-            'margin_pct' => $revenue > 0 ? round($margin / $revenue * 100, 2) : 0.0,
+            'margin_pct' => $netRevenue > 0 ? round($margin / $netRevenue * 100, 2) : 0.0,
         ];
     }
 }

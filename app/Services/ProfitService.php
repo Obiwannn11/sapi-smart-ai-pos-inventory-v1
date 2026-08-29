@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,27 +23,58 @@ use Illuminate\Support\Collection;
  *   tetap terhitung (COGS historis tidak hilang).
  * - COGS memakai cost_price varian SAAT INI, bukan biaya historis saat transaksi.
  *   Ini limitasi yang diketahui.
+ *
+ * **Pajak dan margin ([BL-065]).** Margin dihitung terhadap pendapatan toko,
+ * BUKAN terhadap uang yang berpindah tangan. Keduanya berbeda sejak pajak
+ * masuk ke kasir, dan bedanya persis sebesar pajaknya — di KEDUA mode:
+ *
+ *   - exclusive: pelanggan membayar harga + pajak, jadi `total_amount` memuat
+ *     pajak yang tidak pernah jadi milik toko;
+ *   - inclusive: pelanggan membayar harga katalog yang sudah mengandung
+ *     pajak, jadi `total_amount` tidak bergerak sama sekali saat pajak
+ *     dinyalakan — dan justru itu jebakannya. Marginnya tetap terbaca seperti
+ *     sebelumnya padahal margin sebenarnya sudah turun.
+ *
+ * Untuk tarif 11% pada toko bermargin nyata 30%, memakai `total_amount`
+ * melaporkan 36,9% — meleset hampir tujuh poin, sama besar di kedua mode.
+ * Angka ini tidak pernah dilihat manusia yang bisa curiga: pembacanya konteks
+ * analisis AI dan MCP `GetProfitTool`. Karena itu payload membawa ketiganya
+ * apa adanya — yang dibayar pelanggan, pajaknya, dan pendapatan tokonya —
+ * alih-alih menyerahkan pengurangannya ke model.
  */
 class ProfitService
 {
     /**
      * Ringkasan profit keseluruhan pada rentang tanggal.
      *
-     * @return array{revenue: float, cogs: float, gross_profit: float, margin_pct: float}
+     * `revenue` TIDAK berubah arti — ia tetap uang yang dibayar pelanggan,
+     * sejalan dengan `total_amount` di seluruh basis kode. Yang dipakai
+     * sebagai dasar margin adalah `net_revenue`, dan `gross_profit` diturunkan
+     * darinya. Konsekuensinya `revenue - cogs != gross_profit` untuk tenant
+     * yang memungut pajak, dan itu memang benar: selisihnya bukan keuntungan
+     * yang hilang, melainkan pajak yang tidak pernah jadi milik toko.
+     *
+     * @return array{revenue: float, net_revenue: float, tax: float, cogs: float, gross_profit: float, margin_pct: float}
      */
     public function overallProfit(Carbon $from, Carbon $to): array
     {
-        $revenue = (float) Transaction::where('status', Transaction::STATUS_COMPLETED)
+        $totals = Transaction::where('status', Transaction::STATUS_COMPLETED)
             ->whereEffectiveBetween($from, $to)
-            ->sum('total_amount');
+            ->selectRaw('COALESCE(SUM(total_amount), 0) as paid')
+            ->selectRaw('COALESCE(SUM(subtotal_amount), 0) as net_revenue')
+            ->selectRaw('COALESCE(SUM(tax_amount), 0) as tax')
+            ->first();
 
+        $netRevenue = (float) $totals->net_revenue;
         $cogs = (float) $this->cogsQuery($from, $to)->value('cogs');
 
-        $grossProfit = $revenue - $cogs;
-        $marginPct = $revenue > 0 ? round($grossProfit / $revenue * 100, 2) : 0.0;
+        $grossProfit = $netRevenue - $cogs;
+        $marginPct = $netRevenue > 0 ? round($grossProfit / $netRevenue * 100, 2) : 0.0;
 
         return [
-            'revenue' => $revenue,
+            'revenue' => (float) $totals->paid,
+            'net_revenue' => $netRevenue,
+            'tax' => (float) $totals->tax,
             'cogs' => $cogs,
             'gross_profit' => $grossProfit,
             'margin_pct' => $marginPct,
@@ -55,12 +87,31 @@ class ProfitService
      * Digroup berdasarkan variant_name terdenormalisasi, sama seperti
      * ReportController::daily().
      *
-     * @return Collection<int, array{variant_name: string, qty: int, revenue: float, cogs: float, margin: float, margin_pct: float}>
+     * **Pajak per baris tidak disimpan** — hanya per transaksi. Padahal arti
+     * `transaction_items.subtotal` berbeda antar mode: di exclusive ia sudah
+     * bersih (jumlahnya sama dengan `subtotal_amount` transaksinya), sedangkan
+     * di inclusive ia harga katalog yang SUDAH mengandung pajak. Tanpa koreksi
+     * di bawah, ringkasan dan rincian akan mengirim dua angka margin yang
+     * berbeda untuk periode yang sama — berdampingan, di satu payload, kepada
+     * model yang tidak punya cara mencurigainya.
+     *
+     * Karena itu baris inclusive diurai dengan tarif yang DIBEKUKAN di
+     * transaksinya. Hasil penjumlahannya bisa meleset rupiah dari
+     * `subtotal_amount` transaksi karena pembulatannya jatuh di tempat lain.
+     * `[BL-065]` butir 8 menolak pembulatan per item untuk STRUK — di sana
+     * pelanggan memverifikasi angka tercetak sambil berdiri di depan kasir.
+     * Di sini tidak ada yang memegang selisihnya, dan angka yang konsisten
+     * satu sama lain lebih berharga daripada rupiah terakhir.
+     *
+     * @return Collection<int, array{variant_name: string, qty: int, revenue: float, net_revenue: float, cogs: float, margin: float, margin_pct: float}>
      */
     public function profitByProduct(Carbon $from, Carbon $to): Collection
     {
         return TransactionItem::query()
             ->join('product_variants', 'transaction_items.product_variant_id', '=', 'product_variants.id')
+            // Join ini hanya membawa konteks pajaknya; penyaring DAN scope
+            // tenant tetap datang dari whereHas di bawah.
+            ->join('transactions', 'transaction_items.transaction_id', '=', 'transactions.id')
             ->whereHas('transaction', function ($q) use ($from, $to) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
                     ->whereEffectiveBetween($from, $to);
@@ -68,22 +119,28 @@ class ProfitService
             ->selectRaw('transaction_items.variant_name')
             ->selectRaw('SUM(transaction_items.qty) as qty')
             ->selectRaw('SUM(transaction_items.subtotal) as revenue')
+            ->selectRaw(
+                'SUM(CASE WHEN transactions.tax_mode = ? THEN transaction_items.subtotal * 100.0 / (100 + transactions.tax_rate)'
+                .' ELSE transaction_items.subtotal END) as net_revenue',
+                [Tenant::TAX_MODE_INCLUSIVE]
+            )
             ->selectRaw('SUM(transaction_items.qty * product_variants.cost_price) as cogs')
             ->groupBy('transaction_items.variant_name')
             ->orderByDesc('qty')
             ->get()
             ->map(function ($row) {
-                $revenue = (float) $row->revenue;
+                $netRevenue = round((float) $row->net_revenue, 2);
                 $cogs = (float) $row->cogs;
-                $margin = $revenue - $cogs;
+                $margin = $netRevenue - $cogs;
 
                 return [
                     'variant_name' => $row->variant_name,
                     'qty' => (int) $row->qty,
-                    'revenue' => $revenue,
+                    'revenue' => (float) $row->revenue,
+                    'net_revenue' => $netRevenue,
                     'cogs' => $cogs,
                     'margin' => $margin,
-                    'margin_pct' => $revenue > 0 ? round($margin / $revenue * 100, 2) : 0.0,
+                    'margin_pct' => $netRevenue > 0 ? round($margin / $netRevenue * 100, 2) : 0.0,
                 ];
             });
     }

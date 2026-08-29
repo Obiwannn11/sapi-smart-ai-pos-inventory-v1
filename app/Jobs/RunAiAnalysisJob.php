@@ -60,7 +60,7 @@ class RunAiAnalysisJob implements ShouldQueue
             $to = Carbon::parse($analysis->params['to'])->endOfDay();
 
             $data = $context->buildContext($tenant, $from, $to);
-            [$system, $user] = $this->prompts($analysis->type, $analysis->prompt);
+            [$system, $user] = $this->prompts($analysis->type, $analysis->prompt, $tenant->tax_enabled);
 
             $result = $factory->for($tenant)->generate($system, $data, $user);
 
@@ -131,11 +131,24 @@ class RunAiAnalysisJob implements ShouldQueue
     }
 
     /**
+     * Kalimat pajak hanya ikut untuk tenant yang memungut.
+     *
+     * Payload profit membawa `revenue` (dibayar pelanggan) DAN `net_revenue`
+     * (pendapatan toko) berdampingan sejak `[BL-065]`, dan model yang
+     * mengurangi COGS dari angka pertama akan melaporkan margin yang terlalu
+     * tinggi — persis kesalahan yang baru saja diperbaiki di `ProfitService`.
+     * Menaruh kalimatnya tanpa syarat berarti menjelaskan pajak kepada
+     * mayoritas tenant yang tidak memungut apa pun.
+     *
      * @return array{0: string, 1: string} [systemPrompt, userPrompt]
      */
-    private function prompts(string $type, ?string $custom): array
+    private function prompts(string $type, ?string $custom, bool $taxEnabled = false): array
     {
         $system = 'Kamu analis bisnis F&B. Berdasarkan DATA agregat berikut, beri jawaban ringkas, actionable, dalam Bahasa Indonesia, dengan angka konkret. Jangan mengarang data di luar yang diberikan.';
+
+        if ($taxEnabled) {
+            $system .= ' Tenant ini memungut pajak: `revenue` adalah uang yang dibayar pelanggan dan sudah memuat pajak yang bukan milik toko, sedangkan `net_revenue` adalah pendapatan toko. Hitung margin dan seluruh saran dari `net_revenue`, jangan dari `revenue`.';
+        }
 
         $user = match ($type) {
             AiAnalysis::TYPE_DISCOUNT => 'Item mana yang sebaiknya didiskon dan berapa besarannya? Pertimbangkan margin per item, produk terlaris, dan dead stock.',
