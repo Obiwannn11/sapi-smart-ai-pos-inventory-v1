@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-29 | DECISION | Profit | Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065) |
 | 2026-08-29 | ADDITION | Laporan | Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e) |
 | 2026-08-28 | SCHEMA | Pajak | Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065) |
 | 2026-08-28 | ADDITION | PWA | Antrean Penjualan Offline Berhenti Bergantung pada Tab yang Terbuka (BL-016 Bagian B) |
@@ -219,6 +220,35 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065)
+- **Tanggal:** 2026-08-29
+- **Fase Terkait:** Di Luar Fase — pertanyaan terbuka terakhir `[BL-065]` yang menyangkut angka, diputuskan pemilik setelah butir (e) mendarat
+- **Dampak:** Service, Job, MCP
+- **Breaking Change:** Tidak untuk tenant tanpa pajak — backfill menjamin `subtotal_amount = total_amount` di seluruh masa sebelum pajak ada, jadi angkanya identik. Payload profit melebar (`net_revenue`, `tax`); konsumennya hanya konteks analisis AI dan MCP `GetProfitTool`, keduanya internal. Seluruh 1.286 tes lolos.
+- **Deskripsi:**
+  `ProfitService` mengambil `revenue` dari `total_amount`, sehingga margin dihitung terhadap uang yang berpindah tangan alih-alih terhadap pendapatan toko. Sekarang payload membawa ketiganya apa adanya — `revenue` (dibayar pelanggan, arti lamanya **tidak** berubah), `net_revenue` (pendapatan toko), dan `tax` — dengan `gross_profit` dan `margin_pct` diturunkan dari `net_revenue`.
+- **Koreksi terhadap catatan di `[BL-065]`:**
+  Backlog menulis masalah ini hanya ada di mode **exclusive**. Itu keliru: **kedua mode salah, dan salahnya persis sebesar `tax_amount`.** Pada tarif 11% untuk toko bermargin nyata 30%, keduanya melaporkan **36,9%** — meleset hampir tujuh poin persen.
+
+  Yang berbeda hanya cara ia menipu. Di exclusive, menyalakan pajak membuat margin terlihat *naik* — absurd, tapi mencurigakan. Di inclusive, `total_amount` tidak bergerak sama sekali saat pajak dinyalakan, jadi margin terbaca persis seperti sebelumnya padahal margin sebenarnya baru saja turun. Mode kedua yang lebih berbahaya justru karena tidak ada apa pun di layar yang berubah untuk memancing pertanyaan.
+- **Retakan kedua yang ditemukan saat memutuskan:**
+  `overallProfit()` memakai `total_amount`, tapi `profitByProduct()` memakai `SUM(transaction_items.subtotal)`. Sebelum pajak ada keduanya identik. Setelahnya tidak: di **exclusive** jumlah baris item sama dengan `subtotal_amount` (bersih), sehingga ringkasan melaporkan 63,96% sementara rincian per produk melaporkan 60% — **untuk periode yang sama, dikirim berdampingan dalam satu payload** oleh `AiContextService`. Di **inclusive** keduanya sepakat dan sama-sama kotor.
+- **Keputusan:**
+  1. **`revenue` tidak berganti arti.** Ia tetap uang yang dibayar pelanggan, sejalan dengan `total_amount` di seluruh basis kode. Yang ditambahkan adalah `net_revenue` dan `tax` di sebelahnya. Konsekuensinya `revenue - cogs != gross_profit` untuk tenant yang memungut — dan itu memang benar: selisihnya bukan untung yang hilang, melainkan uang yang tidak pernah jadi milik toko.
+  2. **Rincian per produk ikut dikoreksi sekarang, bukan ditunda.** Baris mode inclusive diurai dengan tarif yang dibekukan di transaksinya. Hasil penjumlahannya bisa meleset rupiah dari `subtotal_amount` transaksi karena pembulatannya jatuh di tempat lain — dan test mengunci selisih itu apa adanya (45.045,05 per baris vs 45.045,00 per transaksi). `[BL-065]` butir 8 menolak pembulatan per item **untuk struk**, di mana pelanggan memverifikasi angka tercetak sambil berdiri di depan kasir; di sini tidak ada yang memegang selisihnya, dan dua angka yang konsisten satu sama lain lebih berharga daripada rupiah terakhir.
+  3. **Model diberi tahu, bukan dibiarkan menebak.** Satu-satunya pembaca angka ini adalah mesin: konteks analisis AI dan MCP `GetProfitTool`. `RunAiAnalysisJob` menambahkan satu kalimat ke system prompt — **hanya** untuk tenant yang memungut — yang menyebutkan mana yang pendapatan toko dan menyuruh menghitung margin dari sana. `#[Description]` milik `GetProfitTool` diperbarui dengan isi yang sama, karena itulah dokumentasi yang dilihat klien MCP eksternal.
+  4. **Agregat `others` di konteks AI ikut pindah dasar.** Ekor katalog yang diringkas dengan dasar berbeda dari barisnya akan terbaca lebih sehat daripada isinya.
+- **Yang TIDAK dikerjakan:**
+  `ProfitService` masih memakai `product_variants.cost_price` **hari ini**, bukan `transaction_items.cost_price_at_sale` yang sudah dibekukan per baris sejak `[BL-018]`. Distorsi kedua pada angka yang sama, sudah tercatat sebagai keterbatasan yang diketahui di docblock kelasnya, dan sengaja dibiarkan di luar keputusan ini.
+- **File Terkait:**
+  - `app/Services/ProfitService.php` — dasar margin, koreksi inclusive per produk
+  - `app/Services/AiContextService.php` — agregat `others`
+  - `app/Jobs/RunAiAnalysisJob.php` — kalimat pajak bersyarat di system prompt
+  - `app/Mcp/Tools/GetProfitTool.php` — deskripsi payload
+  - `tests/Feature/ProfitServiceTest.php` — 5 test baru
 
 ---
 

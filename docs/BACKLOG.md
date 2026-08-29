@@ -266,15 +266,17 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-065] Pajak/PPN — Terpasang & Dilaporkan; Sisa Dua Pertanyaan Terbuka
+### [BL-065] Pajak/PPN — Terpasang, Dilaporkan, Marginnya Diputuskan; Sisa Service Charge & Jalan Buka Kunci
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"
-- **Status:** Open — **pajaknya berjalan sejak 2026-08-28 dan laporannya sejak 2026-08-29; yang tersisa hanya dua hal yang memang sengaja dibiarkan terbuka**
+- **Status:** Open — **pajak berjalan 2026-08-28, laporannya 2026-08-29, dan dasar marginnya diputuskan hari yang sama; tersisa service charge yang sengaja ditunda dan satu utang jalan buka kunci**
   > **SELESAI 2026-08-28 — kedelapan keputusan di bawah sudah terpasang.** Lihat `[SCHEMA] Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065)` di `docs/CHANGELOG.md`. Tenant bisa menyalakan pajak (bawaan mati), memilih mode sekali, dan struknya mencetak pembagiannya — layar, termal, dan mobile.
   >
   > **SELESAI 2026-08-29 — butir (e) mendarat.** Lihat `[ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e)` di `docs/CHANGELOG.md`. Laporan harian dan bulanan memisahkan omzet sebelum pajak, pajak terpungut, dan yang dibayar pelanggan; unduhan CSV bulanan mendapat kolom pajak per tanggal. Labelnya diambil dari transaksinya, bukan dari setelan tenant hari ini.
   >
-  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Seluruh butir (a)–(f) sudah mendarat, tapi dua hal di *Yang sengaja dibiarkan terbuka* belum dijawab — dan salah satunya (`ProfitService`) adalah pertanyaan, bukan pekerjaan. Entri ini baru boleh diarsipkan setelah keduanya punya jawaban. Butir **4** juga menyisakan satu utang: `TaxSettingsController` sudah menyuruh tenant "hubungi operator", tapi jalan buka kunci di konsol platform belum ada wujudnya.
+  > **DIPUTUSKAN 2026-08-29 — dasar margin `ProfitService`.** Lihat `[DECISION] Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065)` di `docs/CHANGELOG.md`. Catatan di entri ini keliru menyebut hanya mode exclusive yang terpengaruh; **kedua mode salah sebesar `tax_amount`**, dan inclusive yang lebih berbahaya karena angkanya tidak bergerak sama sekali saat pajak dinyalakan.
+  >
+  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Seluruh butir (a)–(f) sudah mendarat dan pertanyaan `ProfitService` sudah dijawab, tapi dua hal masih menggantung: **service charge** yang sengaja ditunda (lihat di bawah), dan utang dari butir **4** — `TaxSettingsController` sudah menyuruh tenant "hubungi operator", tapi jalan buka kunci di konsol platform belum ada wujudnya.
 - **Prioritas:** Medium (naik ke High bila ada calon klien yang wajib memungut PPN)
 - **Batas lingkup — ditegaskan pemilik 2026-08-28:**
   Entri ini **hanya** tentang pajak pada transaksi **tenant → pembeli di kasir**. Pajak atas tagihan **platform → tenant** (`invoices`, langganan SaaS) **tidak termasuk** dan sengaja tidak dibahas: fiturnya diutamakan ada di klien, bukan di akun platform. Jangan menyelundupkan PPN langganan ke dalam pekerjaan ini — dasar hukum, siapa yang memungut, dan tabelnya semuanya berbeda.
@@ -328,7 +330,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - **`app/Services/CashDrawerReconciliation.php:99` harus tetap `total_amount`.** Uang fisik di laci memang sejumlah itu, termasuk pajaknya. Ini satu-satunya penjumlahan yang tidak boleh ikut pindah kalau dasar apa pun kelak dipindah.
 - **Yang sengaja dibiarkan terbuka:**
   - **Service charge ditunda.** Aman ditunda justru karena tarif dibekukan per transaksi: kolom yang lahir belakangan dengan default 0 tidak merusak transaksi lama. Kalau nanti dipakai, urutannya terhadap pajak harus ditetapkan lebih dulu — hasilnya berbeda.
-  - **`app/Services/ProfitService.php:37` belum diputuskan** (masih begitu setelah butir (e) mendarat; laporan sudah memisahkan angkanya, layar profit belum)**.** Ia menghitung margin terhadap HPP; dengan `total_amount` di mode exclusive, marginnya akan tampak lebih besar dari kenyataan. Ini pertanyaan **terpisah** dari dasar penagihan (butir 7) dan boleh dijawab berbeda.
+  - ~~**`app/Services/ProfitService.php:37` belum diputuskan.**~~ **Terjawab 2026-08-29:** margin dihitung dari `subtotal_amount`, dengan `revenue` tetap berarti yang dibayar pelanggan dan `net_revenue` ditambahkan di sebelahnya. Rincian per produk ikut dikoreksi untuk mode inclusive. Dijawab **berbeda** dari dasar penagihan (butir 7), persis seperti yang dibolehkan di sini.
+  - **`ProfitService` masih memakai harga modal HARI INI**, bukan `transaction_items.cost_price_at_sale` yang sudah dibekukan per baris sejak `[BL-018]`. Distorsi kedua pada angka yang sama, tercatat sebagai keterbatasan yang diketahui di docblock kelasnya dan sengaja ditinggalkan di luar keputusan 2026-08-29. Belum diputuskan apakah layak diperbaiki.
 
 ### [BL-068] Multi-Cabang Belum Punya Wujud Apa Pun — Satu Tenant = Satu Outlet di Seluruh Basis Kode
 - **Ditemukan:** 2026-08-08
