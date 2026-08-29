@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-29 | ADDITION | Platform | Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4) |
 | 2026-08-29 | DECISION | Profit | Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065) |
 | 2026-08-29 | ADDITION | Laporan | Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e) |
 | 2026-08-28 | SCHEMA | Pajak | Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065) |
@@ -220,6 +221,39 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4)
+- **Tanggal:** 2026-08-29
+- **Fase Terkait:** Di Luar Fase — `[BL-065]` butir 4, utang yang tertinggal sejak pajak mendarat 2026-08-28
+- **Dampak:** Migration, Model, Controller, Route, Service, Frontend
+- **Breaking Change:** Tidak — kolom baru nullable, dan tenant yang tidak pernah dibukakan kuncinya berperilaku persis seperti sebelumnya. Seluruh 1.297 tes lolos.
+- **Deskripsi:**
+  `TaxSettingsController` sudah menyuruh pemilik toko "hubungi operator untuk membukanya" sejak pajak mendarat — tanpa operator punya apa pun untuk menjawab. Janji tanpa mekanisme lebih buruk daripada larangan yang jujur, dan inilah mekanismenya.
+
+  Rincian tenant di konsol platform kini menampilkan keadaan pajak toko beserta kuncinya, dengan satu tombol: **buka kunci**. Pembukaan menuntut alasan tertulis, tercatat di jejak audit sebagai kejadian sensitif lengkap dengan keadaan pajak sebelum dibuka, dan bisa ditutup kembali sebelum jendelanya habis.
+- **Keputusan yang membentuknya:**
+  1. **Yang dibuka adalah KUNCINYA, bukan setelannya.** Tidak ada satu pun jalur di controller ini yang menulis `tax_enabled`, `tax_mode`, `tax_rate`, atau `tax_label`. Operator mengembalikan kemampuan pemilik toko memilih; yang memilih tetap pemilik toko, di layarnya sendiri.
+
+     Pembedaan ini bukan kerapian. `TenantController` pernah punya kuasa mengubah `business_type` tenant dan kuasa itu **dicabut** (`[BL-015]`), dengan alasan yang berlaku persis sama di sini: cara kerja usaha orang bukan milik penyedia layanan, sekalipun nilainya ikut menentukan tarif. Yang diberikan konsol platform adalah kuasa mengetahui, bukan kuasa memutuskan.
+  2. **Controller-nya terpisah dari `TenantController`.** Docblock di sana menyatakan rincian tenant "read-only, tanpa kecuali", dan menyelipkan satu tulisan ke dalamnya akan membuat pernyataan itu tidak lagi benar. `TenantTaxLockController` hidup sendiri supaya kalimat itu tetap bisa dibaca apa adanya.
+  3. **Berupa jendela waktu, bukan boolean.** Kunci yang dibuka tanpa batas adalah kunci yang mati: kalau pemiliknya lupa memakainya hari itu, tidak ada yang menutupnya kembali dan lubang yang penguncian ini hindari terbuka diam-diam berbulan-bulan. **Tujuh hari** — operator dan pemilik toko jarang duduk di meja yang sama, dan jendela yang habis sebelum pemiliknya sempat membuka aplikasinya hanya menghasilkan permintaan kedua.
+  4. **Sekali pakai.** Jendelanya habis begitu perubahan yang membutuhkannya benar-benar tersimpan. Satu pembukaan untuk satu perubahan; yang kedua butuh keputusan baru. Menyimpan **tarif saja** — yang memang tidak pernah terkunci — sengaja tidak menghabiskannya: pemilik yang membetulkan tarif sambil menimbang modenya tidak boleh kehilangan kesempatan yang baru diberikan kepadanya.
+  5. **Alasan wajib ditulis, minimal sepuluh karakter.** Pembukaan tanpa alasan adalah baris audit yang tidak bisa menjawab pertanyaan yang membuatnya dicatat — pola yang sama dengan penjualan di bawah lantai margin (`[BL-018]`).
+  6. **Digerbang `platform.can:tenants` saja** — lebih sempit daripada halaman yang menampungnya, yang menerima tiga modul. Membuka kunci adalah kewenangan mengurus tenant, bukan menagihnya; pemegang modul tagihan yang sampai ke halaman ini dari daftar langganan tetap melihat keadaan kuncinya, tanpa tombolnya.
+  7. **Layar pemilik menyebutkan batas waktunya.** Kesempatan yang tidak menyebutkan kapan habisnya akan dikira berlaku selamanya. `locked` dan `lock_opened_until` dikirim sebagai dua field terpisah, bukan satu boolean gabungan: "terkunci" dan "sedang dibukakan" adalah dua fakta berbeda.
+- **Yang TIDAK dikerjakan:**
+  - **Tidak ada notifikasi ke pemilik toko.** Ia mengetahuinya saat membuka layar Pengaturan. Untuk alur yang dimulai dari teleponnya sendiri, itu cukup — pemberitahuan yang benar baru perlu kalau pembukaan bisa terjadi tanpa ia meminta.
+  - **Tidak ada modul platform baru.** Menambah entri ke katalog berarti izin baru yang harus dicentang ulang untuk tiap staf; `tenants` sudah kewenangan yang tepat.
+- **File Terkait:**
+  - `database/migrations/2026_08_29_203953_add_tax_lock_window_to_tenants_table.php`
+  - `app/Http/Controllers/Platform/TenantTaxLockController.php` — buka & tutup, teraudit
+  - `app/Models/Tenant.php` — `taxLockOpen()`, `taxSettingsEditable()`
+  - `app/Http/Controllers/Owner/Settings/TaxSettingsController.php` — menghormati dan menghabiskan jendelanya
+  - `app/Services/Platform/AccountOverview.php`, `resources/js/Pages/Platform/Tenants/Show.vue` — panel pajak & kuncinya
+  - `resources/js/Pages/Owner/Settings/Operations.vue` — batas waktu di layar pemilik
+  - `tests/Feature/Platform/PlatformTenantDetailTest.php`, `tests/Feature/Owner/TaxSettingsTest.php` — 11 test baru
 
 ---
 

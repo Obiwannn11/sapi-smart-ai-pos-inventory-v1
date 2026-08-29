@@ -266,17 +266,19 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-065] Pajak/PPN — Terpasang, Dilaporkan, Marginnya Diputuskan; Sisa Service Charge & Jalan Buka Kunci
+### [BL-065] Pajak/PPN — Selesai Kecuali Service Charge yang Sengaja Ditunda
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"
-- **Status:** Open — **pajak berjalan 2026-08-28, laporannya 2026-08-29, dan dasar marginnya diputuskan hari yang sama; tersisa service charge yang sengaja ditunda dan satu utang jalan buka kunci**
+- **Status:** Open — **seluruh butir (a)–(f) dan kedelapan keputusannya sudah terpasang; yang tersisa hanya service charge, yang memang ditunda sejak awal dan butuh satu keputusan sebelum dikerjakan**
   > **SELESAI 2026-08-28 — kedelapan keputusan di bawah sudah terpasang.** Lihat `[SCHEMA] Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065)` di `docs/CHANGELOG.md`. Tenant bisa menyalakan pajak (bawaan mati), memilih mode sekali, dan struknya mencetak pembagiannya — layar, termal, dan mobile.
   >
   > **SELESAI 2026-08-29 — butir (e) mendarat.** Lihat `[ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e)` di `docs/CHANGELOG.md`. Laporan harian dan bulanan memisahkan omzet sebelum pajak, pajak terpungut, dan yang dibayar pelanggan; unduhan CSV bulanan mendapat kolom pajak per tanggal. Labelnya diambil dari transaksinya, bukan dari setelan tenant hari ini.
   >
   > **DIPUTUSKAN 2026-08-29 — dasar margin `ProfitService`.** Lihat `[DECISION] Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065)` di `docs/CHANGELOG.md`. Catatan di entri ini keliru menyebut hanya mode exclusive yang terpengaruh; **kedua mode salah sebesar `tax_amount`**, dan inclusive yang lebih berbahaya karena angkanya tidak bergerak sama sekali saat pajak dinyalakan.
   >
-  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Seluruh butir (a)–(f) sudah mendarat dan pertanyaan `ProfitService` sudah dijawab, tapi dua hal masih menggantung: **service charge** yang sengaja ditunda (lihat di bawah), dan utang dari butir **4** — `TaxSettingsController` sudah menyuruh tenant "hubungi operator", tapi jalan buka kunci di konsol platform belum ada wujudnya.
+  > **SELESAI 2026-08-29 — jalan buka kunci butir 4.** Lihat `[ADDITION] Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4)` di `docs/CHANGELOG.md`. Operator membuka lewat rincian tenant di konsol platform dengan alasan tertulis; jendelanya tujuh hari dan habis sekali pakai. Yang dibuka adalah kuncinya — panel platform tidak pernah menulis setelan pajak siapa pun.
+  >
+  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Tinggal satu: **service charge**, yang sengaja ditunda sejak awal dan butuh satu keputusan (urutannya terhadap pajak) sebelum ada yang bisa dikerjakan. Entri ini boleh diarsipkan begitu service charge dijawab — entah dengan mengerjakannya, atau dengan memindahkannya jadi entri sendiri.
 - **Prioritas:** Medium (naik ke High bila ada calon klien yang wajib memungut PPN)
 - **Batas lingkup — ditegaskan pemilik 2026-08-28:**
   Entri ini **hanya** tentang pajak pada transaksi **tenant → pembeli di kasir**. Pajak atas tagihan **platform → tenant** (`invoices`, langganan SaaS) **tidak termasuk** dan sengaja tidak dibahas: fiturnya diutamakan ada di klien, bukan di akun platform. Jangan menyelundupkan PPN langganan ke dalam pekerjaan ini — dasar hukum, siapa yang memungut, dan tabelnya semuanya berbeda.
