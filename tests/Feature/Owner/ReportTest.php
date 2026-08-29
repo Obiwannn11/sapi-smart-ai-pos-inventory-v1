@@ -220,3 +220,173 @@ test('owner can download the monthly report as csv', function () {
         ->toContain('2026-05-12')
         ->toContain('65000');
 });
+
+// --- Pajak terpungut di laporan ([BL-065] butir (e)) ---
+
+/**
+ * Tenant yang memungut pajak, dengan setelan yang sudah menyala.
+ */
+function taxCollectingTenant(Tenant $tenant, string $mode = Tenant::TAX_MODE_EXCLUSIVE, string $label = 'PPN'): void
+{
+    $tenant->update([
+        'tax_enabled' => true,
+        'tax_mode' => $mode,
+        'tax_rate' => 11,
+        'tax_label' => $label,
+    ]);
+}
+
+test('daily report splits revenue from the tax collected on top of it', function () {
+    taxCollectingTenant($this->tenant);
+
+    Transaction::factory()->taxed(100000)->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-12 10:00:00',
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/daily?date=2026-05-12')
+        ->assertInertia(fn (Assert $page) => $page
+            // Yang dibayar pelanggan tetap jadi arti `total_revenue`.
+            ->where('summary.total_revenue', 111000)
+            ->where('summary.net_revenue', 100000)
+            ->where('summary.tax_collected', 11000)
+            ->where('tax.active', true)
+            ->where('tax.label', 'PPN')
+        );
+});
+
+test('daily report shows inclusive tax carved out of an unchanged total', function () {
+    taxCollectingTenant($this->tenant, Tenant::TAX_MODE_INCLUSIVE);
+
+    // Mode inclusive: pelanggan tetap membayar 111.000, dan omzet tokolah
+    // yang turun. Inilah yang tidak terlihat sebelum butir (e) ada.
+    Transaction::factory()->taxed(111000, 11, Tenant::TAX_MODE_INCLUSIVE)->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-12 10:00:00',
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/daily?date=2026-05-12')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('summary.total_revenue', 111000)
+            ->where('summary.net_revenue', 100000)
+            ->where('summary.tax_collected', 11000)
+        );
+});
+
+test('reports say nothing about tax for a tenant that does not collect it', function () {
+    Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'total_amount' => 65000,
+        'occurred_at' => '2026-05-12 10:00:00',
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/daily?date=2026-05-12')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('tax.active', false)
+            // Tanpa pajak, omzet bersih memang sama dengan yang dibayar.
+            ->where('summary.net_revenue', 65000)
+            ->where('summary.tax_collected', 0)
+        );
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-05')
+        ->assertInertia(fn (Assert $page) => $page->where('tax.active', false));
+});
+
+test('daily report still shows the tax section on a day without sales', function () {
+    taxCollectingTenant($this->tenant);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/daily?date=2026-05-12')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('tax.active', true)
+            ->where('tax.label', 'PPN')
+            ->where('summary.tax_collected', 0)
+        );
+});
+
+test('monthly report sums the tax collected across the month', function () {
+    taxCollectingTenant($this->tenant);
+
+    Transaction::factory()->taxed(100000)->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-10 09:00:00',
+    ]);
+
+    Transaction::factory()->taxed(200000)->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-20 09:00:00',
+    ]);
+
+    // Void tidak pernah dipungut, jadi tidak pernah disetorkan.
+    Transaction::factory()->taxed(900000)->voided()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-21 09:00:00',
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-05')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('summary.total_revenue', 333000)
+            ->where('summary.net_revenue', 300000)
+            ->where('summary.tax_collected', 33000)
+            ->where('tax.active', true)
+        );
+});
+
+test('monthly report labels tax with the word frozen on the sale, not the current setting', function () {
+    taxCollectingTenant($this->tenant, label: 'PB1');
+
+    Transaction::factory()->taxed(100000, 11, Tenant::TAX_MODE_EXCLUSIVE, 'PPN')->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-10 09:00:00',
+    ]);
+
+    // Tenant sudah mengganti labelnya jadi PB1, tapi penjualan Mei dipungut
+    // sebagai PPN. Laporan Mei harus tetap menyebut PPN.
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-05')
+        ->assertInertia(fn (Assert $page) => $page->where('tax.label', 'PPN'));
+});
+
+test('monthly csv carries the tax collected, and omits the column when there is none', function () {
+    taxCollectingTenant($this->tenant);
+
+    Transaction::factory()->taxed(100000)->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'occurred_at' => '2026-05-12 10:00:00',
+    ]);
+
+    $csv = $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly/export?month=2026-05')
+        ->streamedContent();
+
+    expect($csv)->toContain('Omzet sebelum pajak')
+        ->toContain('PPN terpungut')
+        ->toContain('11000');
+
+    // Bulan tanpa penjualan berpajak tetap menampilkan kolomnya selama
+    // sakelarnya menyala — yang tidak boleh adalah tenant yang tidak memungut.
+    $this->tenant->update(['tax_enabled' => false]);
+    // `actingAs` memakai instance user yang sama untuk seluruh test, dan relasi
+    // tenant-nya sudah termuat dari permintaan di atas — tanpa ini permintaan
+    // kedua masih membaca setelan yang lama.
+    $this->owner->refresh();
+
+    $quiet = $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly/export?month=2026-04')
+        ->streamedContent();
+
+    expect($quiet)->not->toContain('Omzet sebelum pajak');
+});

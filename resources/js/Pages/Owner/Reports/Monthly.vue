@@ -16,6 +16,9 @@ const props = defineProps({
     monthLabel: String,
     range: Object,
     summary: Object,
+    // Konteks pajak ([BL-065]): `active` false untuk mayoritas tenant yang
+    // tidak memungut, dan bagian pajaknya tidak muncul sama sekali.
+    tax: { type: Object, default: () => ({ active: false, label: 'Pajak' }) },
     comparison: Object,
     dailySeries: Array,
     // Ditunda ([BL-037]) — null sampai kedua rekapnya sampai.
@@ -171,6 +174,34 @@ const paymentTypeLabel = (type) => {
                     <p v-else class="mt-1 text-lg font-bold text-gray-300">—</p>
                 </div>
             </div>
+        </div>
+
+        <!-- Pajak terpungut ([BL-065] butir (e)).
+             Angka kedua inilah yang dipakai pemilik untuk menyetorkan; tanpa
+             pemisahan ini ia tenggelam di dalam omzet. -->
+        <div v-if="tax.active" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-4">{{ tax.label }} {{ monthLabel }}</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <p class="text-xs text-gray-500">Omzet Sebelum Pajak</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.net_revenue) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">pendapatan toko</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">{{ tax.label }} Terpungut</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.tax_collected) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">dititipkan untuk disetorkan</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">Dibayar Pelanggan</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.total_revenue) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">uang yang masuk</p>
+                </div>
+            </div>
+            <p class="mt-4 text-xs text-gray-400">
+                Rinciannya per hari ada di unduhan CSV. Struk kasir bukan faktur pajak — angka ini membantu
+                menyiapkan setoran, bukan menggantikan e-Faktur.
+            </p>
         </div>
 
         <!-- Perbandingan dengan bulan sebelumnya -->

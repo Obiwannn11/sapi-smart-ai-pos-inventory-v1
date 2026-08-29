@@ -14,6 +14,9 @@ defineOptions({ layout: OwnerLayout });
 const props = defineProps({
     date: String,
     summary: Object,
+    // Konteks pajak ([BL-065]): `active` false untuk mayoritas tenant yang
+    // tidak memungut, dan bagian pajaknya tidak muncul sama sekali.
+    tax: { type: Object, default: () => ({ active: false, label: 'Pajak' }) },
     transactions: Array,
     paymentSummary: Array,
     topProducts: Array,
@@ -75,6 +78,7 @@ const toggleTx = (id) => {
             <MetricCard
                 title="Total Pendapatan"
                 :value="formatCurrency(summary.total_revenue)"
+                :subtitle="tax.active ? `termasuk ${tax.label} yang dipungut` : null"
                 icon="currency"
                 color="success"
             />
@@ -92,6 +96,33 @@ const toggleTx = (id) => {
                 icon="average"
                 color="muted"
             />
+        </div>
+
+        <!-- Pajak terpungut ([BL-065] butir (e)).
+             Dua angka yang dipisah dari omzet: yang jadi pendapatan toko, dan
+             yang hanya dititipkan pelanggan untuk disetorkan. -->
+        <div v-if="tax.active" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-4">{{ tax.label }} Hari Ini</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <p class="text-xs text-gray-500">Omzet Sebelum Pajak</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.net_revenue) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">pendapatan toko</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">{{ tax.label }} Terpungut</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.tax_collected) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">dititipkan untuk disetorkan</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">Dibayar Pelanggan</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.total_revenue) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">uang yang masuk</p>
+                </div>
+            </div>
+            <p class="mt-4 text-xs text-gray-400">
+                Struk kasir bukan faktur pajak. Angka ini membantu menyiapkan setoran, bukan menggantikan e-Faktur.
+            </p>
         </div>
 
         <!-- Rekap per Payment Method -->
