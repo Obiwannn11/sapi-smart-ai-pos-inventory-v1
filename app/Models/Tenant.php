@@ -92,7 +92,7 @@ class Tenant extends Model
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
         'min_margin_percent', 'cash_payout_approval_threshold',
         'upsell_mandatory', 'order_identity_mode',
-        'tax_enabled', 'tax_mode', 'tax_rate', 'tax_label',
+        'tax_enabled', 'tax_mode', 'tax_rate', 'tax_label', 'tax_lock_opened_until',
     ];
 
     protected $hidden = ['ai_api_key'];
@@ -138,6 +138,7 @@ class Tenant extends Model
             'upsell_mandatory' => 'boolean',
             'is_demo' => 'boolean',
             'tax_enabled' => 'boolean',
+            'tax_lock_opened_until' => 'datetime',
             'tax_rate' => 'decimal:2',
         ];
     }
@@ -210,6 +211,32 @@ class Tenant extends Model
     public function taxLocked(): bool
     {
         return $this->transactions()->whereNotNull('tax_mode')->exists();
+    }
+
+    /**
+     * Apakah operator platform sedang membukakan kuncinya ([BL-065] butir 4).
+     *
+     * Yang dibuka adalah KUNCINYA, bukan setelannya — panel platform tidak
+     * pernah memilihkan mode atau menyalakan pajak untuk siapa pun. Itu
+     * pembedaan yang sama dengan pencabutan kuasa mengubah `business_type`:
+     * penyedia layanan boleh mengembalikan kemampuan memilih, tidak boleh
+     * memilih.
+     *
+     * Jendelanya berbatas waktu DAN sekali pakai: `TaxSettingsController`
+     * menghapusnya begitu perubahan yang membutuhkannya benar-benar tersimpan.
+     */
+    public function taxLockOpen(): bool
+    {
+        return $this->tax_lock_opened_until !== null
+            && $this->tax_lock_opened_until->isFuture();
+    }
+
+    /**
+     * Bolehkah sakelar dan mode pajak diubah dari layar pemilik saat ini?
+     */
+    public function taxSettingsEditable(): bool
+    {
+        return ! $this->taxLocked() || $this->taxLockOpen();
     }
 
     /**
