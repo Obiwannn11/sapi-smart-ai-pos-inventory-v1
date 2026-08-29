@@ -282,6 +282,33 @@ const submitReject = () => {
     });
 };
 
+// --- Kunci pajak ([BL-065] butir 4) ---
+// Yang dibuka adalah KUNCINYA, bukan setelannya: tombol di bawah tidak pernah
+// mengirim tarif atau mode. Sesudah dibuka, yang memilih tetap pemilik toko.
+const showTaxLockForm = ref(false);
+const taxLockForm = useForm({ reason: '' });
+const taxLockCloseForm = useForm({});
+
+const tax = computed(() => props.tenant.tax ?? null);
+const taxLockOpen = computed(() => Boolean(tax.value?.opened_until));
+
+const openTaxLockForm = () => {
+    taxLockForm.reason = '';
+    taxLockForm.clearErrors();
+    showTaxLockForm.value = true;
+};
+
+const submitTaxLock = () => {
+    taxLockForm.post(`/platform/tenants/${props.tenant.id}/tax-lock`, {
+        preserveScroll: true,
+        onSuccess: () => { showTaxLockForm.value = false; },
+    });
+};
+
+const closeTaxLock = () => {
+    taxLockCloseForm.delete(`/platform/tenants/${props.tenant.id}/tax-lock`, { preserveScroll: true });
+};
+
 const invoiceColumns = [
     { key: 'period', label: 'Periode' },
     { key: 'kind', label: 'Jenis' },
@@ -660,6 +687,79 @@ const revenueColumns = [
                     </p>
                 </template>
             </Panel>
+
+            <!-- ── Pajak & kuncinya ([BL-065] butir 4) ──────────────────── -->
+            <Panel
+                v-if="tax"
+                class="mt-6"
+                title="Pajak penjualan"
+                description="Setelan pajak toko ini, dan satu-satunya hal yang bisa disentuh dari sini: kuncinya."
+            >
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+                    <div>
+                        <dt class="text-xs text-muted-foreground">Status</dt>
+                        <dd class="mt-1">
+                            <StatusBadge
+                                :label="tax.enabled ? 'Memungut' : 'Tidak memungut'"
+                                :tone="tax.enabled ? 'success' : 'neutral'"
+                            />
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-muted-foreground">Jenis</dt>
+                        <dd class="mt-1 text-sm font-medium text-foreground">{{ tax.label ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-muted-foreground">Tarif</dt>
+                        <dd class="mt-1 text-sm font-medium text-foreground">{{ tax.rate }}%</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-muted-foreground">Mode</dt>
+                        <dd class="mt-1 text-sm font-medium text-foreground">
+                            {{ tax.mode === 'inclusive' ? 'Termasuk harga' : 'Ditambahkan' }}
+                        </dd>
+                    </div>
+                </dl>
+
+                <div class="mt-5 border-t border-border pt-5">
+                    <Notice v-if="taxLockOpen" tone="warning">
+                        Kunci sedang terbuka sampai <span class="font-medium">{{ formatDate(tax.opened_until) }}</span>.
+                        Selama itu pemilik toko bisa mengubah sakelar atau mode pajaknya satu kali; jendelanya habis
+                        begitu dipakai.
+                    </Notice>
+
+                    <Notice v-else-if="tax.locked">
+                        Sakelar dan mode pajak terkunci karena toko ini sudah memungut pajak pada penjualan yang
+                        tercatat. Mengubahnya membuat omzet sebelum dan sesudahnya tidak sebanding — itu sebabnya
+                        pembukaannya lewat sini, tercatat, dan bukan self-service.
+                    </Notice>
+
+                    <Notice v-else>
+                        Belum ada penjualan berpajak, jadi belum ada yang terkunci. Pemilik toko masih bisa mengubah
+                        sendiri sakelar dan modenya dari Pengaturan.
+                    </Notice>
+
+                    <div v-if="can.tenants && tax.locked" class="mt-4 flex gap-3">
+                        <Button v-if="!taxLockOpen" @click="openTaxLockForm">Buka kunci</Button>
+                        <Button
+                            v-else
+                            variant="secondary"
+                            :loading="taxLockCloseForm.processing"
+                            @click="closeTaxLock"
+                        >
+                            Tutup kembali
+                        </Button>
+                    </div>
+                </div>
+
+                <template #footer>
+                    <p class="text-xs text-muted-foreground leading-relaxed">
+                        Membuka kunci TIDAK mengubah pajak siapa pun — ia mengembalikan kemampuan pemilik toko memilih,
+                        di layarnya sendiri. Setiap pembukaan dan penutupan tercatat di jejak audit sebagai kejadian
+                        sensitif, lengkap dengan alasannya.
+                    </p>
+                </template>
+            </Panel>
         </div>
 
         <!-- ── Omzet bulanan ────────────────────────────────────────────── -->
@@ -948,6 +1048,42 @@ const revenueColumns = [
                 <div class="flex justify-end gap-3">
                     <Button variant="secondary" @click="rejectTarget = null">Batal</Button>
                     <Button variant="destructive" :loading="rejectForm.processing" @click="submitReject">Tolak</Button>
+                </div>
+            </template>
+        </Modal>
+
+        <!-- Buka kunci pajak ([BL-065] butir 4) -->
+        <Modal
+            :show="showTaxLockForm"
+            title="Buka kunci pajak"
+            description="Berlaku tujuh hari, dan habis begitu pemilik toko memakainya sekali."
+            @close="showTaxLockForm = false"
+        >
+            <form @submit.prevent="submitTaxLock">
+                <FormField
+                    label="Alasan"
+                    hint="Dicatat di jejak audit bersama keadaan pajak sebelum dibuka."
+                    :error="taxLockForm.errors.reason"
+                >
+                    <textarea
+                        v-model="taxLockForm.reason"
+                        rows="3"
+                        placeholder="Mis. tenant salah memilih mode inclusive di hari pertama dan baru menjual tiga transaksi uji."
+                        :class="inputClass"
+                    />
+
+                    <template #footnote>
+                        Yang dibuka adalah kuncinya, bukan setelannya —
+                        <span class="font-medium text-foreground">pemilik toko yang memilih</span>, dari Pengaturan
+                        mereka sendiri.
+                    </template>
+                </FormField>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-3">
+                    <Button variant="secondary" @click="showTaxLockForm = false">Batal</Button>
+                    <Button :loading="taxLockForm.processing" @click="submitTaxLock">Buka kunci</Button>
                 </div>
             </template>
         </Modal>

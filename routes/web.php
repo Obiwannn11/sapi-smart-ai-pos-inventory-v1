@@ -513,6 +513,18 @@ Route::prefix('platform')
                     ->name('tenants.show');
             });
 
+            // Buka kunci pajak ([BL-065] butir 4). Digerbang `tenants` SAJA —
+            // lebih sempit daripada halaman yang menampungnya, karena membuka
+            // kunci adalah kewenangan mengurus tenant, bukan menagihnya.
+            // Pemegang modul tagihan yang sampai ke halaman ini dari daftar
+            // langganan tetap melihat keadaan kuncinya, tanpa tombolnya.
+            Route::middleware('platform.can:tenants')->group(function () {
+                Route::post('/tenants/{tenant}/tax-lock', [\App\Http\Controllers\Platform\TenantTaxLockController::class, 'store'])
+                    ->name('tenants.tax-lock.store');
+                Route::delete('/tenants/{tenant}/tax-lock', [\App\Http\Controllers\Platform\TenantTaxLockController::class, 'destroy'])
+                    ->name('tenants.tax-lock.destroy');
+            });
+
             // Modul: Langganan & Tagihan — satu bagian, dua modul.
             //
             // Halamannya digerbang "salah satu cukup" karena langganan dan

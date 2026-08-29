@@ -107,11 +107,41 @@ class AccountOverview
             'flagged_at' => $tenant->flagged_at?->toDateString(),
             'flag_reason' => $tenant->flag_reason,
             'is_verified' => $owner?->hasVerifiedEmail() ?? false,
+            'tax' => $this->taxPayload($tenant),
             'owner' => $owner === null ? null : [
                 'name' => $owner->name,
                 'email' => $owner->email,
             ],
             'capabilities' => $this->capabilityPayload($tenant),
+        ];
+    }
+
+    /**
+     * Keadaan pajak dan kuncinya ([BL-065] butir 4).
+     *
+     * Setelannya MEMBACA saja, sama seperti kapabilitas di bawah: panel
+     * platform tidak pernah memilihkan mode atau tarif untuk siapa pun. Yang
+     * bisa disentuh dari sini hanya KUNCINYA, lewat rutenya sendiri
+     * (`TenantTaxLockController`) — dan itu pun mengembalikan kemampuan
+     * memilih kepada pemilik toko, bukan memilih untuknya.
+     *
+     * Nilainya tetap terlihat karena operator yang ditelepon pemilik toko
+     * harus bisa melihat apa yang sedang dipersoalkan sebelum memutuskan
+     * membuka apa pun.
+     *
+     * @return array{enabled: bool, mode: ?string, rate: float, label: ?string, locked: bool, opened_until: ?string}
+     */
+    private function taxPayload(Tenant $tenant): array
+    {
+        return [
+            'enabled' => (bool) $tenant->tax_enabled,
+            'mode' => $tenant->tax_mode,
+            'rate' => (float) $tenant->tax_rate,
+            'label' => $tenant->tax_label,
+            'locked' => $tenant->taxLocked(),
+            'opened_until' => $tenant->taxLockOpen()
+                ? $tenant->tax_lock_opened_until->toIso8601String()
+                : null,
         ];
     }
 

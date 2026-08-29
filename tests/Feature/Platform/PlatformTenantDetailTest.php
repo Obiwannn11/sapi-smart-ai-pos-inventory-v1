@@ -190,3 +190,107 @@ test('membuka rincian tercatat sebagai kejadian rutin, bukan sensitif', function
         ->and($log->severity)->toBe(PlatformAuditLog::SEVERITY_ROUTINE)
         ->and($log->subject_id)->toBe($tenant->id);
 });
+
+// --- Jalan buka kunci lewat konsol platform ([BL-065] butir 4) ---
+
+test('operator bisa membuka kunci pajak, dan pembukaannya tercatat lengkap dengan alasannya', function () {
+    ['tenant' => $tenant, 'platformUser' => $platformUser] = tenantDetailContext();
+    $tenant->update([
+        'tax_enabled' => true,
+        'tax_mode' => Tenant::TAX_MODE_INCLUSIVE,
+        'tax_rate' => 11,
+        'tax_label' => 'PPN',
+    ]);
+
+    actingAs($platformUser, 'platform')
+        ->post("/platform/tenants/{$tenant->id}/tax-lock", [
+            'reason' => 'Tenant salah memilih mode inclusive di hari pertama.',
+        ])
+        ->assertRedirect();
+
+    expect($tenant->fresh()->taxLockOpen())->toBeTrue();
+
+    $log = PlatformAuditLog::where('action', 'tenants.tax-lock.open')->latest('id')->first();
+
+    expect($log)->not->toBeNull()
+        ->and($log->severity)->toBe(PlatformAuditLog::SEVERITY_SENSITIVE)
+        ->and($log->subject_id)->toBe($tenant->id)
+        ->and($log->meta['reason'])->toBe('Tenant salah memilih mode inclusive di hari pertama.')
+        // Keadaan SEBELUM dibuka, karena pertanyaannya selalu "dari apa ke apa".
+        ->and($log->meta['tax_before']['mode'])->toBe(Tenant::TAX_MODE_INCLUSIVE);
+});
+
+test('pembukaan tanpa alasan ditolak', function () {
+    ['tenant' => $tenant, 'platformUser' => $platformUser] = tenantDetailContext();
+
+    actingAs($platformUser, 'platform')
+        ->post("/platform/tenants/{$tenant->id}/tax-lock", ['reason' => 'salah'])
+        ->assertSessionHasErrors('reason');
+
+    expect($tenant->fresh()->tax_lock_opened_until)->toBeNull();
+});
+
+test('membuka kunci tidak menyentuh satu pun setelan pajaknya', function () {
+    ['tenant' => $tenant, 'platformUser' => $platformUser] = tenantDetailContext();
+    $tenant->update([
+        'tax_enabled' => true,
+        'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+        'tax_rate' => 11,
+        'tax_label' => 'PPN',
+    ]);
+
+    actingAs($platformUser, 'platform')
+        ->post("/platform/tenants/{$tenant->id}/tax-lock", [
+            'reason' => 'Permintaan pemilik toko lewat dukungan, tiket #412.',
+        ]);
+
+    // Yang dibuka adalah kuncinya, bukan setelannya — operator tidak pernah
+    // memilihkan mode atau menyalakan pajak untuk siapa pun.
+    $fresh = $tenant->fresh();
+
+    expect($fresh->tax_enabled)->toBeTrue()
+        ->and($fresh->tax_mode)->toBe(Tenant::TAX_MODE_EXCLUSIVE)
+        ->and((float) $fresh->tax_rate)->toBe(11.0)
+        ->and($fresh->tax_label)->toBe('PPN');
+});
+
+test('operator bisa menutup kembali sebelum jendelanya habis', function () {
+    ['tenant' => $tenant, 'platformUser' => $platformUser] = tenantDetailContext();
+    $tenant->update(['tax_lock_opened_until' => now()->addDays(7)]);
+
+    actingAs($platformUser, 'platform')
+        ->delete("/platform/tenants/{$tenant->id}/tax-lock")
+        ->assertRedirect();
+
+    expect($tenant->fresh()->taxLockOpen())->toBeFalse()
+        ->and(PlatformAuditLog::where('action', 'tenants.tax-lock.close')->exists())->toBeTrue();
+});
+
+test('staf tanpa modul daftar tenant tidak bisa membuka kunci siapa pun', function () {
+    ['tenant' => $tenant] = tenantDetailContext();
+
+    // Pemegang modul tagihan sampai ke halamannya dari daftar langganan, tapi
+    // membuka kunci adalah kewenangan mengurus tenant — bukan menagihnya.
+    $hanyaTagihan = PlatformUser::factory()->create();
+    $hanyaTagihan->modules()->create(['module' => 'payments']);
+
+    actingAs($hanyaTagihan, 'platform')
+        ->post("/platform/tenants/{$tenant->id}/tax-lock", ['reason' => 'Mencoba membuka tanpa kewenangan.'])
+        ->assertStatus(403);
+
+    expect($tenant->fresh()->tax_lock_opened_until)->toBeNull();
+});
+
+test('rincian tenant membawa keadaan pajak dan kuncinya', function () {
+    ['tenant' => $tenant, 'platformUser' => $platformUser] = tenantDetailContext();
+    $tenant->update(['tax_enabled' => true, 'tax_rate' => 10, 'tax_label' => 'PB1']);
+
+    actingAs($platformUser, 'platform')
+        ->get("/platform/tenants/{$tenant->id}")
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('tenant.tax.enabled', true)
+            ->where('tenant.tax.label', 'PB1')
+            ->where('tenant.tax.opened_until', null)
+            ->etc()
+        );
+});
