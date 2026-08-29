@@ -29,7 +29,10 @@ class TaxSettingsController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $tenant = auth()->user()->tenant;
-        $locked = $tenant->taxLocked();
+
+        // Terkunci secara struktur, TAPI operator sedang membukakannya:
+        // dua keadaan berbeda, dan hanya yang kedua boleh menyimpan.
+        $editable = $tenant->taxSettingsEditable();
 
         $validated = $request->validate([
             'tax_enabled' => 'required|boolean',
@@ -52,11 +55,25 @@ class TaxSettingsController extends Controller
             ]);
         }
 
-        if ($locked) {
+        if (! $editable) {
             $this->assertLockedFieldsUnchanged($tenant, $validated);
         }
 
+        // Apakah perubahan ini MEMAKAI jendela yang dibukakan operator.
+        // Menyimpan tarif saja — yang memang tidak pernah terkunci — tidak
+        // boleh menghabiskan jendelanya; pemilik yang membetulkan tarif
+        // sambil menunggu keputusan modenya akan kehilangan kesempatan yang
+        // baru saja diberikan kepadanya.
+        $memakaiJendela = $tenant->taxLockOpen() && $this->lockedFieldsChanged($tenant, $validated);
+
         $tenant->update($validated);
+
+        if ($memakaiJendela) {
+            // Sekali pakai. Satu pembukaan untuk satu perubahan: jendela yang
+            // tetap terbuka sesudahnya membiarkan perubahan kedua lewat tanpa
+            // ada yang memutuskannya.
+            $tenant->update(['tax_lock_opened_until' => null]);
+        }
 
         return back()->with('success', 'Setelan pajak berhasil disimpan.');
     }
@@ -85,11 +102,22 @@ class TaxSettingsController extends Controller
         }
 
         if ($validated['tax_mode'] !== $tenant->tax_mode) {
-            $errors['tax_mode'] = 'Mode pajak terkunci sejak penjualan berpajak pertama — mengubahnya membuat omzet sebelum dan sesudahnya tidak sebanding.';
+            $errors['tax_mode'] = 'Mode pajak terkunci sejak penjualan berpajak pertama — mengubahnya membuat omzet sebelum dan sesudahnya tidak sebanding. Hubungi operator kalau memang perlu dibuka.';
         }
 
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
+    }
+
+    /**
+     * Apakah salah satu dari dua field terkunci itu benar-benar berubah.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function lockedFieldsChanged(Tenant $tenant, array $validated): bool
+    {
+        return (bool) $validated['tax_enabled'] !== (bool) $tenant->tax_enabled
+            || $validated['tax_mode'] !== $tenant->tax_mode;
     }
 }

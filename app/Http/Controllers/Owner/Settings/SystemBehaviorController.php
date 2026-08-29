@@ -72,6 +72,14 @@ class SystemBehaviorController extends Controller
                 // menyalakan pajak lalu berubah pikiran sebelum menjual apa
                 // pun harus tetap bisa membatalkannya.
                 'locked' => $tenant->taxLocked(),
+                // Jendela yang sedang dibukakan operator ([BL-065] butir 4).
+                // Dikirim terpisah dari `locked`, bukan menggantikannya:
+                // "terkunci" dan "sedang dibukakan" adalah dua fakta berbeda,
+                // dan layarnya perlu keduanya untuk bisa mengatakan sampai
+                // kapan kesempatan itu berlaku.
+                'lock_opened_until' => $tenant->taxLockOpen()
+                    ? $tenant->tax_lock_opened_until->toIso8601String()
+                    : null,
             ],
             'taxModes' => Tenant::taxModes(),
             'orderIdentityModes' => Tenant::orderIdentityModes(),

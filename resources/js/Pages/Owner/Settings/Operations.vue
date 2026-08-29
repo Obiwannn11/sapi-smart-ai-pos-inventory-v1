@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -65,7 +66,30 @@ const taxForm = useForm({
     tax_label:   props.tax.tax_label ?? '',
 });
 
-const taxLocked = computed(() => props.tax.locked === true);
+// Terkunci secara struktur — ada penjualan berpajak yang tercatat.
+const taxStructurallyLocked = computed(() => props.tax.locked === true);
+
+// Jendela yang sedang dibukakan operator platform ([BL-065] butir 4).
+const taxUnlockUntil = computed(() => props.tax.lock_opened_until ?? null);
+
+// Yang menentukan kendalinya mati atau hidup adalah KEDUANYA, dan sengaja
+// dirakit di sini alih-alih dikirim jadi satu boolean: "terkunci" dan "sedang
+// dibukakan" dua fakta berbeda, dan layarnya perlu keduanya untuk bisa
+// mengatakan sampai kapan kesempatannya berlaku.
+const taxLocked = computed(() => taxStructurallyLocked.value && taxUnlockUntil.value === null);
+
+const taxUnlockDeadline = computed(() => {
+    if (taxUnlockUntil.value === null) return null;
+
+    return new Date(taxUnlockUntil.value).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+});
 
 // Contoh dihitung dari angka bulat yang mudah dicek ulang di kepala. Yang
 // ditunjukkan bukan besar pajaknya, melainkan SIAPA yang menanggungnya —
@@ -360,6 +384,18 @@ const submitTax = () => {
                         di bawah itu Anda berstatus pengusaha kecil dan tidak wajib memungut apa pun.
                         Rumah makan dan kafe memungut <strong>PBJT</strong> daerah, bukan PPN — tarif dan batasnya ditetapkan Perda setempat.
                     </p>
+
+                    <!-- Kunci yang sedang dibukakan operator ([BL-065] butir 4).
+                         Batas waktunya disebutkan: kesempatan yang tidak menyebutkan
+                         kapan habisnya akan dikira berlaku selamanya. -->
+                    <div
+                        v-if="taxUnlockDeadline"
+                        class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 leading-relaxed"
+                    >
+                        <span class="font-semibold block">Kunci dibuka sampai {{ taxUnlockDeadline }}.</span>
+                        Anda bisa mengubah sakelar atau mode pajak <strong>satu kali</strong> dalam jendela ini —
+                        setelah tersimpan, kuncinya menutup kembali sendiri.
+                    </div>
 
                     <label
                         class="flex gap-3 p-3 rounded-lg border border-gray-200"

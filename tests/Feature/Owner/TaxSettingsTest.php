@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\TransactionService;
+use Inertia\Testing\AssertableInertia as Assert;
 
 /**
  * Setelan pajak dan pengunciannya ([BL-065] butir 2-6).
@@ -184,4 +185,94 @@ test('tarif di luar nalar ditolak', function () {
         'tax_rate' => 150,
         'tax_label' => 'PPN',
     ])->assertSessionHasErrors('tax_rate');
+});
+
+// --- Jendela buka kunci dari operator ([BL-065] butir 4) ---
+
+test('jendela yang dibukakan operator mengembalikan kemampuan mengubah mode', function () {
+    sellOnceWithTax($this->tenant, Tenant::TAX_MODE_INCLUSIVE);
+    $this->tenant->update(['tax_lock_opened_until' => now()->addDays(7)]);
+
+    $this->actingAs($this->owner)
+        ->patch('/owner/settings/operations/tax', [
+            'tax_enabled' => true,
+            'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+            'tax_rate' => 11,
+            'tax_label' => 'PPN',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($this->tenant->fresh()->tax_mode)->toBe(Tenant::TAX_MODE_EXCLUSIVE);
+});
+
+test('jendelanya habis begitu dipakai — perubahan kedua ditolak lagi', function () {
+    sellOnceWithTax($this->tenant, Tenant::TAX_MODE_INCLUSIVE);
+    $this->tenant->update(['tax_lock_opened_until' => now()->addDays(7)]);
+
+    $this->actingAs($this->owner)->patch('/owner/settings/operations/tax', [
+        'tax_enabled' => true,
+        'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+        'tax_rate' => 11,
+        'tax_label' => 'PPN',
+    ]);
+
+    expect($this->tenant->fresh()->tax_lock_opened_until)->toBeNull();
+
+    // Satu pembukaan untuk satu perubahan: yang kedua butuh keputusan baru.
+    $this->actingAs($this->owner)
+        ->patch('/owner/settings/operations/tax', [
+            'tax_enabled' => false,
+            'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+            'tax_rate' => 11,
+            'tax_label' => 'PPN',
+        ])
+        ->assertSessionHasErrors('tax_enabled');
+
+    expect($this->tenant->fresh()->tax_enabled)->toBeTrue();
+});
+
+test('menyimpan tarif saja tidak menghabiskan jendela yang belum terpakai', function () {
+    sellOnceWithTax($this->tenant, Tenant::TAX_MODE_INCLUSIVE);
+    $this->tenant->update(['tax_lock_opened_until' => now()->addDays(7)]);
+
+    // Tarif tidak pernah terkunci. Pemilik yang membetulkannya sambil menimbang
+    // modenya tidak boleh kehilangan kesempatan yang baru diberikan kepadanya.
+    $this->actingAs($this->owner)->patch('/owner/settings/operations/tax', [
+        'tax_enabled' => true,
+        'tax_mode' => Tenant::TAX_MODE_INCLUSIVE,
+        'tax_rate' => 10,
+        'tax_label' => 'PB1',
+    ])->assertSessionHasNoErrors();
+
+    expect($this->tenant->fresh()->taxLockOpen())->toBeTrue();
+});
+
+test('jendela yang sudah lewat waktunya tidak membuka apa pun', function () {
+    sellOnceWithTax($this->tenant, Tenant::TAX_MODE_INCLUSIVE);
+    $this->tenant->update(['tax_lock_opened_until' => now()->subMinute()]);
+
+    $this->actingAs($this->owner)
+        ->patch('/owner/settings/operations/tax', [
+            'tax_enabled' => true,
+            'tax_mode' => Tenant::TAX_MODE_EXCLUSIVE,
+            'tax_rate' => 11,
+            'tax_label' => 'PPN',
+        ])
+        ->assertSessionHasErrors('tax_mode');
+
+    expect($this->tenant->fresh()->tax_mode)->toBe(Tenant::TAX_MODE_INCLUSIVE);
+});
+
+test('layar setelan menyebutkan sampai kapan jendelanya berlaku', function () {
+    sellOnceWithTax($this->tenant);
+    $this->tenant->update(['tax_lock_opened_until' => now()->addDays(7)]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/settings/operations')
+        ->assertInertia(fn (Assert $page) => $page
+            // Dua fakta terpisah: terkunci, DAN sedang dibukakan.
+            ->where('tax.locked', true)
+            ->whereNot('tax.lock_opened_until', null)
+            ->etc()
+        );
 });
