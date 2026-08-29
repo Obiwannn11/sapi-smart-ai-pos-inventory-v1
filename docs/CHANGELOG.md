@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-29 | ADDITION | Laporan | Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e) |
 | 2026-08-28 | SCHEMA | Pajak | Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065) |
 | 2026-08-28 | ADDITION | PWA | Antrean Penjualan Offline Berhenti Bergantung pada Tab yang Terbuka (BL-016 Bagian B) |
 | 2026-08-26 | HOTFIX | PWA | Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096) |
@@ -218,6 +219,37 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e)
+- **Tanggal:** 2026-08-29
+- **Fase Terkait:** Di Luar Fase — `[BL-065]` butir **(e)**, sisa terakhir dari pekerjaan pajak yang mendarat di kasir 2026-08-28
+- **Dampak:** Controller, Factory, Frontend
+- **Breaking Change:** Tidak — bentuk `total_amount` dan artinya tidak disentuh, dan tenant yang tidak memungut pajak tidak melihat satu pun angka baru. Seluruh 1.281 tes lolos.
+- **Deskripsi:**
+  Pajak sudah dipungut di kasir sejak 2026-08-28, tapi laporan masih menjumlahkan `total_amount` polos — sehingga pemilik yang memungut melihat satu angka omzet yang diam-diam sudah memuat uang titipan pelanggan, dan tidak punya angka kedua untuk menyetorkannya. Laporan harian dan bulanan sekarang menyebut ketiganya terpisah: **omzet sebelum pajak** (pendapatan toko), **pajak terpungut** (yang dititipkan untuk disetorkan), dan **dibayar pelanggan** (uang yang masuk).
+
+  Di mode inclusive pemisahan ini yang pertama kali membuat selisihnya terlihat: pelanggan membayar angka yang sama seperti sebelum pajak menyala, dan yang turun adalah pendapatan toko. Sebelum ini, layar tidak punya tempat untuk mengatakannya.
+- **Alasan:**
+  Butir (e) adalah satu-satunya butir `[BL-065]` yang tidak ikut mendarat kemarin, dan ia justru yang dipakai untuk membayar pajaknya. Fitur yang memungut tanpa melaporkan berarti menyerahkan pekerjaan penjumlahannya kembali ke pemilik — dengan data yang sudah ada di basis data.
+- **Keputusan yang diambil saat mengerjakannya:**
+  1. **`total_revenue` TIDAK berubah arti.** Ia tetap "yang dibayar pelanggan". Dua angka baru (`net_revenue`, `tax_collected`) ditambahkan **di sebelahnya**, bukan menggantikannya — dua belas tempat sudah membaca kolomnya dengan arti itu.
+  2. **Tenant yang tidak memungut tidak melihat apa pun.** Bagian pajak muncul bila `tax_enabled` menyala **atau** ada pajak yang benar-benar terpungut di periode itu. Syarat kedua yang menjaga periode lampau tetap terbaca kalau sakelarnya kelak dibuka lewat konsol platform. Kolom nol di setiap baris CSV bukan kejujuran, melainkan derau yang harus dibaca ulang tiap bulan oleh mayoritas yang tidak memungut.
+  3. **Labelnya diambil dari transaksinya, bukan dari setelan tenant hari ini.** `tax_label` sengaja **tidak** ikut terkunci saat penjualan berpajak pertama (`[BL-065]` butir 6), jadi tenant yang mengganti "PPN" jadi "PB1" bulan lalu tidak boleh membuat laporan lamanya menyebut dasar hukum yang salah. Satu periode dengan dua label menyebut keduanya — menampilkan salah satu berarti memilih sebagian angka lalu menamainya seluruhnya.
+  4. **Pajak per hari ikut diagregasi di deret bulanan yang sudah ada**, bukan lewat kueri sendiri: barisnya sama dan penyaringnya sama, dan ringkasan bulan memang sudah diturunkan dari deret itu. Unduhan CSV karenanya mendapat kolom pajak per tanggal tanpa satu pun kueri tambahan.
+  5. **`average_transaction` tetap dihitung dari `total_amount`.** Rata-rata belanja adalah berapa yang dikeluarkan pelanggan, dan itu memang termasuk pajaknya.
+- **Lubang yang ditemukan dan ditutup di jalan:**
+  `TransactionFactory` menulis `total_amount` tanpa `subtotal_amount`, sehingga setiap transaksi buatan pabrik melanggar invarian `subtotal + pajak = total` — subtotalnya tertinggal di 0. Belum ada test yang mengandalkannya, tapi setiap laporan yang menjumlahkan `subtotal_amount` akan membaca nol di sana. Pabriknya kini menurunkan subtotal dari total lewat closure (bawaannya penjualan tanpa pajak, dan di sana subtotal memang sama dengan total), plus state `taxed()` yang menghitung ketiga angkanya lewat `TaxCalculator` yang sama dengan produksi. `$base`-nya jadi argumen, bukan dibaca dari `total_amount`: atribut yang diberikan ke `create()` menimpa state, dan `total_amount` yang dititipkan di sana akan menyisakan pajak dari angka acak bawaan pabrik.
+- **Yang TIDAK dikerjakan:**
+  - **`ProfitService` belum diputuskan** — masih menghitung margin terhadap `total_amount`, yang di mode exclusive membuat margin tampak lebih besar dari kenyataan. Pertanyaan ini milik `[BL-065]` dan sengaja dibiarkan terbuka di sana; ia terpisah dari dasar penagihan dan boleh dijawab berbeda.
+  - **Dashboard tidak disentuh.** Butir (e) menyebut laporan harian dan bulanan; dashboard adalah layar sekilas, bukan dasar setoran.
+  - **Jalan buka kunci di konsol platform belum ada.** `TaxSettingsController` sudah menyuruh tenant "hubungi operator", tapi operatornya belum punya tombolnya — tetap terbuka di `[BL-065]` butir 4.
+- **File Terkait:**
+  - `app/Http/Controllers/Owner/ReportController.php` — dua angka di ringkasan harian/bulanan, `taxContext()`, kolom pajak di CSV
+  - `database/factories/TransactionFactory.php` — invarian subtotal dan state `taxed()`
+  - `resources/js/Pages/Owner/Reports/Daily.vue`, `Monthly.vue` — panel pajak
+  - `tests/Feature/Owner/ReportTest.php` — 7 test baru
 
 ---
 

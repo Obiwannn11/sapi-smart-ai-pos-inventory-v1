@@ -266,13 +266,15 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ---
 
-### [BL-065] Pajak/PPN — Terpasang di Kasir; Sisa Laporannya
+### [BL-065] Pajak/PPN — Terpasang & Dilaporkan; Sisa Dua Pertanyaan Terbuka
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"
-- **Status:** Open — **pajaknya sudah berjalan sejak 2026-08-28; yang tersisa adalah laporannya**
+- **Status:** Open — **pajaknya berjalan sejak 2026-08-28 dan laporannya sejak 2026-08-29; yang tersisa hanya dua hal yang memang sengaja dibiarkan terbuka**
   > **SELESAI 2026-08-28 — kedelapan keputusan di bawah sudah terpasang.** Lihat `[SCHEMA] Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065)` di `docs/CHANGELOG.md`. Tenant bisa menyalakan pajak (bawaan mati), memilih mode sekali, dan struknya mencetak pembagiannya — layar, termal, dan mobile.
   >
-  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Butir **(e)** — laporan harian/bulanan menampilkan omzet dan pajak terpungut sebagai dua angka — belum tersentuh, dan pemilik yang memungut pajak butuh angka kedua itu untuk menyetorkannya. Dua hal di *Yang sengaja dibiarkan terbuka* juga masih terbuka.
+  > **SELESAI 2026-08-29 — butir (e) mendarat.** Lihat `[ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e)` di `docs/CHANGELOG.md`. Laporan harian dan bulanan memisahkan omzet sebelum pajak, pajak terpungut, dan yang dibayar pelanggan; unduhan CSV bulanan mendapat kolom pajak per tanggal. Labelnya diambil dari transaksinya, bukan dari setelan tenant hari ini.
+  >
+  > **Ini TIDAK memindahkan entri ini ke Riwayat Selesai.** Seluruh butir (a)–(f) sudah mendarat, tapi dua hal di *Yang sengaja dibiarkan terbuka* belum dijawab — dan salah satunya (`ProfitService`) adalah pertanyaan, bukan pekerjaan. Entri ini baru boleh diarsipkan setelah keduanya punya jawaban. Butir **4** juga menyisakan satu utang: `TaxSettingsController` sudah menyuruh tenant "hubungi operator", tapi jalan buka kunci di konsol platform belum ada wujudnya.
 - **Prioritas:** Medium (naik ke High bila ada calon klien yang wajib memungut PPN)
 - **Batas lingkup — ditegaskan pemilik 2026-08-28:**
   Entri ini **hanya** tentang pajak pada transaksi **tenant → pembeli di kasir**. Pajak atas tagihan **platform → tenant** (`invoices`, langganan SaaS) **tidak termasuk** dan sengaja tidak dibahas: fiturnya diutamakan ada di klien, bukan di akun platform. Jangan menyelundupkan PPN langganan ke dalam pekerjaan ini — dasar hukum, siapa yang memungut, dan tabelnya semuanya berbeda.
@@ -313,12 +315,12 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
      - **Inclusive:** jangkar `total_amount` (uang yang berpindah tangan itu nyata) → bulatkan pajak → `subtotal = total − pajak`
 
      Membulatkan per item ditolak: pelanggan memverifikasi struk dari angka yang **tercetak**, jadi tarif dikali subtotal tercetak harus sama persis dengan pajak tercetak. Tidak membulatkan sama sekali ditolak di kasir, bukan di kode — total berakhir di Rp 14.985 dan laci tidak punya uangnya.
-- **Usulan Perbaikan** — (a)-(d) dan (f) **sudah mendarat 2026-08-28**; **(e) belum**:
+- **Usulan Perbaikan** — (a)-(d) dan (f) **mendarat 2026-08-28**, (e) menyusul **2026-08-29**; seluruhnya selesai:
   **(a)** `transactions` mendapat `subtotal_amount` dan `tax_amount`, dengan `total_amount` **tetap** berarti "yang dibayar pelanggan" — kolom yang sudah dibaca 12 tempat jangan berubah maknanya. Migrasi mengisi transaksi lama dengan `subtotal_amount = total_amount`, `tax_amount = 0`, yang memang benar untuk masa sebelum pajak ada.
   **(b)** `tenants` mendapat `tax_enabled` (default **false**), `tax_mode`, `tax_rate`, `tax_label` — sejajar dengan `*_enabled` lain — dan keempatnya **dibekukan per transaksi**, sama seperti `invoices.pricing_context` membekukan konteks tagihan. Struk lama harus tetap bisa dicetak ulang dengan angka yang sama walau tarifnya sudah berubah.
   **(c)** Struk menampilkan Subtotal → *label* (tarif%) → TOTAL untuk mode exclusive, dan Subtotal → TOTAL dengan catatan "termasuk *label* Rp X" untuk mode inclusive.
   **(d)** Pajak dihitung **setelah** diskon. Diskon per item sudah ada (`transaction_items.discount_amount`, `[BL-018]`); urutannya ditulis, bukan diasumsikan.
-  **(e)** Laporan harian/bulanan (`[BL-063]`) menampilkan omzet dan pajak terpungut sebagai **dua angka**. Pemilik toko yang memungut pajak butuh angka kedua itu untuk menyetorkannya.
+  **(e)** Laporan harian/bulanan (`[BL-063]`) menampilkan omzet dan pajak terpungut sebagai **dua angka**. Pemilik toko yang memungut pajak butuh angka kedua itu untuk menyetorkannya. — **selesai 2026-08-29**; ditampilkan sebagai tiga angka (omzet sebelum pajak, pajak terpungut, dibayar pelanggan) karena angka ketiga yang membuat dua yang pertama bisa diperiksa.
   **(f)** Struk POS **bukan** faktur pajak. Tenant PKP tetap wajib menerbitkan e-Faktur terpisah; fitur ini tidak boleh dijual seolah menggantikannya.
 - **Jebakan yang sudah diketahui — jangan ditemukan ulang dengan cara mahal:**
   - **`app/Jobs/ComputeTenantMonthlyRevenue.php:114` memakai `updateOrCreate` berkunci tenant+periode.** Kalau dasar bracket kelak dipindah ke `subtotal_amount` — dan itu **bisa** dibalik tanpa migrasi, karena kolomnya sudah ditulis demi struk — maka menjalankan ulang job untuk bulan lampau akan **menimpa** metrik historis dengan dasar baru. Kalau diganti, ganti **maju saja**.
@@ -326,7 +328,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - **`app/Services/CashDrawerReconciliation.php:99` harus tetap `total_amount`.** Uang fisik di laci memang sejumlah itu, termasuk pajaknya. Ini satu-satunya penjumlahan yang tidak boleh ikut pindah kalau dasar apa pun kelak dipindah.
 - **Yang sengaja dibiarkan terbuka:**
   - **Service charge ditunda.** Aman ditunda justru karena tarif dibekukan per transaksi: kolom yang lahir belakangan dengan default 0 tidak merusak transaksi lama. Kalau nanti dipakai, urutannya terhadap pajak harus ditetapkan lebih dulu — hasilnya berbeda.
-  - **`app/Services/ProfitService.php:37` belum diputuskan.** Ia menghitung margin terhadap HPP; dengan `total_amount` di mode exclusive, marginnya akan tampak lebih besar dari kenyataan. Ini pertanyaan **terpisah** dari dasar penagihan (butir 7) dan boleh dijawab berbeda.
+  - **`app/Services/ProfitService.php:37` belum diputuskan** (masih begitu setelah butir (e) mendarat; laporan sudah memisahkan angkanya, layar profit belum)**.** Ia menghitung margin terhadap HPP; dengan `total_amount` di mode exclusive, marginnya akan tampak lebih besar dari kenyataan. Ini pertanyaan **terpisah** dari dasar penagihan (butir 7) dan boleh dijawab berbeda.
 
 ### [BL-068] Multi-Cabang Belum Punya Wujud Apa Pun — Satu Tenant = Satu Outlet di Seluruh Basis Kode
 - **Ditemukan:** 2026-08-08
