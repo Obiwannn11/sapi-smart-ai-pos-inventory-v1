@@ -13,7 +13,7 @@
 ### [BL-065] Pajak/PPN — Dari Nol Kata di Basis Kode Sampai Terpungut, Tercetak, Terlapor, dan Bisa Dibuka Kuncinya
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"
-- **Status:** **Selesai 2026-08-29** — seluruh butir (a)–(f) dan kedelapan keputusannya terpasang. Diarsipkan 2026-08-30, setelah dua hal yang tersisa dipindah jadi entrinya sendiri (`[BL-097]` service charge, `[BL-098]` harga modal historis) — keduanya pertanyaan terbuka yang bukan tentang pajak.
+- **Status:** **Selesai 2026-08-29** — seluruh butir (a)–(f) dan kedelapan keputusannya terpasang. Diarsipkan 2026-08-30, setelah service charge dipindah jadi entrinya sendiri (`[BL-097]`) — satu-satunya yang tersisa, dan ia bukan tentang pajak.
   > **SELESAI 2026-08-28 — kedelapan keputusan di bawah sudah terpasang.** Lihat `[SCHEMA] Pajak Masuk ke Kasir — Uang Transaksi Berhenti Jadi Satu Angka (BL-065)` di `docs/CHANGELOG.md`. Tenant bisa menyalakan pajak (bawaan mati), memilih mode sekali, dan struknya mencetak pembagiannya — layar, termal, dan mobile.
   >
   > **SELESAI 2026-08-29 — butir (e) mendarat.** Lihat `[ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e)` di `docs/CHANGELOG.md`. Laporan harian dan bulanan memisahkan omzet sebelum pajak, pajak terpungut, dan yang dibayar pelanggan; unduhan CSV bulanan mendapat kolom pajak per tanggal. Labelnya diambil dari transaksinya, bukan dari setelan tenant hari ini.
@@ -22,7 +22,7 @@
   >
   > **SELESAI 2026-08-29 — jalan buka kunci butir 4.** Lihat `[ADDITION] Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4)` di `docs/CHANGELOG.md`. Operator membuka lewat rincian tenant di konsol platform dengan alasan tertulis; jendelanya tujuh hari dan habis sekali pakai. Yang dibuka adalah kuncinya — panel platform tidak pernah menulis setelan pajak siapa pun.
   >
-  > **DIARSIPKAN 2026-08-30.** Pajaknya selesai seluruhnya; yang menahan entri ini tetap terbuka bukan lagi pajak, melainkan dua pertanyaan yang menempel padanya karena kebetulan ditemukan saat mengerjakannya. Keduanya dipindah jadi entri sendiri — `[BL-097]` (service charge) dan `[BL-098]` (harga modal historis di `ProfitService`) — supaya "Open" tidak kehilangan artinya dengan menahan pekerjaan yang sudah tuntas.
+  > **DIARSIPKAN 2026-08-30.** Pajaknya selesai seluruhnya; yang menahan entri ini tetap terbuka bukan lagi pajak, melainkan service charge yang menempel padanya karena kebetulan terlihat saat mengerjakannya. Ia dipindah jadi `[BL-097]` supaya "Open" tidak kehilangan artinya dengan menahan pekerjaan yang sudah tuntas.
 - **Prioritas:** Medium (naik ke High bila ada calon klien yang wajib memungut PPN)
 - **Batas lingkup — ditegaskan pemilik 2026-08-28:**
   Entri ini **hanya** tentang pajak pada transaksi **tenant → pembeli di kasir**. Pajak atas tagihan **platform → tenant** (`invoices`, langganan SaaS) **tidak termasuk** dan sengaja tidak dibahas: fiturnya diutamakan ada di klien, bukan di akun platform. Jangan menyelundupkan PPN langganan ke dalam pekerjaan ini — dasar hukum, siapa yang memungut, dan tabelnya semuanya berbeda.
@@ -77,7 +77,7 @@
 - **Yang sengaja dibiarkan terbuka:**
   - **Service charge ditunda** → dipindah jadi `[BL-097]` pada 2026-08-30. Aman ditunda justru karena tarif dibekukan per transaksi: kolom yang lahir belakangan dengan default 0 tidak merusak transaksi lama.
   - ~~**`app/Services/ProfitService.php:37` belum diputuskan.**~~ **Terjawab 2026-08-29:** margin dihitung dari `subtotal_amount`, dengan `revenue` tetap berarti yang dibayar pelanggan dan `net_revenue` ditambahkan di sebelahnya. Rincian per produk ikut dikoreksi untuk mode inclusive. Dijawab **berbeda** dari dasar penagihan (butir 7), persis seperti yang dibolehkan di sini.
-  - **`ProfitService` masih memakai harga modal HARI INI** → dipindah jadi `[BL-098]` pada 2026-08-30. Bukan soal pajak sama sekali; ia hanya ikut terlihat saat dasar margin diputuskan.
+  - **`ProfitService` masih memakai harga modal HARI INI**, bukan `transaction_items.cost_price_at_sale` yang sudah dibekukan per baris sejak `[BL-018]`. Terlihat saat dasar margin diputuskan 2026-08-29 dan sengaja **tidak** dijadikan entri sendiri (keputusan pemilik 2026-08-30): rumahnya adalah docblock `ProfitService`, yang sudah mencatatnya sebagai keterbatasan yang diketahui.
 
 ### [BL-095] Cold Start Offline Membuka POS yang Tidak Pernah Bisa Menjual — Katalog Tertahan Selamanya di Kerangka
 - **Ditemukan:** 2026-08-26 (spike Tahap 1 `[BL-016]`)
