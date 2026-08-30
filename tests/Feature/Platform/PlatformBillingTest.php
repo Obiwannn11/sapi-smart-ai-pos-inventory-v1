@@ -11,6 +11,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\Billing\InvoiceSettlement;
+use Illuminate\Support\Carbon;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -284,6 +285,19 @@ test('alasannya ikut terbaca tenant di halaman langganannya sendiri', function (
 // --- Verifikasi ---
 
 test('menerima pembayaran mengaktifkan tenant dan mengunci harganya', function () {
+    // Tanggalnya dipatok ke pertengahan bulan, dan itu bukan hiasan. Factory
+    // langganan menurunkan `billing_anchor_day` dari `now()->addMonthNoOverflow()`
+    // — dijalankan pada tanggal 31, jangkarnya lahir SUDAH terjepit jadi 30,
+    // sementara `now()->addMonthsNoOverflow(2)` di bawah tetap mengira 31.
+    // Keduanya hanya berselisih pada tanggal yang memaksa penjepitan.
+    //
+    // Yang diuji di sini bukan penjepitan itu — melainkan bahwa verifikasi
+    // mengaktifkan tenant, mengunci harga, dan menyambung periode. Penjepitan
+    // punya penjaganya sendiri di `SubscriptionBillingDateTest` (`[BL-030]`),
+    // jadi tanggal netral di sini menjauhkan tes ini dari perkara yang bukan
+    // urusannya.
+    Carbon::setTestNow('2026-08-15 09:00:00');
+
     ['platformUser' => $platformUser, 'tenant' => $tenant, 'subscription' => $subscription] = platformBillingContext();
 
     $invoice = Invoice::factory()->awaitingVerification()->create([
