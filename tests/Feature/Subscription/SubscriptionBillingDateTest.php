@@ -199,3 +199,43 @@ test('the three-month track switch distance does not overflow on the 31st', func
 
     expect($subscription->fresh()->track_changed_at->toDateString())->toBe('2025-11-30');
 });
+
+// ── Periode `Y-m` diurai tanpa memungut tanggal hari ini ─────────────────────
+
+test('pricingAsOf does not borrow the day of month from today', function () {
+    // `createFromFormat('Y-m', ...)` mengisi satuan yang tidak disebut
+    // formatnya dari HARI INI, termasuk tanggalnya. Dijalankan pada tanggal 31
+    // atas bulan berisi 30 hari, `2026-06` menjadi `2026-06-31` yang tidak ada,
+    // lalu dinormalkan Carbon jadi `2026-07-01` — dan `startOfMonth()`
+    // sesudahnya hanya merapikan bulan yang SALAH.
+    //
+    // Yang ditagihkan karenanya bukan sekadar tanggal yang meleset: titik ini
+    // adalah waktu penetapan harga, jadi tagihan Juni akan dihargai dengan
+    // aturan yang baru berdiri di bulan Juli.
+    Carbon::setTestNow('2026-08-31 09:00:00');
+
+    expect(SubscriptionService::pricingAsOf('2026-06')->toDateTimeString())
+        ->toBe('2026-06-01 00:00:00');
+
+    // Februari adalah bentuk terparahnya — tiga hari meleset, bukan satu.
+    expect(SubscriptionService::pricingAsOf('2026-02')->toDateTimeString())
+        ->toBe('2026-02-01 00:00:00');
+});
+
+test('pricingAsOf is the same date whatever day it is asked', function () {
+    // Penjaga di atas dipatok pada tanggal 31 supaya gagal setiap hari, bukan
+    // sekali dalam dua belas. Yang ini menjawab pertanyaan sebaliknya: titik
+    // penetapan harga sebuah periode tidak boleh bergantung pada kapan ia
+    // ditanyakan sama sekali — penerbit otomatis dan penerbit manual di
+    // `Platform\InvoiceController` menanyakannya pada hari yang berbeda.
+    $jawaban = collect(['2026-08-01', '2026-08-15', '2026-08-30', '2026-08-31'])
+        ->map(function (string $hari): string {
+            Carbon::setTestNow($hari.' 12:00:00');
+
+            return SubscriptionService::pricingAsOf('2026-06')->toDateTimeString();
+        })
+        ->unique();
+
+    expect($jawaban)->toHaveCount(1)
+        ->and($jawaban->first())->toBe('2026-06-01 00:00:00');
+});

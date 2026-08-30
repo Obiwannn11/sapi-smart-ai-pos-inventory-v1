@@ -248,3 +248,47 @@ test('batas retensi tidak bergeser sebulan pada tanggal 31', function () {
     expect(TenantMonthlyMetric::where('tenant_id', $tenant->id)->where('period', $diBatas)->exists())
         ->toBeTrue();
 });
+
+/**
+ * Cabang `--period` meluber dengan cara yang BERBEDA dari dua penjaga di atas,
+ * dan itu sebabnya ia lolos selama ini: bukan `subMonth()` yang salah urutan,
+ * melainkan `createFromFormat('Y-m', ...)` yang memungut satuan tak tersebut
+ * dari HARI INI — termasuk tanggalnya. Pada tanggal 31, `2026-06` menjadi
+ * `2026-06-31` yang tidak ada, dinormalkan jadi `2026-07-01`, dan
+ * `startOfMonth()` sesudahnya hanya merapikan bulan yang salah.
+ *
+ * Yang ditulis karenanya adalah omzet bulan lain di bawah periode yang diminta
+ * — dan angka itu masukan bracket harga Adaptif.
+ */
+test('--period tidak memungut tanggal hari ini saat dijalankan pada tanggal 31', function () {
+    $this->travelTo(Carbon\Carbon::parse('2026-07-31 10:00:00'));
+
+    ['tenant' => $tenant, 'owner' => $owner] = makeMetricContext();
+
+    makeSale($tenant, $owner, 400000, Transaction::STATUS_COMPLETED, Carbon\Carbon::parse('2026-06-10'));
+    makeSale($tenant, $owner, 900000, Transaction::STATUS_COMPLETED, Carbon\Carbon::parse('2026-07-10'));
+
+    artisan('subscriptions:compute-revenue', ['--period' => '2026-06'])->assertSuccessful();
+
+    // Periodenya benar, DAN angkanya diambil dari bulan itu — bukan sekadar
+    // label yang benar di atas omzet bulan sebelahnya.
+    $metric = TenantMonthlyMetric::where('tenant_id', $tenant->id)->sole();
+
+    expect($metric->period)->toBe('2026-06')
+        ->and((float) $metric->revenue)->toBe(400000.0);
+});
+
+test('--period atas Februari tidak meleset tiga hari ke bulan berikutnya', function () {
+    // Bentuk terparahnya: 31 − 28 = tiga hari luberan, jadi `2026-02` mendarat
+    // di Maret, bukan sekadar menyerempet tanggal 1.
+    $this->travelTo(Carbon\Carbon::parse('2026-07-31 10:00:00'));
+
+    ['tenant' => $tenant, 'owner' => $owner] = makeMetricContext();
+
+    makeSale($tenant, $owner, 250000, Transaction::STATUS_COMPLETED, Carbon\Carbon::parse('2026-02-14'));
+
+    artisan('subscriptions:compute-revenue', ['--period' => '2026-02'])->assertSuccessful();
+
+    expect(TenantMonthlyMetric::where('tenant_id', $tenant->id)->pluck('period')->all())
+        ->toBe(['2026-02']);
+});

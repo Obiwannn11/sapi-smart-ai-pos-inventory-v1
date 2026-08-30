@@ -89,11 +89,19 @@ class ComputeTenantMonthlyRevenue implements ShouldQueue
      * − 1 bulan = 31 Juni yang tidak ada, dinormalkan Carbon jadi 1 Juli — dan
      * job ini akan menghitung bulan BERJALAN, persis yang dilarang kalimat di
      * atas. Lihat [BL-029].
+     *
+     * Cabang `--period` meluber dengan cara yang BERBEDA, dan peringatan di
+     * atas tidak menutupinya. `createFromFormat('Y-m', ...)` mengisi satuan
+     * yang tidak disebut formatnya dari **hari ini**, termasuk tanggalnya:
+     * dijalankan pada tanggal 31, `2026-06` jadi `2026-06-31` yang tidak ada,
+     * lalu dinormalkan jadi `2026-07-01`. `startOfMonth()` sesudahnya sudah
+     * terlambat — ia merapikan bulan yang salah. Tanggalnya karena itu ditulis
+     * eksplisit (`-01`), sama seperti `Owner\ReportController`.
      */
     private static function periodOrLastClosedMonth(?string $period): Carbon
     {
         return $period !== null
-            ? Carbon::createFromFormat('Y-m', $period)->startOfMonth()
+            ? Carbon::createFromFormat('Y-m-d', $period.'-01')->startOfMonth()
             : now()->startOfMonth()->subMonth();
     }
 

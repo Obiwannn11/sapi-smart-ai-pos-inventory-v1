@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-31 | HOTFIX | Langganan | Periode `Y-m` Berhenti Memungut Tanggal Hari Ini — Tagihan Juni Tidak Lagi Dihargai Aturan Juli |
 | 2026-08-31 | DECISION | Frontend | Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094) |
 | 2026-08-29 | ADDITION | Platform | Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4) |
 | 2026-08-29 | DECISION | Profit | Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065) |
@@ -222,6 +223,37 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Periode `Y-m` Berhenti Memungut Tanggal Hari Ini — Tagihan Juni Tidak Lagi Dihargai Aturan Juli
+- **Tanggal:** 2026-08-31
+- **Fase Terkait:** Di Luar Fase — ditemukan saat `[BL-094]` dikerjakan, dari lima tes yang gagal dan **tidak** disebabkan olehnya
+- **Dampak:** Service | Job | Test
+- **Breaking Change:** Tidak. Yang berubah hanya cara satu string `YYYY-MM` diurai; pada 28 dari 31 hari hasilnya memang sudah sama.
+- **Deskripsi:** `Carbon::createFromFormat('Y-m', $period)` diganti `Carbon::createFromFormat('Y-m-d', $period.'-01')` di dua tempat: `SubscriptionService::pricingAsOf()` dan `ComputeTenantMonthlyRevenue::periodOrLastClosedMonth()`.
+- **Alasan:** `createFromFormat` mengisi satuan yang **tidak disebut formatnya** dari hari ini — termasuk tanggalnya. Dijalankan pada tanggal 31 atas bulan berisi 30 hari, `2026-06` menjadi `2026-06-31` yang tidak ada, dinormalkan Carbon jadi `2026-07-01`. `startOfMonth()` yang menyusul sudah terlambat: ia merapikan bulan yang **salah**.
+
+  ```
+  // pada 2026-08-31
+  Carbon::createFromFormat('Y-m', '2026-06')->startOfMonth()  =>  2026-07
+  ```
+
+- **Ini bukan tes yang rewel, dan itu bagian terpentingnya.** Keduanya jalur uang:
+  - `pricingAsOf()` adalah **titik waktu penetapan harga** sebuah periode tagihan, dipakai bersama oleh penerbit otomatis dan penerbit manual di `Platform\InvoiceController`. Meleset ke bulan berikutnya berarti tagihan Juni dihargai dengan aturan harga yang baru berdiri di bulan Juli — persis yang docblock-nya sendiri berjanji tidak akan terjadi ("aturan yang mulai berlaku di tengah bulan tidak boleh mengubah harga bulan yang sudah berjalan").
+  - `periodOrLastClosedMonth()` menentukan bulan yang dihitung `subscriptions:compute-revenue --period`. Barisnya masuk `tenant_monthly_metrics`, dan tabel itu masukan bracket harga Adaptif — jadi perhitungan ulang yang dijalankan pada tanggal 31 menulis omzet bulan lain di bawah label periode yang diminta.
+- **Ironinya: luberan ini sudah pernah dipikirkan, di berkas yang sama.** Docblock tepat di atas `periodOrLastClosedMonth()` memperingatkan `[BL-029]` dengan gamblang — "31 Juli − 1 bulan = 31 Juni yang tidak ada" — dan menyuruh `startOfMonth()` dulu baru `subMonth()`. Peringatan itu benar, dan ia hanya menutupi cabang `now()`. Cabang `--period` di baris berikutnya meluber lewat mekanisme yang berbeda, dan lolos justru karena peringatannya terlihat sudah menjaga tempat itu.
+- **`Owner\ReportController` sudah memakai bentuk yang benar sejak awal** (`'Y-m-d', $month.'-01'`). Ketiga situs pengurai periode di basis kode ini kini seragam; yang lain hanya mem-`format('Y-m')` ke luar, dan arah itu tidak pernah meluber.
+- **Empat penjaga baru, seluruhnya dipatok tanggalnya.** Cacat ini hidup selama sebelas bulan setiap tahun karena tesnya memakai `now()`: ia hanya gagal pada tanggal 31, dan hanya untuk bulan yang lebih pendek. Yang baru memakai `travelTo`/`setTestNow` ke 31 Juli, jadi gagal **setiap hari** bila cacatnya kembali — bukan sekali dalam dua belas. Salah satunya menguji Februari, bentuk terparahnya: luberannya tiga hari, jadi periodenya mendarat di Maret. Keempatnya **dibuktikan gagal lebih dulu** dengan mengembalikan `createFromFormat('Y-m', ...)`.
+- **Yang diperiksa dan sengaja TIDAK diubah:** tes lama `periode bisa dipilih untuk menghitung ulang bulan tertentu` dibiarkan apa adanya. Ia tetap bergantung `now()`, tapi bukan lagi satu-satunya yang menjaga tempat itu — dan mengubahnya berarti kehilangan satu tes yang memang menjalankan jalur ini pada tanggal sungguhan.
+- **Kelima tes yang gagal itu ternyata bukan satu cacat, melainkan dua — dan yang kelima BUKAN cacat produksi.** Empat di antaranya jatuh dari luberan `Y-m` di atas. Yang kelima (`PlatformBillingTest`) jatuh karena `SubscriptionFactory` menurunkan `billing_anchor_day` dari `now()->addMonthNoOverflow()`: dijalankan pada tanggal 31, jangkarnya lahir **sudah terjepit** jadi 30, sementara harapan tesnya (`now()->addMonthsNoOverflow(2)`) tetap mengira 31. Kode penerbitnya benar untuk jangkar 30; yang keliru adalah pintasan di tesnya. Jamnya dipatok ke tanggal netral, karena yang diuji berkas itu adalah verifikasi-mengaktifkan-mengunci — penjepitan sudah punya penjaganya sendiri di `SubscriptionBillingDateTest` (`[BL-030]`). Dipisahkan supaya tidak terbaca seolah tagihan pernah salah karenanya: tidak pernah.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `pricingAsOf()`
+  - `app/Jobs/ComputeTenantMonthlyRevenue.php` — `periodOrLastClosedMonth()`
+  - `tests/Feature/Subscription/SubscriptionBillingDateTest.php` — 2 tes baru
+  - `tests/Feature/Subscription/ComputeTenantMonthlyRevenueTest.php` — 2 tes baru, di bagian `[BL-029]` yang sudah ada
+  - `tests/Feature/Platform/PlatformBillingTest.php` — jam dipatok; tidak ada kode produksi yang berubah karenanya
+- **Catatan Migrasi:** Tidak ada migrasi. **Namun baris `tenant_monthly_metrics` yang pernah ditulis `--period` pada tanggal 31 berisi omzet bulan yang salah** dan tidak diperbaiki sendiri oleh perubahan ini. Jalankan ulang `php artisan subscriptions:compute-revenue --period YYYY-MM` untuk periode yang dicurigai; `updateOrCreate` akan menimpanya dengan angka yang benar. Jadwal bulanan otomatis tidak terdampak — ia memakai cabang `now()`, yang tidak pernah punya cacat ini.
 
 ---
 

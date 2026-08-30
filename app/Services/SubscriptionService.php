@@ -85,10 +85,16 @@ class SubscriptionService
      * `Platform\InvoiceController` memakai titik waktu yang sama. Dua tanggal
      * penetapan harga yang berbeda akan melahirkan dua nominal untuk periode
      * yang sama, dan yang menang tinggal soal siapa yang menekan tombol.
+     *
+     * Tanggalnya ditulis eksplisit (`-01`), dan itu bukan kerapian belaka:
+     * `createFromFormat('Y-m', ...)` mengisi satuan yang tidak disebut
+     * formatnya dari **hari ini**. Dijalankan pada tanggal 31 atas bulan
+     * berisi 30 hari, `2026-06` meluber jadi `2026-07-01` — dan tagihan Juni
+     * akan dihargai dengan aturan yang baru berdiri di bulan Juli.
      */
     public static function pricingAsOf(string $period): Carbon
     {
-        return Carbon::createFromFormat('Y-m', $period)->startOfMonth();
+        return Carbon::createFromFormat('Y-m-d', $period.'-01')->startOfMonth();
     }
 
     /**
