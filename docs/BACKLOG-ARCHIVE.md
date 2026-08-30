@@ -10,6 +10,34 @@
 
 ## Daftar Entri
 
+### [BL-094] `eager: true` Menyatukan 56 Halaman Vue Jadi Satu Bundel untuk Pengguna yang Sudah Masuk
+- **Ditemukan:** 2026-08-24 (butir (c) `[BL-091]`, sengaja dipisahkan saat entri itu dikerjakan)
+- **Sumber:** Butir (c) `[BL-091]` — "layak ditinjau terpisah, dan bukan bagian dari entri ini"
+- **Status:** **Selesai 2026-08-31** — butir (a), (b), dan (c) seluruhnya dikerjakan. Lihat `[DECISION] Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094)` di `docs/CHANGELOG.md`.
+  > **Hasilnya, diukur pada build nyata:** entry 1.136 KB → **264 KB** (−77%), 56 chunk halaman. Halaman terberat (`Owner/Dashboard`) 493 KB / 15 permintaan; median 309 KB / 11; rata-rata 9,6 permintaan.
+  >
+  > **Butir (b) menjawab kekhawatirannya sendiri:** "56 permintaan kecil" tidak terjadi — paling banyak 15, dimuat paralel lewat `__vitePreload`. Halaman terberat pun hanya 43% dari bundel lama.
+  >
+  > **Butir (c) diperiksa dan `delay: 500` sengaja TIDAK diubah.** Inertia menunggu `resolve` sebelum menukar halaman, jadi unduhan chunk kini di dalam jendela bilah — pada cache dingin kerangka pemuatan tidak lagi yang pertama sampai. Kesimpulannya tetap: puluhan milidetik pada sambungan wajar, dan pada sambungan lambat bilah itu memang yang dibutuhkan. Yang diubah komentarnya, supaya alasan "jarang terlihat" tidak bertumpu pada keadaan yang sudah tidak berlaku.
+  >
+  > **Mode offline diperiksa terpisah dan tidak rusak** — `sw.js` cache-first `/build/assets/**` tanpa precache, jadi chunk POS ikut ter-cache pada muat online yang sama dengan HTML-nya. `CACHE_VERSION` tidak dinaikkan.
+- **Prioritas:** Low — sesudah `[BL-091]`, tak seorang pun yang belum punya akun menanggungnya lagi. Yang tersisa hanya ongkos muat pertama bagi pengguna yang memang akan memakai aplikasinya
+- **Area Terdampak:**
+  - `resources/js/app.js:8` — `import.meta.glob('./Pages/**/*.vue', { eager: true })`
+  - `vite.config.js` — tidak ada pemecahan chunk yang disetel sendiri hari ini
+  - `public/build/assets/app-*.js` — **1.117 KB** dalam satu berkas
+- **Deskripsi:**
+  `eager: true` membuat Vite mengompilasi seluruh 56 halaman ke dalam bundel entry alih-alih memecahnya jadi chunk per halaman. Kasir yang seharian hanya membuka satu layar tetap mengunduh panel platform, laporan, dan langganan pada muat pertama.
+
+  Menggantinya dengan glob malas (`{ eager: false }` + `resolvePageComponent`) memecah bundelnya per halaman — keuntungan nyata, tapi ia mengubah **cara setiap halaman dimuat**: resolusi komponen jadi asinkron, dan tiap perpindahan halaman menambah satu permintaan jaringan yang sebelumnya tidak ada.
+- **Kenapa dipisah dari `[BL-091]`:** yang di sana penghapusan tanpa risiko — satu argumen `@vite` dicabut, tidak ada perilaku yang berubah. Yang ini perubahan perilaku pemuatan pada **setiap** halaman aplikasi, dan pantas diuji sendiri alih-alih menumpang commit yang tidak menanggung risikonya.
+- **Usulan Perbaikan:**
+  **(a)** Pakai `resolvePageComponent` dari `laravel-vite-plugin/inertia-helpers` dengan glob malas, bukan merakit `import()` sendiri.
+  **(b)** Ukur sesudahnya, jangan diasumsikan: catat ukuran entry dan jumlah chunk sebelum/sesudah. Pemecahan chunk yang menghasilkan 56 permintaan kecil pada sambungan lambat bisa lebih buruk daripada satu bundel besar yang sudah di-cache.
+  **(c)** Perhatikan bilah kemajuan `[BL-037]` (`delay: 500`): resolusi asinkron menambah jeda yang sebelumnya nol, dan alasan bilah itu "jarang terlihat" ditulis dari keadaan yang sekarang akan berubah.
+
+---
+
 ### [BL-065] Pajak/PPN — Dari Nol Kata di Basis Kode Sampai Terpungut, Tercetak, Terlapor, dan Bisa Dibuka Kuncinya
 - **Ditemukan:** 2026-08-08
 - **Sumber:** Saran pasca-peragaan — "pajak + PPN, mode munculkan include atau tidak untuk ke pelanggan (misal harga dijual include PPN atau ditanggung customer)"

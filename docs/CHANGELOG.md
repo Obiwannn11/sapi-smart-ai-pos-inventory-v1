@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-31 | DECISION | Frontend | Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094) |
 | 2026-08-29 | ADDITION | Platform | Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4) |
 | 2026-08-29 | DECISION | Profit | Margin Diukur terhadap Pendapatan Toko, Bukan terhadap Pajak yang Menumpang di Atasnya (BL-065) |
 | 2026-08-29 | ADDITION | Laporan | Pajak Terpungut Punya Angkanya Sendiri di Laporan (BL-065 Butir e) |
@@ -221,6 +222,41 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094)
+- **Tanggal:** 2026-08-31
+- **Fase Terkait:** Di Luar Fase — `[BL-094]`, yaitu butir (c) `[BL-091]` yang sengaja dipisahkan saat entri itu dikerjakan. Entrinya selesai
+- **Dampak:** Frontend | Build | Test
+- **Breaking Change:** Tidak ada perubahan API, rute, maupun data. Yang berubah adalah **cara setiap halaman dimuat** — resolusi komponen kini asinkron — dan itu diperlakukan sebagai perubahan perilaku, bukan sebagai optimasi diam-diam.
+- **Deskripsi:** `resources/js/app.js` berpindah dari `import.meta.glob('./Pages/**/*.vue', { eager: true })` ke glob malas dengan `resolvePageComponent` dari `laravel-vite-plugin/inertia-helpers`. Vite memecah 56 halaman jadi chunk masing-masing, dan entry-nya turun dari **1.136 KB jadi 264 KB** (−77%).
+- **Alasan:** `[BL-091]` sudah membebaskan pengunjung yang belum punya akun dari bundel itu. Yang tersisa ditanggung pengguna yang sudah masuk: kasir yang seharian hanya membuka satu layar tetap mengunduh panel platform, laporan, dan langganan pada muat pertama.
+
+- **Butir (b) entrinya dijalankan apa adanya: diukur, bukan diasumsikan.** Entrinya memperingatkan bahwa 56 permintaan kecil pada sambungan lambat bisa lebih buruk daripada satu bundel besar yang sudah di-cache. Angka sebenarnya sesudah build (`public/build/manifest.json`, ukuran mentah, entry + seluruh graf impor statis halamannya):
+
+  | | Sebelum | Sesudah |
+  |---|---|---|
+  | Entry | 1.136 KB (1 berkas) | 264 KB (1 berkas, tanpa impor statis) |
+  | Halaman teringan | 1.136 KB / 1 permintaan | 266 KB / 2 permintaan (`Auth/VerifyEmail`) |
+  | Halaman median | 1.136 KB / 1 permintaan | 309 KB / 11 permintaan (`Owner/Stock/Movements`) |
+  | Halaman terberat | 1.136 KB / 1 permintaan | 493 KB / 15 permintaan (`Owner/Dashboard`) |
+  | Rata-rata permintaan | 1 | 9,6 |
+
+  Angka "sebelum" adalah build yang ada di disk tepat sebelum perubahan ini (`app-TcvBsAwx.js`, 1.162.860 byte). `[BL-091]` dan `[BL-094]` menyebut 1.117 KB — itu pengukuran build yang lebih lama, dan bundelnya memang terus tumbuh selama ia masih menampung setiap halaman baru. Perbedaannya bukan koreksi; ia justru memperlihatkan sifat bundel yang tidak dipecah.
+
+  Kekhawatiran "56 permintaan" tidak terjadi: paling banyak **15**, rata-rata **9,6**, dan Vite memuatnya paralel lewat `__vitePreload`, bukan berantai. Halaman **terberat** pun hanya 43% dari bundel lama.
+
+- **Butir (c) — bilah kemajuan `[BL-037]` — diperiksa, dan `delay: 500` sengaja TIDAK diubah.** Inertia menunggu `resolve` selesai sebelum menukar halaman (`CurrentPage.resolve()` di `@inertiajs/core`), jadi unduhan chunk kini berada **di dalam** jendela bilah itu. Konsekuensi yang nyata: pada cache dingin kerangka pemuatan tidak lagi yang pertama sampai — ia baru berdiri sesudah chunk-nya tiba. Yang tidak berubah adalah kesimpulannya: pada sambungan wajar tambahannya puluhan milidetik dan bilah tetap tak sempat lahir, sedangkan pada sambungan lambat bilah inilah yang memang dibutuhkan. Yang diubah adalah **komentarnya**, supaya alasan "jarang terlihat" tidak lagi bertumpu pada keadaan yang sudah tidak berlaku.
+- **Mode offline diperiksa terpisah, dan tidak rusak.** `public/sw.js` melayani `/build/assets/**` secara cache-first tanpa daftar precache, jadi chunk halaman masuk `ASSET_CACHE` pada muat online pertamanya — syarat yang sama persis dengan HTML halamannya sendiri di `PAGE_CACHE`. Satu-satunya rute yang memang offline-capable (`/cashier/pos`) menarik 17 berkas, dan seluruhnya sudah ter-cache saat halaman itu terakhir dibuka online. `CACHE_VERSION` **tidak dinaikkan**: nama berkasnya ber-hash, jadi tidak ada entri lama yang menunjuk berkas yang hilang.
+- **Diverifikasi di peramban terhadap hasil build, bukan dev server.** `public/hot` disingkirkan supaya `@vite` merender berkas ber-hash. Login → `Owner/Dashboard` (halaman terberat, 15 chunk) → perpindahan Inertia ke `Owner/Products` → `Cashier/POS`: seluruhnya mount, kerangka pemuatan tetap muncul, **nol error konsol**. Perpindahan ke `Owner/Products` menarik 4 chunk baru secara paralel.
+- **Penjaganya dibuktikan gagal lebih dulu.** `eager: true` dikembalikan ke globnya, tes ditolak di baris yang benar dengan pesan yang menyebut jalan keluarnya, lalu keadaan dikembalikan. Ini bentuk kemunduran yang paling mungkin terjadi: satu kata yang disalin kembali, tanpa satu pun error dan tanpa satu pun halaman rusak — persis cara `[BL-091]` bertahan berbulan-bulan.
+- **Dua dari tiga penjaganya membaca hasil build, dan sengaja melewati diri bila `public/build` belum ada.** `.gitignore` mengecualikannya, jadi checkout bersih tidak punya apa pun untuk diperiksa. Yang menahan kemunduran di segala keadaan adalah penjaga sumbernya — yang membaca `resources/js/app.js` langsung dan selalu berjalan.
+- **Keadaan tes saat entri ini mendarat, ditulis apa adanya: 1.295 lolos, 5 gagal — dan kelimanya BUKAN dari perubahan ini.** Seluruhnya di jalur langganan/tagihan (`PlatformBillingTest`, `AutoInvoiceTest`, `ComputeTenantMonthlyRevenueTest`, `InvoicePostponementTest`), dan entri ini tidak menyentuh satu baris PHP pun — yang berubah hanya `resources/js/app.js`, tiga berkas dokumentasi, dan satu berkas tes baru. Penyebabnya ditemukan saat ditelusuri, dan ia cacat produksi, bukan tes yang rewel: `ComputeTenantMonthlyRevenue::periodOrLastClosedMonth()` memakai `Carbon::createFromFormat('Y-m', $period)`, yang mengisi tanggalnya dari **hari ini**. Dijalankan pada tanggal 31 atas bulan berisi 30 hari, `2026-06` meluber jadi `2026-07-01` dan `startOfMonth()` menghasilkan **Juli**. Jadi `--period 2026-06` pada tanggal 31 menghitung bulan yang salah, dan angkanya adalah masukan bracket harga Adaptif. Ironinya, docblock tepat di atas metode itu sudah memperingatkan luberan yang sama untuk cabang `now()`-nya. Dicatat terpisah, bukan ditambal di sini — ia utang milik jalur tagihan, dan menumpangkannya pada commit frontend justru menyembunyikannya.
+- **File Terdampak:**
+  - `resources/js/app.js` — glob malas + `resolvePageComponent`; komentar `progress` `[BL-037]` diperbarui untuk model pemuatan yang baru
+  - `tests/Feature/AppBundleSplittingTest.php` — **baru**, 3 tes: sumber `app.js` tidak eager, tiap halaman punya chunk sendiri di manifest, entry tidak melewati anggaran 400 KB
+- **Catatan Migrasi:** Tidak ada. `npm run build` wajib dijalankan ulang saat deploy — sudah ada di `.github/workflows/deploy.yml`. Nama berkasnya ber-hash, jadi tidak ada cache peramban maupun service worker yang perlu dibatalkan manual.
 
 ---
 

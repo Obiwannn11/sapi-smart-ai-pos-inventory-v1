@@ -118,27 +118,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Kenapa tidak ikut mendarat bersama `[BL-087]`:** jalur unggahnya menuntut direktori sendiri, mekanisme klaim berkas, dan **kebijakan retensi**. Yang terakhir belum pernah diputuskan untuk foto bukti mana pun — `[BL-075]` mendarat tanpa retensi dan `[BL-076]` masih memegang persoalan penyimpanannya. Menyelipkan satu jalur unggah lagi berarti menambah satu tumpukan berkas yang tak seorang pun tahu kapan boleh dihapus.
 - **Usulan Perbaikan:** kolom `proof_path` nullable pada `cash_drawer_movements`, tombol unggah opsional di modal pencatatan, dan pratinjaunya di daftar persetujuan pemilik — **setelah** retensi berkas bukti diputuskan di `[BL-076]`.
 
-### [BL-094] `eager: true` Menyatukan 56 Halaman Vue Jadi Satu Bundel untuk Pengguna yang Sudah Masuk
-- **Ditemukan:** 2026-08-24 (butir (c) `[BL-091]`, sengaja dipisahkan saat entri itu dikerjakan)
-- **Sumber:** Butir (c) `[BL-091]` — "layak ditinjau terpisah, dan bukan bagian dari entri ini"
-- **Status:** Open
-- **Prioritas:** Low — sesudah `[BL-091]`, tak seorang pun yang belum punya akun menanggungnya lagi. Yang tersisa hanya ongkos muat pertama bagi pengguna yang memang akan memakai aplikasinya
-- **Area Terdampak:**
-  - `resources/js/app.js:8` — `import.meta.glob('./Pages/**/*.vue', { eager: true })`
-  - `vite.config.js` — tidak ada pemecahan chunk yang disetel sendiri hari ini
-  - `public/build/assets/app-*.js` — **1.117 KB** dalam satu berkas
-- **Deskripsi:**
-  `eager: true` membuat Vite mengompilasi seluruh 56 halaman ke dalam bundel entry alih-alih memecahnya jadi chunk per halaman. Kasir yang seharian hanya membuka satu layar tetap mengunduh panel platform, laporan, dan langganan pada muat pertama.
-
-  Menggantinya dengan glob malas (`{ eager: false }` + `resolvePageComponent`) memecah bundelnya per halaman — keuntungan nyata, tapi ia mengubah **cara setiap halaman dimuat**: resolusi komponen jadi asinkron, dan tiap perpindahan halaman menambah satu permintaan jaringan yang sebelumnya tidak ada.
-- **Kenapa dipisah dari `[BL-091]`:** yang di sana penghapusan tanpa risiko — satu argumen `@vite` dicabut, tidak ada perilaku yang berubah. Yang ini perubahan perilaku pemuatan pada **setiap** halaman aplikasi, dan pantas diuji sendiri alih-alih menumpang commit yang tidak menanggung risikonya.
-- **Usulan Perbaikan:**
-  **(a)** Pakai `resolvePageComponent` dari `laravel-vite-plugin/inertia-helpers` dengan glob malas, bukan merakit `import()` sendiri.
-  **(b)** Ukur sesudahnya, jangan diasumsikan: catat ukuran entry dan jumlah chunk sebelum/sesudah. Pemecahan chunk yang menghasilkan 56 permintaan kecil pada sambungan lambat bisa lebih buruk daripada satu bundel besar yang sudah di-cache.
-  **(c)** Perhatikan bilah kemajuan `[BL-037]` (`delay: 500`): resolusi asinkron menambah jeda yang sebelumnya nol, dan alasan bilah itu "jarang terlihat" ditulis dari keadaan yang sekarang akan berubah.
-
----
-
 ### [BL-081] Omzet Penentu Tarif Masih Terikat Bulan Kalender, Bukan Jendela yang Selalu Penuh
 - **Ditemukan:** 2026-08-20 (saat memilih opsi butir (b) `[BL-080]`; pemilik sempat mencondong ke sini sebelum ongkos persetujuan ulangnya terlihat)
 - **Sumber:** `[BL-080]` butir (b) opsi **(iv-b)**, sengaja tidak diambil dan dipisah supaya tidak hilang bersama entri yang ditutup
@@ -554,6 +533,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-094` | `eager: true` menyatukan 56 halaman Vue jadi satu bundel entry 1,1 MB untuk pengguna yang sudah masuk | 2026-08-31 (butir (a), (b), (c). Entry 1.136 KB → 264 KB; diukur, bukan diasumsikan — paling banyak 15 permintaan per halaman, bukan 56. `delay: 500` bilah kemajuan sengaja tidak diubah, hanya alasannya yang ditulis ulang) | `[DECISION] Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094)` |
 | `BL-065` | Pajak/PPN — nol kata di basis kode, sampai terpungut, tercetak, terlapor, dan bisa dibuka kuncinya | 2026-08-29 (butir (a)–(f) + kedelapan keputusan. Service charge dipisah jadi `[BL-097]`) | `[SCHEMA] Pajak Masuk ke Kasir…`, `[ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan…`, `[DECISION] Margin Diukur terhadap Pendapatan Toko…`, `[ADDITION] Kunci Pajak Punya Jalan Bukanya…` (BL-065) |
 | `BL-095` | Cold start offline membuka POS yang tidak pernah bisa menjual — katalog tertahan selamanya di kerangka | 2026-08-26 (butir (a), (c), (d); butir (b) ditolak sadar karena akan memperlihatkan harga basi ke kasir yang sedang online. Pendengar `success` + penyelidik 60 detik ikut mendarat sebagai jalan pulang yang belum pernah ada) | `[HOTFIX] Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096)` |
 | `BL-096` | Cold start offline di `/` berujung halaman buntu — tidak ada jalan menuju POS | 2026-08-26 (butir (a); butir (c) tidak dikerjakan karena (a) sudah menutupnya dengan lebih murah, butir (b) menunggu `[BL-016]`. `CACHE_VERSION` naik ke v4 — tanpa itu perbaikannya tidak akan pernah sampai ke pemasangan yang sudah ada) | `[HOTFIX] Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096)` |
