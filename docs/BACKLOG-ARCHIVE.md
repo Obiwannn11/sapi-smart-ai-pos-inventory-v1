@@ -10,6 +10,38 @@
 
 ## Daftar Entri
 
+### [BL-051] Tenant yang Sudah Ditangguhkan Tidak Punya Tagihan untuk Dibayar
+- **Ditemukan:** 2026-08-07 (saat meninjau `renewPeriod()` × `[BL-044]`)
+- **Sumber:** Telaah, bukan laporan — sisi lain dari lubang masa tenggang yang ditutup 2026-08-07
+- **Status:** **Selesai 2026-08-31** — keputusan pemilik jatuh pada **opsi (ii)**. Lihat `[ADDITION] Tenant yang Ditangguhkan Punya Jalan Pulang — Satu Tagihan Pemulihan, Diminta Sendiri (BL-051)` di `docs/CHANGELOG.md`.
+- **Prioritas saat dibuka:** Low (belum ada satu pun tenant `suspended`); akan naik ke Medium begitu tenant pertama benar-benar tertangguh. Dikerjakan sebelum hari itu tiba — justru karena hari itu adalah hari terburuk untuk menemukan bahwa jalan pulangnya tidak ada.
+- **Area Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`, daftar status yang ikut ditagih
+  - `app/Services/SubscriptionService.php` — `renewPeriod()`, aturan "tunggakan tidak ditumpuk"
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`, satu-satunya jalan keluar hari ini
+- **Deskripsi:**
+  Penerbit otomatis menagih tenant `trial`, `active`, dan (sejak 2026-08-07) `grace`. `suspended` sengaja di luar: aksesnya sudah tertutup penuh, dan menerbitkan tagihan atas bulan yang tidak bisa dipakai berarti menumbuhkan utang yang tidak pernah diminta siapa pun.
+  Konsekuensinya baru terlihat dari sisi tenant yang ingin **kembali**. Sekali tertangguh tanpa tagihan terbuka — misalnya tagihannya pernah ditolak lalu kedaluwarsa, atau ia tertangguh sebelum tarifnya pernah ditetapkan — tidak ada apa pun yang bisa ia bayar untuk pulih. `current_period_end` beku, penerbit tidak menyentuhnya, dan satu-satunya pintu adalah pemilik SaaS mengetikkan tagihannya manual di `/platform/invoices`. Itu persis keadaan yang `[BL-044]` tutup, hanya bergeser satu status ke kanan.
+  Yang membuat ini keputusan dan bukan cacat: kedua jawabannya masuk akal dan berbeda artinya. Menagih otomatis berarti tenant yang sudah pergi tetap menerima tagihan bulanan. Tidak menagih berarti tenant yang ingin kembali harus menghubungi manusia lebih dulu.
+- **Usulan Perbaikan:**
+  **(a)** Putuskan mana yang berlaku: (i) tetap manual — pemulihan memang lewat percakapan, dan itu wajar untuk basis tenant sekecil ini; (ii) tombol "aktifkan kembali" di halaman langganan yang menerbitkan **satu** tagihan pemulihan atas permintaan tenant sendiri; atau (iii) penerbitan otomatis penuh seperti `grace`. Opsi (ii) paling dekat dengan bentuk yang sudah ada — ia meminjam alur `UpgradeController`, dan tagihannya lahir karena tenant memintanya, bukan karena kalender.
+  **(b)** Apa pun pilihannya, **jangan** menerbitkan satu tagihan per bulan yang terlewat. Aturan "tunggakan tidak ditumpuk" di `renewPeriod()` memulihkan tepat satu periode ke depan per pembayaran; begitu ada dua tagihan langganan terbuka untuk satu tenant, melompati periode berarti benar-benar melompati uang, dan kedua aturan itu mulai bertabrakan. Ditinjau ulang 2026-08-07 dan dinyatakan aman **justru karena** penerbit tidak pernah melahirkan tagihan kedua — lihat docblock `renewPeriod()`.
+- **Keputusan pemilik 2026-08-31 — opsi (ii), dan apa yang ikut diputuskan bersamanya:**
+  **Yang dipilih:** tombol "Minta tagihan pemulihan" di halaman langganan, hanya untuk owner, hanya saat tenant berstatus `suspended`. Tagihannya lahir karena tenant memintanya, bukan karena kalender — itu seluruh perbedaannya dari opsi (iii), yang akan membuat tenant yang **sudah pergi** terus menerima tagihan bulanan seumur hidup.
+
+  **Butir (b) ditegakkan tanpa penjaga baru.** Tagihan pemulihan memakai `current_period_end` yang beku, jadi kunci `(tenant_id, period, kind)`-nya sama persis dengan yang sudah dijaga penerbit massal — penjaga periode-ganda yang ada menolak tagihan kedua tanpa perlu tahu dari mana yang pertama datang. Satu pelanggaran tetap satu tagihan; satu pembayaran tetap satu periode. Docblock `renewPeriod()` diperbarui: ia dulu menyebut "penerbitan yang ikut berjalan untuk tenant `suspended`" sebagai salah satu dari dua hal yang bisa mematahkan aturan "tunggakan tidak ditumpuk", dan sekarang menjelaskan kenapa yang ini justru tidak.
+
+  **Opsi (i) tidak dibuang — ia jadi jalur untuk tiga keadaan yang memang bukan soal uang.** Tombolnya menolak, dengan kalimatnya masing-masing, saat tarifnya tak bisa dihitung, totalnya nol, atau ringkasan omzet penentu tarif Adaptif belum ada. Tenant di keadaan itu tidak punya angka apa pun untuk ditransfer, jadi tak ada tagihan yang bisa menjawabnya; ia diarahkan menghubungi pengelola. Yang **tidak** dilakukan: menerbitkan tagihan dari paket penampung supaya tombolnya selalu berhasil — itu menagih tenant subsidi dengan tarif termahal karena sebuah cron gagal.
+
+  **Daftar status di `issueDuePeriodInvoices()` TIDAK dilonggarkan,** dan itu disengaja. Alasan aslinya masih berlaku sepenuhnya: menerbitkan tagihan atas bulan yang tidak bisa dipakai berarti menumbuhkan utang yang tidak pernah diminta siapa pun. Menambahkan `Tenant::STATUS_SUSPENDED` ke saringan itu akan mengembalikan tepat keadaan yang entri ini tolak, dan docblock-nya kini mengatakannya dengan kalimat itu juga.
+
+  **Satu refactor yang dituntut oleh lahirnya penerbit kedua:** urutan tarif → seat → kuota AI → pecahan `billing_breakdown` diangkat jadi `draftSubscriptionInvoice()`, dipakai kedua penerbit. Dua penerbit yang menyalin urutan itu pasti bercabang begitu salah satunya diperbaiki, dan cabang di jalur uang adalah jenis kesalahan yang paling lama tidak terlihat.
+
+  **Belum pernah dilihat di layar sungguhan** — tidak ada tenant `suspended` di basis data dev, persis alasan entri ini berprioritas Low sejak dibuka. Yang membuktikannya sepuluh tes di `tests/Feature/Subscription/ReactivationTest.php`, termasuk lingkaran penuhnya: minta → bayar → `active` dengan periode yang mendarat di masa depan.
+- **Entri terkait di `CHANGELOG.md`:** `[ADDITION] Tenant yang Ditangguhkan Punya Jalan Pulang — Satu Tagihan Pemulihan, Diminta Sendiri (BL-051)`
+
+---
+
 ### [BL-094] `eager: true` Menyatukan 56 Halaman Vue Jadi Satu Bundel untuk Pengguna yang Sudah Masuk
 - **Ditemukan:** 2026-08-24 (butir (c) `[BL-091]`, sengaja dipisahkan saat entri itu dikerjakan)
 - **Sumber:** Butir (c) `[BL-091]` — "layak ditinjau terpisah, dan bukan bagian dari entri ini"
@@ -1097,7 +1129,7 @@ Umur tagihan terbuka ditetapkan **per hari**: 24 jam setelah transaksinya tercat
   - `SubscriptionService::trialChoice()` — kartu dua jalur di dashboard owner, terbuka `trial_choice_lead_days` (14) hari sebelum masa coba habis. **Tujuh hari lebih awal daripada penerbitan tagihan, dan selisih itu inti butirnya:** tagihan pertama terbit H-7 dan nominalnya beku di sana, jadi pilihan yang tiba di hari yang sama tidak bermuara ke mana pun. Sesudah H-7 kartunya tidak hilang — `first_invoice_issued` berbalik dan kalimatnya berganti jadi "berlakunya pada tagihan berikutnya".
   - Kelayakannya ditanyakan ke `adaptiveVerdict()`, bukan diperiksa ulang: tenant yang layak melihat dua jalur berikut perkiraan tarif adaptifnya, yang tidak layak melihat satu jalur berikut sebabnya. Kartunya tetap muncul bagi keduanya — tenant yang tidak layak justru paling perlu tahu bahwa masa gratisnya berujung tagihan.
   - **Cacat yang ditemukan saat mengerjakannya dan ikut diperbaiki:** perkiraan Harga Adaptif dibandingkan terhadap `effectivePrice()`, yang bagi tenant masa coba adalah **Rp 0** — sehingga setiap tenant masa coba dijawab "Harga Tetap masih lebih menguntungkan". Pembandingnya kini `comparisonPriceFor()` (tarif paket tujuan setelah masa coba), diperbaiki serentak di dashboard, `/langganan`, dan `/langganan/harga-adaptif`.
-  - **Yang tersisa dan sengaja di luar entri ini:** tarif jalur Harga Tetap masih menunggu `[BL-041]`(a); pemulihan tenant `suspended` masih terbuka di `[BL-051]`. Kartunya sendiri belum pernah dilihat di layar sungguhan — tidak ada tenant berstatus `trial` di basis data dev.
+  - **Yang tersisa dan sengaja di luar entri ini:** tarif jalur Harga Tetap masih menunggu `[BL-041]`(a); pemulihan tenant `suspended` masih terbuka di `[BL-051]` — **ditutup 2026-08-31 dengan opsi (ii)**, tombol tagihan pemulihan yang diminta tenant sendiri. Kartunya sendiri belum pernah dilihat di layar sungguhan — tidak ada tenant berstatus `trial` di basis data dev.
 
 ---
 

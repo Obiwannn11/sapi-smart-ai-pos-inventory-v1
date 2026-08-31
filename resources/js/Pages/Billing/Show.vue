@@ -35,6 +35,10 @@ const props = defineProps({
     // Kelas harga jalur Harga Tetap ([BL-041](b)). `null` untuk tenant jalur
     // Harga Adaptif — mereka sudah punya `subsidy.bracket`.
     classification: { type: Object, default: null },
+    // Jalan keluar dari penangguhan ([BL-051] opsi (ii)). `null` untuk tenant
+    // yang tidak ditangguhkan — panel yang menjelaskan pemulihan kepada orang
+    // yang tidak butuh dipulihkan hanya menimbulkan kecemasan.
+    reactivation: { type: Object, default: null },
 });
 
 /**
@@ -387,6 +391,30 @@ const revokeSubsidy = () => {
     });
 };
 
+// --- Aktifkan kembali ([BL-051] opsi (ii)) ---
+const reactivateForm = useForm({});
+
+const requestReactivation = () => {
+    reactivateForm.post('/langganan/aktifkan-kembali', { preserveScroll: true });
+};
+
+// Kalimat untuk tenant ditangguhkan yang TIDAK bisa menekan tombolnya. Ketiga
+// keadaannya punya jalan keluar yang berbeda, jadi ketiganya dapat kalimatnya
+// sendiri — "tidak bisa sekarang" saja akan membuat tenant menunggu sesuatu yang
+// tidak akan datang sendiri.
+const reactivationBlockedNote = computed(() => {
+    if (!props.reactivation || props.reactivation.available) return null;
+
+    switch (props.reactivation.status) {
+        case 'already_invoiced':
+            return 'Tagihan yang harus diselesaikan sudah ada di daftar Tagihan di bawah. Bayar tagihan itu, dan akses Anda terbuka kembali.';
+        case 'not_ready':
+            return 'Tarif periode ini belum bisa dihitung karena ringkasan omzet penentunya belum tersedia. Hubungi pengelola layanan — kami tidak menerbitkan tagihan dengan angka yang belum tentu benar.';
+        default:
+            return 'Tarif langganan Anda belum ditetapkan, jadi belum ada tagihan yang bisa diterbitkan. Hubungi pengelola layanan untuk membuka kembali akun Anda.';
+    }
+});
+
 const invoiceStatusLabels = {
     unpaid: 'Belum dibayar',
     awaiting_verification: 'Menunggu diperiksa',
@@ -424,6 +452,59 @@ const invoiceStatusLabels = {
 
                 <p v-if="trialDaysLeft !== null" class="mt-3 text-sm font-medium text-foreground tabular-nums">
                     Sisa {{ trialDaysLeft }} hari
+                </p>
+            </div>
+
+            <!--
+                Jalan keluar dari penangguhan ([BL-051] opsi (ii)).
+
+                Letaknya tepat di bawah kartu keadaan, bukan di dekat daftar
+                tagihan: tenant yang sampai di halaman ini karena aplikasinya
+                tertutup sedang mencari satu hal saja, dan menaruhnya sepuluh
+                gulungan ke bawah di antara panel kursi dan kuota AI berarti
+                menyembunyikan satu-satunya tindakan yang tersisa baginya.
+
+                Tagihannya lahir karena tenant memintanya, bukan karena
+                kalender — itu seluruh perbedaan opsi (ii) dari penagihan
+                otomatis, dan kalimat di bawah menyebutnya terus terang supaya
+                tombolnya tidak terbaca sebagai "tagih saya lagi".
+            -->
+            <div v-if="reactivation" class="mt-4 rounded-xl border border-border bg-card px-5 py-5">
+                <p class="text-sm font-medium text-foreground">Aktifkan kembali langganan</p>
+
+                <template v-if="reactivation.available">
+                    <p class="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+                        Saat ini tidak ada tagihan yang menunggu, jadi tidak ada yang bisa Anda bayar untuk pulih.
+                        Minta tagihan pemulihannya di sini — satu tagihan untuk satu periode, bukan satu untuk tiap
+                        bulan yang terlewat. Begitu pembayarannya masuk, akses terbuka kembali dan data Anda tetap
+                        seperti semula.
+                    </p>
+
+                    <button
+                        v-if="tenant.is_owner"
+                        type="button"
+                        :disabled="reactivateForm.processing"
+                        class="mt-3 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                        @click="requestReactivation"
+                    >
+                        {{ reactivateForm.processing ? 'Menerbitkan...' : 'Minta tagihan pemulihan' }}
+                    </button>
+
+                    <!--
+                        Staf melihat panelnya tapi tidak tombolnya, dan diberi
+                        tahu siapa yang bisa menekannya. Halaman ini sengaja
+                        terbuka untuk semua pengguna tenant; kasir yang mendarat
+                        di sini tanpa keterangan apa pun akan mengira aplikasinya
+                        rusak, bukan bahwa langganannya menunggu keputusan
+                        pemiliknya.
+                    -->
+                    <p v-else class="mt-3 text-xs text-muted-foreground leading-relaxed">
+                        Yang bisa meminta tagihan pemulihan adalah pemilik usaha ini.
+                    </p>
+                </template>
+
+                <p v-else class="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+                    {{ reactivationBlockedNote }}
                 </p>
             </div>
 

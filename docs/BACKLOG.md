@@ -192,23 +192,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **Satu hal yang ditemukan saat mengerjakannya dan belum pernah tercatat:** `app/Http/Controllers/Owner/Settings/BusinessProfileController.php` sudah memvalidasi `business_type` sebagai `required`, sementara pendaftaran menerima kosong — **wajib saat diubah, opsional saat dibuat.** Ketidakkonsistenan ini dibiarkan sadar, karena menyeragamkannya berarti menjawab pertanyaan yang sedang ditahan. Jangan "dirapikan" tanpa keputusan.
 - **Entri terkait di `CHANGELOG.md`:** `[DECISION] Jenis Usaha Tetap Opsional, tapi Bawaannya Berhenti Ditebakkan Diam-diam (BL-079)`
 
-### [BL-051] Tenant yang Sudah Ditangguhkan Tidak Punya Tagihan untuk Dibayar
-- **Ditemukan:** 2026-08-07 (saat meninjau `renewPeriod()` × `[BL-044]`)
-- **Sumber:** Telaah, bukan laporan — sisi lain dari lubang masa tenggang yang ditutup 2026-08-07
-- **Status:** Open — **butuh keputusan pemilik**, bukan pekerjaan kode
-- **Prioritas:** Low sekarang (belum ada satu pun tenant `suspended`); naik ke Medium begitu tenant pertama benar-benar tertangguh
-- **Area Terdampak:**
-  - `app/Services/SubscriptionService.php` — `issueDuePeriodInvoices()`, daftar status yang ikut ditagih
-  - `app/Services/SubscriptionService.php` — `renewPeriod()`, aturan "tunggakan tidak ditumpuk"
-  - `app/Http/Controllers/Platform/InvoiceController.php` — `store()`, satu-satunya jalan keluar hari ini
-- **Deskripsi:**
-  Penerbit otomatis menagih tenant `trial`, `active`, dan (sejak 2026-08-07) `grace`. `suspended` sengaja di luar: aksesnya sudah tertutup penuh, dan menerbitkan tagihan atas bulan yang tidak bisa dipakai berarti menumbuhkan utang yang tidak pernah diminta siapa pun.
-  Konsekuensinya baru terlihat dari sisi tenant yang ingin **kembali**. Sekali tertangguh tanpa tagihan terbuka — misalnya tagihannya pernah ditolak lalu kedaluwarsa, atau ia tertangguh sebelum tarifnya pernah ditetapkan — tidak ada apa pun yang bisa ia bayar untuk pulih. `current_period_end` beku, penerbit tidak menyentuhnya, dan satu-satunya pintu adalah pemilik SaaS mengetikkan tagihannya manual di `/platform/invoices`. Itu persis keadaan yang `[BL-044]` tutup, hanya bergeser satu status ke kanan.
-  Yang membuat ini keputusan dan bukan cacat: kedua jawabannya masuk akal dan berbeda artinya. Menagih otomatis berarti tenant yang sudah pergi tetap menerima tagihan bulanan. Tidak menagih berarti tenant yang ingin kembali harus menghubungi manusia lebih dulu.
-- **Usulan Perbaikan:**
-  **(a)** Putuskan mana yang berlaku: (i) tetap manual — pemulihan memang lewat percakapan, dan itu wajar untuk basis tenant sekecil ini; (ii) tombol "aktifkan kembali" di halaman langganan yang menerbitkan **satu** tagihan pemulihan atas permintaan tenant sendiri; atau (iii) penerbitan otomatis penuh seperti `grace`. Opsi (ii) paling dekat dengan bentuk yang sudah ada — ia meminjam alur `UpgradeController`, dan tagihannya lahir karena tenant memintanya, bukan karena kalender.
-  **(b)** Apa pun pilihannya, **jangan** menerbitkan satu tagihan per bulan yang terlewat. Aturan "tunggakan tidak ditumpuk" di `renewPeriod()` memulihkan tepat satu periode ke depan per pembayaran; begitu ada dua tagihan langganan terbuka untuk satu tenant, melompati periode berarti benar-benar melompati uang, dan kedua aturan itu mulai bertabrakan. Ditinjau ulang 2026-08-07 dan dinyatakan aman **justru karena** penerbit tidak pernah melahirkan tagihan kedua — lihat docblock `renewPeriod()`.
-
 ---
 
 ### [BL-073] Puncak Seat yang Tak Pernah Turun Menahan Tenant Musiman di Bracket Adaptif yang Lebih Mahal
@@ -551,6 +534,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-051` | Tenant suspended tidak punya tagihan untuk dibayar — bagaimana ia keluar dari situ? | 2026-08-31 (keputusan pemilik: **opsi (ii)** — tombol "aktifkan kembali" yang menerbitkan SATU tagihan pemulihan atas permintaan tenant. Butir (b) ditegakkan lewat periode beku, bukan lewat penjaga baru. Opsi (i) tetap berlaku untuk tenant yang tarifnya tak bisa dihitung) | `[ADDITION] Tenant yang Ditangguhkan Punya Jalan Pulang — Satu Tagihan Pemulihan, Diminta Sendiri (BL-051)` |
 | `BL-094` | `eager: true` menyatukan 56 halaman Vue jadi satu bundel entry 1,1 MB untuk pengguna yang sudah masuk | 2026-08-31 (butir (a), (b), (c). Entry 1.136 KB → 264 KB; diukur, bukan diasumsikan — paling banyak 15 permintaan per halaman, bukan 56. `delay: 500` bilah kemajuan sengaja tidak diubah, hanya alasannya yang ditulis ulang) | `[DECISION] Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094)` |
 | `BL-065` | Pajak/PPN — nol kata di basis kode, sampai terpungut, tercetak, terlapor, dan bisa dibuka kuncinya | 2026-08-29 (butir (a)–(f) + kedelapan keputusan. Service charge dipisah jadi `[BL-097]`) | `[SCHEMA] Pajak Masuk ke Kasir…`, `[ADDITION] Pajak Terpungut Punya Angkanya Sendiri di Laporan…`, `[DECISION] Margin Diukur terhadap Pendapatan Toko…`, `[ADDITION] Kunci Pajak Punya Jalan Bukanya…` (BL-065) |
 | `BL-095` | Cold start offline membuka POS yang tidak pernah bisa menjual — katalog tertahan selamanya di kerangka | 2026-08-26 (butir (a), (c), (d); butir (b) ditolak sadar karena akan memperlihatkan harga basi ke kasir yang sedang online. Pendengar `success` + penyelidik 60 detik ikut mendarat sebagai jalan pulang yang belum pernah ada) | `[HOTFIX] Kasir Offline Berhenti Menunggu Katalog yang Tidak Akan Pernah Datang (BL-095, BL-096)` |

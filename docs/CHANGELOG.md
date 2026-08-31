@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-08-31 | ADDITION | Langganan | Tenant yang Ditangguhkan Punya Jalan Pulang — Satu Tagihan Pemulihan, Diminta Sendiri (BL-051) |
 | 2026-08-31 | HOTFIX | Langganan | Periode `Y-m` Berhenti Memungut Tanggal Hari Ini — Tagihan Juni Tidak Lagi Dihargai Aturan Juli |
 | 2026-08-31 | DECISION | Frontend | Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094) |
 | 2026-08-29 | ADDITION | Platform | Kunci Pajak Punya Jalan Bukanya — Operator Membuka Kuncinya, Bukan Setelannya (BL-065 Butir 4) |
@@ -223,6 +224,33 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Tenant yang Ditangguhkan Punya Jalan Pulang — Satu Tagihan Pemulihan, Diminta Sendiri (BL-051)
+- **Tanggal:** 2026-08-31
+- **Fase Terkait:** Di Luar Fase — `[BL-051]`, dibuka 2026-08-07 sebagai **keputusan pemilik**, bukan pekerjaan kode. Keputusannya jatuh 2026-08-31: **opsi (ii)**.
+- **Dampak:** Service | Controller | Route | UI | Test
+- **Breaking Change:** Tidak. Tak ada perilaku lama yang berubah; yang ada hanyalah satu jalan yang sebelumnya tidak pernah ada.
+- **Deskripsi:** Tenant berstatus `suspended` kini bisa meminta sendiri satu tagihan pemulihan lewat tombol di halaman langganan. Tagihannya lahir karena tenant memintanya, bukan karena kalender; melunasinya membawa tenant kembali ke `active` lewat jalur pelunasan yang sudah ada.
+- **Masalah yang ditutupnya.** Penerbit otomatis menagih `trial`, `active`, dan `grace`; `suspended` sengaja di luar, karena menerbitkan tagihan atas bulan yang tak bisa dipakai berarti menumbuhkan utang yang tak pernah diminta siapa pun. Konsekuensinya hanya terlihat dari **arah sebaliknya**: sekali tertangguh tanpa tagihan terbuka — buktinya pernah ditolak lalu tak pernah diselesaikan, atau ia tertangguh sebelum tarifnya pernah ditetapkan — tak ada apa pun yang bisa ia bayar untuk pulih. `current_period_end` beku, penerbit tak menyentuhnya, dan satu-satunya pintu adalah pemilik SaaS mengetikkan tagihannya manual di `/platform/invoices`. Itu persis keadaan yang `[BL-044]` tutup, hanya bergeser satu status ke kanan.
+- **Kenapa opsi (ii), bukan (i) atau (iii).** Ketiganya masuk akal dan artinya berbeda. Penerbitan otomatis penuh (iii) berarti tenant yang **sudah pergi** terus menerima tagihan bulanan seumur hidup — utang yang tumbuh di belakang punggung orang yang tak pernah memintanya. Tetap manual (i) berarti setiap tenant yang ingin kembali harus menghubungi manusia lebih dulu. Opsi (ii) meminjam bentuk yang sudah ada di aplikasi ini — tenant menekan sesuatu, tagihannya terbit — dan memindahkan pemicunya dari kalender ke tenant itu sendiri.
+- **SATU tagihan, dan penjaganya bukan niat baik.** `[BL-051]`(b) melarang menerbitkan satu tagihan per bulan yang terlewat, karena aturan "tunggakan tidak ditumpuk" di `renewPeriod()` memulihkan tepat satu periode per pembayaran: begitu ada dua tagihan langganan terbuka, melompati periode berarti benar-benar melompati uang. Yang menegakkannya di sini bukan kode baru melainkan pilihan periodenya — tagihan pemulihan memakai `current_period_end` yang **beku**, sehingga kunci `(tenant_id, period, kind)`-nya sama persis dengan yang sudah dijaga penerbit massal, dan penjaga periode-ganda menolak yang kedua. Docblock `renewPeriod()` sendiri menyebut "penerbitan yang ikut berjalan untuk tenant `suspended`" sebagai salah satu dari dua hal yang bisa mematahkan aturan itu; docblock-nya diperbarui untuk menjelaskan kenapa yang ini justru tidak.
+- **Pemulihannya tidak ditulis dua kali.** `InvoiceSettlement::settle()` sudah membawa tenant ke `active` dan memajukan periodenya — satu-satunya pintu menuju keadaan itu. Tak ada satu baris pun di jalur baru ini yang menulis `Tenant::STATUS_ACTIVE`; menambah jalur kedua berarti tenant bisa pulih tanpa uangnya masuk.
+- **Empat penolakan, empat kalimat berbeda.** Tombolnya mati — dan halaman menyebut alasannya — saat: tagihan periode itu sudah ada (termasuk yang `rejected`, yang masih bisa dibayar dan diunggahi bukti baru; tenantnya tidak buntu, ia hanya belum menyelesaikannya), tarifnya tidak bisa dihitung, totalnya nol, atau ringkasan omzet penentu tarif Adaptif belum ada. Tiga yang terakhir adalah tempat **opsi (i) tetap berlaku**: yang menghalangi tenant itu bukan uang, jadi tak ada tagihan yang bisa menjawabnya, dan ia diarahkan menghubungi pengelola. Keadaannya diputuskan di server dan dikirim ke halaman sebagai status — bukan boolean — supaya tombol yang mati tidak membuat tenant menebak, sama seperti `subsidy.reason` di halaman yang sama.
+- **Kesiapan ringkasan omzet diperiksa dengan alasan yang sama seperti di penerbit massal** (`[BL-080]`): tanpa ringkasan, penetapan harga menjatuhkan tenant Adaptif ke paket penampung, dan tagihan yang lahir di jalur itu bukan tagihan yang tertunda melainkan tagihan yang **terlalu mahal**. Menagih terlalu mahal seorang tenant yang baru saja meminta jalan pulang adalah arah kesalahan yang paling merugikan.
+- **Satu refactor yang dituntut oleh lahirnya penerbit kedua.** Urutan tarif → seat → kuota AI → pecahan `billing_breakdown` diangkat keluar dari `issueDuePeriodInvoices()` menjadi `draftSubscriptionInvoice()`, dipakai kedua penerbit. Yang dijaga bukan kerapian melainkan uang: dua penerbit yang menyalin urutan itu pasti bercabang begitu salah satunya diperbaiki, dan cabang di jalur uang adalah jenis kesalahan yang paling lama tidak terlihat. Yang **tidak** ikut diangkat adalah hal-hal yang memang berbeda antar penerbit — penghitung, jejak audit, pemberitahuan, dan pembedaan "tertunda" versus "lewat tenggat".
+- **Jejaknya menyebut siapa yang meminta.** `platform_user_id` selalu null pada kejadian ini — tak ada orang platform yang menekan tombolnya — jadi `invoices.reactivation` mencatat `requested_by`. Tanpa itu jejaknya menyisakan tagihan yang seolah lahir sendiri.
+- **Rutenya diberi nama `billing.reactivate`** supaya tercakup `ALWAYS_ALLOWED` di `EnsureSubscriptionActive`. Tanpa awalan itu, rutenya akan ditolak persis oleh keadaan yang hendak ia akhiri.
+- **Belum pernah dilihat di layar sungguhan.** Tidak ada satu pun tenant berstatus `suspended` di basis data dev — itu juga alasan `[BL-051]` berprioritas Low sejak dibuka. Yang membuktikannya sepuluh tes, termasuk lingkaran penuhnya: minta → bayar → `active` dengan periode yang mendarat di masa depan.
+- **File Terdampak:**
+  - `app/Services/SubscriptionService.php` — `issueReactivationInvoice()`, `reactivationStateFor()`, `draftSubscriptionInvoice()` (diangkat dari `issueDuePeriodInvoices()`); docblock `renewPeriod()` dan `issueDuePeriodInvoices()` diperbarui
+  - `app/Http/Controllers/Billing/ReactivationController.php` — baru
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `reactivation`
+  - `routes/web.php` — `POST /langganan/aktifkan-kembali`, digerbang `role:owner`
+  - `resources/js/Pages/Billing/Show.vue` — panel pemulihan, tepat di bawah kartu keadaan
+  - `tests/Feature/Subscription/ReactivationTest.php` — 10 tes baru
+- **Catatan Migrasi:** Tidak ada migrasi. Tenant `suspended` yang sudah punya tagihan terbuka tidak terpengaruh sama sekali — jalur ini hanya menyala ketika tidak ada yang bisa dibayar.
 
 ---
 

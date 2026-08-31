@@ -108,6 +108,13 @@ Route::middleware(['auth', 'tenant'])
             Route::post('/langganan/tagihan/{invoice}/bukti', [\App\Http\Controllers\Billing\UpgradeController::class, 'storeProof'])
                 ->name('proof.store');
 
+            // Permintaan tagihan pemulihan oleh tenant yang ditangguhkan
+            // (`[BL-051]` opsi (ii)). Namanya diawali `billing.` sehingga ikut
+            // tercakup ALWAYS_ALLOWED di EnsureSubscriptionActive — tanpa itu
+            // rutenya akan ditolak persis oleh keadaan yang hendak ia akhiri.
+            Route::post('/langganan/aktifkan-kembali', [\App\Http\Controllers\Billing\ReactivationController::class, 'store'])
+                ->name('reactivate');
+
             // Kuota AI tambahan (`[BL-069]`). Alurnya kembar dengan seat —
             // beli berlaku seketika, lepas berlaku satu periode ke depan — dan
             // pembatasnya sama: keputusan komersial, jadi owner saja.

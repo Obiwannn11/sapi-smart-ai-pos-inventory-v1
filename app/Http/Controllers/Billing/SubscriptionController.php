@@ -243,6 +243,16 @@ class SubscriptionController extends Controller
                 'enabled' => $gateways->has($configuredDriver = (string) config('subscription.payment.driver')),
                 'is_simulated' => $gateways->isSimulated($configuredDriver),
             ],
+            // Jalan keluar dari penangguhan (`[BL-051]` opsi (ii)). `null`
+            // untuk tenant yang tidak ditangguhkan — lihat
+            // `SubscriptionService::reactivationStateFor()`.
+            //
+            // Statusnya ikut, bukan cuma boleh/tidaknya, dengan alasan yang
+            // sama seperti `subsidy.reason` di atas: tombol yang mati tanpa
+            // sebab membuat tenant menebak, dan tenant yang seluruh
+            // aplikasinya sudah tertutup adalah yang paling tidak punya ruang
+            // untuk menebak.
+            'reactivation' => $subscriptions->reactivationStateFor($tenant),
         ]);
     }
 }
