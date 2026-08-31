@@ -142,7 +142,25 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Kapan ini layak dibuka lagi:**
   1. **Bila keluhan masa siap benar-benar muncul** dari tenant berjangkar awal bulan — bukan diperkirakan, melainkan terjadi. Saat itu alasan permintaan consent v2 bisa dijelaskan dengan jujur, dan itu jauh lebih mudah diterima daripada permintaan tanpa sebab yang terlihat.
   2. **Bila dokumen consent akan dinaikkan versinya untuk alasan lain.** Ongkos terbesar entri ini adalah persetujuan ulangnya; menumpangkannya pada versi yang memang sudah harus naik membuat ongkos itu nyaris hilang.
-- **Usulan Perbaikan bila dikerjakan:**
+- **Bila keluhannya benar-benar muncul, timbang (viii) LEBIH DULU — perbandingan yang tidak pernah dilakukan saat keputusannya diambil (ditambahkan 2026-08-31):**
+  Waktu `[BL-080]` butir (b) diputuskan, pertanyaan yang sedang dijawab masih **"omzet bulan mana yang dipakai"**. Di pertanyaan itu (iv-b) memang kandidat kuat dan (viii) terlihat seperti pengalihan pokok soal. Opsi (i) sudah menutup pertanyaan itu sepenuhnya — tidak ada lagi angka yang salah. Yang tersisa di entri ini pertanyaan yang **berbeda**: berapa hari peringatan yang didapat tenant berjangkar 1–7. Keduanya menjawab pertanyaan baru itu dengan penuh, tapi ongkosnya beda **jenis**, dan keduanya belum pernah disandingkan di halaman yang sama:
+
+  | | (iv-b) jendela 30 hari | (viii) bagian Adaptif ditagih di belakang |
+  |---|---|---|
+  | Masa siap jangkar 1–7 | kembali 7 hari | kembali 7 hari |
+  | Consent v2 + tanda tangan ulang | **wajib** | **tidak** — pengumpulannya tetap "sekali sebulan, setelah bulan berjalan tutup", persis kalimat yang sudah ditandatangani |
+  | Kalimat aturan `[BL-056]` + `README.md` | berubah | tetap |
+  | Bentuk `tenant_monthly_metrics` | `period` bukan lagi label bulan; retensi & `--period YYYY-MM` ikut terseret | tidak tersentuh |
+  | Ketergantungan tagihan pada data yang belum ada | tetap ada, hanya selalu kebetulan terpenuhi | **hilang total** — tagihan tidak pernah lagi butuh angka yang belum ditulis |
+  | Ongkos yang ditanggung | tanda tangan ulang; sebagian tenant tidak menyetujui lagi dan keluar dari keringanan yang dibuat untuk mereka | satu baris "koreksi bulan lalu" di tagihan berikutnya, dan pertanyaan dukungan pertama yang akan masuk karenanya |
+  | **Siapa yang menanggung** | **tenant** | **kita** |
+
+  Baris terakhir itu yang memutuskan. Ongkos (iv-b) dibayar oleh orang yang sedang kita bantu — mereka diminta menandatangani ulang pengumpulan data omzetnya demi memulihkan 1–6 hari pemberitahuan, dan sebagian akan menjawab tidak. Ongkos (viii) dibayar oleh kita, berupa satu baris tagihan yang harus bisa dijelaskan. Untuk menukar hal yang sama, ongkos yang jatuh ke pihak kita lebih pantas.
+
+  **Yang harus jujur disebut soal (viii), karena ia belum pernah ditulis di mana pun:** menagih di belakang memindahkan satu koreksi ke **ujung hubungan**. Tagihan pertama tenant tidak punya baris koreksi, dan tenant yang berhenti berlangganan meninggalkan satu koreksi terakhir yang tidak punya tagihan berikutnya untuk ditumpangi. Itu keputusan tersendiri — dihapuskan, atau diterbitkan sebagai tagihan penutup — dan harus dijawab sebelum (viii) dikerjakan, bukan ditemukan saat tenant pertama pergi. `SubsidyEstimator` juga tetap wajib ikut: tenant akan melihat perkiraan di layar lebih dulu, lalu koreksinya, dan dua angka untuk satu bulan yang tidak saling menjelaskan adalah aduan berikutnya.
+
+  **Yang TIDAK berubah dari keputusan 2026-08-20:** (viii) juga bukan alasan membuka entri ini sekarang. Kedua syarat pembuka di atas tetap berlaku apa adanya — yang berubah hanya **opsi mana yang ditimbang pertama** begitu syaratnya terpenuhi. Dan bila yang terpenuhi syarat nomor 2 (consent naik versi untuk alasan lain), urutannya berbeda lagi: di sana ongkos termahal sudah dibayar orang lain, dan yang layak dipertimbangkan **(iv)**, bukan (iv-b) — hanya (iv) yang benar-benar menghapus dua penanggalan yang berselisih, sementara (iv-b) menyisakannya dengan jendela yang kebetulan selalu penuh.
+- **Usulan Perbaikan bila (iv-b) yang dipilih:**
   **(a)** Naikkan versi consent dan tuliskan jendelanya apa adanya — "30 hari terakhir sebelum tagihan Anda terbit", bukan "bulan lalu". Kalimat yang lebih rapi daripada perilakunya adalah kalimat yang menyesatkan pembacanya sendiri.
   **(b)** `SubsidyEstimator` **wajib** ikut berubah di commit yang sama. Ia menghitung perkiraan yang dilihat tenant langsung dari bulan kalender lalu; tertinggal sedikit saja, tenant melihat satu angka di layar lalu ditagih dari angka lain.
   **(c)** Pertahankan `MonthlyMetricResolver::requiredPeriodFor()` sebagai satu-satunya tempat jendelanya didefinisikan. `MetricReadiness` membacanya dari sana, dan dua definisi yang berselisih hanya akan terlihat pada tagihan tenant.
