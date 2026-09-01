@@ -28,8 +28,10 @@ use Illuminate\Support\Str;
  * memotret lalu membatalkan modal meninggalkan berkas di `pending/`. Yang
  * membersihkannya `payment-proofs:prune-unclaimed`, dan ia HANYA menyentuh
  * `pending/` — foto yang sudah melekat pada pembayaran tidak pernah ia lihat.
- * Retensi foto yang sudah diklaim adalah keputusan produk yang sengaja belum
- * diambil (`[BL-075]`); ini sekadar kebersihan, bukan kebijakan.
+ * Retensi foto yang sudah diklaim SUDAH diputuskan: tanpa batas untuk
+ * sekarang, tanpa pembersihan otomatis (keputusan pemilik 2026-08-19 di
+ * `[BL-075]`). Jadi perintah di atas adalah kebersihan disk, BUKAN kebijakan
+ * retensi — keduanya sengaja tidak digabung.
  */
 class PaymentProofService
 {

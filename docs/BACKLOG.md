@@ -108,15 +108,20 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-093] Pencatatan Uang Keluar Laci Belum Bisa Dilampiri Foto Struk
 - **Ditemukan:** 2026-08-21 (dipecah dari `[BL-087]` saat fiturnya mendarat)
 - **Sumber:** Saran di dalam pembahasan `[BL-087]` — foto struk sebagai pelengkap alasan tertulis, disetujui pemilik bersama bentuk fiturnya
-- **Status:** Open — **terhalang keputusan retensi, bukan kodenya**
+- **Status:** Open — **tidak terhalang.** Sampai 2026-08-31 entri ini berstatus "terhalang keputusan retensi"; penghalang itu ternyata tidak ada (lihat KOREKSI di bawah)
 - **Prioritas:** Low — alasan tertulis sudah wajib dan sudah menutup sebagian besar gunanya; foto mengubah "katanya beli galon" jadi bisa diperiksa, dan itu berguna tapi bukan penentu
 - **Area Terdampak:**
   - `app/Services/PaymentProofService.php` — pola unggah-lalu-klaim yang bisa ditiru (`storePending()` / `claim()`), tapi seluruh `pathFor()`-nya terikat `TransactionPayment`
   - `app/Services/ProofFileService.php` — penyimpanan, thumbnail, dan penghapusannya sudah umum dan bisa dipakai apa adanya
   - `database/migrations/..._create_cash_drawer_movements_table.php` — belum punya kolom `proof_path`
 - **Deskripsi:** `[BL-087]` mewajibkan alasan tertulis, dan itu yang membedakan pencatatan dari uang yang hilang begitu saja. Yang belum ada: bukti yang bisa diperiksa. Untuk pengeluaran yang punya struk — galon, belanja bahan, parkir — foto mengubah keterangan jadi sesuatu yang bisa dicocokkan.
-- **Kenapa tidak ikut mendarat bersama `[BL-087]`:** jalur unggahnya menuntut direktori sendiri, mekanisme klaim berkas, dan **kebijakan retensi**. Yang terakhir belum pernah diputuskan untuk foto bukti mana pun — `[BL-075]` mendarat tanpa retensi dan `[BL-076]` masih memegang persoalan penyimpanannya. Menyelipkan satu jalur unggah lagi berarti menambah satu tumpukan berkas yang tak seorang pun tahu kapan boleh dihapus.
-- **Usulan Perbaikan:** kolom `proof_path` nullable pada `cash_drawer_movements`, tombol unggah opsional di modal pencatatan, dan pratinjaunya di daftar persetujuan pemilik — **setelah** retensi berkas bukti diputuskan di `[BL-076]`.
+- **Kenapa tidak ikut mendarat bersama `[BL-087]`:** jalur unggahnya menuntut direktori sendiri dan mekanisme klaim berkas — pekerjaan yang berdiri sendiri dan tidak ada hubungannya dengan rumus `expected_amount` yang jadi inti `[BL-087]`. Menyelipkannya berarti menahan fitur yang sudah selesai demi pelengkap yang tidak menentukan.
+- **KOREKSI 2026-08-31 — penghalang yang semula tercatat di sini tidak pernah ada.** Entri ini dibuat dengan alasan "kebijakan retensi belum pernah diputuskan untuk foto bukti mana pun" dan menunggu keputusan itu turun di `[BL-076]`. Dua-duanya keliru, dan keduanya sudah keliru sejak entri ini ditulis:
+  1. **Retensinya sudah diputuskan** — keputusan pemilik 2026-08-19 di dalam `[BL-075]` (`docs/BACKLOG-ARCHIVE.md`, "KEPUTUSAN PEMILIK 2026-08-19" butir 1): **tanpa batas untuk sekarang**, tidak ada pembersihan otomatis untuk foto yang sudah melekat. Yang punya perintah pembersih hanya berkas TERTUNDA yang tak pernah diklaim (`payment-proofs:prune-unclaimed`, harian, batas 24 jam), dan di sana ditulis tegas bahwa itu kebersihan disk, **bukan** kebijakan retensi.
+  2. **`[BL-076]` tidak memegang persoalan retensi.** Keempat usulannya soal **lokasi** berkas — `DISK` jadi konfigurasi, pemindahan berkas lama, alirkan byte vs URL bertanda tangan, dan larangan melonggarkan privasi. Tidak ada satu baris pun tentang berapa lama berkas disimpan. Menunggu retensi diputuskan di sana berarti menunggu selamanya.
+
+  Yang **memang** bertahan sebagai singgungan dengan `[BL-076]`: butir (c)-nya, "putuskan per jenis berkas, jangan satu kebijakan untuk semuanya". Foto struk galon tidak memuat nama dan nomor pelanggan seperti tangkapan layar e-wallet, jadi ia lebih dekat ke foto produk daripada ke bukti bayar `[BL-075]`. Itu keputusan saat `[BL-076]` dikerjakan, **bukan** syarat untuk menambah kolom di sini.
+- **Usulan Perbaikan:** kolom `proof_path` nullable pada `cash_drawer_movements`, tombol unggah opsional di modal pencatatan, dan pratinjaunya di daftar persetujuan pemilik. Presedennya sudah lengkap dan tinggal ditiru apa adanya: direktori sendiri di bawah disk privat, pola unggah-lalu-klaim, perintah pembersih untuk `pending/`-nya sendiri, dan retensi mengikuti kebijakan yang sama — tanpa batas untuk foto yang sudah melekat.
 
 ### [BL-081] Omzet Penentu Tarif Masih Terikat Bulan Kalender, Bukan Jendela yang Selalu Penuh
 - **Ditemukan:** 2026-08-20 (saat memilih opsi butir (b) `[BL-080]`; pemilik sempat mencondong ke sini sebelum ongkos persetujuan ulangnya terlihat)
