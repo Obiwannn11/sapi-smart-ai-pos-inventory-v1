@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
@@ -113,8 +114,13 @@ test('the new password must be confirmed', function () {
 
 // ── Halaman ──────────────────────────────────────────────────────────────────
 test('the reset pages are reachable by guests', function () {
-    get('/platform/forgot-password')->assertStatus(200);
-    get('/platform/reset-password/token-apa-saja')->assertStatus(200);
+    get('/platform/forgot-password')
+        ->assertStatus(200)
+        ->assertInertia(fn (Assert $page) => $page->component('Platform/ForgotPassword'));
+
+    get('/platform/reset-password/token-apa-saja')
+        ->assertStatus(200)
+        ->assertInertia(fn (Assert $page) => $page->component('Platform/ResetPassword'));
 });
 
 // ── Throttle ─────────────────────────────────────────────────────────────────

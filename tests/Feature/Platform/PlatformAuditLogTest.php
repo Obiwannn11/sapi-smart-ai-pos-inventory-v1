@@ -93,6 +93,7 @@ test('logs can be filtered by severity', function () {
     // Jejaknya ditunda ([BL-037]) — penyaringnya eager, barisnya menyusul.
     get('/platform/audit-logs?severity=sensitive')
         ->assertInertia(fn (Assert $page) => $page
+            ->component('Platform/AuditLogs/Index')
             ->missing('logs')
             ->loadDeferredProps(fn (Assert $reload) => $reload
                 ->where('logs.data', fn ($logs) => collect($logs)->every(fn ($log) => $log['severity'] === 'sensitive'))));

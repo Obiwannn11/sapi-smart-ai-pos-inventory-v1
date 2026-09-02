@@ -3,6 +3,7 @@
 use App\Models\PlatformAuditLog;
 use App\Models\PlatformUser;
 use App\Services\Platform\TotpService;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\delete;
@@ -110,6 +111,16 @@ test('kata sandi benar BELUM memasukkan akun yang berfaktor kedua', function () 
 
 test('layar kode kedua tidak bisa dibuka tanpa melewati kata sandi', function () {
     get('/platform/two-factor')->assertRedirect(route('platform.login'));
+});
+
+test('layar kode kedua terbuka setelah kata sandinya benar', function () {
+    ['user' => $user] = enrolledPlatformUser();
+
+    post('/platform/login', ['email' => $user->email, 'password' => 'rahasia-panjang']);
+
+    get('/platform/two-factor')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('Platform/TwoFactorChallenge'));
 });
 
 test('kode authenticator yang benar menyelesaikan login', function () {
@@ -315,5 +326,7 @@ test('halaman keamanan terbuka untuk staf platform tanpa modul apa pun', functio
     actingAs($staff, 'platform');
 
     // Keamanan akun sendiri bukan modul yang bisa dipegangkan atau ditahan.
-    get('/platform/keamanan/two-factor')->assertOk();
+    get('/platform/keamanan/two-factor')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('Platform/TwoFactorSetup'));
 });

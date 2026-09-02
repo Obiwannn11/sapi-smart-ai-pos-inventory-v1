@@ -76,6 +76,7 @@ test('tenant list exposes only whitelisted administrative fields', function () {
     actingAs($platformUser, 'platform')
         ->get('/platform/tenants')
         ->assertInertia(fn (Assert $page) => $page
+            ->component('Platform/Tenants/Index')
             // Daftarnya ditunda ([BL-037]); daftar putihnya diperiksa di
             // permintaan lanjutan yang membawa barisnya.
             ->missing('tenants')
@@ -115,6 +116,7 @@ test('platform dashboard exposes only administrative counts', function () {
     actingAs($platformUser, 'platform')
         ->get('/platform')
         ->assertInertia(fn (Assert $page) => $page
+            ->component('Platform/Dashboard')
             ->where('stats.tenant_count', 2)
             ->where('stats.user_count', 4)
             ->has('stats', fn (Assert $stats) => $stats->hasAll(['tenant_count', 'user_count']))

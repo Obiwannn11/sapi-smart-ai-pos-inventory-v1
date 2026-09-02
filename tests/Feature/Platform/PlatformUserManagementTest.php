@@ -128,6 +128,7 @@ test('the module catalog marks which modules have no page yet', function () {
     config()->set('platform-rbac.modules.pricing_rules.available', false);
 
     get('/platform/users')->assertInertia(fn (Assert $page) => $page
+        ->component('Platform/Users/Index')
         ->where('modules', fn ($modules) => collect($modules)->firstWhere('name', 'tenants')['available'] === true
             && collect($modules)->firstWhere('name', 'pricing_rules')['available'] === false));
 });

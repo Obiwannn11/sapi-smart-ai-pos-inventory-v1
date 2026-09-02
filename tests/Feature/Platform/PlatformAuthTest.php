@@ -4,6 +4,7 @@ use App\Models\PlatformAuditLog;
 use App\Models\PlatformUser;
 use App\Models\Tenant;
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
@@ -95,6 +96,12 @@ test('a look-alike destination outside the platform prefix is rejected', functio
         'email' => 'pemilik@sapi.test',
         'password' => 'rahasia123',
     ])->assertRedirect('/platform');
+});
+
+test('the platform login page is reachable by guests', function () {
+    get('/platform/login')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('Platform/Login'));
 });
 
 test('an already signed-in platform user reopening the login lands on the console', function () {
