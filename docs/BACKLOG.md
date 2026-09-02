@@ -105,6 +105,25 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
+### [BL-098] `Platform\InvoiceController::index()` Merender Halaman yang Sudah Tidak Ada, dan Tidak Ada Rute yang Bisa Memanggilnya
+- **Ditemukan:** 2026-09-02 (saat menambahkan asersi `->component()` untuk seluruh halaman Platform)
+- **Sumber:** Penyisiran cakupan tes lapisan tampilan — `Platform/Invoices/Index` satu-satunya halaman Platform yang tidak bisa dipatok namanya, dan sebabnya ternyata bukan pada tesnya
+- **Status:** Open
+- **Prioritas:** Low — hari ini tidak ada yang rusak justru karena tidak ada yang bisa memanggilnya. Yang dipertaruhkan kejujuran kode: 30 baris yang terbaca seperti fitur hidup, lengkap dengan query, paginasi, dan pencatatan audit
+- **Area Terdampak:**
+  - `app/Http/Controllers/Platform/InvoiceController.php:41-70` — `index()`, merender `Platform/Invoices/Index`
+  - `routes/web.php:628-629` — `Route::redirect('/invoices', '/platform/subscriptions')->name('invoices.index')`; alamat lamanya kini pengalihan, dan **tidak ada rute lain** yang menunjuk `index()`
+  - `resources/js/Pages/Platform/Invoices/` — **sudah tidak ada**, terhapus di `fc284f0` (2026-08-01, "give tenants a tabbed detail page, and the console one shape")
+- **Deskripsi:**
+  Daftar tagihan pindah ke halaman Langganan saat konsol platform diseragamkan; alamat lamanya sengaja dipertahankan sebagai pengalihan, dan komentar di `routes/web.php` menuliskan alasannya. Yang tertinggal adalah `index()`-nya sendiri.
+  Ia mati dua lapis sekaligus, dan itu yang membuatnya tidak berbahaya sekaligus tidak jujur: **tidak ada rute** yang memanggilnya, dan seandainya ada, komponen Vue yang direndernya **sudah tidak ada di disk** sehingga permintaannya berakhir 500. Satu-satunya cara menemukannya adalah membandingkan daftar `Inertia::render()` di controller dengan daftar halaman yang benar-benar punya rute — bukan sesuatu yang dilakukan siapa pun dalam pekerjaan sehari-hari.
+  Dua hal yang ikut mati bersamanya dan mudah terlewat saat menghapus: `PlatformAuditLog::recordRoutine('invoices.index')` (`InvoiceController.php:56`) adalah aksi audit yang tidak akan pernah tercatat lagi, dan `use Inertia\Inertia` + `use Inertia\Response` (`:21-22`) tidak punya pemakai lain di berkas itu — `index()` satu-satunya method yang merender halaman di sana.
+- **Yang JANGAN ikut dihapus, dan sudah diperiksa satu per satu:**
+  1. **Rute pengalihannya tetap.** Ia melayani tautan dan bookmark lama, dan alasannya sudah ditulis di tempatnya. Nama rutenya (`platform.invoices.index`) memang tidak dipakai `route()` di mana pun — hanya definisinya sendiri — tapi itu bukan alasan menghapus pengalihan URL-nya.
+  2. **`InvoiceResource` tetap hidup.** `app/Services/Platform/AccountOverview.php:264` memakainya, jadi menghapus `index()` tidak menyeret resource-nya ikut mati.
+  3. **`Tenant` tetap dipakai** di `store()` (`:87`), jadi importnya tidak ikut gugur.
+- **Usulan Perbaikan:** hapus `index()` beserta dua import Inertia yang jadi yatim, sisakan seluruh rute dan method lain apa adanya. Bila suatu saat halaman daftar tagihan tersendiri diinginkan lagi, itu fitur baru dengan komponennya sendiri — bukan menghidupkan kembali method ini, yang bentuk datanya sudah tidak cocok dengan halaman mana pun yang ada sekarang.
+
 ### [BL-093] Pencatatan Uang Keluar Laci Belum Bisa Dilampiri Foto Struk
 - **Ditemukan:** 2026-08-21 (dipecah dari `[BL-087]` saat fiturnya mendarat)
 - **Sumber:** Saran di dalam pembahasan `[BL-087]` — foto struk sebagai pelengkap alasan tertulis, disetujui pemilik bersama bentuk fiturnya
