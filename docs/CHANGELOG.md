@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-03 | ADDITION | Langganan | Bayar Tagihan Langganan Selesai di Satu Modal — Kata Sandi Owner sebagai Ganti Aplikasi Bank |
 | 2026-08-31 | ADDITION | Langganan | Tenant yang Ditangguhkan Punya Jalan Pulang — Satu Tagihan Pemulihan, Diminta Sendiri (BL-051) |
 | 2026-08-31 | HOTFIX | Langganan | Periode `Y-m` Berhenti Memungut Tanggal Hari Ini — Tagihan Juni Tidak Lagi Dihargai Aturan Juli |
 | 2026-08-31 | DECISION | Frontend | Halaman Vue Berhenti Dikirim Berombongan — Satu Bundel 1.136 KB Jadi Chunk per Halaman (BL-094) |
@@ -224,6 +225,33 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Bayar Tagihan Langganan Selesai di Satu Modal — Kata Sandi Owner sebagai Ganti Aplikasi Bank
+- **Tanggal:** 2026-09-03
+- **Fase Terkait:** Di Luar Fase — kebutuhan peragaan/pitching, diminta pemilik. Bukan penggantian `[BL-059]`.
+- **Dampak:** Controller | Route | Frontend | Test
+- **Breaking Change:** Tidak. Alur tiga halaman (`Billing/Pay` → `Billing/PaymentInstruction`) tetap ada, tetap berutas sama, dan tetap diuji; yang bertambah hanya satu pintu di sampingnya.
+- **Deskripsi:** Tombol "Bayar sekarang" di daftar tagihan halaman langganan tidak lagi berpindah halaman. Ia membuka modal berisi tiga langkah di tempat: pilih kanal → ketik kata sandi akun sendiri → layar "memproses" → tagihannya lunas di baris yang sama.
+- **Kenapa ada, padahal `[BL-059]` sudah bekerja.** Alur tiga halaman itu dibangun untuk berbentuk sama dengan penyedia sungguhan, dan untuk tujuan itu ia benar. Yang tidak bisa dilakukannya adalah menjawab pertanyaan yang muncul di ruang rapat — "kalau saya bayar sekarang, seperti apa?" Di sana tidak ada aplikasi bank untuk memindai QR, tidak ada delapan detik untuk menunggu pelunasan otomatis, dan dua kali pindah halaman adalah dua kesempatan perhatian penonton hilang. Memasang penyedia sungguhan hanya demi bisa memperagakannya berarti mengurus administrasi PG sebelum ada satu klien pun yang membayar.
+- **Kata sandinya bukan hiasan, dan itu satu-satunya alasan pintu ini pantas ada.** Ia diperiksa di server dengan `Hash::check()` terhadap akun yang sedang masuk, dan rutenya `role:owner` — jadi yang ditanya selalu pemilik usaha. Ia menggantikan otentikasi yang di dunia nyata terjadi di aplikasi bank. Tanpa satu langkah pun yang menuntut sesuatu yang hanya diketahui pemiliknya, yang dipasang di halaman langganan cuma tombol yang melunasi tagihan — persis benda yang `[BL-061]` cabut.
+- **Pelunasannya tetap tidak terjadi di controller ini.** Sama seperti `simulate()`, `checkout()` menyusun notifikasi bertanda tangan lewat `FakeGateway::callbackRequest()` lalu menyerahkannya ke `PaymentWebhookController`. Verifikasi tanda tangan, penjaga idempotensi, pemeriksaan nominal, tenggat, dan jejak `payments.settled` semuanya tetap dilewati; `InvoiceSettlement` tetap satu-satunya pintu menuju `active`. Jalur pintas yang melunasi sendiri hanya akan membuktikan bahwa jalur pintasnya bekerja.
+- **404 di luar driver tiruan, bukan 403.** Penyedia sungguhan tidak punya "bayar dengan kata sandi", jadi alamatnya harus ikut hilang begitu `PAYMENT_DRIVER` bukan `fake` — bukan sekadar tombolnya berhenti dirender. Menjawab "terlarang" justru memberi tahu penanyanya bahwa ada sesuatu di sini yang bisa dibuka. Gerbang produksi di `PaymentGatewayManager` tetap lapis pertamanya.
+- **Rutenya dibatasi lajunya (`throttle:8,1`).** Ini satu-satunya rute tenant yang menerima kata sandi di luar layar masuk; tanpa pembatas, ia jadi tempat paling nyaman untuk menebak kata sandi owner berulang kali. Kata sandi juga diperiksa **sebelum** instruksi bayar dibuat, sehingga tebakan yang salah tidak meninggalkan tumpukan nomor transaksi yang menganggur.
+- **Penantiannya sengaja tidak dipotong.** Server menjawab dalam puluhan milidetik, dan pembayaran yang selesai secepat itu terbaca sebagai tombol, bukan sebagai pembayaran. Modalnya menahan hasilnya sampai `MINIMUM_PROCESSING_MS` (2.400 ms) lewat sambil menjalankan tiga kalimat status yang menyebut nama kanal yang dipilih — supaya pilihan kanal di atasnya terasa berakibat sesuatu. Ini murni lapisan tampilan; server tidak menunggu apa pun.
+- **Jawaban 200 tidak otomatis dirayakan.** Tagihan yang keburu lunas lewat jalur lain kembali dengan flash galat dan tanpa galat validasi. Modalnya memeriksa `flash.error` sebelum berpindah ke layar berhasil; merayakan yang tidak terbayar adalah satu-satunya hal yang tidak boleh dibohongi di layar ini.
+- **Instruksi yang masih hidup dipakai ulang**, alasannya sama dengan `create()`: satu tagihan tidak boleh punya dua nomor transaksi yang sama-sama ditunggu. Kanal yang baru dipilih boleh berbeda dari kanal instruksi lama — yang dilunasi tagihan yang sama dengan nominal yang sama.
+- **Kanal ikut dikirim di prop `payment` halaman langganan.** Tanpa itu modalnya harus mengunjungi halaman lain dulu untuk tahu kanal apa saja yang tersedia — dan sekali ia berpindah halaman, ia bukan modal lagi. Aman di-resolve di sana karena dijaga `payment.enabled`: `PaymentGatewayManager::has()` sudah menjawab false untuk driver tiruan di produksi, sehingga `driver()` yang melempar exception tidak pernah terpanggil.
+- **Diperagakan sungguhan, bukan cuma diuji.** Alurnya dijalankan di peramban atas basis data dev dengan `owner@sapi.test`: kata sandi salah → medan merah, tidak ada instruksi yang terbit; kata sandi benar → tiga kalimat status → layar berhasil → baris tagihannya berubah "Lunas" tanpa muat ulang manual. Data dev yang dipakai untuk itu dikembalikan ke keadaan semula setelahnya.
+- **File Terdampak:**
+  - `app/Http/Controllers/Billing/PaymentController.php` — `checkout()`; docblock kelas menyebut pintu keempat
+  - `app/Http/Controllers/Billing/SubscriptionController.php` — prop `payment.channels`
+  - `routes/web.php` — `POST /langganan/tagihan/{invoice}/bayar-cepat`, `role:owner` + `throttle:8,1`
+  - `resources/js/Components/BillingCheckoutModal.vue` — baru
+  - `resources/js/Pages/Billing/Show.vue` — tombol pembuka modal menggantikan `<Link>`, render modal
+  - `tests/Feature/Subscription/PaymentGatewayTest.php` — 9 tes: lunas lewat webhook, kata sandi salah, kanal tak dikenal, kasir & tenant lain, tagihan yang sudah lunas, pakai ulang instruksi, tenant tertangguh, 404 di luar driver tiruan, dan kanal di prop halaman
+- **Catatan Migrasi:** Tidak ada. Pintu ini hidup selama `PAYMENT_DRIVER=fake`; menyetelnya ke penyedia sungguhan menghilangkan tombol **dan** alamat rutenya sekaligus, tanpa perubahan kode.
 
 ---
 

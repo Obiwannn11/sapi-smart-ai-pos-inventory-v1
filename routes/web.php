@@ -134,6 +134,14 @@ Route::middleware(['auth', 'tenant'])
             Route::get('/langganan/pembayaran/{attempt}', [\App\Http\Controllers\Billing\PaymentController::class, 'show'])
                 ->name('payment.show');
 
+            // Bayar sekali jalan dari modal di halaman langganan.
+            // Dibatasi lajunya karena ia satu-satunya rute tenant yang menerima
+            // kata sandi di luar layar masuk; tanpa pembatas, ia jadi tempat
+            // paling nyaman untuk menebak kata sandi owner berulang kali.
+            Route::post('/langganan/tagihan/{invoice}/bayar-cepat', [\App\Http\Controllers\Billing\PaymentController::class, 'checkout'])
+                ->middleware('throttle:8,1')
+                ->name('payment.checkout');
+
             // Panel peragaan pada halaman instruksi. Ia TIDAK melunasi apa pun
             // sendiri — lihat docblock PaymentController::simulate().
             Route::post('/langganan/pembayaran/{attempt}/peragakan', [\App\Http\Controllers\Billing\PaymentController::class, 'simulate'])

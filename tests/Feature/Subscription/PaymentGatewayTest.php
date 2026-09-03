@@ -491,6 +491,181 @@ test('the webhook of a simulated gateway does not exist in production', function
     expect($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID);
 });
 
+// ── Bayar sekali jalan dari modal ───────────────────────────────
+
+test('an owner pays an invoice from the modal by confirming with their password', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'invoice' => $invoice] = paymentContext();
+
+    actingAs($owner);
+
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", [
+        'channel' => 'qris',
+        'password' => 'password',
+    ])->assertRedirect();
+
+    $attempt = PaymentAttempt::first();
+
+    // Satu pintu, satu jalur: tagihannya lunas, percobaannya ikut tertandai,
+    // dan jejaknya tertulis — ketiganya milik `PaymentWebhookController`, yang
+    // berarti pelunasannya memang lewat sana dan bukan lewat jalan pintas.
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_PAID)
+        ->and($attempt->fresh()->status)->toBe(PaymentAttempt::STATUS_PAID)
+        ->and($attempt->fresh()->paid_at)->not->toBeNull()
+        ->and($tenant->fresh()->status)->toBe(Tenant::STATUS_ACTIVE)
+        ->and(PlatformAuditLog::where('action', 'payments.settled')->exists())->toBeTrue();
+});
+
+test('a wrong password pays nothing', function () {
+    ['owner' => $owner, 'invoice' => $invoice] = paymentContext();
+
+    actingAs($owner);
+
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", [
+        'channel' => 'qris',
+        'password' => 'bukan-kata-sandinya',
+    ])->assertSessionHasErrors('password');
+
+    // Tidak ada instruksi yang terbit sama sekali: kata sandi diperiksa sebelum
+    // apa pun dibuat, sehingga menebak-nebak tidak meninggalkan tumpukan nomor
+    // transaksi yang menganggur.
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID)
+        ->and(PaymentAttempt::count())->toBe(0);
+});
+
+test('the modal reuses an open instruction instead of issuing a second one', function () {
+    ['owner' => $owner, 'invoice' => $invoice] = paymentContext();
+
+    $existing = PaymentAttempt::factory()->create([
+        'invoice_id' => $invoice->id,
+        'tenant_id' => $invoice->tenant_id,
+        'channel' => 'va_bca',
+        'amount' => $invoice->amount,
+    ]);
+
+    actingAs($owner);
+
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", [
+        'channel' => 'qris',
+        'password' => 'password',
+    ])->assertRedirect();
+
+    expect(PaymentAttempt::count())->toBe(1)
+        ->and($existing->fresh()->status)->toBe(PaymentAttempt::STATUS_PAID)
+        ->and($invoice->fresh()->status)->toBe(Invoice::STATUS_PAID);
+});
+
+test('an invoice that is already paid is not paid twice', function () {
+    ['owner' => $owner, 'invoice' => $invoice] = paymentContext();
+    $invoice->update(['status' => Invoice::STATUS_PAID]);
+
+    actingAs($owner);
+
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", [
+        'channel' => 'qris',
+        'password' => 'password',
+    ])->assertSessionHas('error');
+
+    expect(PaymentAttempt::count())->toBe(0);
+});
+
+test('the modal refuses a channel the gateway does not offer', function () {
+    ['owner' => $owner, 'invoice' => $invoice] = paymentContext();
+
+    actingAs($owner);
+
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", [
+        'channel' => 'transfer-ke-rekening-saya',
+        'password' => 'password',
+    ])->assertSessionHasErrors('channel');
+
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID);
+});
+
+test('a cashier cannot pay from the modal, and neither can another tenant', function () {
+    ['cashier' => $cashier, 'invoice' => $invoice] = paymentContext();
+    ['owner' => $stranger] = paymentContext();
+
+    actingAs($cashier);
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", ['channel' => 'qris', 'password' => 'password'])
+        ->assertForbidden();
+
+    actingAs($stranger);
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", ['channel' => 'qris', 'password' => 'password'])
+        ->assertForbidden();
+
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID);
+});
+
+test('the modal has no address once a real provider is installed', function () {
+    ['owner' => $owner, 'invoice' => $invoice] = paymentContext();
+
+    // Penyedia sungguhan tidak punya "bayar dengan kata sandi". Alamatnya harus
+    // ikut hilang, bukan sekadar tombolnya berhenti dirender — halaman boleh
+    // berubah, rute yang bisa melunasi tagihan tanpa uang tidak boleh menunggu
+    // di belakangnya.
+    app()->bind(PaymentGateway::class, fn () => new class implements PaymentGateway
+    {
+        public function key(): string
+        {
+            return 'sumopod';
+        }
+
+        public function settlementSource(): string
+        {
+            return 'gateway_sumopod';
+        }
+
+        public function availableChannels(): array
+        {
+            return [['code' => 'qris', 'label' => 'QRIS', 'hint' => '']];
+        }
+
+        public function createCharge(Invoice $invoice, string $channel): PaymentAttempt
+        {
+            throw new RuntimeException('tidak dipakai dalam pengujian ini');
+        }
+
+        public function verifyCallback(Illuminate\Http\Request $request): App\Services\Billing\Gateways\CallbackResult
+        {
+            throw new RuntimeException('tidak dipakai dalam pengujian ini');
+        }
+    });
+
+    actingAs($owner);
+
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", ['channel' => 'qris', 'password' => 'password'])
+        ->assertNotFound();
+
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_UNPAID);
+});
+
+test('a suspended tenant can pay from the modal too', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'invoice' => $invoice] = paymentContext();
+    $tenant->update(['status' => Tenant::STATUS_SUSPENDED]);
+
+    actingAs($owner);
+
+    // Rutenya bernama `billing.*` justru supaya ia lolos EnsureSubscriptionActive:
+    // tenant yang ditangguhkan adalah yang paling butuh pintu ini.
+    post("/langganan/tagihan/{$invoice->id}/bayar-cepat", ['channel' => 'qris', 'password' => 'password'])
+        ->assertRedirect();
+
+    expect($invoice->fresh()->status)->toBe(Invoice::STATUS_PAID)
+        ->and($tenant->fresh()->status)->toBe(Tenant::STATUS_ACTIVE);
+});
+
+test('the billing page carries the channels the modal renders', function () {
+    ['owner' => $owner] = paymentContext();
+
+    actingAs($owner);
+
+    // Tanpa ini modal harus mengunjungi halaman lain dulu untuk tahu kanal apa
+    // saja yang ada — dan sekali ia berpindah halaman, ia bukan modal lagi.
+    get('/langganan')->assertInertia(fn (Assert $page) => $page
+        ->has('payment.channels', 5)
+        ->where('payment.channels.0.code', 'qris'));
+});
+
 // ── Permukaannya ─────────────────────────────────────────────────────────────
 
 test('the billing page offers the payment path', function () {

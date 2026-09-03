@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
+import BillingCheckoutModal from '@/Components/BillingCheckoutModal.vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import { businessToday, parseDateOnly } from '@/support/date';
 
@@ -23,7 +24,7 @@ const props = defineProps({
     // halaman ini menyebutnya terus terang — tombol bayar yang terlihat
     // sungguhan padahal tiruan adalah cara termudah membuat orang mengira
     // uangnya sudah berpindah.
-    payment: { type: Object, default: () => ({ enabled: false, is_simulated: false }) },
+    payment: { type: Object, default: () => ({ enabled: false, is_simulated: false, channels: [] }) },
     // Kuota AI (`[BL-067]`(b)). Sebelum ini isi paket terpecah dua — kursi
     // dijawab di halaman ini, kuota AI hanya di Pengaturan — dan tidak ada satu
     // pun layar yang menjawab "paket saya dapat apa saja".
@@ -361,6 +362,12 @@ const aiQuotaRunningCost = computed(() =>
 // membayar pemakaiannya sendiri dan tidak dijatah sama sekali — menawarkan
 // "tambah kuota" kepadanya adalah menjual sesuatu yang tidak ia butuhkan.
 const canBuyAiQuota = computed(() => Boolean(props.aiQuotaOffer) && props.aiQuota?.using_free_tier);
+
+// --- Bayar lewat modal ---
+// Tagihan yang sedang dibayar, bukan sekadar buka/tutup: daftar di bawah bisa
+// memuat beberapa tagihan sekaligus, dan modal yang tidak tahu sedang membayar
+// yang mana adalah modal yang akan membayar yang salah.
+const checkoutTarget = ref(null);
 
 // --- Unggah bukti bayar ---
 const proofTarget = ref(null);
@@ -1123,13 +1130,14 @@ const invoiceStatusLabels = {
                                     dan ia satu-satunya jalur yang tetap jalan
                                     ketika gateway sedang mati.
                                 -->
-                                <Link
+                                <button
                                     v-if="payment.enabled && tenant.is_owner && invoice.status !== 'paid'"
-                                    :href="`/langganan/tagihan/${invoice.id}/bayar`"
-                                    class="mt-1.5 block rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                                    type="button"
+                                    class="mt-1.5 block w-full rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                                    @click="checkoutTarget = invoice"
                                 >
                                     Bayar sekarang
-                                </Link>
+                                </button>
 
                                 <button
                                     v-if="tenant.is_owner && invoice.status !== 'paid'"
@@ -1162,6 +1170,14 @@ const invoiceStatusLabels = {
                     mengonfirmasi menyusul.
                 </template>
             </p>
+
+            <!-- Bayar -->
+            <BillingCheckoutModal
+                :invoice="checkoutTarget"
+                :channels="payment.channels ?? []"
+                :is-simulated="Boolean(payment.is_simulated)"
+                @close="checkoutTarget = null"
+            />
 
             <!-- Unggah bukti -->
             <Teleport to="body">

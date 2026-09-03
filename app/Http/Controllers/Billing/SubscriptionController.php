@@ -240,8 +240,15 @@ class SubscriptionController extends Controller
             // mati gara-gara satu variabel `.env` salah setel — di sanalah
             // tenant yang ditangguhkan mencari jalan keluarnya.
             'payment' => [
-                'enabled' => $gateways->has($configuredDriver = (string) config('subscription.payment.driver')),
+                'enabled' => $paymentEnabled = $gateways->has($configuredDriver = (string) config('subscription.payment.driver')),
                 'is_simulated' => $gateways->isSimulated($configuredDriver),
+                // Kanal ikut dikirim supaya modal bayar di halaman ini bisa
+                // menawarkan pilihan tanpa satu pun kunjungan halaman
+                // tambahan. Aman di-resolve di sini justru karena dijaga
+                // `enabled` di atasnya: `has()` sudah menjawab false untuk
+                // driver tiruan di produksi, sehingga `driver()` yang melempar
+                // exception di sana tidak pernah terpanggil.
+                'channels' => $paymentEnabled ? $gateways->driver($configuredDriver)->availableChannels() : [],
             ],
             // Jalan keluar dari penangguhan (`[BL-051]` opsi (ii)). `null`
             // untuk tenant yang tidak ditangguhkan — lihat

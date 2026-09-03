@@ -10,7 +10,9 @@ use App\Services\Billing\Gateways\PaymentGateway;
 use App\Services\Billing\Gateways\PaymentGatewayManager;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Response;
 
 /**
@@ -20,6 +22,11 @@ use Inertia\Response;
  * terbitkan instruksi → tunggu. Langkah ketiga berdiri sendiri karena ia satu-
  * satunya yang punya umur: tenant menutup laptopnya, membayar dari ponsel, lalu
  * kembali — dan alamat yang sama harus menunjukkan keadaan terbarunya.
+ *
+ * Ada pintu KEEMPAT yang memampatkan ketiganya jadi satu modal — `checkout()`.
+ * Ia bukan pengganti: alur tiga halaman itulah yang berbentuk sama
+ * dengan penyedia sungguhan, dan hanya itu yang tetap berlaku setelah Sumopod
+ * terpasang. Yang keempat hidup hanya selama drivernya tiruan.
  *
  * Yang TIDAK ada di kelas ini: melunasi tagihan. Bahkan tombol peragaan pun
  * tidak — ia menyusun notifikasi bertanda tangan dan menyerahkannya ke
@@ -175,6 +182,73 @@ class PaymentController extends Controller
             PaymentAttempt::STATUS_PAID => 'Pembayaran diterima. Akses langganan dipulihkan.',
             PaymentAttempt::STATUS_MISMATCH => 'Nominal yang masuk tidak sama dengan tagihan, jadi tagihannya belum dilunasi. Pemilik layanan akan menindaklanjuti.',
             PaymentAttempt::STATUS_EXPIRED => 'Instruksi pembayaran ini sudah kedaluwarsa. Terbitkan yang baru.',
+            default => 'Pembayaran gagal. Silakan coba lagi atau pilih kanal lain.',
+        });
+    }
+
+    /**
+     * Bayar sekali jalan dari halaman langganan — jalur peragaan.
+     *
+     * Alur tiga halaman di atas menirukan bentuk penyedia sungguhan, dan itu
+     * masih benar. Yang tidak bisa dilakukannya adalah menjawab pertanyaan yang
+     * muncul di ruang rapat: "kalau saya bayar sekarang, seperti apa?" — di
+     * sana tidak ada aplikasi bank, tidak ada waktu untuk menunggu delapan
+     * detik, dan berpindah halaman dua kali membuat yang menonton kehilangan
+     * benang ceritanya.
+     *
+     * Jadi pintu ini memampatkan ketiganya menjadi satu modal: pilih kanal,
+     * ketikkan kata sandi akun sendiri, selesai. Kata sandinya BUKAN hiasan —
+     * ia menggantikan otentikasi yang di dunia nyata terjadi di aplikasi bank,
+     * dan tanpa satu langkah pun yang menuntut sesuatu yang hanya diketahui
+     * pemiliknya, tombol ini cuma tombol yang melunasi tagihan.
+     *
+     * Yang TIDAK berubah, dan sengaja: pelunasannya tetap tidak terjadi di
+     * sini. Sama seperti `simulate()`, ia menyusun notifikasi bertanda tangan
+     * lalu menyerahkannya ke `PaymentWebhookController` — tanda tangan,
+     * idempotensi, pemeriksaan nominal, dan tenggat semuanya tetap dilewati.
+     * Dan sama seperti `simulate()`, ia 404 di luar driver tiruan: jalur yang
+     * bisa melunasi tagihan dengan kata sandi alih-alih uang tidak boleh punya
+     * alamat yang hidup ketika penyedia sungguhan sudah terpasang.
+     */
+    public function checkout(Request $request, Invoice $invoice, PaymentWebhookController $webhook): RedirectResponse
+    {
+        $this->authorizeInvoice($request, $invoice);
+
+        $gateway = $this->gateway;
+
+        abort_unless($gateway instanceof FakeGateway && $this->gateways->isSimulated($gateway->key()), 404);
+
+        if ($invoice->isPaid()) {
+            return back()->with('error', 'Tagihan ini sudah lunas.');
+        }
+
+        $validated = $request->validate([
+            'channel' => ['required', 'string', Rule::in(array_column($gateway->availableChannels(), 'code'))],
+            'password' => ['required', 'string'],
+        ]);
+
+        // Dibandingkan dengan kata sandi akun yang sedang masuk, dan rutenya
+        // `role:owner` — jadi yang ditanya selalu pemilik usaha, bukan siapa
+        // pun yang kebetulan meminjam layarnya saat peragaan berlangsung.
+        if (! Hash::check($validated['password'], (string) $request->user()->password)) {
+            throw ValidationException::withMessages([
+                'password' => 'Kata sandi tidak cocok dengan akun Anda.',
+            ]);
+        }
+
+        // Instruksi yang masih hidup dipakai ulang, alasannya sama dengan
+        // `create()`: satu tagihan tidak boleh punya dua nomor transaksi yang
+        // sama-sama ditunggu. Kanal yang barusan dipilih boleh berbeda dari
+        // kanal instruksi lama, dan itu tidak apa-apa — yang dilunasi tagihan
+        // yang sama, dengan nominal yang sama.
+        $attempt = $this->openAttemptFor($invoice) ?? $gateway->createCharge($invoice, $validated['channel']);
+
+        $webhook->handle($gateway->callbackRequest($attempt, 'paid'), $attempt->gateway);
+
+        return back()->with('success', match ($attempt->fresh()->status) {
+            PaymentAttempt::STATUS_PAID => 'Pembayaran berhasil. Akses langganan Anda aktif kembali.',
+            PaymentAttempt::STATUS_MISMATCH => 'Nominal yang masuk tidak sama dengan tagihan, jadi tagihannya belum dilunasi.',
+            PaymentAttempt::STATUS_EXPIRED => 'Instruksi pembayaran ini sudah kedaluwarsa. Coba lagi.',
             default => 'Pembayaran gagal. Silakan coba lagi atau pilih kanal lain.',
         });
     }
