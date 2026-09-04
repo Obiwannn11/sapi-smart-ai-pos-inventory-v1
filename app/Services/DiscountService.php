@@ -53,6 +53,27 @@ class DiscountService
     private const ROUNDING_STEP = 500;
 
     /**
+     * Sebab sebuah aturan tidak menurunkan harga hari ini.
+     *
+     * Empat sebab yang penanganannya berbeda-beda: yang satu menunggu tanggal,
+     * yang satu menunggu owner mengisi modal, yang satu menuntut potongannya
+     * diperbesar, dan yang satu tidak bisa diapa-apakan tanpa menurunkan margin
+     * minimum. Layar yang hanya berkata "tidak berlaku" menyerahkan pemilihan
+     * di antara keempatnya kepada tebakan owner.
+     */
+    public const REASON_NO_RULE = 'no_rule';
+
+    public const REASON_EXPIRED = 'expired';
+
+    public const REASON_UNKNOWN_COST = 'unknown_cost';
+
+    public const REASON_NO_CUT_TODAY = 'no_cut_today';
+
+    public const REASON_FLOOR_ABSORBED = 'floor_absorbed';
+
+    public const REASON_CUT_TOO_SMALL = 'cut_too_small';
+
+    /**
      * Harga terendah yang boleh dicapai RUMUS untuk varian ini.
      *
      * `cost_price × (1 + margin/100)`, dibulatkan KE ATAS. Varian tanpa
@@ -121,7 +142,12 @@ class DiscountService
      * bila aturannya tidak boleh dipakai (barang sudah kedaluwarsa, modal tak
      * diketahui).
      *
-     * @return array{price: float, discount: float, rule: ?DiscountRule, floor: ?float}
+     * `reason` menyebutkan sebabnya saat harga TIDAK turun, dan `clamped`
+     * menandai harga yang turun tapi tertahan lantai. Keduanya dipakai layar
+     * Aturan Diskon: baris yang diam menyebut sebabnya sendiri, alih-alih
+     * menyuruh owner menebak di antara empat kemungkinan.
+     *
+     * @return array{price: float, discount: float, rule: ?DiscountRule, floor: ?float, reason: ?string, clamped: bool}
      */
     public function priceFor(ProductVariant $variant, Tenant $tenant, ?DiscountRule $rule = null): array
     {
@@ -130,31 +156,48 @@ class DiscountService
 
         $rule ??= $this->ruleFor($variant, $tenant);
 
-        $none = ['price' => $catalog, 'discount' => 0.0, 'rule' => null, 'floor' => $floor];
+        $none = fn (string $reason): array => [
+            'price' => $catalog,
+            'discount' => 0.0,
+            'rule' => null,
+            'floor' => $floor,
+            'reason' => $reason,
+            'clamped' => false,
+        ];
 
-        if ($rule === null || ! $this->isDiscountable($variant)) {
-            return $none;
+        if ($rule === null) {
+            return $none(self::REASON_NO_RULE);
+        }
+
+        if (! $this->isDiscountable($variant)) {
+            return $none(self::REASON_EXPIRED);
         }
 
         // Modal tak diketahui → tak ada lantai → rumus tidak boleh menurunkan
         // harga. Lihat floorFor().
         if ($floor === null) {
-            return $none;
+            return $none(self::REASON_UNKNOWN_COST);
         }
 
         $percent = $this->effectivePercent($rule, $variant);
 
         if ($percent <= 0) {
-            return $none;
+            return $none(self::REASON_NO_CUT_TODAY);
         }
 
-        $price = $this->roundUp($catalog * (1 - $percent / 100));
+        $raw = $this->roundUp($catalog * (1 - $percent / 100));
 
         // Aturan (1): rumus berhenti di lantai. Selalu.
-        $price = max($price, $floor);
+        $price = max($raw, $floor);
 
         if ($price >= $catalog) {
-            return $none;
+            // Lantai yang sudah setinggi katalog dan potongan yang lebih kecil
+            // daripada satu langkah pembulatan sama-sama berakhir "tidak turun",
+            // tapi yang pertama menuntut margin minimum diturunkan sedangkan
+            // yang kedua cukup dinaikkan persentasenya.
+            return $none($floor >= $catalog
+                ? self::REASON_FLOOR_ABSORBED
+                : self::REASON_CUT_TOO_SMALL);
         }
 
         return [
@@ -162,6 +205,8 @@ class DiscountService
             'discount' => round($catalog - $price, 2),
             'rule' => $rule,
             'floor' => $floor,
+            'reason' => null,
+            'clamped' => $raw < $floor,
         ];
     }
 

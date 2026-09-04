@@ -7,12 +7,12 @@
  * adalah uang yang keluar dan sukar ditarik kembali. Yang berlaku di kasir
  * hanyalah baris yang owner tuliskan di sini.
  *
- * Dua hal yang halaman ini harus katakan terus terang, karena keduanya adalah
- * cara owner menyimpulkan "fiturnya rusak" padahal ia bekerja:
- *
- *   1. Potongannya BERHENTI di lantai margin. Aturan 60% pada barang bermodal
- *      tinggi tidak akan pernah menghasilkan potongan 60%.
- *   2. Barang yang SUDAH kedaluwarsa tidak pernah didiskon sama sekali.
+ * Dua batas tak terlihat — lantai untung, dan barang kedaluwarsa yang tak
+ * pernah didiskon — dulu diterangkan lewat paragraf di kepala halaman.
+ * Paragrafnya dibaca sekali, oleh owner yang belum punya satu pun aturan,
+ * lalu tidak pernah dibaca lagi tepat pada saat batas itu menggigit. Sekarang
+ * keduanya DITUNJUK pada barisnya sendiri: sebab yang spesifik di kolom
+ * status, dan penanda "Tertahan lantai" pada harga yang benar-benar terjepit.
  */
 import { ref, computed } from 'vue';
 import { Deferred, useForm, Head } from '@inertiajs/vue3';
@@ -31,13 +31,41 @@ const props = defineProps({
     variants: { type: Array, default: null },
 });
 
+/** Label pendek untuk tabel, tempat lebar kolomnya mahal. */
 const triggerLabels = {
     near_expiry: 'Mendekati kedaluwarsa',
     dead_stock: 'Lama tak terjual',
     manual: 'Alasan sendiri',
 };
 
-const triggerOptions = Object.entries(triggerLabels).map(([value, label]) => ({ value, label }));
+/**
+ * Label panjang untuk dropdown, tempat pilihannya harus menjelaskan dirinya.
+ *
+ * Kata "Tetap" dan "Membesar sendiri" ada di sini supaya perbedaan satu-satunya
+ * yang berakibat — hanya `near_expiry` yang potongannya mendalam seiring
+ * tanggal — terbaca saat owner memilih, bukan di paragraf bantuan di bawahnya.
+ */
+const triggerOptions = [
+    { value: 'manual', label: 'Tetap — alasan saya sendiri' },
+    { value: 'dead_stock', label: 'Tetap — barang lama tak terjual' },
+    { value: 'near_expiry', label: 'Membesar sendiri mendekati kedaluwarsa' },
+];
+
+/**
+ * Sebab sebuah aturan diam hari ini, dikirim server lewat `effective.reason`.
+ *
+ * Kelimanya dulu dilaporkan sebagai satu kalimat "Tidak berlaku (cek
+ * stok/kedaluwarsa)" — yang menyuruh owner memeriksa dua hal, sementara tiga
+ * sebab lainnya tidak disebut sama sekali.
+ */
+const REASON_LABELS = {
+    expired: 'Barang sudah kedaluwarsa',
+    unknown_cost: 'Modal belum diisi',
+    no_cut_today: 'Potongan 0% hari ini',
+    floor_absorbed: 'Habis dimakan lantai untung',
+    cut_too_small: 'Potongan terlalu kecil',
+    no_rule: 'Tidak berlaku',
+};
 
 const variantOptions = computed(() =>
     (props.variants ?? []).map((variant) => ({ value: variant.id, label: variant.label }))
@@ -64,13 +92,23 @@ const dormantReason = (rule) => {
     if (rule.starts_on && rule.starts_on.slice(0, 10) > today) return 'Belum mulai';
     if (rule.ends_on && rule.ends_on.slice(0, 10) < today) return 'Sudah berakhir';
 
-    // `effective.rule === null` berarti server menolak memberlakukannya —
-    // barang kedaluwarsa, modal tak diketahui, atau potongannya habis dimakan
-    // lantai. Menampilkannya mencegah kesimpulan "fiturnya rusak".
-    if (rule.effective && !rule.effective.rule) return 'Tidak berlaku (cek stok/kedaluwarsa)';
+    // `effective.rule === null` berarti server menolak memberlakukannya, dan
+    // `effective.reason` menyebut yang mana di antara lima sebabnya.
+    if (rule.effective && !rule.effective.rule) {
+        return REASON_LABELS[rule.effective.reason] ?? 'Tidak berlaku';
+    }
 
     return null;
 };
+
+/** Ringkasan yang menggantikan paragraf pengantar: angka, bukan penjelasan. */
+const ruleCounts = computed(() => {
+    if (!props.rules) return null;
+
+    const live = props.rules.filter((rule) => dormantReason(rule) === null).length;
+
+    return { live, dormant: props.rules.length - live };
+});
 
 // --- Form ---
 const showForm = ref(false);
@@ -104,7 +142,11 @@ const preview = computed(() => {
     return {
         catalog,
         floor,
-        price: floor === null ? rounded : Math.max(rounded, Number(floor)),
+        // Tanpa lantai, server MENOLAK menurunkan harga sama sekali. Pratinjau
+        // yang tetap memamerkan harga diskon di sini akan berselisih dengan
+        // kenyataan begitu aturannya disimpan.
+        blocked: floor === null,
+        price: floor === null ? catalog : Math.max(rounded, Number(floor)),
         clamped: floor !== null && rounded < Number(floor),
     };
 });
@@ -170,9 +212,10 @@ const doDelete = () => {
         <div class="flex items-start justify-between mb-6 gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Aturan Diskon</h1>
-                <p class="text-sm text-gray-500 mt-1">
-                    Potongan harga yang <strong>Anda setujui</strong>. Harga katalog tetap utuh — yang berubah hanya harga yang ditagih selama aturannya berlaku.
+                <p v-if="ruleCounts" class="text-sm text-gray-500 mt-1">
+                    {{ ruleCounts.live }} berlaku di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} diam</template>
                 </p>
+                <p v-else class="text-sm text-gray-500 mt-1">Memuat aturan…</p>
             </div>
             <button
                 @click="openCreate"
@@ -183,21 +226,6 @@ const doDelete = () => {
                 </svg>
                 Tambah Aturan
             </button>
-        </div>
-
-        <!-- Dua batas yang tidak bisa ditembus aturan. Ditulis di depan supaya
-             owner tidak menyimpulkan fiturnya rusak. -->
-        <div class="mb-5 flex gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
-            <svg class="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>
-                Potongan <strong>berhenti di lantai untung</strong> — harga modal ditambah margin minimum
-                <strong>{{ minMarginPercent }}%</strong> (diatur di
-                <a href="/owner/settings/operations" class="underline hover:no-underline">Cara Kerja Sistem</a>).
-                Barang yang <strong>sudah kedaluwarsa tidak pernah didiskon</strong>, berapa pun aturannya.
-                Hanya Anda yang bisa menjual di bawah lantai, langsung dari kasir, dengan alasan tertulis.
-            </span>
         </div>
 
         <!-- Modal Form -->
@@ -230,37 +258,44 @@ const doDelete = () => {
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Alasan diskon *</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Cara potongan bekerja *</label>
                                 <SelectDropdown
                                     v-model="form.trigger"
                                     :options="triggerOptions"
                                     :error="form.errors.trigger"
                                 />
-                                <p class="mt-1 text-xs text-gray-500">
-                                    "Mendekati kedaluwarsa" adalah satu-satunya yang potongannya <strong>membesar sendiri</strong> seiring tanggalnya mendekat.
-                                </p>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Potongan awal (%) *</label>
-                                    <input
-                                        v-model.number="form.percent"
-                                        type="number" min="1" max="90" step="1"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                                    />
-                                    <p v-if="form.errors.percent" class="mt-1 text-xs text-destructive">{{ form.errors.percent }}</p>
+                            <!-- Satu kontrol berpasangan, bukan dua field bernama
+                                 "awal" dan "terdalam" yang butuh paragraf untuk
+                                 menjelaskan hubungan di antara keduanya. -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Potongan *</label>
+                                <div class="flex items-center gap-2">
+                                    <div class="relative">
+                                        <input
+                                            v-model.number="form.percent"
+                                            type="number" min="1" max="90" step="1"
+                                            class="w-24 pl-3 pr-7 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                        />
+                                        <span class="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-gray-400">%</span>
+                                    </div>
+
+                                    <template v-if="form.trigger === 'near_expiry'">
+                                        <span class="text-gray-400" aria-hidden="true">&rarr;</span>
+                                        <div class="relative">
+                                            <input
+                                                v-model.number="form.max_percent"
+                                                type="number" min="1" max="90" step="1"
+                                                class="w-24 pl-3 pr-7 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                            />
+                                            <span class="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-gray-400">%</span>
+                                        </div>
+                                        <span class="text-xs text-gray-500">pada hari kedaluwarsa</span>
+                                    </template>
                                 </div>
-                                <div v-if="form.trigger === 'near_expiry'">
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Potongan terdalam (%)</label>
-                                    <input
-                                        v-model.number="form.max_percent"
-                                        type="number" min="1" max="90" step="1"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                                    />
-                                    <p v-if="form.errors.max_percent" class="mt-1 text-xs text-destructive">{{ form.errors.max_percent }}</p>
-                                    <p v-else class="mt-1 text-xs text-gray-500">Dicapai pada hari kedaluwarsa.</p>
-                                </div>
+                                <p v-if="form.errors.percent" class="mt-1 text-xs text-destructive">{{ form.errors.percent }}</p>
+                                <p v-if="form.errors.max_percent" class="mt-1 text-xs text-destructive">{{ form.errors.max_percent }}</p>
                             </div>
 
                             <!-- Pratinjau. Menunjukkan jepitan lantai SEBELUM
@@ -272,20 +307,33 @@ const doDelete = () => {
                                     <span class="text-gray-700">{{ formatRupiah(preview.catalog) }}</span>
                                 </div>
                                 <div class="flex items-center justify-between mt-1">
-                                    <span class="text-gray-500">Lantai untung</span>
+                                    <!-- Rumusnya menempel pada angkanya, bukan di
+                                         paragraf terpisah yang harus diingat. -->
+                                    <a
+                                        href="/owner/settings/operations"
+                                        class="text-gray-500 underline decoration-gray-300 hover:decoration-gray-500"
+                                    >Lantai untung (modal + {{ minMarginPercent }}%)</a>
                                     <span class="text-gray-700">{{ formatRupiah(preview.floor) }}</span>
                                 </div>
                                 <div class="flex items-center justify-between mt-1 font-medium">
                                     <span class="text-gray-700">Harga jadi</span>
-                                    <span class="text-success">{{ formatRupiah(preview.price) }}</span>
+                                    <span class="flex items-center gap-1.5">
+                                        <span
+                                            v-if="preview.clamped"
+                                            class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                                        >Tertahan lantai</span>
+                                        <span :class="preview.blocked ? 'text-gray-500' : 'text-success'">
+                                            {{ formatRupiah(preview.price) }}
+                                        </span>
+                                    </span>
                                 </div>
-                                <p v-if="preview.clamped" class="mt-1.5 text-amber-700">
-                                    Potongannya tertahan lantai untung — harga tidak akan turun lebih jauh dari ini.
+                                <p v-if="preview.blocked" class="mt-1.5 text-amber-700">
+                                    Modal barang ini belum diisi — potongan tidak akan berlaku.
                                 </p>
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Alasan untuk dicatat *</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Catatan untuk laporan *</label>
                                 <input
                                     v-model="form.reason"
                                     type="text" maxlength="120"
@@ -294,7 +342,7 @@ const doDelete = () => {
                                 />
                                 <p v-if="form.errors.reason" class="mt-1 text-xs text-destructive">{{ form.errors.reason }}</p>
                                 <p v-else class="mt-1 text-xs text-gray-500">
-                                    Ikut tercatat pada <strong>setiap penjualan</strong> yang memakainya, dan tetap terbaca walau aturannya nanti dihapus.
+                                    Ikut tercatat pada setiap penjualan yang memakainya.
                                 </p>
                             </div>
 
@@ -362,7 +410,20 @@ const doDelete = () => {
                                         <span class="font-medium text-success">{{ formatRupiah(rule.effective.price) }}</span>
                                     </template>
                                     <span v-else class="text-gray-400">{{ formatRupiah(rule.variant?.price) }}</span>
-                                    <span class="block text-xs text-gray-400">lantai {{ formatRupiah(rule.effective?.floor) }}</span>
+
+                                    <!-- Lantai untung berhenti diterangkan di kepala
+                                         halaman dan mulai ditunjuk di sini, pada baris
+                                         yang potongannya benar-benar terjepit. -->
+                                    <span v-if="rule.effective?.clamped" class="mt-0.5 block">
+                                        <!-- Angka lantainya sengaja TIDAK diulang: baris yang
+                                             terjepit punya harga jadi yang sama persis dengan
+                                             lantainya, dan angka kembar berdampingan membuat
+                                             pembacanya mencari beda yang tidak ada. -->
+                                        <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                                            Tertahan lantai
+                                        </span>
+                                    </span>
+                                    <span v-else class="block text-xs text-gray-400">lantai {{ formatRupiah(rule.effective?.floor) }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-center">
                                     <span

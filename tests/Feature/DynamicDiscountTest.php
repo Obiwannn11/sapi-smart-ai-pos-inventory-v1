@@ -653,3 +653,122 @@ test('aturan tenant lain tidak berlaku di sini', function () {
 
     expect(app(DiscountService::class)->priceFor($variant, $tenant)['rule'])->toBeNull();
 });
+
+// --- Sebab sebuah aturan diam ---
+//
+// Layar Aturan Diskon dulu hanya menulis "Tidak berlaku (cek stok/kedaluwarsa)"
+// untuk kelima keadaan di bawah, sehingga owner menebak sendiri mana yang
+// sedang terjadi — padahal penanganannya berbeda-beda. `priceFor()` sudah tahu
+// sebabnya; tes ini yang menjaga sebab itu tetap terkirim.
+
+test('barang yang sudah kedaluwarsa menyebut sebabnya', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext(cost: 2000);
+
+    $variant->update(['expiry_date' => now()->subDay()]);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id, 'product_variant_id' => $variant->id, 'percent' => 20,
+    ]);
+
+    $pricing = app(DiscountService::class)->priceFor($variant->fresh(), $tenant);
+
+    expect($pricing['rule'])->toBeNull()
+        ->and($pricing['reason'])->toBe(DiscountService::REASON_EXPIRED);
+});
+
+test('modal yang masih nol menyebut sebabnya, bukan menyalahkan stok', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext();
+
+    // Kolomnya NOT NULL, jadi "modal tak diketahui" di lapangan berbentuk nol —
+    // varian yang dibuat buru-buru dan harga modalnya belum pernah diisi.
+    $variant->update(['cost_price' => 0]);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id, 'product_variant_id' => $variant->id, 'percent' => 20,
+    ]);
+
+    $pricing = app(DiscountService::class)->priceFor($variant->fresh(), $tenant);
+
+    expect($pricing['rule'])->toBeNull()
+        ->and($pricing['reason'])->toBe(DiscountService::REASON_UNKNOWN_COST);
+});
+
+test('lantai yang sudah setinggi katalog dibedakan dari potongan yang terlalu kecil', function () {
+    // Lantai menelan seluruh potongan: modal 20.000 + margin 10% = 22.000,
+    // sudah di atas harga katalognya sendiri.
+    ['tenant' => $tenant, 'variant' => $mahal] = makeDiscountContext(price: 20000, cost: 20000);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id, 'product_variant_id' => $mahal->id, 'percent' => 50,
+    ]);
+
+    expect(app(DiscountService::class)->priceFor($mahal, $tenant)['reason'])
+        ->toBe(DiscountService::REASON_FLOOR_ABSORBED);
+
+    // Lantainya rendah, yang kurang justru potongannya: 1% dari 20.000 hilang
+    // ditelan pembulatan ke atas kelipatan 500.
+    ['tenant' => $tenantKedua, 'variant' => $murah] = makeDiscountContext(price: 20000, cost: 1000);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenantKedua->id, 'product_variant_id' => $murah->id, 'percent' => 1,
+    ]);
+
+    expect(app(DiscountService::class)->priceFor($murah, $tenantKedua)['reason'])
+        ->toBe(DiscountService::REASON_CUT_TOO_SMALL);
+});
+
+test('varian tanpa aturan apa pun tetap menyebut sebabnya', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext(cost: 2000);
+
+    expect(app(DiscountService::class)->priceFor($variant, $tenant)['reason'])
+        ->toBe(DiscountService::REASON_NO_RULE);
+});
+
+test('potongan yang berlaku tapi tertahan lantai ditandai clamped', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext(price: 20000, cost: 10000);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id, 'product_variant_id' => $variant->id, 'percent' => 60,
+    ]);
+
+    $pricing = app(DiscountService::class)->priceFor($variant, $tenant);
+
+    // 60% dari 20.000 = 8.000, tapi lantainya 11.000.
+    expect($pricing['price'])->toBe(11000.0)
+        ->and($pricing['clamped'])->toBeTrue()
+        ->and($pricing['reason'])->toBeNull();
+});
+
+test('potongan yang tidak menyentuh lantai tidak ditandai clamped', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext(price: 20000, cost: 2000);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id, 'product_variant_id' => $variant->id, 'percent' => 10,
+    ]);
+
+    $pricing = app(DiscountService::class)->priceFor($variant, $tenant);
+
+    expect($pricing['clamped'])->toBeFalse()
+        ->and($pricing['reason'])->toBeNull();
+});
+
+test('halaman aturan diskon mengirim sebab dan penanda lantai ke layar', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'variant' => $variant] = makeDiscountContext(
+        price: 20000, cost: 10000,
+    );
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id, 'product_variant_id' => $variant->id, 'percent' => 60,
+    ]);
+
+    actingAs($owner);
+
+    get('/owner/discount-rules')->assertInertia(fn (Assert $page) => $page
+        ->component('Owner/DiscountRules/Index')
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            ->where('rules.0.effective.clamped', true)
+            ->where('rules.0.effective.reason', null)
+            ->etc()
+        )
+    );
+});
