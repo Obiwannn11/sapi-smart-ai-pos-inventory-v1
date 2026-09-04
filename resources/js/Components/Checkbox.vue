@@ -9,6 +9,10 @@ const props = defineProps({
     disabled: { type: Boolean, default: false },
     // 'card' renders a bordered, selectable card; 'inline' is a plain checkbox row.
     variant: { type: String, default: 'inline' },
+    // Baris yang keterangannya panjang perlu kotaknya sejajar baris PERTAMA,
+    // bukan di tengah tumpukan teks — centang yang melayang di tengah paragraf
+    // terbaca seperti milik kalimat yang sedang disejajarinya.
+    align: { type: String, default: 'center' },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -41,23 +45,35 @@ const toggle = () => {
 </script>
 
 <template>
-    <label
+    <!-- Kontrolnya bukan <input>, jadi peran dan keadaannya harus dinyatakan
+         sendiri: tanpa ini pembaca layar hanya menemukan teks biasa, dan
+         keyboard sama sekali tidak bisa mencapainya. -->
+    <div
+        role="checkbox"
+        :aria-checked="isChecked"
+        :aria-disabled="disabled || undefined"
+        :tabindex="disabled ? -1 : 0"
         :class="[
-            'flex items-center gap-3 cursor-pointer select-none transition-colors',
-            disabled ? 'opacity-50 cursor-not-allowed' : '',
+            'flex gap-3 select-none transition-colors rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            align === 'start' ? 'items-start' : 'items-center',
+            disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
             variant === 'card'
                 ? [
-                    'p-3 border rounded-lg',
-                    isChecked ? 'border-primary bg-primary/10' : 'border-gray-200 hover:border-gray-300',
+                    'p-3 border',
+                    isChecked ? 'border-primary bg-primary/10' : 'border-gray-200',
+                    disabled ? 'bg-gray-50' : (isChecked ? '' : 'hover:border-gray-300 hover:bg-gray-50'),
                 ]
                 : '',
         ]"
-        @click.prevent="toggle"
+        @click="toggle"
+        @keydown.space.prevent="toggle"
+        @keydown.enter.prevent="toggle"
     >
         <!-- Custom check box -->
         <span
             :class="[
                 'flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-all',
+                align === 'start' ? 'mt-0.5' : '',
                 isChecked
                     ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-white border-gray-300',
@@ -80,5 +96,5 @@ const toggle = () => {
                 <span v-if="description" class="block text-xs text-gray-500 mt-0.5">{{ description }}</span>
             </slot>
         </span>
-    </label>
+    </div>
 </template>
