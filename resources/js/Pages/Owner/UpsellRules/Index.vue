@@ -28,7 +28,7 @@ import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import TabNav from '@/Components/TabNav.vue';
-import { businessToday } from '@/support/date';
+import { businessToday, parseDateOnly } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -84,6 +84,21 @@ const triggerOptions = computed(() => [
 ]);
 
 const formatRupiah = (value) => 'Rp ' + Number(value ?? 0).toLocaleString('id-ID');
+
+/**
+ * Tanggal jendela aturan, mis. "Rab, 19 Agustus 2026".
+ *
+ * `parseDateOnly`, bukan `new Date(value)`: isinya tanggal tanpa jam, dan
+ * `new Date('2026-08-19')` diurai sebagai tengah malam UTC — di WITA ia mundur
+ * satu hari, sehingga aturan yang mulai tanggal 19 dilaporkan mulai 18.
+ * Bentuknya mengikuti DatePicker di halaman lain, bukan bentuk baru.
+ */
+const formatRuleDate = (value) => parseDateOnly(value).toLocaleDateString('id-ID', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+});
 
 const variantLabel = (variant) => {
     if (!variant) return '—';
@@ -431,11 +446,20 @@ const doDelete = () => {
                                     <span class="text-xs text-gray-500">{{ formatRupiah(rule.suggested_variant?.price) }}</span>
                                     <span v-if="rule.note" class="text-xs text-gray-400 block mt-0.5">“{{ rule.note }}”</span>
                                 </td>
+                                <!-- Bertumpuk dan berlabel, bukan "2026-08-19 – 2026-08-30".
+                                     Dua tanggal ISO berdampingan menyuruh pembacanya
+                                     menerjemahkan angka DAN menebak mana yang mulai;
+                                     labelnya menjawab yang kedua tanpa satu kalimat pun. -->
                                 <td class="px-5 py-4 text-sm text-gray-600 whitespace-nowrap">
                                     <template v-if="rule.starts_on || rule.ends_on">
-                                        {{ rule.starts_on ? rule.starts_on.slice(0, 10) : '…' }}
-                                        &ndash;
-                                        {{ rule.ends_on ? rule.ends_on.slice(0, 10) : '…' }}
+                                        <span class="block">
+                                            <span class="text-xs text-gray-400">Mulai</span>
+                                            {{ rule.starts_on ? formatRuleDate(rule.starts_on) : 'sejak dibuat' }}
+                                        </span>
+                                        <span class="block">
+                                            <span class="text-xs text-gray-400">Sampai</span>
+                                            {{ rule.ends_on ? formatRuleDate(rule.ends_on) : 'dimatikan' }}
+                                        </span>
                                     </template>
                                     <span v-else class="text-gray-400">Selamanya</span>
                                 </td>
@@ -450,14 +474,18 @@ const doDelete = () => {
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <button @click="toggle(rule)" class="px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 transition-colors">
+                                    <!-- Tumpukan, bukan baris: tiga tombol berjajar
+                                         memaksa kolomnya selebar tiga tombol, dan
+                                         di layar sempit merekalah yang pertama
+                                         terdorong keluar batas tabel. -->
+                                    <div class="flex flex-col items-end gap-1.5">
+                                        <button @click="toggle(rule)" class="w-24 px-2.5 py-1.5 text-center text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 transition-colors">
                                             {{ rule.is_active ? 'Matikan' : 'Nyalakan' }}
                                         </button>
-                                        <button @click="openEdit(rule)" class="px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
+                                        <button @click="openEdit(rule)" class="w-24 px-2.5 py-1.5 text-center text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
                                             Edit
                                         </button>
-                                        <button @click="deleteTarget = rule" class="px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
+                                        <button @click="deleteTarget = rule" class="w-24 px-2.5 py-1.5 text-center text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
                                             Hapus
                                         </button>
                                     </div>

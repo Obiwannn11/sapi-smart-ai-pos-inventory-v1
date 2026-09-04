@@ -436,14 +436,18 @@ const doDelete = () => {
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <button @click="toggle(rule)" class="px-2.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 transition-colors">
+                                    <!-- Tumpukan, bukan baris: tiga tombol berjajar
+                                         memaksa kolomnya selebar tiga tombol, dan
+                                         di layar sempit merekalah yang pertama
+                                         terdorong keluar batas tabel. -->
+                                    <div class="flex flex-col items-end gap-1.5">
+                                        <button @click="toggle(rule)" class="w-24 px-2.5 py-1.5 text-center text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 transition-colors">
                                             {{ rule.is_active ? 'Hentikan' : 'Jalankan' }}
                                         </button>
-                                        <button @click="openEdit(rule)" class="px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
+                                        <button @click="openEdit(rule)" class="w-24 px-2.5 py-1.5 text-center text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 transition-colors">
                                             Edit
                                         </button>
-                                        <button @click="deleteTarget = rule" class="px-2.5 py-1.5 text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
+                                        <button @click="deleteTarget = rule" class="w-24 px-2.5 py-1.5 text-center text-xs font-medium text-destructive bg-destructive/10 border border-destructive/20 rounded-lg hover:bg-destructive/20 transition-colors">
                                             Hapus
                                         </button>
                                     </div>
