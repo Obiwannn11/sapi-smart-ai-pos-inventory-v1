@@ -34,11 +34,34 @@ class UpsellRule extends Model
         'is_active' => true,
     ];
 
+    /**
+     * `date:Y-m-d`, bukan `date` — dan bedanya BUKAN kosmetik ([BL-082]).
+     *
+     * Cast `date` menyimpan tengah malam menurut zona bisnis, lalu
+     * menyerialkannya ke JSON sebagai UTC: `2026-08-20` berangkat dari server
+     * sebagai `"2026-08-19T16:00:00.000000Z"` di Asia/Makassar. Layar yang
+     * memotongnya dengan `.slice(0, 10)` — dan semuanya memotong begitu —
+     * membaca tanggal SEHARI SEBELUMNYA.
+     *
+     * Tiga akibatnya, dan yang ketiga merusak data:
+     *
+     *   1. Kolom "Berlaku" menyebut tanggal yang salah.
+     *   2. Lencana "Belum mulai"/"Sudah berakhir" berpindah sehari lebih awal
+     *      daripada `activeOn()`, yang membandingkan tanggal di SQL dengan
+     *      benar. Layar dan kasir jadi tidak sependapat.
+     *   3. Membuka formulir Edit mengisi tanggalnya dengan nilai yang sudah
+     *      mundur sehari, dan menyimpannya menuliskan kemunduran itu kembali
+     *      ke basis data. Aturan yang berulang kali disunting merayap mundur,
+     *      sehari tiap suntingan.
+     *
+     * Kolomnya memang tanggal-tanpa-jam, jadi ia tidak punya urusan dengan zona
+     * waktu sama sekali; formatnya yang dikunci, bukan zonanya yang ditambal.
+     */
     protected function casts(): array
     {
         return [
-            'starts_on' => 'date',
-            'ends_on' => 'date',
+            'starts_on' => 'date:Y-m-d',
+            'ends_on' => 'date:Y-m-d',
             'is_active' => 'boolean',
         ];
     }

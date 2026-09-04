@@ -772,3 +772,19 @@ test('halaman aturan diskon mengirim sebab dan penanda lantai ke layar', functio
         )
     );
 });
+
+test('jendela tanggal aturan diskon sampai ke layar sebagai Y-m-d', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext(cost: 2000);
+
+    $rule = DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id,
+        'product_variant_id' => $variant->id,
+        'starts_on' => '2026-09-10',
+        'ends_on' => '2026-09-20',
+    ]);
+
+    expect($rule->fresh()->toArray())->toMatchArray([
+        'starts_on' => '2026-09-10',
+        'ends_on' => '2026-09-20',
+    ]);
+});

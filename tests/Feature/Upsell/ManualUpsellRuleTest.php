@@ -507,3 +507,51 @@ test('owner tidak bisa menggeser aturan tenant lain', function () {
     post("/owner/upsell-rules/{$milikOrangLain->id}/move", ['direction' => 'up'])
         ->assertNotFound();
 });
+
+// --- Jendela tanggal yang sampai ke layar ---
+//
+// Cast `date` biasa menyerialkan tengah malam zona bisnis sebagai UTC, jadi
+// di Asia/Makassar `2026-09-10` berangkat sebagai "2026-09-09T16:00:00Z" dan
+// setiap layar yang memotongnya dengan `.slice(0, 10)` membaca tanggal SEHARI
+// SEBELUMNYA — termasuk formulir Edit, yang lalu menyimpan kemunduran itu
+// kembali ke basis data ([BL-082]).
+
+test('jendela tanggal sampai ke layar sebagai Y-m-d, bukan tengah malam UTC', function () {
+    $rule = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+        'starts_on' => '2026-09-10',
+        'ends_on' => '2026-09-20',
+    ]);
+
+    expect($rule->fresh()->toArray())->toMatchArray([
+        'starts_on' => '2026-09-10',
+        'ends_on' => '2026-09-20',
+    ]);
+});
+
+test('menyunting aturan tidak menggeser tanggalnya mundur', function () {
+    $suggested = makeRuleVariant($this->tenant);
+
+    $rule = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => $suggested->id,
+        'starts_on' => '2026-09-10',
+        'ends_on' => '2026-09-20',
+    ]);
+
+    // Persis yang dilakukan layar: baca tanggalnya, kirim balik apa adanya.
+    $terbaca = $rule->fresh()->toArray();
+
+    put("/owner/upsell-rules/{$rule->id}", [
+        'suggested_variant_id' => $suggested->id,
+        'starts_on' => substr($terbaca['starts_on'], 0, 10),
+        'ends_on' => substr($terbaca['ends_on'], 0, 10),
+        'is_active' => true,
+    ])->assertSessionHas('success');
+
+    expect($rule->fresh()->toArray())->toMatchArray([
+        'starts_on' => '2026-09-10',
+        'ends_on' => '2026-09-20',
+    ]);
+});
