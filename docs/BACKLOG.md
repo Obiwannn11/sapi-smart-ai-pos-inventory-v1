@@ -105,6 +105,23 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
+### [BL-101] Satu Barang Bisa Mengisi Dua Slot Kasir Sekaligus Lewat Dua Jenis Saran Berbeda
+- **Ditemukan:** 2026-09-04 (saat memeriksa pratinjau slot secara visual, dengan aturan uji buatan sendiri)
+- **Sumber:** Baris pratinjau "Espresso - Single" menampilkan **Espresso - Double dua kali** — sekali sebagai `Pilihan pemilik`, sekali sebagai `Naik ukuran` — dan keduanya menang slot
+- **Status:** Open
+- **Prioritas:** Medium — tidak ada uang yang salah, tapi ia memakan slot yang paling langka di fitur ini. Kasir hanya punya tiga, dan dua di antaranya bisa terpakai untuk barang yang sama
+- **Area Terdampak:**
+  - `app/Services/Upsell/Suggestion.php` — `key()`, bentuknya `type:pemicu:varian`
+  - `app/Services/Upsell/UpsellIndexBuilder.php` — `rankForCart()`, tempat dedup satu-satunya terjadi (`$picked[$suggestion['key']]`)
+  - `resources/js/Components/UpsellStrip.vue` — tempat akibatnya terlihat kasir
+- **Deskripsi:**
+  Dedup di `rankForCart()` memakai `key()`, dan `key()` mengandung **jenis** sarannya. Dua strategi yang kebetulan menunjuk varian yang sama karena itu menghasilkan dua kunci berbeda dan lolos berdua.
+  Cara paling mudah menemuinya: owner menulis aturan "dorong Espresso Double" (tanpa pemicu), sementara mesin sudah menyarankan Espresso Double sebagai naik ukuran dari Espresso Single. Begitu Espresso Single masuk keranjang, strip kasir memuat Espresso Double dua kali, dengan dua lencana berbeda dan dua alasan berbeda, memakan dua dari tiga slot.
+  **Ini perilaku lama, bukan bawaan perombakan tampilan 2026-09-03/04.** Yang berubah hanyalah kemudahan menemuinya: sebelum `[BL-074]` seluruh saran datang dari mesin, dan dua strategi mesin jarang menunjuk varian yang sama. Begitu owner bisa menuliskan targetnya sendiri, tabrakan ini jadi wajar — orang mendorong barang yang memang layak didorong, dan mesin sudah lebih dulu memikirkan hal yang sama.
+- **Kenapa `key()` TIDAK boleh sekadar dibuang jenisnya:** kunci itu dipakai dua hal lain — client mengingat saran mana yang sudah ditutup kasir, dan checkout mencocokkan event ke saran yang tepat. Menyamakan kunci dua saran berbeda akan membuat laporan kehilangan kemampuan memisahkan `attach` dari `upsize`, yang justru inti tabel "Per Jenis Saran".
+- **Usulan Perbaikan:** dedup **kedua** di `rankForCart()`, setelah pengurutan skor dan sebelum pemotongan slot: buang saran yang `suggested_variant_id`-nya sudah dipakai saran berskor lebih tinggi. Yang bertahan otomatis yang paling mendesak, dan aturan manual menang karena lantai skornya — jadi "Pilihan pemilik" yang tampil, bukan "Naik ukuran". `key()` tidak perlu disentuh sama sekali.
+- **Yang perlu diperiksa saat mengerjakannya:** saran ber-modifier (`attach`) menunjuk `suggested_modifier_id`, bukan varian; dedup per varian tidak boleh diam-diam membuang dua add-on berbeda pada produk yang sama.
+
 ### [BL-099] Saklar Per-Jenis Saran Jual Hanya Ada di `config/upsell.php` — Owner Tak Punya Jalan ke Sana
 - **Ditemukan:** 2026-09-03 (saat merombak tampilan tiga halaman Saran Jual & Aturan)
 - **Sumber:** Keterangan di halaman Saran Jual yang berbunyi "Jenis yang tak pernah diterima bisa dimatikan di `config/upsell.php`" — kalimat yang menyuruh pemilik warung menyunting berkas PHP, dan dibuang saat perombakan
