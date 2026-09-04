@@ -31,34 +31,48 @@ const emit = defineEmits(['accept', 'reject', 'retract']);
 
 const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
 
-// Tiap jenis menjawab pertanyaan berbeda, jadi tampilannya pun dibedakan —
-// kasir harus bisa tahu sekilas ini "tambah topping" atau "barang mau habis".
+/**
+ * Empat jenis saran, empat nada — seluruhnya token sistem desain.
+ *
+ * Sebelumnya warnanya diambil langsung dari palet Tailwind (sky, violet, amber,
+ * emerald), jadi ia tidak ikut tema mana pun dan tidak bisa diubah dari satu
+ * tempat. Yang lebih penting: empat warna itu dipilih supaya BERBEDA, bukan
+ * supaya BERARTI — dan warna yang cuma menandai kategori membuat kasir menghafal
+ * kunci warna alih-alih membacanya.
+ *
+ * Sekarang nadanya mengikuti SEBERAPA BESAR TUNTUTANNYA pada kasir:
+ *
+ *   - `manual`  → primary. Permintaan pemilik toko; ini yang wajib diucapkan.
+ *   - `pressed` → warning. Barang tertekan stok/kedaluwarsa — ada waktunya.
+ *   - `upsize`  → success. Naik ukuran, tambahan omzet yang nyata.
+ *   - `attach`  → muted.   Add-on, ajakan paling ringan dan paling sering.
+ *
+ * `attach` sengaja yang paling tenang meski paling sering muncul: strip ini
+ * hanya memuat tiga baris sekaligus, jadi nada tenang tidak menyembunyikannya —
+ * ia cuma berhenti berteriak sekeras permintaan pemilik.
+ */
 const TONE = {
     attach: {
-        ring: 'border-sky-200 bg-sky-50',
-        chip: 'bg-sky-100 text-sky-700',
-        button: 'bg-sky-600 hover:bg-sky-700',
+        ring: 'border-border bg-muted/40',
+        chip: 'bg-muted text-muted-foreground',
         title: 'Tambah',
     },
     pressed_stock: {
-        ring: 'border-amber-200 bg-amber-50',
-        chip: 'bg-amber-100 text-amber-800',
-        button: 'bg-amber-600 hover:bg-amber-700',
+        ring: 'border-warning/30 bg-warning/5',
+        chip: 'bg-warning/15 text-warning-foreground',
         title: 'Dorong',
     },
     upsize: {
-        ring: 'border-violet-200 bg-violet-50',
-        chip: 'bg-violet-100 text-violet-700',
-        button: 'bg-violet-600 hover:bg-violet-700',
+        ring: 'border-success/30 bg-success/5',
+        chip: 'bg-success/10 text-success',
         title: 'Naik ukuran',
     },
     // Aturan yang ditulis pemilik ([BL-074]). Tanpa baris ini ia menyamar jadi
     // add-on biasa, dan kasir kehilangan satu-satunya keterangan yang membuat
     // saran itu layak diucapkan: ini permintaan pemilik toko, bukan tebakan.
     manual: {
-        ring: 'border-emerald-200 bg-emerald-50',
-        chip: 'bg-emerald-100 text-emerald-700',
-        button: 'bg-emerald-600 hover:bg-emerald-700',
+        ring: 'border-primary/30 bg-primary/5',
+        chip: 'bg-primary/10 text-primary',
         title: 'Pilihan pemilik',
     },
 };
@@ -107,13 +121,15 @@ const taken = computed(() => props.accepted ?? []);
                     </p>
                 </div>
 
+<!-- Satu warna untuk keempat jenis. Tombol ini adalah AKSI yang
+                     sama persis di mana pun ia berdiri — "pelanggan menerima" —
+                     dan mewarnainya per kategori membuat kasir mengira empat
+                     tombol itu berbeda akibatnya. Kategorinya sudah dibawa
+                     lencana dan bingkai kartunya. -->
                 <button
                     type="button"
                     :disabled="disabled"
-                    :class="[
-                        'shrink-0 rounded-md px-2.5 py-1.5 text-[11px] font-semibold text-white transition disabled:opacity-40',
-                        toneFor(suggestion.type).button,
-                    ]"
+                    class="shrink-0 rounded-md bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
                     @click="emit('accept', suggestion)"
                 >
                     Diterima
@@ -141,15 +157,15 @@ const taken = computed(() => props.accepted ?? []);
             <div
                 v-for="suggestion in taken"
                 :key="suggestion.key"
-                class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5"
+                class="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-2.5 py-1.5"
             >
-                <svg class="h-3.5 w-3.5 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <svg class="h-3.5 w-3.5 shrink-0 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
                 </svg>
 
-                <span class="min-w-0 flex-1 truncate text-[11px] text-emerald-900">
+                <span class="min-w-0 flex-1 truncate text-[11px] text-foreground">
                     <span class="font-semibold">Diambil:</span> {{ suggestion.label }}
-                    <span v-if="Number(suggestion.actual_extra_amount) > 0" class="text-emerald-700">
+                    <span v-if="Number(suggestion.actual_extra_amount) > 0" class="text-success">
                         · +{{ formatCurrency(suggestion.actual_extra_amount) }}
                     </span>
                 </span>
@@ -157,7 +173,7 @@ const taken = computed(() => props.accepted ?? []);
                 <button
                     type="button"
                     :disabled="disabled"
-                    class="shrink-0 rounded px-1.5 py-1 text-[11px] font-semibold text-emerald-800 underline-offset-2 transition hover:underline disabled:opacity-40"
+                    class="shrink-0 rounded px-1.5 py-1 text-[11px] font-semibold text-success underline-offset-2 transition hover:underline disabled:opacity-40"
                     title="Batalkan — barangnya dikeluarkan lagi dari keranjang"
                     @click="emit('retract', suggestion)"
                 >

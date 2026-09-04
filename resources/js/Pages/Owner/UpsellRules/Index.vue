@@ -54,10 +54,10 @@ const props = defineProps({
  * dan di sana "barang tertekan" menyebutkan sebab yang justru sedang dinilai.
  */
 const SOURCE_BADGES = {
-    manual: { text: 'Pilihan pemilik', class: 'bg-emerald-100 text-emerald-700' },
-    attach: { text: 'Tambah', class: 'bg-sky-100 text-sky-700' },
-    pressed_stock: { text: 'Dorong', class: 'bg-amber-100 text-amber-800' },
-    upsize: { text: 'Naik ukuran', class: 'bg-violet-100 text-violet-700' },
+    manual: { text: 'Pilihan pemilik', class: 'bg-primary/10 text-primary' },
+    attach: { text: 'Tambah', class: 'bg-muted text-muted-foreground' },
+    pressed_stock: { text: 'Dorong', class: 'bg-warning/15 text-warning-foreground' },
+    upsize: { text: 'Naik ukuran', class: 'bg-success/10 text-success' },
 };
 
 const sourceBadge = (slot) => SOURCE_BADGES[slot.type] ?? { text: slot.type, class: 'bg-gray-100 text-gray-600' };
