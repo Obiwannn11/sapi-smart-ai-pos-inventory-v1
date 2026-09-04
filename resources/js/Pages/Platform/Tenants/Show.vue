@@ -9,7 +9,7 @@ import StatCard from '@/Components/Platform/StatCard.vue';
 import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import Notice from '@/Components/Platform/Notice.vue';
 import FormField from '@/Components/Platform/FormField.vue';
-import TabNav from '@/Components/Platform/TabNav.vue';
+import TabNav from '@/Components/TabNav.vue';
 import Button from '@/Components/Button.vue';
 import Modal from '@/Components/Modal.vue';
 import { businessMonth } from '@/support/date';

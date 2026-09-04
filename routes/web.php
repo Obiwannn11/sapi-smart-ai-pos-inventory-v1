@@ -277,6 +277,8 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
             ->name('upsell-rules.update');
         Route::post('upsell-rules/{upsellRule}/toggle', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'toggle'])
             ->name('upsell-rules.toggle');
+        Route::post('upsell-rules/{upsellRule}/move', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'move'])
+            ->name('upsell-rules.move');
         Route::delete('upsell-rules/{upsellRule}', [\App\Http\Controllers\Owner\UpsellRuleController::class, 'destroy'])
             ->name('upsell-rules.destroy');
 

@@ -7,10 +7,19 @@
  * berdasarkan selisih harga. Orang yang paling tahu barangnya sendiri belum
  * punya satu pun tempat untuk mengatakan "bulan ini dorong kopi susu botol".
  *
- * Dua bentuk aturan, dan bedanya sengaja dijelaskan di layar, bukan hanya di
- * kode: aturan BERPEMICU muncul saat barang tertentu masuk keranjang; aturan
- * TANPA PEMICU muncul di setiap penjualan. Owner memilih di antara keduanya
- * dengan satu dropdown, bukan dengan memahami dua konsep.
+ * **Dua tab, bukan satu gulungan panjang.** Halaman ini mengerjakan dua hal
+ * yang berbeda: MENULIS aturan, dan MELIHAT apa yang benar-benar muncul di
+ * kasir hari ini. Yang kedua dulu terkubur di dasar halaman, di bawah tabel
+ * dan modal — padahal ia jawaban atas pertanyaan pertama owner setiap kali ia
+ * selesai menulis aturan. Dua penawar menjaga isi tab yang tertutup tetap
+ * terbaca: angka di label tabnya, dan lompatan otomatis ke tab pratinjau tiap
+ * kali sebuah aturan disimpan.
+ *
+ * **Batasnya ditunjukkan, bukan diterangkan.** Penjaga stok, batas tiga slot,
+ * dan urutan rebutan dulu ditulis sebagai paragraf di kepala halaman. Paragraf
+ * itu dibaca sekali, oleh owner yang belum punya satu pun aturan, lalu tidak
+ * pernah dibaca lagi tepat pada saat batasnya menggigit. Sekarang ketiganya
+ * diperagakan tab pratinjau, pada barang milik owner sendiri.
  */
 import { ref, computed } from 'vue';
 import { Deferred, useForm, Head } from '@inertiajs/vue3';
@@ -18,6 +27,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import TabNav from '@/Components/TabNav.vue';
 import { businessToday } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
@@ -101,6 +111,34 @@ const dormantReason = (rule) => {
     return null;
 };
 
+/** Ringkasan yang menggantikan paragraf pengantar: angka, bukan penjelasan. */
+const ruleCounts = computed(() => {
+    if (!props.rules) return null;
+
+    const live = props.rules.filter((rule) => dormantReason(rule) === null).length;
+
+    return { live, dormant: props.rules.length - live };
+});
+
+// --- Tab ---
+const activeTab = ref('rules');
+
+/**
+ * Angka di label tab pratinjau: berapa slot kasir yang benar-benar terisi pada
+ * penjualan apa pun hari ini. Inilah satu-satunya keadaan yang tidak bisa
+ * ditebak dari tab sebelah, jadi inilah yang dibawa ke luar.
+ */
+const previewSlotCount = computed(() => {
+    if (!props.preview?.enabled) return null;
+
+    return props.preview.cart_level.filter((slot) => slot.wins_slot).length || null;
+});
+
+const tabs = computed(() => [
+    { key: 'rules', label: 'Aturan saya' },
+    { key: 'preview', label: 'Muncul di kasir', badge: previewSlotCount.value },
+]);
+
 // --- Form ---
 const showForm = ref(false);
 const editingId = ref(null);
@@ -111,7 +149,6 @@ const form = useForm({
     note: '',
     starts_on: '',
     ends_on: '',
-    priority: 0,
     is_active: true,
 });
 
@@ -128,7 +165,6 @@ const openEdit = (rule) => {
     form.note = rule.note ?? '';
     form.starts_on = rule.starts_on ? rule.starts_on.slice(0, 10) : '';
     form.ends_on = rule.ends_on ? rule.ends_on.slice(0, 10) : '';
-    form.priority = rule.priority;
     form.is_active = rule.is_active;
     form.clearErrors();
     editingId.value = rule.id;
@@ -143,7 +179,15 @@ const closeForm = () => {
 };
 
 const submit = () => {
-    const options = { preserveScroll: true, onSuccess: () => closeForm() };
+    const options = {
+        preserveScroll: true,
+        onSuccess: () => {
+            closeForm();
+            // Akibat aturan yang baru ditulis DITUNJUKKAN, bukan diserahkan
+            // pada owner untuk dicari sendiri di tab sebelah.
+            activeTab.value = 'preview';
+        },
+    };
 
     if (editingId.value) {
         form.put(`/owner/upsell-rules/${editingId.value}`, options);
@@ -157,6 +201,17 @@ const toggleForm = useForm({});
 
 const toggle = (rule) => {
     toggleForm.post(`/owner/upsell-rules/${rule.id}/toggle`, { preserveScroll: true });
+};
+
+// --- Urutan ---
+//
+// Menggantikan kolom isian berisi angka 0–999. Owner yang ingin sebuah aturan
+// tampil lebih dulu sedang menunjuk baris, bukan memikirkan bilangan.
+const moveForm = useForm({ direction: 'up' });
+
+const move = (rule, direction) => {
+    moveForm.direction = direction;
+    moveForm.post(`/owner/upsell-rules/${rule.id}/move`, { preserveScroll: true });
 };
 
 // --- Hapus ---
@@ -178,13 +233,13 @@ const doDelete = () => {
 
     <div class="max-w-5xl mx-auto">
         <!-- Header -->
-        <div class="flex items-start justify-between mb-6 gap-4">
+        <div class="flex items-start justify-between mb-5 gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Aturan Saran Jual</h1>
-                <p class="text-sm text-gray-500 mt-1">
-                    Saran yang <strong>Anda</strong> tentukan sendiri, di samping saran yang ditemukan sistem dari data penjualan.
-                    Aturan di sini selalu tampil lebih dulu.
+                <p v-if="ruleCounts" class="text-sm text-gray-500 mt-1">
+                    {{ ruleCounts.live }} tampil di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} diam</template>
                 </p>
+                <p v-else class="text-sm text-gray-500 mt-1">Memuat aturan…</p>
             </div>
             <button
                 @click="openCreate"
@@ -197,18 +252,27 @@ const doDelete = () => {
             </button>
         </div>
 
-        <!-- Batas yang tidak bisa ditembus aturan manual. Ditulis di sini supaya
-             owner tidak menyimpulkan fiturnya rusak saat sarannya tidak muncul. -->
-        <div class="mb-5 flex gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
-            <svg class="mt-px h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>
-                Aturan tetap tunduk pada penjaga barang: barang yang <strong>stoknya habis, sudah kedaluwarsa, atau produknya nonaktif</strong>
-                tidak akan disarankan walaupun tertulis di sini. Kasir juga menampilkan paling banyak
-                <strong>3 saran</strong> per penjualan, dan aturan Anda mengisi slotnya lebih dulu.
-            </span>
-        </div>
+        <!-- Saklar sistem berada DI ATAS tab, bukan di dalam salah satunya:
+             kalau saran jual dimatikan seluruhnya, kedua tab sedang berbohong. -->
+        <Deferred data="preview">
+            <template #fallback><span /></template>
+
+            <div class="space-y-2 mb-4">
+                <div v-if="!preview.enabled" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Saran jual sedang <strong>dimatikan seluruhnya</strong> di setelan sistem. Kasir tidak menerima
+                    saran apa pun, termasuk aturan yang Anda tulis di sini.
+                </div>
+
+                <div
+                    v-else-if="disabledTypeNames"
+                    class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+                >
+                    Jenis saran berikut sedang dimatikan di setelan sistem: <strong>{{ disabledTypeNames }}</strong>.
+                </div>
+            </div>
+        </Deferred>
+
+        <TabNav :tabs="tabs" v-model="activeTab" class="mb-5" />
 
         <!-- Modal Form -->
         <Teleport to="body">
@@ -237,10 +301,6 @@ const doDelete = () => {
                                     searchable
                                     :error="form.errors.trigger_variant_id"
                                 />
-                                <p class="mt-1 text-xs text-gray-500">
-                                    Pilih satu barang agar saran hanya muncul saat barang itu masuk keranjang,
-                                    atau biarkan "setiap penjualan" untuk mendorong sesuatu sepanjang periode.
-                                </p>
                             </div>
 
                             <div>
@@ -264,9 +324,7 @@ const doDelete = () => {
                                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                                 />
                                 <p v-if="form.errors.note" class="mt-1 text-xs text-destructive">{{ form.errors.note }}</p>
-                                <p v-else class="mt-1 text-xs text-gray-500">
-                                    Tampil apa adanya di layar kasir. Kosongkan bila tidak perlu.
-                                </p>
+                                <p v-else class="mt-1 text-xs text-gray-500">Tampil apa adanya di layar kasir.</p>
                             </div>
 
                             <div class="grid grid-cols-2 gap-3">
@@ -277,6 +335,7 @@ const doDelete = () => {
                                         type="date"
                                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                                     />
+                                    <p class="mt-1 text-xs text-gray-500">Kosong = mulai sekarang</p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Berakhir</label>
@@ -286,25 +345,8 @@ const doDelete = () => {
                                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                                     />
                                     <p v-if="form.errors.ends_on" class="mt-1 text-xs text-destructive">{{ form.errors.ends_on }}</p>
+                                    <p v-else class="mt-1 text-xs text-gray-500">Kosong = sampai dimatikan</p>
                                 </div>
-                            </div>
-                            <p class="text-xs text-gray-500 -mt-2">
-                                Boleh disetel dari jauh hari — aturan baru muncul di kasir pada tanggal mulainya.
-                                Kosongkan keduanya agar berlaku terus sampai dimatikan.
-                            </p>
-
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Urutan</label>
-                                <input
-                                    v-model.number="form.priority"
-                                    type="number"
-                                    min="0"
-                                    max="999"
-                                    class="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                                />
-                                <p class="mt-1 text-xs text-gray-500">
-                                    Angka lebih besar tampil lebih dulu — hanya berpengaruh sesama aturan Anda sendiri.
-                                </p>
                             </div>
 
                             <label class="flex items-center gap-3">
@@ -326,9 +368,10 @@ const doDelete = () => {
             </Transition>
         </Teleport>
 
-        <!-- Tabel. Ditunda ([BL-037]) — kerangkanya memakai jumlah kolom yang
-             sama supaya lebar kolom tidak berubah saat barisnya tiba. -->
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <!-- ── Tab 1: aturan yang owner tulis ──────────────────────────────
+             Ditunda ([BL-037]) — kerangkanya memakai jumlah kolom yang sama
+             supaya lebar kolom tidak berubah saat barisnya tiba. -->
+        <div v-show="activeTab === 'rules'" class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <Deferred data="rules">
                 <template #fallback>
                     <SkeletonTable :rows="5" :columns="5" label="Memuat aturan saran jual…" />
@@ -338,6 +381,7 @@ const doDelete = () => {
                     <table class="w-full">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200">
+                                <th class="w-10 px-2 py-3"><span class="sr-only">Urutan</span></th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Pemicu</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Disarankan</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Berlaku</th>
@@ -346,7 +390,31 @@ const doDelete = () => {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
-                            <tr v-for="rule in rules" :key="rule.id" class="hover:bg-gray-50 transition-colors">
+                            <tr v-for="(rule, index) in rules" :key="rule.id" class="hover:bg-gray-50 transition-colors">
+                                <td class="px-2 py-4 align-middle">
+                                    <div class="flex flex-col items-center gap-0.5">
+                                        <button
+                                            :disabled="index === 0 || moveForm.processing"
+                                            :aria-label="`Naikkan ${variantLabel(rule.suggested_variant)}`"
+                                            class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                            @click="move(rule, 'up')"
+                                        >
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            :disabled="index === rules.length - 1 || moveForm.processing"
+                                            :aria-label="`Turunkan ${variantLabel(rule.suggested_variant)}`"
+                                            class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                            @click="move(rule, 'down')"
+                                        >
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </td>
                                 <td class="px-5 py-4">
                                     <span v-if="rule.trigger_variant" class="text-sm text-gray-900">
                                         {{ variantLabel(rule.trigger_variant) }}
@@ -391,13 +459,13 @@ const doDelete = () => {
                                 </td>
                             </tr>
                             <tr v-if="rules && rules.length === 0">
-                                <td colspan="5" class="px-5 py-12 text-center">
+                                <td colspan="6" class="px-5 py-12 text-center">
                                     <svg class="mx-auto w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                                     </svg>
                                     <p class="mt-2 text-sm text-gray-500">Belum ada aturan buatan Anda</p>
                                     <p class="mt-1 text-xs text-gray-400">
-                                        Kasir tetap menerima saran dari sistem. Aturan di sini menambahkan saran yang Anda pilih sendiri.
+                                        Kasir tetap menerima saran dari sistem.
                                     </p>
                                     <button @click="openCreate" class="mt-3 text-sm text-primary hover:text-primary/80 font-medium">
                                         Tambah aturan pertama
@@ -410,18 +478,10 @@ const doDelete = () => {
             </Deferred>
         </div>
 
-        <!-- Pratinjau slot kasir ([BL-092]).
-             Tabel di atas hanya memperlihatkan separuh kenyataan — aturan yang
-             Anda tulis. Bagian ini memperlihatkan separuh lainnya: saran yang
-             ditemukan sistem dari stok, dan siapa yang sebenarnya mengisi
-             ketiga slot kasir hari ini. -->
-        <div class="mt-8">
-            <h2 class="text-lg font-semibold text-gray-900">Yang Muncul di Kasir Hari Ini</h2>
-            <p class="text-sm text-gray-500 mt-1 mb-4">
-                Aturan Anda dan saran otomatis sistem berebut slot yang sama. Daftar ini dihitung dengan cara
-                yang sama persis seperti layar kasir, memakai stok dan tanggal hari ini.
-            </p>
-
+        <!-- ── Tab 2: apa yang benar-benar muncul di kasir hari ini ([BL-092])
+             Dihitung dengan kode yang sama persis dengan layar kasir, memakai
+             stok dan tanggal hari ini. -->
+        <div v-show="activeTab === 'preview'">
             <Deferred data="preview">
                 <template #fallback>
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -430,28 +490,10 @@ const doDelete = () => {
                 </template>
 
                 <div class="space-y-4">
-                    <!-- Saklar mati adalah penjelasan pertama yang owner butuhkan,
-                         bukan daftar kosong tanpa sebab. -->
-                    <div v-if="!preview.enabled" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                        Saran jual sedang <strong>dimatikan seluruhnya</strong> di setelan sistem. Kasir tidak menerima
-                        saran apa pun, termasuk aturan yang Anda tulis di atas.
-                    </div>
-
-                    <div
-                        v-else-if="disabledTypeNames"
-                        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
-                    >
-                        Jenis saran berikut sedang dimatikan di setelan sistem: <strong>{{ disabledTypeNames }}</strong>.
-                    </div>
-
                     <!-- Tanpa pemicu: inilah yang dilihat kasir pada penjualan apa pun. -->
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                         <div class="px-5 py-3 border-b border-gray-100">
                             <h3 class="text-sm font-semibold text-gray-800">Pada setiap penjualan</h3>
-                            <p class="text-xs text-gray-500 mt-0.5">
-                                Saran yang tidak menunggu barang pemicu — aturan tanpa pemicu, dan barang tertekan
-                                stok yang ditemukan sistem.
-                            </p>
                         </div>
 
                         <ul v-if="preview.cart_level.length > 0" class="divide-y divide-gray-100">
@@ -493,8 +535,7 @@ const doDelete = () => {
                         </ul>
 
                         <p v-else class="px-5 py-6 text-center text-sm text-gray-500">
-                            Tidak ada saran tanpa pemicu hari ini. Kasir hanya melihat saran saat barang pemicunya
-                            masuk keranjang.
+                            Tidak ada saran tanpa pemicu hari ini.
                         </p>
                     </div>
 
@@ -503,10 +544,6 @@ const doDelete = () => {
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                         <div class="px-5 py-3 border-b border-gray-100">
                             <h3 class="text-sm font-semibold text-gray-800">Saat barang tertentu masuk keranjang</h3>
-                            <p class="text-xs text-gray-500 mt-0.5">
-                                Isi kolom kanan adalah maksimal {{ preview.max_per_transaction }} saran yang menang slot
-                                bila keranjang hanya berisi barang di kolom kiri.
-                            </p>
                         </div>
 
                         <div v-if="preview.triggers.length > 0" class="overflow-x-auto">

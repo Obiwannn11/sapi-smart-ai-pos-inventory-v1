@@ -12,6 +12,7 @@ use App\Models\UpsellRule;
 use App\Services\Upsell\UpsellIndexBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -187,7 +188,15 @@ class UpsellRuleController extends Controller
 
     public function store(StoreUpsellRuleRequest $request): RedirectResponse
     {
-        UpsellRule::create($request->validated());
+        $data = $request->validated();
+
+        // Aturan baru mendarat DI ATAS daftar, bukan di dasarnya. Slot kasir
+        // hanya tiga; aturan yang lahir di urutan terakhir tidak muncul di mana
+        // pun, dan owner yang baru saja menuliskannya menyimpulkan fiturnya
+        // rusak. Nilai yang dikirim eksplisit tetap dihormati.
+        $data['priority'] ??= (int) UpsellRule::max('priority') + 1;
+
+        UpsellRule::create($data);
 
         return back()->with('success', 'Aturan saran jual ditambahkan.');
     }
@@ -214,6 +223,47 @@ class UpsellRuleController extends Controller
         return back()->with('success', $upsellRule->is_active
             ? 'Aturan dinyalakan.'
             : 'Aturan dimatikan — kasir tidak lagi melihatnya.');
+    }
+
+    /**
+     * Geser satu aturan satu langkah ke atas atau ke bawah.
+     *
+     * Menggantikan kolom isian "Urutan" berisi angka 0–999. Angka prioritas
+     * adalah cara MESIN mengurutkan; owner yang ingin sebuah aturan tampil
+     * lebih dulu tidak sedang memikirkan bilangan, ia sedang menunjuk baris.
+     *
+     * Seluruh prioritas DITULIS ULANG, bukan ditukar dua-dua: nilai bawaannya
+     * 0, jadi aturan yang belum pernah disentuh semuanya seri dan urutannya
+     * jatuh ke `id`. Menukar dua angka nol tidak memindahkan apa pun di layar.
+     */
+    public function move(Request $request, UpsellRule $upsellRule): RedirectResponse
+    {
+        $direction = $request->validate([
+            'direction' => ['required', 'in:up,down'],
+        ])['direction'];
+
+        // Urutan yang sama persis dengan yang dipakai `index()` — kalau kedua
+        // urutan ini berbeda, panahnya akan memindahkan baris yang tidak
+        // ditunjuk owner.
+        $rules = UpsellRule::orderByDesc('priority')->orderByDesc('id')->get()->values();
+
+        $from = $rules->search(fn (UpsellRule $rule) => $rule->is($upsellRule));
+        $to = $direction === 'up' ? $from - 1 : $from + 1;
+
+        if ($from === false || $to < 0 || $to >= $rules->count()) {
+            return back();
+        }
+
+        $ordered = $rules->all();
+        [$ordered[$from], $ordered[$to]] = [$ordered[$to], $ordered[$from]];
+
+        DB::transaction(function () use ($ordered) {
+            foreach ($ordered as $position => $rule) {
+                $rule->update(['priority' => count($ordered) - $position]);
+            }
+        });
+
+        return back();
     }
 
     public function destroy(UpsellRule $upsellRule): RedirectResponse

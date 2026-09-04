@@ -1,11 +1,16 @@
 <script setup>
 /**
- * Nav tab untuk halaman rincian panel platform.
+ * Nav tab, murni di sisi klien.
  *
- * Murni di sisi klien — berpindah tab tidak memuat ulang apa pun, karena
- * seluruh isinya sudah ikut di payload halaman. Yang tidak boleh dilihat
- * pembacanya tidak dikirim sama sekali, jadi tab-nya pun tidak ada untuk
- * ditekan; menyaringnya di sini bukan tugas komponen ini.
+ * Berpindah tab tidak memuat ulang apa pun: seluruh isinya sudah ikut di
+ * payload halaman. Yang tidak boleh dilihat pembacanya tidak dikirim sama
+ * sekali, jadi tab-nya pun tidak ada untuk ditekan; menyaringnya di sini
+ * bukan tugas komponen ini.
+ *
+ * `badge` bukan hiasan. Isi tab yang tidak sedang dibuka tak terlihat sama
+ * sekali, dan perbandingan yang menuntut satu klik lebih dulu adalah
+ * perbandingan yang tidak pernah terjadi — angka di labelnya yang membuat
+ * keadaan tab sebelah tetap terbaca tanpa dibuka.
  */
 defineProps({
     // [{ key, label, badge? }] — `badge` untuk angka kecil di sebelah label.

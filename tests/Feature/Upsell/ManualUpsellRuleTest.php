@@ -418,3 +418,92 @@ test('pratinjau menyebutkan jenis saran yang dimatikan lewat config', function (
             )
         );
 });
+
+// --- Menggeser urutan ---
+//
+// Kolom isian "Urutan" berisi angka 0–999 diganti dua panah di tabel. Yang
+// dijaga di sini adalah hal yang membuat panah terasa rusak padahal tidak:
+// prioritas bawaan 0 membuat seluruh aturan seri, dan menukar dua angka nol
+// tidak memindahkan apa pun.
+
+test('menggeser ke atas memindahkan aturan walau prioritasnya masih seri', function () {
+    $atas = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+    ]);
+    $bawah = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+    ]);
+
+    // Keduanya berprioritas 0, jadi urutan tampilnya jatuh ke id menurun:
+    // $bawah yang dibuat belakangan justru tampil lebih dulu.
+    expect($atas->priority)->toBe(0)
+        ->and($bawah->priority)->toBe(0);
+
+    post("/owner/upsell-rules/{$atas->id}/move", ['direction' => 'up'])
+        ->assertRedirect();
+
+    $urutan = UpsellRule::orderByDesc('priority')->orderByDesc('id')->pluck('id')->all();
+
+    expect($urutan)->toBe([$atas->id, $bawah->id]);
+});
+
+test('menggeser ke bawah mengembalikannya ke tempat semula', function () {
+    $pertama = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+        'priority' => 10,
+    ]);
+    $kedua = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+        'priority' => 5,
+    ]);
+
+    post("/owner/upsell-rules/{$pertama->id}/move", ['direction' => 'down']);
+
+    expect(UpsellRule::orderByDesc('priority')->orderByDesc('id')->pluck('id')->all())
+        ->toBe([$kedua->id, $pertama->id]);
+});
+
+test('menggeser aturan teratas ke atas tidak mengubah apa pun', function () {
+    $atas = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+        'priority' => 10,
+    ]);
+    $bawah = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+        'priority' => 5,
+    ]);
+
+    post("/owner/upsell-rules/{$atas->id}/move", ['direction' => 'up'])
+        ->assertRedirect();
+
+    expect(UpsellRule::orderByDesc('priority')->orderByDesc('id')->pluck('id')->all())
+        ->toBe([$atas->id, $bawah->id]);
+});
+
+test('arah geser selain naik atau turun ditolak', function () {
+    $rule = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => makeRuleVariant($this->tenant)->id,
+    ]);
+
+    post("/owner/upsell-rules/{$rule->id}/move", ['direction' => 'samping'])
+        ->assertSessionHasErrors('direction');
+});
+
+test('owner tidak bisa menggeser aturan tenant lain', function () {
+    $tenantLain = Tenant::factory()->create();
+
+    $milikOrangLain = UpsellRule::factory()->create([
+        'tenant_id' => $tenantLain->id,
+        'suggested_variant_id' => makeRuleVariant($tenantLain)->id,
+    ]);
+
+    post("/owner/upsell-rules/{$milikOrangLain->id}/move", ['direction' => 'up'])
+        ->assertNotFound();
+});
