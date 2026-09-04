@@ -1,7 +1,10 @@
 <script setup>
+import { computed } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
+import Button from '@/Components/Button.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -15,6 +18,12 @@ const form = useForm({
     phone:         props.tenant.phone ?? '',
     business_type: props.tenant.business_type ?? 'lainnya',
 });
+
+// Daftar jenis usaha datang sebagai peta nilai→label; SelectDropdown bekerja
+// dengan daftar.
+const businessTypeOptions = computed(() =>
+    Object.entries(props.businessTypes).map(([value, label]) => ({ value, label })),
+);
 
 const submit = () => {
     form.patch('/owner/settings', { preserveScroll: true });
@@ -56,9 +65,9 @@ const submit = () => {
                         rows="3"
                         placeholder="Contoh: Jl. Merdeka No. 1, Jakarta Pusat"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                        :class="{ 'border-red-300': form.errors.address }"
+                        :class="{ 'border-destructive/50': form.errors.address }"
                     />
-                    <p v-if="form.errors.address" class="mt-1 text-xs text-red-600">{{ form.errors.address }}</p>
+                    <p v-if="form.errors.address" class="mt-1 text-xs text-destructive">{{ form.errors.address }}</p>
                 </div>
 
                 <!-- No. Telepon -->
@@ -69,9 +78,9 @@ const submit = () => {
                         type="text"
                         placeholder="Contoh: 021-1234567"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        :class="{ 'border-red-300': form.errors.phone }"
+                        :class="{ 'border-destructive/50': form.errors.phone }"
                     />
-                    <p v-if="form.errors.phone" class="mt-1 text-xs text-red-600">{{ form.errors.phone }}</p>
+                    <p v-if="form.errors.phone" class="mt-1 text-xs text-destructive">{{ form.errors.phone }}</p>
                 </div>
 
                 <!-- Jenis Usaha -->
@@ -85,18 +94,13 @@ const submit = () => {
                      kolom yang menentukan tarif tidak boleh terlihat sama tak
                      berbahayanya dengan kolom nomor telepon ([BL-039]). -->
                 <div class="pt-5 border-t border-gray-200">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Jenis Usaha</label>
-                    <select
+                    <SelectDropdown
                         v-model="form.business_type"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        :class="{ 'border-red-300': form.errors.business_type }"
-                    >
-                        <option v-for="(label, value) in businessTypes" :key="value" :value="value">
-                            {{ label }}
-                        </option>
-                    </select>
-                    <p v-if="form.errors.business_type" class="mt-1 text-xs text-red-600">{{ form.errors.business_type }}</p>
-                    <p v-else class="mt-1 text-xs text-gray-500 leading-relaxed">
+                        :options="businessTypeOptions"
+                        label="Jenis Usaha"
+                        :error="form.errors.business_type"
+                    />
+                    <p v-if="!form.errors.business_type" class="mt-1 text-xs text-gray-500 leading-relaxed">
                         Ikut menentukan tarif langganan Anda. Mengubahnya
                         <span class="font-medium text-gray-700">tidak mengubah tagihan yang sudah terbit</span> —
                         pengaruhnya baru terasa di periode berikutnya.
@@ -105,17 +109,9 @@ const submit = () => {
 
                 <!-- Submit -->
                 <div class="flex justify-end pt-2">
-                    <button
-                        type="submit"
-                        :disabled="form.processing"
-                        class="inline-flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                        <svg v-if="form.processing" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                        </svg>
+                    <Button type="submit" size="lg" :loading="form.processing">
                         {{ form.processing ? 'Menyimpan...' : 'Simpan Profil' }}
-                    </button>
+                    </Button>
                 </div>
             </form>
         </div>

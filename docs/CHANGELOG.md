@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-04 | DECISION | Pengaturan | Ketiga Halaman Pengaturan Berhenti Merakit Kontrolnya Sendiri — Centang, Dropdown, dan Tombol Dipulangkan ke Komponen Bersama |
 | 2026-09-04 | DECISION | AI Analysis | Hasil AI Berhenti Menasihati dan Mulai Menunjuk Angka — Prompt Ditulis Ulang, Penomoran & Polling-nya Diperbaiki |
 | 2026-09-03 | DECISION | Promosi | Tiga Halaman Saran Jual & Diskon Berhenti Menjelaskan Dirinya — Batasnya Ditunjuk, Bukan Diceritakan |
 | 2026-09-03 | DECISION | Langganan | Halaman Langganan Dipecah Jadi Tiga Tab — Dua Kolom Dicoba Lebih Dulu dan Dibatalkan |
@@ -228,6 +229,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DECISION] Ketiga Halaman Pengaturan Berhenti Merakit Kontrolnya Sendiri — Centang, Dropdown, dan Tombol Dipulangkan ke Komponen Bersama
+- **Tanggal:** 2026-09-04
+- **Fase Terkait:** Di Luar Fase — penyeragaman tampilan, diminta pemilik.
+- **Dampak:** Frontend — ketiga tab Pengaturan (`Profil & Merek`, `Cara Kerja Sistem`, `Integrasi & Kredensial`) dan dua komponen bersama yang dipakai belasan halaman lain.
+- **Breaking Change:** Tidak. Tidak ada rute, request, maupun nama field yang berubah; 113 test `tests/Feature/Owner` tetap hijau.
+- **Deskripsi:** Ketiga halaman Pengaturan menulis sendiri centang, dropdown, dan tombolnya dari `<input type="checkbox">`, `<select>`, dan `<button>` mentah — padahal `Checkbox.vue`, `SelectDropdown.vue`, dan `Button.vue` sudah ada dan dipakai halaman lain. Akibatnya kontrol yang sama terlihat berbeda tergantung halaman mana yang sedang dibuka: centang bawaan browser di Pengaturan, centang kartu bertanda di Produk; menu abu-abu sistem di Pengaturan, popup bertanda centang hijau di Aturan Diskon. Sembilan belas kontrol dipulangkan ke komponen bersama, dan warna galat yang bercampur (`text-red-600` di satu baris, `text-destructive` di baris berikutnya) diseragamkan ke token tema.
+- **Dua cacat komponen yang baru ketahuan karena dipakai di sini.** Keduanya sudah lama ada dan diam:
+  1. `SelectDropdown` menghitung "sudah memilih" dari **isi nilainya** (`modelValue !== ''`), bukan dari ada tidaknya opsi yang cocok. Daftar yang memakai `''` sebagai pilihan sah karena itu tidak pernah bisa menampilkan labelnya — kolom Provider menampilkan placeholder abu-abu "Pilih..." padahal "Default (SumoPod gratis)" sedang terpilih. Ini bukan cuma soal halaman ini: **tujuh halaman lain** — `Produk` (daftar & form), `Transaksi`, `Mutasi Stok`, `Riwayat Kasir`, `Staf`, `Aturan Saran Jual` — punya opsi `''` berlabel "Semua …", "Tanpa Kategori", "Tanpa role", atau "Setiap penjualan" yang selama ini juga tampil sebagai placeholder abu-abu, bukan sebagai pilihan yang sedang berlaku. Satu perbaikan di komponennya menyembuhkan semuanya.
+  2. Tombol "kosongkan" di dalam pemicu dropdown adalah `<button>` di dalam `<button>`. HTML tidak mengizinkannya, dan browser diam-diam mengeluarkannya dari induknya. Diganti `<span role="button">` yang tetap bisa dicapai keyboard.
+- **Kenapa centangnya sekalian diberi peran dan fokus.** `Checkbox.vue` tidak memakai `<input>` sama sekali — ia `<label>` dengan `@click`. Artinya keyboard tidak pernah bisa mencapainya dan pembaca layar hanya menemukan teks biasa. Sekarang ia `<div role="checkbox">` dengan `aria-checked`, `tabindex`, dan Spasi/Enter. Ditambah prop `align="start"` supaya kotaknya sejajar baris pertama pada baris yang keterangannya panjang — di Pengaturan tiap centang punya satu paragraf penjelasan, dan kotak yang melayang di tengah paragraf terbaca seperti milik kalimat yang sedang disejajarinya.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/Settings/Index.vue` — dropdown Jenis Usaha dan tombol simpan; pembatas `border-t` di atasnya sengaja dipertahankan, karena kolom itu satu-satunya di halaman ini yang menggerakkan tarif.
+  - `resources/js/Pages/Owner/Settings/Operations.vue` — 6 centang, 3 dropdown, 2 tombol simpan dipulangkan ke komponen bersama; label field diseragamkan ke `text-gray-700`; cincin fokus input angka disamakan.
+  - `resources/js/Pages/Owner/Settings/Integrations.vue` — dropdown Provider, tombol simpan, dua tombol salin, tombol generate & cabut token.
+  - `resources/js/Components/SelectDropdown.vue` — `hasSelection` dihitung dari opsi yang cocok; Escape menutup dari mana pun fokusnya (handler pindah ke `document` karena popupnya di-teleport ke `<body>`); `role="listbox"`/`option`, `aria-expanded`; tombol kosongkan tidak lagi bersarang.
+  - `resources/js/Components/Checkbox.vue` — `role="checkbox"` + keyboard, prop `align`, keadaan disabled untuk varian kartu.
+- **Catatan Migrasi:** Tidak ada. Jalankan `npm run build` seperti biasa.
 
 ---
 

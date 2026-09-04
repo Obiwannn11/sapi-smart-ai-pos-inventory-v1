@@ -4,6 +4,8 @@ import { useForm, usePage, router, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
+import Button from '@/Components/Button.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -15,6 +17,16 @@ const props = defineProps({
     aiQuota: Object,
     mcp: Object,
 });
+
+// Label penyedia ditulis sekali di sini supaya kolomnya bisa memakai
+// SelectDropdown yang sama dengan halaman pengaturan lain.
+const providerOptions = [
+    { value: '',          label: 'Default (SumoPod gratis)' },
+    { value: 'sumopod',   label: 'SumoPod' },
+    { value: 'gemini',    label: 'Gemini' },
+    { value: 'openai',    label: 'OpenAI' },
+    { value: 'anthropic', label: 'Anthropic' },
+];
 
 const form = useForm({
     ai_provider: props.tenant.ai_provider ?? '',
@@ -93,19 +105,12 @@ const revokeMcpToken = () => {
             <form @submit.prevent="submit">
                 <!-- Provider -->
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-                    <select
+                    <SelectDropdown
                         v-model="form.ai_provider"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        :class="{ 'border-red-300': form.errors.ai_provider }"
-                    >
-                        <option value="">Default (SumoPod gratis)</option>
-                        <option value="sumopod">SumoPod</option>
-                        <option value="gemini">Gemini</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="anthropic">Anthropic</option>
-                    </select>
-                    <p v-if="form.errors.ai_provider" class="mt-1 text-xs text-red-600">{{ form.errors.ai_provider }}</p>
+                        :options="providerOptions"
+                        label="Provider"
+                        :error="form.errors.ai_provider"
+                    />
                 </div>
 
                 <!-- API Key -->
@@ -117,9 +122,9 @@ const revokeMcpToken = () => {
                         autocomplete="off"
                         :placeholder="tenant.ai_key_set ? '•••• tersimpan' : 'Masukkan API key Anda'"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        :class="{ 'border-red-300': form.errors.ai_api_key }"
+                        :class="{ 'border-destructive/50': form.errors.ai_api_key }"
                     />
-                    <p v-if="form.errors.ai_api_key" class="mt-1 text-xs text-red-600">{{ form.errors.ai_api_key }}</p>
+                    <p v-if="form.errors.ai_api_key" class="mt-1 text-xs text-destructive">{{ form.errors.ai_api_key }}</p>
                     <p v-else class="mt-1 text-xs text-gray-400">
                         {{ tenant.ai_key_set ? 'Kunci sudah tersimpan. Kosongkan untuk mempertahankannya.' : 'Kosongkan untuk memakai kuota gratis.' }}
                     </p>
@@ -133,24 +138,16 @@ const revokeMcpToken = () => {
                         type="text"
                         placeholder="Contoh: gpt-4o-mini"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        :class="{ 'border-red-300': form.errors.ai_model }"
+                        :class="{ 'border-destructive/50': form.errors.ai_model }"
                     />
-                    <p v-if="form.errors.ai_model" class="mt-1 text-xs text-red-600">{{ form.errors.ai_model }}</p>
+                    <p v-if="form.errors.ai_model" class="mt-1 text-xs text-destructive">{{ form.errors.ai_model }}</p>
                 </div>
 
                 <!-- Submit -->
                 <div class="flex justify-end pt-5">
-                    <button
-                        type="submit"
-                        :disabled="form.processing"
-                        class="inline-flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                        <svg v-if="form.processing" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                        </svg>
+                    <Button type="submit" size="lg" :loading="form.processing">
                         {{ form.processing ? 'Menyimpan...' : 'Simpan Kredensial' }}
-                    </button>
+                    </Button>
                 </div>
             </form>
         </div>
@@ -173,13 +170,13 @@ const revokeMcpToken = () => {
                         readonly
                         class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 font-mono"
                     />
-                    <button
-                        type="button"
+                    <Button
+                        variant="secondary"
+                        class="shrink-0"
                         @click="copy(mcp.endpoint, 'endpoint')"
-                        class="shrink-0 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                         {{ copied === 'endpoint' ? 'Tersalin!' : 'Salin' }}
-                    </button>
+                    </Button>
                 </div>
             </div>
 
@@ -195,13 +192,13 @@ const revokeMcpToken = () => {
                         readonly
                         class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm text-gray-800 font-mono"
                     />
-                    <button
-                        type="button"
+                    <Button
+                        variant="secondary"
+                        class="shrink-0"
                         @click="copy(mcpToken, 'token')"
-                        class="shrink-0 px-3 py-2 text-xs font-medium text-amber-800 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors"
                     >
                         {{ copied === 'token' ? 'Tersalin!' : 'Salin' }}
-                    </button>
+                    </Button>
                 </div>
             </div>
 
@@ -214,22 +211,12 @@ const revokeMcpToken = () => {
                 <span v-else class="text-xs text-gray-400">Belum ada token</span>
 
                 <div class="flex gap-2">
-                    <button
-                        type="button"
-                        @click="generateMcpToken"
-                        :disabled="generatingToken"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
+                    <Button :loading="generatingToken" @click="generateMcpToken">
                         {{ mcp.token_set ? 'Buat Ulang Token' : 'Generate Token' }}
-                    </button>
-                    <button
-                        v-if="mcp.token_set"
-                        type="button"
-                        @click="revokeMcpToken"
-                        class="inline-flex items-center px-4 py-2 text-destructive bg-destructive/10 border border-destructive/20 text-sm font-medium rounded-lg hover:bg-destructive/20 transition-colors"
-                    >
+                    </Button>
+                    <Button v-if="mcp.token_set" variant="destructiveSoft" @click="revokeMcpToken">
                         Cabut
-                    </button>
+                    </Button>
                 </div>
             </div>
         </div>

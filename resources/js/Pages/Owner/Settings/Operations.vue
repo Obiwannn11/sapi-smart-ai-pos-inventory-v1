@@ -3,6 +3,9 @@ import { computed } from 'vue';
 import { useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import Checkbox from '@/Components/Checkbox.vue';
+import SelectDropdown from '@/Components/SelectDropdown.vue';
+import Button from '@/Components/Button.vue';
 import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
@@ -48,6 +51,12 @@ const identityModeHint = computed(() => ({
     table: 'Sebelum menyimpan, kasir mengisi nomor meja lewat papan angka. Nomor ikut tercetak di struk dan tampil di riwayat.',
     code: 'Sistem memberi nomor panggil berurutan tiap hari — kasir tidak mengetik apa pun. Nomor dicetak besar di struk untuk dipanggil saat pesanan siap.',
 }[form.order_identity_mode] ?? ''));
+
+// Daftar mode datang dari server sebagai peta nilai→label; SelectDropdown
+// bekerja dengan daftar, jadi bentuknya disamakan di satu tempat.
+const identityModeOptions = computed(() =>
+    Object.entries(props.orderIdentityModes).map(([value, label]) => ({ value, label })),
+);
 
 const submit = () => {
     form.patch('/owner/settings/operations', { preserveScroll: true });
@@ -121,6 +130,17 @@ const taxExample = computed(() => {
     };
 });
 
+const taxModeOptions = computed(() =>
+    Object.entries(props.taxModes).map(([value, label]) => ({ value, label })),
+);
+
+// Kata yang tercetak di struk. Keterangannya ikut di dalam label karena
+// justru itulah yang membedakan keduanya bagi owner.
+const taxLabelOptions = [
+    { value: 'PPN', label: 'PPN — pajak pusat, untuk usaha yang sudah dikukuhkan PKP' },
+    { value: 'PB1', label: 'PB1 / PBJT — pajak daerah, untuk rumah makan dan kafe' },
+];
+
 const rupiah = (value) => Number(value || 0).toLocaleString('id-ID');
 
 const submitTax = () => {
@@ -150,8 +170,7 @@ const submitTax = () => {
                     </p>
 
                     <div class="space-y-3">
-                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
-                            <input v-model="form.kitchen_queue_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                        <Checkbox v-model="form.kitchen_queue_enabled" variant="card" align="start">
                             <span class="text-sm">
                                 <span class="font-medium text-gray-900 block">Antrian Dapur</span>
                                 <span class="text-xs text-gray-500">
@@ -159,15 +178,14 @@ const submitTax = () => {
                                     Mode ini <strong>tidak aktif saat perangkat offline</strong> — kasir kembali ke alur biasa dan penjualan hasil sinkronisasi tidak menyusul masuk papan.
                                 </span>
                             </span>
-                        </label>
+                        </Checkbox>
 
-                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
-                            <input v-model="form.self_order_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                        <Checkbox v-model="form.self_order_enabled" variant="card" align="start">
                             <span class="text-sm">
                                 <span class="font-medium text-gray-900 block">Self-Order</span>
                                 <span class="text-xs text-gray-500">Pemesanan mandiri pelanggan lewat QR/Telegram beserta saran jualnya.</span>
                             </span>
-                        </label>
+                        </Checkbox>
 
                         <div v-if="warnSelfOrderOff" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                             <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -179,20 +197,18 @@ const submitTax = () => {
                             </span>
                         </div>
 
-                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
-                            <input v-model="form.ai_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                        <Checkbox v-model="form.ai_enabled" variant="card" align="start">
                             <span class="text-sm">
                                 <span class="font-medium text-gray-900 block">AI Analysis &amp; MCP</span>
                                 <span class="text-xs text-gray-500">
                                     Analisis AI di aplikasi sekaligus akses AI client eksternal lewat token MCP.
                                     Kunci API dan tokennya sendiri diatur di
-                                    <a href="/owner/settings/integrations" class="text-primary hover:underline">Integrasi &amp; Kredensial</a>.
+                                    <a href="/owner/settings/integrations" class="text-primary hover:underline" @click.stop>Integrasi &amp; Kredensial</a>.
                                 </span>
                             </span>
-                        </label>
+                        </Checkbox>
 
-                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
-                            <input v-model="form.payment_proof_enabled" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                        <Checkbox v-model="form.payment_proof_enabled" variant="card" align="start">
                             <span class="text-sm">
                                 <span class="font-medium text-gray-900 block">Foto Bukti Bayar Non-Tunai</span>
                                 <span class="text-xs text-gray-500">
@@ -202,7 +218,7 @@ const submitTax = () => {
                                     Penjualan <strong>offline selalu tunai</strong>, jadi aturan ini tidak pernah menghalangi kasir saat sinyal mati.
                                 </span>
                             </span>
-                        </label>
+                        </Checkbox>
 
                         <div v-if="warnAiOff" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                             <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -231,7 +247,7 @@ const submitTax = () => {
                                 min="0"
                                 max="90"
                                 step="0.5"
-                                class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                             />
                             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
                         </div>
@@ -267,7 +283,7 @@ const submitTax = () => {
                                 type="number"
                                 min="0"
                                 step="1000"
-                                class="w-full pl-9 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                class="w-full pl-9 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                             />
                         </div>
                         <p class="text-xs text-gray-500">
@@ -296,8 +312,7 @@ const submitTax = () => {
                     </p>
 
                     <div class="space-y-3">
-                        <label class="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
-                            <input v-model="form.upsell_mandatory" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
+                        <Checkbox v-model="form.upsell_mandatory" variant="card" align="start">
                             <span class="text-sm">
                                 <span class="font-medium text-gray-900 block">Penawaran wajib diselesaikan</span>
                                 <span class="text-xs text-gray-500">
@@ -306,7 +321,7 @@ const submitTax = () => {
                                     yang tidak bisa hanyalah melewatinya tanpa menjawab.
                                 </span>
                             </span>
-                        </label>
+                        </Checkbox>
 
                         <div v-if="form.upsell_mandatory && !features.upsell_mandatory" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
                             <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -321,24 +336,19 @@ const submitTax = () => {
 
                         <!-- Identitas pesanan: satu mode, bukan tiga saklar -->
                         <div class="p-3 rounded-lg border border-gray-200">
-                            <label class="block text-sm font-medium text-gray-900 mb-1">Identitas Pesanan</label>
+                            <p class="text-sm font-medium text-gray-700 mb-1">Identitas Pesanan</p>
                             <p class="text-xs text-gray-500 mb-2">
                                 Cara mengenali pesanan saat dipanggil atau diantar.
                                 <strong>Pilih satu</strong> — outlet yang memakai ketiganya sekaligus biasanya berakhir tidak mengisi satu pun.
                             </p>
-                            <select
+                            <SelectDropdown
                                 v-model="form.order_identity_mode"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                :class="{ 'border-red-300': form.errors.order_identity_mode }"
-                            >
-                                <option v-for="(label, value) in orderIdentityModes" :key="value" :value="value">
-                                    {{ label }}
-                                </option>
-                            </select>
-                            <p v-if="form.errors.order_identity_mode" class="mt-1 text-xs text-red-600">
-                                {{ form.errors.order_identity_mode }}
+                                :options="identityModeOptions"
+                                :error="form.errors.order_identity_mode"
+                            />
+                            <p v-if="!form.errors.order_identity_mode" class="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                                {{ identityModeHint }}
                             </p>
-                            <p v-else class="mt-1.5 text-xs text-gray-500 leading-relaxed">{{ identityModeHint }}</p>
                         </div>
 
                         <div
@@ -358,17 +368,9 @@ const submitTax = () => {
 
                 <!-- Submit -->
                 <div class="flex justify-end pt-2">
-                    <button
-                        type="submit"
-                        :disabled="form.processing"
-                        class="inline-flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                        <svg v-if="form.processing" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                        </svg>
+                    <Button type="submit" size="lg" :loading="form.processing">
                         {{ form.processing ? 'Menyimpan...' : 'Simpan Cara Kerja' }}
-                    </button>
+                    </Button>
                 </div>
             </form>
         </div>
@@ -397,16 +399,12 @@ const submitTax = () => {
                         setelah tersimpan, kuncinya menutup kembali sendiri.
                     </div>
 
-                    <label
-                        class="flex gap-3 p-3 rounded-lg border border-gray-200"
-                        :class="taxLocked ? 'bg-gray-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'"
+                    <Checkbox
+                        v-model="taxForm.tax_enabled"
+                        variant="card"
+                        align="start"
+                        :disabled="taxLocked"
                     >
-                        <input
-                            v-model="taxForm.tax_enabled"
-                            type="checkbox"
-                            :disabled="taxLocked"
-                            class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring disabled:opacity-50"
-                        />
                         <span class="text-sm">
                             <span class="font-medium text-gray-900 block">Pungut pajak pada setiap penjualan</span>
                             <span class="text-xs text-gray-500">
@@ -414,7 +412,7 @@ const submitTax = () => {
                                 omzet dari pajak yang harus Anda setorkan.
                             </span>
                         </span>
-                    </label>
+                    </Checkbox>
 
                     <p v-if="taxForm.errors.tax_enabled" class="mt-1.5 text-xs text-destructive">
                         {{ taxForm.errors.tax_enabled }}
@@ -424,45 +422,32 @@ const submitTax = () => {
                 <div v-if="taxForm.tax_enabled" class="space-y-4 pt-1">
                     <!-- Jenis pajak: ditanyakan, tidak pernah ditebak -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-900 mb-1">Jenis Pajak</label>
+                        <p class="text-sm font-medium text-gray-700 mb-1">Jenis Pajak</p>
                         <p class="text-xs text-gray-500 mb-2">
                             Kata ini yang <strong>tercetak di struk pelanggan</strong>, dan keduanya menyebut dasar hukum yang berbeda.
                         </p>
-                        <select
+                        <SelectDropdown
                             v-model="taxForm.tax_label"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            :class="{ 'border-red-300': taxForm.errors.tax_label }"
-                        >
-                            <option value="">— pilih —</option>
-                            <option value="PPN">PPN — pajak pusat, untuk usaha yang sudah dikukuhkan PKP</option>
-                            <option value="PB1">PB1 / PBJT — pajak daerah, untuk rumah makan dan kafe</option>
-                        </select>
-                        <p v-if="taxForm.errors.tax_label" class="mt-1 text-xs text-red-600">
-                            {{ taxForm.errors.tax_label }}
-                        </p>
+                            :options="taxLabelOptions"
+                            placeholder="— pilih —"
+                            :error="taxForm.errors.tax_label"
+                        />
                     </div>
 
                     <!-- Mode: yang menentukan siapa menanggung -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-900 mb-1">Cara Membebankan</label>
-                        <select
+                        <SelectDropdown
                             v-model="taxForm.tax_mode"
+                            :options="taxModeOptions"
+                            label="Cara Membebankan"
                             :disabled="taxLocked"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-gray-50 disabled:text-gray-500"
-                            :class="{ 'border-red-300': taxForm.errors.tax_mode }"
-                        >
-                            <option v-for="(label, value) in taxModes" :key="value" :value="value">
-                                {{ label }}
-                            </option>
-                        </select>
-                        <p v-if="taxForm.errors.tax_mode" class="mt-1 text-xs text-red-600">
-                            {{ taxForm.errors.tax_mode }}
-                        </p>
+                            :error="taxForm.errors.tax_mode"
+                        />
                     </div>
 
                     <!-- Tarif: tidak pernah terkunci -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-900 mb-1">Tarif</label>
+                        <p class="text-sm font-medium text-gray-700 mb-1">Tarif</p>
                         <div class="flex items-center gap-3">
                             <div class="relative w-32">
                                 <input
@@ -471,7 +456,7 @@ const submitTax = () => {
                                     min="0"
                                     max="100"
                                     step="0.5"
-                                    class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                    class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                 />
                                 <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
                             </div>
@@ -507,17 +492,9 @@ const submitTax = () => {
                 </div>
 
                 <div class="flex justify-end pt-2">
-                    <button
-                        type="submit"
-                        :disabled="taxForm.processing"
-                        class="inline-flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                    >
-                        <svg v-if="taxForm.processing" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                        </svg>
+                    <Button type="submit" size="lg" :loading="taxForm.processing">
                         {{ taxForm.processing ? 'Menyimpan...' : 'Simpan Pajak' }}
-                    </button>
+                    </Button>
                 </div>
             </form>
         </div>
