@@ -105,6 +105,46 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
+### [BL-099] Saklar Per-Jenis Saran Jual Hanya Ada di `config/upsell.php` — Owner Tak Punya Jalan ke Sana
+- **Ditemukan:** 2026-09-03 (saat merombak tampilan tiga halaman Saran Jual & Aturan)
+- **Sumber:** Keterangan di halaman Saran Jual yang berbunyi "Jenis yang tak pernah diterima bisa dimatikan di `config/upsell.php`" — kalimat yang menyuruh pemilik warung menyunting berkas PHP, dan dibuang saat perombakan
+- **Status:** Open
+- **Prioritas:** Medium — bukan cacat, tapi lubang di sebuah lingkaran yang sudah hampir tertutup: laporannya memisahkan angka per jenis SUPAYA jenis yang tak pernah laku bisa dimatikan, lalu tidak menyediakan tempat mematikannya
+- **Area Terdampak:**
+  - `config/upsell.php` — array `types` (`attach`, `pressed_stock`, `upsize`, `manual`); komentarnya sendiri menulis "jenis yang terbukti tidak pernah diterima dimatikan di sini, bukan ditebak"
+  - `app/Http/Controllers/Owner/UpsellRuleController.php` — `disabledTypes()`; sisi bacanya sudah ada dan sudah tampil di halaman Aturan Saran Jual sebagai peringatan kuning
+  - `resources/js/Pages/Owner/Reports/Upsell.vue` — tabel "Per Jenis Saran", tempat kesimpulannya diambil
+  - `resources/js/Pages/Owner/Settings/Operations.vue` + `app/Http/Controllers/Owner/Settings/SystemBehaviorController.php` — tempat saklarnya semestinya berada, bersama `upsell_mandatory` yang sudah per-tenant
+- **Deskripsi:**
+  Laporan Saran Jual memecah angkanya per jenis saran, dan alasan pemecahan itu ditulis terang-terangan di `config/upsell.php`: jenis yang tak pernah diterima sebaiknya dimatikan berdasarkan bukti, bukan tebakan. Kesimpulannya bisa diambil owner dari layar; tindakannya tidak — satu-satunya saklar ada di berkas PHP yang hanya bisa disentuh orang dengan akses server.
+  Sisi bacanya sudah lengkap: `disabledTypes()` mengirim jenis yang mati ke layar, dan halaman Aturan Saran Jual menampilkannya sebagai peringatan kuning. Yang belum ada hanya sisi tulisnya.
+- **Yang membuatnya lebih mahal daripada kelihatannya:** `upsell.types` adalah konfigurasi **global**, satu nilai untuk seluruh tenant, sedangkan saklar yang berguna bagi owner harus **per-tenant**. Setelan per-tenant di aplikasi ini berbentuk kolom nyata di tabel `tenants` (`kitchen_queue_enabled`, `upsell_mandatory`, `min_margin_percent`, …), bukan satu kolom JSON serba guna — jadi ongkosnya migrasi berisi empat kolom boolean baru (atau satu kolom JSON yang memutus pola yang sudah ada), bukan sekadar menambah tiga checkbox di layar Setelan.
+- **Usulan Perbaikan:** empat kolom boolean per-tenant dengan bawaan `true`, dibaca `UpsellIndexBuilder` sebagai lapisan di ATAS `config/upsell.php` — config tetap jadi saklar darurat global, tenant hanya boleh mematikan yang masih hidup secara global, tidak sebaliknya. Saklarnya diletakkan di Setelan → Cara Kerja Sistem bersama `upsell_mandatory`, dan diberi tautan dari tabel "Per Jenis Saran" di laporan supaya kesimpulan dan tindakannya bersebelahan.
+- **Yang JANGAN dilakukan:** menghidupkan lagi kalimat "dimatikan di `config/upsell.php`" di layar mana pun. Menyebut jalan yang tidak bisa ditempuh pembacanya lebih buruk daripada diam, karena ia terbaca seperti izin.
+
+### [BL-100] Nama Varian di Hasil AI Belum Bisa Ditelusuri — Owner Membacanya, Lalu Mencarinya Sendiri
+- **Ditemukan:** 2026-09-03 (saat merapikan tampilan & prompt AI Analysis)
+- **Sumber:** Permintaan pemilik di sesi yang sama — "tambahkan agar user bisa direferensi atau clickable barangnya, mungkin nanti entah dengan url params atau bagaimana cocoknya"
+- **Status:** Open
+- **Prioritas:** Medium — hasil analisis kini WAJIB menyebut nama varian persis seperti di data (aturan isi nomor 2 pada prompt yang baru), jadi jumlah nama yang muncul di layar naik, sementara jalan dari nama itu ke barangnya masih nol
+- **Area Terdampak:**
+  - `app/Services/AiContextService.php:36-45,62-70` — `top_products` dan `profit_by_item` dikelompokkan `variant_name`, dan **hanya nama** yang dikirim; `product_variants.id` maupun `products.id` tidak pernah ikut ke dalam payload
+  - `app/Services/ProfitService.php:119,128` — `selectRaw('transaction_items.variant_name')` + `groupBy('transaction_items.variant_name')`; sumber pengelompokannya kolom terdenormalisasi di `transaction_items`, bukan relasi ke variannya
+  - `resources/js/Pages/Owner/AiAnalysis/Index.vue` — `renderMarkdown()` menghasilkan HTML dari teks model; hari ini tidak ada satu pun `<a>` yang bisa lahir darinya
+  - `app/Http/Controllers/Owner/ProductController.php:23-36` — `index()` tidak membaca satu pun query string
+  - `resources/js/Pages/Owner/Products/Index.vue:20-49` — penyaringnya `filterCategory` dan `filterStatus` saja, keduanya `ref` lokal; **tidak ada pencarian nama, dan tidak ada state yang dibaca dari URL**
+- **Deskripsi:**
+  Hasil analisis menyebut varian dengan namanya — "margin `Iced` 70%", "`Croissant Plain` sudah kedaluwarsa" — dan di situ jejaknya berhenti. Untuk menindaklanjutinya owner harus membuka Produk di tab lain, menggulir katalognya, dan mencocokkan nama dengan mata. Analisis yang menyuruh bertindak tapi tidak mengantar ke tempat bertindak menyisakan pekerjaan manual yang justru paling sering membuat sarannya tidak dikerjakan.
+- **Dugaan Penyebab — dan ini yang membuatnya bukan pekerjaan sepele:**
+  1. **Payload-nya memang tidak membawa id.** Konteks LLM dikelompokkan berdasarkan `variant_name`, kolom terdenormalisasi yang disalin ke `transaction_items` saat transaksi dibuat. Model tidak pernah melihat id, jadi ia tidak bisa menuliskannya walau diminta.
+  2. **Namanya tidak dijamin unik, dan tidak dijamin masih ada.** Dua produk berbeda boleh punya varian bernama sama (`Iced`), dan varian yang sudah dihapus tetap hidup sebagai teks di `transaction_items`. Pemetaan nama → satu id karena itu bisa mengembalikan nol, satu, atau banyak — ketiganya perlu punya perilaku sendiri, dan yang "banyak" tidak boleh diam-diam memilih yang pertama.
+  3. **Tujuannya belum ada.** Sekalipun idnya tersedia, `owner/products` tidak menerima parameter apa pun dan tidak punya kotak pencarian; menautkan ke sana hari ini hanya mendarat di katalog penuh yang sama.
+- **Usulan Perbaikan (urut, tiap tahap berdiri sendiri):**
+  1. **Buat tujuannya lebih dulu** — `ProductController::index()` membaca `?q=` (dan opsional `?variant=`), lalu halaman Vue-nya memakai nilai itu sebagai keadaan awal penyaring. Ini berguna sendirian, terlepas dari AI: hari ini katalog memang tidak bisa dicari.
+  2. **Petakan nama → varian di server, bukan di teks model.** Setelah analisis selesai, cocokkan `variant_name` yang dikenal (dari konteks yang dipakai) dengan katalog aktif, dan kirim hasilnya sebagai peta terpisah di samping `result` — mis. `{ "Iced": { "product_id": 12, "variant_id": 30 } }`. Nama yang berpasangan lebih dari satu, atau tidak berpasangan sama sekali, **tidak masuk peta**; yang tidak ada di peta tetap tampil sebagai teks biasa.
+  3. **Baru sesudah itu tautkan di renderer.** `renderMarkdown()` menyisipkan `<a>` hanya untuk nama yang ada di peta. Menyuruh model menulis markdown link sendiri jangan dipilih: ia akan mengarang tujuan untuk nama yang tidak ada, dan hasilnya tautan mati yang terlihat sah.
+- **Yang perlu diputuskan pemilik sebelum tahap 2:** apakah nama yang sudah tidak punya varian aktif (produk terhapus) sebaiknya diam saja sebagai teks, atau justru ditandai — karena "produk ini sudah tidak ada di katalog" kadang justru informasi yang dicari.
+
 ### [BL-098] `Platform\InvoiceController::index()` Merender Halaman yang Sudah Tidak Ada, dan Tidak Ada Rute yang Bisa Memanggilnya
 - **Ditemukan:** 2026-09-02 (saat menambahkan asersi `->component()` untuk seluruh halaman Platform)
 - **Sumber:** Penyisiran cakupan tes lapisan tampilan — `Platform/Invoices/Index` satu-satunya halaman Platform yang tidak bisa dipatok namanya, dan sebabnya ternyata bukan pada tesnya

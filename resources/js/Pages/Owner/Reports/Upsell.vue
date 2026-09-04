@@ -25,6 +25,8 @@ const to = ref(props.filters.to);
 
 const formatCurrency = (value) => 'Rp ' + Number(value ?? 0).toLocaleString('id-ID');
 
+const rate = (accepted, shown) => (shown > 0 ? Math.round((accepted / shown) * 1000) / 10 : 0);
+
 const TYPE_LABELS = {
     attach: 'Tambah add-on',
     pressed_stock: 'Barang tertekan',
@@ -35,30 +37,67 @@ const TYPE_LABELS = {
 };
 
 /**
- * Tiga kolom perbandingan ([BL-092]).
+ * Perjalanan satu saran, dari muncul sampai dibeli.
  *
- * Kolom gabungan tetap ada dan tetap di depan: pertanyaan pertama owner selalu
- * "fitur ini menghasilkan atau tidak", bukan "mesin atau saya yang menang".
+ * Menggantikan empat kartu dan satu strip abu-abu yang memuat DUA persentase
+ * berpenyebut berbeda — `accepted/shown` dan `accepted/offered` — beserta
+ * paragraf yang mencoba menerangkan bedanya. Dua penyebut yang harus diingat
+ * adalah dua penyebut yang tertukar; di sini masing-masing menempel pada
+ * batang yang menjadi penyebutnya, dan selisih "tampil tanpa dijawab" terbaca
+ * sebagai penyempitan batang, bukan sebagai kalimat. ([BL-025])
+ */
+const funnel = computed(() => {
+    const { shown, offered, accepted, rejected, offer_rate: offerRate } = props.summary;
+
+    const width = (value) => (shown > 0 ? (value / shown) * 100 : 0) + '%';
+
+    return [
+        {
+            key: 'shown',
+            label: 'Muncul di layar',
+            value: shown,
+            width: '100%',
+            tone: 'bg-gray-200 text-gray-700',
+            rate: null,
+        },
+        {
+            key: 'offered',
+            label: 'Ditawarkan kasir',
+            value: offered,
+            width: width(offered),
+            tone: 'bg-gray-300 text-gray-800',
+            rate: shown > 0 ? `${rate(offered, shown)}% dari yang muncul` : null,
+        },
+        {
+            key: 'accepted',
+            label: 'Jadi dibeli',
+            value: accepted,
+            width: width(accepted),
+            tone: 'bg-success/20 text-success',
+            rate: offered > 0 ? `${offerRate}% dari yang ditawarkan · ${rejected} ditolak` : null,
+        },
+    ];
+});
+
+/**
+ * Dua kolom perbandingan ([BL-092]).
+ *
+ * Kolom "Gabungan" dibuang: isinya salinan persis corong di atasnya, dan
+ * angka yang sama muncul dua kali di satu layar membuat pembacanya mencari
+ * beda yang tidak ada.
  */
 const sourceColumns = computed(() => [
     {
-        key: 'combined',
-        title: 'Gabungan',
-        caption: 'Seluruh saran, dari sumber mana pun',
-        accent: 'text-gray-900',
-        summary: props.summary,
-    },
-    {
         key: 'auto',
         title: 'Otomatis (sistem)',
-        caption: 'Ditemukan dari stok, kedaluwarsa, dan riwayat penjualan',
+        href: null,
         accent: 'text-sky-700',
         summary: props.sources?.auto,
     },
     {
         key: 'manual',
         title: 'Aturan Anda',
-        caption: 'Yang Anda tulis sendiri di halaman Aturan Saran Jual',
+        href: '/owner/upsell-rules',
         accent: 'text-emerald-700',
         summary: props.sources?.manual,
     },
@@ -70,8 +109,6 @@ const SURFACE_LABELS = {
 };
 
 const bucketLabel = (bucket, map) => map[bucket] ?? bucket;
-
-const rate = (accepted, shown) => (shown > 0 ? Math.round((accepted / shown) * 1000) / 10 : 0);
 
 const applyFilter = () => {
     router.get('/owner/reports/upsell', { from: from.value, to: to.value }, {
@@ -88,9 +125,6 @@ const applyFilter = () => {
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Saran Jual (Upsell)</h1>
-                <p class="text-sm text-gray-500 mt-1">
-                    Berapa saran yang muncul, berapa yang diambil, dan berapa tambahan omzetnya.
-                </p>
             </div>
             <div class="flex items-end gap-2">
                 <DatePicker v-model="from" @update:modelValue="applyFilter" />
@@ -99,15 +133,35 @@ const applyFilter = () => {
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <MetricCard title="Saran Tampil" :value="summary.shown" icon="chart" color="muted" />
-            <MetricCard title="Diterima" :value="summary.accepted" icon="receipt" color="primary" />
-            <MetricCard
-                title="Tingkat Terima"
-                :value="summary.conversion_rate + '%'"
-                icon="average"
-                color="success"
-            />
+        <!-- Bentuknya sendiri yang menjelaskan: batang yang menyempit ADALAH
+             saran yang hilang di tiap tahap, dan tiap persentase menempel pada
+             batang yang jadi penyebutnya. ([BL-025]) -->
+        <div v-if="summary.shown > 0" class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 lg:col-span-2">
+                <div class="space-y-2.5">
+                    <div v-for="stage in funnel" :key="stage.key" class="flex items-start gap-3">
+                        <span class="w-24 shrink-0 pt-1.5 text-sm text-gray-600 sm:w-32">{{ stage.label }}</span>
+
+                        <!-- Persentasenya turun ke bawah batang di layar sempit.
+                             Ia tidak boleh dipaksa satu baris: "25% dari yang
+                             ditawarkan · 3 ditolak" lebih panjang daripada sisa
+                             ruang di sebelah batang 375px, dan yang meluber
+                             keluar kartu tidak terbaca sama sekali. -->
+                        <div class="flex min-w-0 flex-1 flex-col gap-1 lg:flex-row lg:items-center lg:gap-2">
+                            <div
+                                :class="['flex h-8 shrink-0 items-center justify-end rounded-md px-2.5', stage.tone]"
+                                :style="{ width: stage.width, minWidth: '3rem' }"
+                            >
+                                <span class="text-sm font-semibold">{{ stage.value }}</span>
+                            </div>
+                            <span v-if="stage.rate" class="min-w-0 text-xs text-gray-500">
+                                {{ stage.rate }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <MetricCard
                 title="Tambahan Omzet"
                 :value="formatCurrency(summary.extra_revenue)"
@@ -116,42 +170,24 @@ const applyFilter = () => {
             />
         </div>
 
-        <!-- Dua angka yang mudah tertukar, dan bedanya menentukan apa yang
-             sebenarnya sedang dinilai. `Tingkat Terima` dihitung dari SEMUA
-             saran yang tampil, jadi ia ikut mengukur seberapa sering kasir
-             benar-benar menawarkan. `Tingkat Sukses Tawar` hanya menghitung
-             yang benar-benar sampai ke pelanggan — inilah yang menilai mutu
-             sarannya sendiri. ([BL-025]) -->
-        <div v-if="summary.offered > 0" class="rounded-lg border border-border bg-muted/40 px-4 py-3">
-            <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
-                <span class="font-medium text-foreground">
-                    Tingkat sukses tawar: {{ summary.offer_rate }}%
-                </span>
-                <span class="text-muted-foreground">
-                    dari {{ summary.offered }} yang benar-benar ditawarkan
-                    ({{ summary.accepted }} diterima, {{ summary.rejected }} ditolak)
-                </span>
-                <span v-if="summary.shown > summary.offered" class="text-muted-foreground">
-                    · {{ summary.shown - summary.offered }} tampil tanpa dijawab
-                </span>
-            </div>
-        </div>
-
         <!-- Mesin vs aturan sendiri ([BL-092]). Berdampingan, bukan bergantian:
              perbandingan yang menuntut owner mengingat angka dari layar
              sebelumnya adalah perbandingan yang tidak pernah terjadi. -->
         <div v-if="summary.shown > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="px-5 py-3 border-b border-gray-100">
                 <h2 class="text-sm font-semibold text-gray-800">Otomatis vs Aturan Anda</h2>
-                <p class="text-xs text-gray-500 mt-0.5">
-                    Keduanya berebut slot yang sama di layar kasir — aturan Anda selalu mendapat slotnya lebih dulu.
-                </p>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            <div class="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
                 <div v-for="column in sourceColumns" :key="column.key" class="p-5">
-                    <p :class="['text-sm font-semibold', column.accent]">{{ column.title }}</p>
-                    <p class="text-xs text-gray-500 mt-0.5 min-h-8">{{ column.caption }}</p>
+                    <!-- Tautan, bukan keterangan: pertanyaan yang menyusul angka
+                         ini selalu "di mana saya mengubahnya". -->
+                    <a
+                        v-if="column.href"
+                        :href="column.href"
+                        :class="['text-sm font-semibold underline decoration-transparent hover:decoration-current', column.accent]"
+                    >{{ column.title }}</a>
+                    <p v-else :class="['text-sm font-semibold', column.accent]">{{ column.title }}</p>
 
                     <div v-if="column.summary.shown === 0" class="mt-3 text-xs text-gray-400">
                         Belum ada saran dari sumber ini pada rentang ini.
@@ -217,9 +253,6 @@ const applyFilter = () => {
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-5 py-3 border-b border-gray-100">
                         <h2 class="text-sm font-semibold text-gray-800">Per Jenis Saran</h2>
-                        <p class="text-xs text-gray-500 mt-0.5">
-                            Jenis yang tak pernah diterima bisa dimatikan di <code>config/upsell.php</code>.
-                        </p>
                     </div>
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50 text-xs text-gray-500">
@@ -249,9 +282,6 @@ const applyFilter = () => {
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-5 py-3 border-b border-gray-100">
                         <h2 class="text-sm font-semibold text-gray-800">Per Permukaan</h2>
-                        <p class="text-xs text-gray-500 mt-0.5">
-                            Kasir harus mengucapkan tawarannya; self-order tidak.
-                        </p>
                     </div>
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50 text-xs text-gray-500">
