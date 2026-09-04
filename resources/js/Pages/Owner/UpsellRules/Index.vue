@@ -43,13 +43,18 @@ const props = defineProps({
 /**
  * Label sumber tiap saran di pratinjau.
  *
- * Warnanya sengaja sama dengan strip di layar kasir: owner yang membandingkan
- * layar ini dengan layar kasirnya tidak sedang membaca dua sistem berbeda.
+ * KATA DAN WARNANYA disalin dari `UpsellStrip.vue`, bukan dikarang ulang.
+ * Tab ini mengaku memperagakan layar kasir; kalau kasir membaca "DORONG"
+ * sementara layar ini menulis "Barang tertekan", owner yang membandingkan
+ * keduanya sedang memetakan dua kosakata, bukan membaca satu sistem.
+ *
+ * Tabel di halaman laporan sengaja TIDAK ikut: ia buku besar, bukan cermin,
+ * dan di sana "barang tertekan" menyebutkan sebab yang justru sedang dinilai.
  */
 const SOURCE_BADGES = {
-    manual: { text: 'Aturan Anda', class: 'bg-emerald-100 text-emerald-700' },
-    attach: { text: 'Tambah add-on', class: 'bg-sky-100 text-sky-700' },
-    pressed_stock: { text: 'Barang tertekan', class: 'bg-amber-100 text-amber-800' },
+    manual: { text: 'Pilihan pemilik', class: 'bg-emerald-100 text-emerald-700' },
+    attach: { text: 'Tambah', class: 'bg-sky-100 text-sky-700' },
+    pressed_stock: { text: 'Dorong', class: 'bg-amber-100 text-amber-800' },
     upsize: { text: 'Naik ukuran', class: 'bg-violet-100 text-violet-700' },
 };
 
@@ -548,20 +553,41 @@ const doDelete = () => {
 
                         <div v-if="preview.triggers.length > 0" class="overflow-x-auto">
                             <table class="w-full">
+                                <!-- Kepala kolomlah yang menerangkan tabel ini,
+                                     bukan paragraf di atasnya: tanpa keduanya,
+                                     dua kolom tanpa nama tidak memberi tahu mana
+                                     yang sebab dan mana yang akibat. -->
+                                <thead>
+                                    <tr class="bg-gray-50 text-xs text-gray-500">
+                                        <th class="w-1/3 px-5 py-2 text-left font-medium">Kalau ini masuk keranjang</th>
+                                        <th class="px-5 py-2 text-left font-medium">Yang dilihat kasir</th>
+                                    </tr>
+                                </thead>
                                 <tbody class="divide-y divide-gray-100">
                                     <tr v-for="trigger in preview.triggers" :key="trigger.variant_id" class="align-top">
                                         <td class="px-5 py-3 text-sm text-gray-900 whitespace-nowrap w-1/3">
                                             {{ trigger.label }}
                                         </td>
                                         <td class="px-5 py-3">
+                                            <!-- Jenisnya ikut sebagai TEKS. Sebelumnya ia
+                                                 hanya warna latar pil, dengan namanya
+                                                 tersembunyi di tooltip — warna tanpa
+                                                 keterangan tidak bisa dibaca siapa pun
+                                                 yang belum hafal artinya. Susunannya
+                                                 sama dengan daftar "Pada setiap
+                                                 penjualan" di atas, supaya satu halaman
+                                                 tidak punya dua bahasa visual. -->
                                             <div class="flex flex-wrap gap-1.5">
                                                 <span
                                                     v-for="slot in trigger.slots.filter((s) => s.wins_slot)"
                                                     :key="slot.key"
-                                                    :class="['inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs', sourceBadge(slot).class]"
+                                                    class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white py-0.5 pl-1 pr-2.5"
                                                     :title="slot.note"
                                                 >
-                                                    {{ slot.label }}
+                                                    <span :class="['whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold', sourceBadge(slot).class]">
+                                                        {{ sourceBadge(slot).text }}
+                                                    </span>
+                                                    <span class="text-xs text-gray-800">{{ slot.label }}</span>
                                                 </span>
                                             </div>
                                             <p
