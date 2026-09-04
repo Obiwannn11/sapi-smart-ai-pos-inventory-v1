@@ -42,14 +42,17 @@ const filtered = computed(() => {
     return normalized.value.filter((o) => String(o.label).toLowerCase().includes(q));
 });
 
-const selectedLabel = computed(() => {
-    const found = normalized.value.find((o) => o.value === props.modelValue);
-    return found ? found.label : '';
-});
-
-const hasSelection = computed(
-    () => props.modelValue !== '' && props.modelValue !== null && props.modelValue !== undefined
+// Yang menentukan "sudah memilih" adalah ADA TIDAKNYA opsi yang cocok, bukan
+// isi nilainya. Sebagian daftar memakai '' sebagai pilihan sah — "Default",
+// "Semua" — dan menganggapnya kosong membuat label pilihan itu tidak pernah
+// bisa tampil, padahal ia sedang terpilih.
+const selectedOption = computed(
+    () => normalized.value.find((o) => o.value === props.modelValue) ?? null
 );
+
+const selectedLabel = computed(() => selectedOption.value?.label ?? '');
+
+const hasSelection = computed(() => selectedOption.value !== null);
 
 const computePosition = () => {
     if (!container.value) {
@@ -110,15 +113,25 @@ const clearSelection = () => {
 
 const isSelected = (option) => option.value === props.modelValue;
 
+const handleEscape = (e) => {
+    if (e.key === 'Escape' && open.value) {
+        open.value = false;
+    }
+};
+
 const handleClickOutside = (e) => {
     if (container.value && !container.value.contains(e.target) && !e.target.closest('[data-select-popup]')) {
         open.value = false;
     }
 };
 
-onMounted(() => document.addEventListener('mousedown', handleClickOutside));
+onMounted(() => {
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+});
 onBeforeUnmount(() => {
     document.removeEventListener('mousedown', handleClickOutside);
+    document.removeEventListener('keydown', handleEscape);
     window.removeEventListener('scroll', computePosition, true);
     window.removeEventListener('resize', computePosition);
 });
@@ -132,10 +145,13 @@ onBeforeUnmount(() => {
         <button
             type="button"
             :disabled="disabled"
+            role="combobox"
+            aria-haspopup="listbox"
+            :aria-expanded="open"
             @click="toggleOpen"
             :class="[
                 'w-full flex items-center gap-2 px-3 py-2 bg-white border rounded-lg text-sm text-left transition-colors focus:outline-none focus:ring-2 focus:ring-ring',
-                error ? 'border-red-300' : 'border-gray-300',
+                error ? 'border-destructive/50' : 'border-gray-300',
                 disabled ? 'opacity-60 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50 cursor-pointer',
             ]"
         >
@@ -143,16 +159,20 @@ onBeforeUnmount(() => {
                 {{ hasSelection ? selectedLabel : placeholder }}
             </span>
 
-            <button
+            <span
                 v-if="clearable && hasSelection && !disabled"
-                type="button"
+                role="button"
+                tabindex="0"
+                aria-label="Kosongkan pilihan"
                 @click.stop="clearSelection"
-                class="text-gray-300 hover:text-gray-500 flex-shrink-0"
+                @keydown.enter.stop.prevent="clearSelection"
+                @keydown.space.stop.prevent="clearSelection"
+                class="text-gray-300 hover:text-gray-500 flex-shrink-0 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
-            </button>
+            </span>
 
             <svg
                 class="w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0"
@@ -163,7 +183,7 @@ onBeforeUnmount(() => {
             </svg>
         </button>
 
-        <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
+        <p v-if="error" class="mt-1 text-xs text-destructive">{{ error }}</p>
 
         <!-- Dropdown -->
         <Teleport to="body">
@@ -178,6 +198,7 @@ onBeforeUnmount(() => {
                 <div
                     v-if="open"
                     data-select-popup
+                    role="listbox"
                     :style="popupStyle"
                     class="bg-white rounded-xl shadow-lg border border-gray-200 py-1.5 origin-top"
                 >
@@ -197,6 +218,8 @@ onBeforeUnmount(() => {
                             v-for="option in filtered"
                             :key="String(option.value)"
                             type="button"
+                            role="option"
+                            :aria-selected="isSelected(option)"
                             @click="selectOption(option)"
                             :class="[
                                 'w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors',
