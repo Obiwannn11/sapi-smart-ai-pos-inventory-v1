@@ -27,6 +27,8 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import DatePicker from '@/Components/DatePicker.vue';
+import Checkbox from '@/Components/Checkbox.vue';
 import TabNav from '@/Components/TabNav.vue';
 import { businessToday, parseDateOnly } from '@/support/date';
 
@@ -111,9 +113,35 @@ const variantLabel = (variant) => {
     return variant.product ? `${variant.product.name} - ${variant.name}` : variant.name;
 };
 
-/** Kenapa sebuah aturan tidak muncul di kasir hari ini, atau null bila muncul. */
+/**
+ * Dua nada untuk aturan yang sedang diam, memakai token sistem desain.
+ *
+ * Sebelumnya SELURUH sebab memakai satu abu-abu yang sama, jadi "owner sendiri
+ * yang mematikannya" terlihat persis seperti "stoknya habis" — padahal yang
+ * pertama tidak menunggu apa-apa dan yang kedua menunggu owner bertindak.
+ *
+ * Hanya dua, bukan satu warna per sebab: yang dijawab warnanya cuma "perlu saya
+ * apa-apakan atau tidak". Pertanyaan "kenapa" sudah dijawab tulisannya.
+ *
+ * `text-warning-foreground`, bukan `text-warning`: token `--warning` adalah
+ * kuning terang (L 0.78) dan di atas tint 15% ia nyaris tak terbaca.
+ */
+const STATUS_TONES = {
+    /** Disengaja atau sekadar soal waktu — tidak ada yang perlu dikerjakan. */
+    quiet: 'bg-muted text-muted-foreground',
+    /** Ada yang menghalangi, dan owner bisa membereskannya. */
+    blocked: 'bg-warning/15 text-warning-foreground',
+    /** Berjalan. */
+    live: 'bg-success/10 text-success',
+};
+
+/**
+ * Kenapa sebuah aturan tidak muncul di kasir hari ini, atau null bila muncul.
+ *
+ * @return {{label: string, tone: 'quiet'|'blocked'}|null}
+ */
 const dormantReason = (rule) => {
-    if (!rule.is_active) return 'Dimatikan';
+    if (!rule.is_active) return { label: 'Dimatikan', tone: 'quiet' };
 
     // Hari toko ([BL-082]): `toISOString()` memberi tanggal UTC, sehingga
     // sepanjang pukul 00.00–08.00 WITA aturan yang mulai hari ini masih
@@ -121,20 +149,24 @@ const dormantReason = (rule) => {
     const today = businessToday();
 
     if (rule.starts_on && rule.starts_on.slice(0, 10) > today) {
-        return 'Belum mulai';
+        return { label: 'Belum mulai', tone: 'quiet' };
     }
     if (rule.ends_on && rule.ends_on.slice(0, 10) < today) {
-        return 'Sudah berakhir';
+        return { label: 'Sudah berakhir', tone: 'quiet' };
     }
     // Penjaga kandidat berlaku tanpa pengecualian, termasuk untuk aturan yang
     // owner tulis sendiri. Menampilkannya di sini mencegah kesimpulan "fiturnya
     // rusak" saat yang sebenarnya terjadi adalah stoknya nol.
     if (rule.suggested_variant && rule.suggested_variant.stock <= 0) {
-        return 'Stok barangnya habis';
+        return { label: 'Stok barangnya habis', tone: 'blocked' };
     }
 
     return null;
 };
+
+const statusLabel = (rule) => dormantReason(rule)?.label ?? 'Tampil di kasir';
+
+const statusClass = (rule) => STATUS_TONES[dormantReason(rule)?.tone ?? 'live'];
 
 /** Ringkasan yang menggantikan paragraf pengantar: angka, bukan penjelasan. */
 const ruleCounts = computed(() => {
@@ -346,7 +378,7 @@ const doDelete = () => {
                                     type="text"
                                     maxlength="120"
                                     placeholder="Contoh: Promo bulan ini, stok baru datang"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                    class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                                 />
                                 <p v-if="form.errors.note" class="mt-1 text-xs text-destructive">{{ form.errors.note }}</p>
                                 <p v-else class="mt-1 text-xs text-gray-500">Tampil apa adanya di layar kasir.</p>
@@ -355,29 +387,18 @@ const doDelete = () => {
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Mulai</label>
-                                    <input
-                                        v-model="form.starts_on"
-                                        type="date"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                                    />
+                                    <DatePicker v-model="form.starts_on" block clearable />
                                     <p class="mt-1 text-xs text-gray-500">Kosong = mulai sekarang</p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Berakhir</label>
-                                    <input
-                                        v-model="form.ends_on"
-                                        type="date"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
-                                    />
+                                    <DatePicker v-model="form.ends_on" block clearable />
                                     <p v-if="form.errors.ends_on" class="mt-1 text-xs text-destructive">{{ form.errors.ends_on }}</p>
                                     <p v-else class="mt-1 text-xs text-gray-500">Kosong = sampai dimatikan</p>
                                 </div>
                             </div>
 
-                            <label class="flex items-center gap-3">
-                                <input v-model="form.is_active" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
-                                <span class="text-sm font-medium text-gray-700">Aktif</span>
-                            </label>
+                            <Checkbox v-model="form.is_active" label="Aktif" />
 
                             <div class="flex gap-3 pt-2">
                                 <button type="button" @click="closeForm" class="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
@@ -406,7 +427,7 @@ const doDelete = () => {
                     <table class="w-full">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200">
-                                <th class="w-10 px-2 py-3"><span class="sr-only">Urutan</span></th>
+                                <th class="w-14 px-2 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Urutan</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Pemicu</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Disarankan</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Berlaku</th>
@@ -416,26 +437,36 @@ const doDelete = () => {
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             <tr v-for="(rule, index) in rules" :key="rule.id" class="hover:bg-gray-50 transition-colors">
+                                <!-- Panahnya diberi bingkai supaya terbaca sebagai
+                                     TOMBOL, bukan hiasan, dan `title` menjawab
+                                     pertanyaan yang tidak bisa dijawab bentuk panah
+                                     sendirian: naik ke mana, dan supaya apa. -->
                                 <td class="px-2 py-4 align-middle">
-                                    <div class="flex flex-col items-center gap-0.5">
+                                    <div class="flex flex-col items-center gap-1">
                                         <button
                                             :disabled="index === 0 || moveForm.processing"
+                                            :title="index === 0
+                                                ? 'Sudah paling atas'
+                                                : 'Naikkan — aturan ini lebih dulu mengisi slot kasir'"
                                             :aria-label="`Naikkan ${variantLabel(rule.suggested_variant)}`"
-                                            class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                            class="rounded-md border border-gray-200 bg-white p-1 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:hover:text-gray-500"
                                             @click="move(rule, 'up')"
                                         >
-                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7" />
                                             </svg>
                                         </button>
                                         <button
                                             :disabled="index === rules.length - 1 || moveForm.processing"
+                                            :title="index === rules.length - 1
+                                                ? 'Sudah paling bawah'
+                                                : 'Turunkan — aturan lain lebih dulu mengisi slot kasir'"
                                             :aria-label="`Turunkan ${variantLabel(rule.suggested_variant)}`"
-                                            class="rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                                            class="rounded-md border border-gray-200 bg-white p-1 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:hover:text-gray-500"
                                             @click="move(rule, 'down')"
                                         >
-                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
                                             </svg>
                                         </button>
                                     </div>
@@ -456,26 +487,29 @@ const doDelete = () => {
                                      menerjemahkan angka DAN menebak mana yang mulai;
                                      labelnya menjawab yang kedua tanpa satu kalimat pun. -->
                                 <td class="px-5 py-4 text-sm text-gray-600 whitespace-nowrap">
+                                    <!-- Tebalnya jatuh pada NILAI, bukan pada labelnya:
+                                         yang dicari mata saat menyapu kolom ini adalah
+                                         tanggalnya, dan "Mulai"/"Sampai" cuma penopang
+                                         yang menjawab tanggal yang mana. -->
                                     <template v-if="rule.starts_on || rule.ends_on">
                                         <span class="block">
                                             <span class="text-xs text-gray-400">Mulai</span>
-                                            {{ rule.starts_on ? formatRuleDate(rule.starts_on) : 'sejak dibuat' }}
+                                            <span class="font-medium text-gray-900">
+                                                {{ rule.starts_on ? formatRuleDate(rule.starts_on) : 'sejak dibuat' }}
+                                            </span>
                                         </span>
                                         <span class="block">
                                             <span class="text-xs text-gray-400">Sampai</span>
-                                            {{ rule.ends_on ? formatRuleDate(rule.ends_on) : 'dimatikan' }}
+                                            <span class="font-medium text-gray-900">
+                                                {{ rule.ends_on ? formatRuleDate(rule.ends_on) : 'dimatikan' }}
+                                            </span>
                                         </span>
                                     </template>
-                                    <span v-else class="text-gray-400">Selamanya</span>
+                                    <span v-else class="font-medium text-gray-900">Selamanya</span>
                                 </td>
                                 <td class="px-5 py-4 text-center">
-                                    <span
-                                        :class="[
-                                            'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                                            dormantReason(rule) ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success',
-                                        ]"
-                                    >
-                                        {{ dormantReason(rule) ?? 'Tampil di kasir' }}
+                                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', statusClass(rule)]">
+                                        {{ statusLabel(rule) }}
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-right">

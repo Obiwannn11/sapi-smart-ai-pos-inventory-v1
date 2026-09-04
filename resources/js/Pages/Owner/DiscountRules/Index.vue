@@ -20,6 +20,8 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import DatePicker from '@/Components/DatePicker.vue';
+import Checkbox from '@/Components/Checkbox.vue';
 import { businessToday } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
@@ -67,6 +69,37 @@ const REASON_LABELS = {
     no_rule: 'Tidak berlaku',
 };
 
+/**
+ * Sebab yang MENUNTUT tindakan owner, dibedakan dari yang sekadar soal waktu.
+ *
+ * `no_cut_today` tidak masuk sini: itu aturan mendekati-kedaluwarsa yang
+ * jendelanya belum dimulai, dan ia akan mendalam sendiri tanpa disentuh.
+ */
+const BLOCKED_REASONS = ['expired', 'unknown_cost', 'floor_absorbed', 'cut_too_small'];
+
+/**
+ * Dua nada untuk aturan yang sedang diam, memakai token sistem desain.
+ *
+ * Sebelumnya SELURUH sebab memakai satu abu-abu yang sama, jadi "owner sendiri
+ * yang mematikannya" terlihat persis seperti "stoknya habis" — padahal yang
+ * pertama tidak menunggu apa-apa dan yang kedua menunggu owner bertindak.
+ *
+ * Hanya dua, bukan satu warna per sebab: yang dijawab warnanya cuma "perlu saya
+ * apa-apakan atau tidak". Pertanyaan "kenapa" sudah dijawab tulisannya.
+ *
+ * `text-warning-foreground`, bukan `text-warning`: token `--warning` adalah
+ * kuning terang (L 0.78) dan di atas tint 15% ia nyaris tak terbaca.
+ */
+const STATUS_TONES = {
+    /** Disengaja atau sekadar soal waktu — tidak ada yang perlu dikerjakan. */
+    quiet: 'bg-muted text-muted-foreground',
+    /** Ada yang menghalangi, dan owner bisa membereskannya. */
+    blocked: 'bg-warning/15 text-warning-foreground',
+    /** Berjalan. */
+    live: 'bg-success/10 text-success',
+};
+
+
 const variantOptions = computed(() =>
     (props.variants ?? []).map((variant) => ({ value: variant.id, label: variant.label }))
 );
@@ -82,24 +115,31 @@ const variantLabel = (variant) => {
 
 /** Kenapa sebuah aturan tidak berlaku hari ini, atau null bila berlaku. */
 const dormantReason = (rule) => {
-    if (!rule.is_active) return 'Dihentikan';
+    if (!rule.is_active) return { label: 'Dihentikan', tone: 'quiet' };
 
     // Hari toko ([BL-082]): `toISOString()` memberi tanggal UTC, sehingga
     // sepanjang pukul 00.00–08.00 WITA aturan yang mulai hari ini masih
     // dilaporkan "Belum mulai".
     const today = businessToday();
 
-    if (rule.starts_on && rule.starts_on.slice(0, 10) > today) return 'Belum mulai';
-    if (rule.ends_on && rule.ends_on.slice(0, 10) < today) return 'Sudah berakhir';
+    if (rule.starts_on && rule.starts_on.slice(0, 10) > today) return { label: 'Belum mulai', tone: 'quiet' };
+    if (rule.ends_on && rule.ends_on.slice(0, 10) < today) return { label: 'Sudah berakhir', tone: 'quiet' };
 
     // `effective.rule === null` berarti server menolak memberlakukannya, dan
     // `effective.reason` menyebut yang mana di antara lima sebabnya.
     if (rule.effective && !rule.effective.rule) {
-        return REASON_LABELS[rule.effective.reason] ?? 'Tidak berlaku';
+        return {
+            label: REASON_LABELS[rule.effective.reason] ?? 'Tidak berlaku',
+            tone: BLOCKED_REASONS.includes(rule.effective.reason) ? 'blocked' : 'quiet',
+        };
     }
 
     return null;
 };
+
+const statusLabel = (rule) => dormantReason(rule)?.label ?? 'Berlaku di kasir';
+
+const statusClass = (rule) => STATUS_TONES[dormantReason(rule)?.tone ?? 'live'];
 
 /** Ringkasan yang menggantikan paragraf pengantar: angka, bukan penjelasan. */
 const ruleCounts = computed(() => {
@@ -276,7 +316,7 @@ const doDelete = () => {
                                         <input
                                             v-model.number="form.percent"
                                             type="number" min="1" max="90" step="1"
-                                            class="w-24 pl-3 pr-7 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                            class="w-24 pl-3 pr-7 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                                         />
                                         <span class="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-gray-400">%</span>
                                     </div>
@@ -287,7 +327,7 @@ const doDelete = () => {
                                             <input
                                                 v-model.number="form.max_percent"
                                                 type="number" min="1" max="90" step="1"
-                                                class="w-24 pl-3 pr-7 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                                class="w-24 pl-3 pr-7 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                                             />
                                             <span class="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-sm text-gray-400">%</span>
                                         </div>
@@ -338,7 +378,7 @@ const doDelete = () => {
                                     v-model="form.reason"
                                     type="text" maxlength="120"
                                     placeholder="Contoh: Stok menumpuk menjelang akhir bulan"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                    class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                                 />
                                 <p v-if="form.errors.reason" class="mt-1 text-xs text-destructive">{{ form.errors.reason }}</p>
                                 <p v-else class="mt-1 text-xs text-gray-500">
@@ -349,19 +389,16 @@ const doDelete = () => {
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Mulai</label>
-                                    <input v-model="form.starts_on" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring" />
+                                    <DatePicker v-model="form.starts_on" block clearable />
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Berakhir</label>
-                                    <input v-model="form.ends_on" type="date" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring" />
+                                    <DatePicker v-model="form.ends_on" block clearable />
                                     <p v-if="form.errors.ends_on" class="mt-1 text-xs text-destructive">{{ form.errors.ends_on }}</p>
                                 </div>
                             </div>
 
-                            <label class="flex items-center gap-3">
-                                <input v-model="form.is_active" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-ring" />
-                                <span class="text-sm font-medium text-gray-700">Aktif</span>
-                            </label>
+                            <Checkbox v-model="form.is_active" label="Aktif" />
 
                             <div class="flex gap-3 pt-2">
                                 <button type="button" @click="closeForm" class="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
@@ -426,13 +463,8 @@ const doDelete = () => {
                                     <span v-else class="block text-xs text-gray-400">lantai {{ formatRupiah(rule.effective?.floor) }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-center">
-                                    <span
-                                        :class="[
-                                            'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                                            dormantReason(rule) ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success',
-                                        ]"
-                                    >
-                                        {{ dormantReason(rule) ?? 'Berlaku di kasir' }}
+                                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', statusClass(rule)]">
+                                        {{ statusLabel(rule) }}
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-right">
