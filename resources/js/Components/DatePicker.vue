@@ -4,6 +4,15 @@ import { businessToday, parseDateOnly } from '@/support/date';
 
 const props = defineProps({
     modelValue: String, // YYYY-MM-DD
+    // Lebarnya mengisi wadahnya, bukan mengikuti panjang tanggalnya. Dipakai
+    // saat beberapa kontrol berdiri sejajar dan harus sama besar: "6 Agu 2026"
+    // dan "4 September 2026" punya panjang berbeda, dan kolom yang mengikuti
+    // teks membuat barisnya terlihat ragged.
+    block: { type: Boolean, default: false },
+    // Boleh dikosongkan kembali. Jendela tanggal yang opsional ("Kosong = mulai
+    // sekarang") kehilangan cara untuk melepas tanggalnya begitu input date
+    // bawaan diganti kontrol ini — tanpa ini, sekali diisi tak bisa dinolkan.
+    clearable: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -131,15 +140,25 @@ const selectDay = (day) => {
     open.value = false;
 };
 
+const clearDate = () => {
+    emit('update:modelValue', '');
+    open.value = false;
+};
+
 const isSelected = (day) => toStr(day.date) === props.modelValue;
 const isToday = (day) => toStr(day.date) === todayStr;
 
+// Bulan disingkat saat lebarnya dipatok. Kolom yang sama besar di layar lebar
+// menyisakan ~190px untuk tanggalnya di lebar jendela yang sedang, dan
+// "Jum, 4 September 2026" tidak muat di sana — ia akan terpotong jadi
+// "Jum, 4 September…", membuang justru tahunnya. "Jum, 4 Sep 2026" muat utuh,
+// dan bentuk itu memang yang sudah dipakai tabel riwayat di halaman yang sama.
 const formattedDate = computed(() => {
     if (!props.modelValue) return 'Pilih Tanggal';
     return parseDate(props.modelValue).toLocaleDateString('id-ID', {
         weekday: 'short',
         day: 'numeric',
-        month: 'long',
+        month: props.block ? 'short' : 'long',
         year: 'numeric',
     });
 });
@@ -159,18 +178,38 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
 </script>
 
 <template>
-    <div ref="container" class="inline-block">
+    <div ref="container" :class="block ? 'block w-full' : 'inline-block'">
         <!-- Trigger button -->
         <button
             type="button"
             @click="toggleOpen"
-            class="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring transition-colors shadow-sm"
+            class="items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-ring transition-colors shadow-sm"
+            :class="block ? 'flex w-full' : 'inline-flex'"
         >
             <svg class="w-4 h-4 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span class="font-medium">{{ formattedDate }}</span>
+            <!-- `truncate` hanya saat lebarnya dipatok: tanggal yang tidak muat
+                 lebih baik terpotong dengan elipsis daripada mendorong lebar
+                 kolomnya dan merusak kerataan barisnya. -->
+            <span class="font-medium whitespace-nowrap" :class="{ 'flex-1 text-left truncate': block }">{{ formattedDate }}</span>
+            <!-- Tombol di dalam tombol tidak sah, jadi ikon hapus ini span
+                 ber-role, sama seperti di SelectDropdown. -->
+            <span
+                v-if="clearable && modelValue"
+                role="button"
+                tabindex="0"
+                aria-label="Kosongkan tanggal"
+                @click.stop="clearDate"
+                @keydown.enter.stop.prevent="clearDate"
+                @keydown.space.stop.prevent="clearDate"
+                class="flex-shrink-0 rounded text-gray-300 hover:text-gray-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </span>
             <svg
                 class="w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0"
                 :class="{ 'rotate-180': open }"
