@@ -86,17 +86,22 @@ const triggerOptions = computed(() => [
 const formatRupiah = (value) => 'Rp ' + Number(value ?? 0).toLocaleString('id-ID');
 
 /**
- * Tanggal jendela aturan, mis. "Rab, 19 Agustus 2026".
+ * Tanggal jendela aturan, mis. "Kam, 20 Agu 2026".
  *
  * `parseDateOnly`, bukan `new Date(value)`: isinya tanggal tanpa jam, dan
- * `new Date('2026-08-19')` diurai sebagai tengah malam UTC — di WITA ia mundur
- * satu hari, sehingga aturan yang mulai tanggal 19 dilaporkan mulai 18.
- * Bentuknya mengikuti DatePicker di halaman lain, bukan bentuk baru.
+ * `new Date('2026-08-20')` diurai sebagai tengah malam UTC — di WITA ia mundur
+ * satu hari, sehingga aturan yang mulai tanggal 20 dilaporkan mulai 19.
+ *
+ * Bulan PENDEK, mengikuti tabel lain di aplikasi ini (rekap bulanan,
+ * DailyChart, daftar tagihan) — bulan panjang disimpan untuk judul dan modal.
+ * Di sini ia juga membayar dirinya sendiri: "20 September" menambah ~60px pada
+ * lebar minimum tabel, dan tabel inilah yang paling awal harus digulir
+ * mendatar di layar ponsel.
  */
 const formatRuleDate = (value) => parseDateOnly(value).toLocaleDateString('id-ID', {
     weekday: 'short',
     day: 'numeric',
-    month: 'long',
+    month: 'short',
     year: 'numeric',
 });
 
