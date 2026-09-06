@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | ADDITION | Kas | Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093) |
 | 2026-09-06 | ADDITION | AI Analysis | Nama Varian di Hasil AI Jadi Bisa Diklik — dan yang Barangnya Sudah Hilang Ditandai (BL-100 Tahap 2 & 3) |
 | 2026-09-06 | ADDITION | Promosi | Saklar Per-Jenis Saran Jual Pindah dari Berkas PHP ke Layar Owner — dan Config Tetap Menang (BL-099) |
 | 2026-09-06 | ADDITION | Produk | Katalog Produk Akhirnya Bisa Dicari — dan Kata Kuncinya Boleh Datang dari URL (BL-100 Tahap 1) |
@@ -235,6 +236,34 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-093]`, pecahan dari `[BL-087]`.
+- **Dampak:** Migration (satu kolom pada `cash_drawer_movements`), `CashDrawerMovement`, `StoreCashDrawerMovementRequest`, `Cashier\CashDrawerController`, `MediaController`, satu rute media baru, `Services\CashMovementProofService` (baru), dua halaman Vue.
+- **Breaking Change:** Tidak. Fotonya opsional dan kolomnya nullable; mencatat mutasi kas tanpa foto berperilaku persis seperti sebelumnya.
+- **Deskripsi:** `[BL-087]` mewajibkan alasan tertulis, dan itu yang membedakan pencatatan ini dari uang yang hilang begitu saja. Yang belum ada adalah bukti yang bisa **diperiksa**. Untuk pengeluaran yang punya struk — galon, belanja bahan, parkir — foto mengubah "katanya beli galon" jadi sesuatu yang bisa dicocokkan. Kasir melampirkannya dari modal pencatatan, pemilik melihat pratinjaunya di daftar persetujuan sebelum memutuskan.
+- **Fotonya OPSIONAL, dan itu keputusan, bukan kemalasan.** Mewajibkannya akan mengulang persis kesalahan yang `[BL-087]` hindari dari sisi lain: kasir yang tidak bisa mencatat karena struknya tidak ada tetap mengeluarkan uangnya, dan selisihnya muncul di akhir shift tanpa keterangan apa pun. Sebagian pengeluaran memang tidak berstruk — parkir, tukar receh. Yang hilang kalau foto diwajibkan bukan fotonya, melainkan seluruh keterangan uangnya.
+- **MENYIMPANG dari usulan entrinya: tidak ada pola unggah-lalu-klaim.** Entri `[BL-093]` menyarankan menyalin preseden `PaymentProofService` apa adanya — direktori `pending/`, token, langkah klaim, dan perintah pembersih tersendiri. Alasan preseden itu ada ternyata tidak berlaku di sini, dan alasannya tertulis di docblock-nya sendiri: dua langkah lahir karena checkout POS mengirim **JSON bersarang**, dan menyelipkan berkas ke dalamnya memaksa seluruh payload pindah ke `multipart/form-data`, tempat setiap angka berubah jadi string dan setiap boolean jadi "1"/"0". Formulir mutasi kas datar — tipe, nominal, alasan — jadi ia memang boleh membawa berkasnya sendiri. Inertia beralih sendiri ke multipart begitu ada `File` di payload, dan kembali JSON biasa kalau tidak ada.
+- **Yang ikut hilang bersama langkah kedua bukan cuma kerumitannya, melainkan seluruh KELAS masalahnya:** tidak ada direktori `pending/`, tidak ada token yang bisa dikarang client, tidak ada berkas terlantar saat kasir membatalkan modal — dan karena itu tidak ada perintah pembersih kedua yang harus ditulis, dijadwalkan, dan dijaga. Berkas di sini lahir bersama barisnya atau tidak lahir sama sekali; satu test menjaganya dengan menolak nominal dan memastikan disk tetap bersih.
+- **PDF tidak diterima,** sama seperti bukti bayar kasir dan berbeda dari bukti transfer langganan. Ini foto yang diambil di tempat, dan berkas yang tidak bisa dipratinjau berarti bukti yang tidak pernah bisa diperiksa siapa pun.
+- **Rutenya digerbang batas TENANT, bukan batas peran.** Kasir yang mencatat perlu bisa membuka kembali foto yang baru ia lampirkan — tanpa itu, salah foto baru ketahuan dari mulut pemilik. Yang dijaga adalah foto satu toko tidak pernah bisa dibuka toko lain, dan jawabannya **404, bukan 403**: jawaban yang membedakan "bukan milikmu" dari "tidak ada" mengubah URL ini jadi alat menghitung mutasi kas toko sebelah.
+- **Menolak sebuah mutasi TIDAK menghapus fotonya.** Justru pada baris yang ditolak fotonya paling berguna — ia bukti dari klaim yang tidak diterima, dan itu yang akan ditanyakan kembali nanti.
+- **Retensinya sudah diputuskan sejak 2026-08-19** (keputusan pemilik di `[BL-075]`): tanpa batas untuk sekarang, tanpa pembersihan otomatis. Foto yang sudah melekat tidak disentuh perintah pembersih mana pun — dan di sini memang tidak ada berkas yang belum melekat.
+- **Di layar pemilik fotonya mendahului keterangannya**, bukan menyusul di bawah: ia satu-satunya bagian baris itu yang bisa diperiksa, sedangkan nominal dan alasan sama-sama ucapan orang yang mencatatnya.
+- **File Terdampak:**
+  - `database/migrations/2026_09_07_013520_add_proof_path_to_cash_drawer_movements_table.php` — kolom nullable
+  - `app/Services/CashMovementProofService.php` — **baru**; penyimpanan dipakai apa adanya dari `ProofFileService`
+  - `app/Models/CashDrawerMovement.php` — `proof_path` fillable
+  - `app/Http/Requests/StoreCashDrawerMovementRequest.php` — aturan `proof` nullable + pesannya
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — simpan berkas saat mencatat
+  - `app/Http/Controllers/MediaController.php` + `routes/web.php` — `media.cash-movement-proof`
+  - `resources/js/Pages/Cashier/CashDrawer.vue` — tombol foto di modal, pratinjau, dan thumbnail di daftar sesi
+  - `resources/js/Pages/Owner/CashDrawers/Index.vue` — thumbnail di daftar persetujuan
+  - `tests/Feature/Cashier/CashMovementProofTest.php` — **baru**, 11 test
+- **Catatan Migrasi:** `php artisan migrate`. Tidak ada backfill; baris lama tetap tanpa foto.
 
 ---
 

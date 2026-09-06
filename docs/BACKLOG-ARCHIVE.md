@@ -10,6 +10,26 @@
 
 ## Daftar Entri
 
+### [BL-093] Pencatatan Uang Keluar Laci Belum Bisa Dilampiri Foto Struk
+- **Ditemukan:** 2026-08-21 (dipecah dari `[BL-087]` saat fiturnya mendarat)
+- **Sumber:** Saran di dalam pembahasan `[BL-087]` — foto struk sebagai pelengkap alasan tertulis, disetujui pemilik bersama bentuk fiturnya
+- **Status:** **Selesai 2026-09-06** — kolom `proof_path`, unggahan ikut permintaan yang sama, dan pratinjaunya di dua layar. Lihat `[ADDITION] Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093)` di `docs/CHANGELOG.md`.
+- **Prioritas:** Low — alasan tertulis sudah wajib dan sudah menutup sebagian besar gunanya; foto mengubah "katanya beli galon" jadi bisa diperiksa, dan itu berguna tapi bukan penentu
+- **Area Terdampak:**
+  - `app/Services/PaymentProofService.php` — pola unggah-lalu-klaim yang bisa ditiru (`storePending()` / `claim()`), tapi seluruh `pathFor()`-nya terikat `TransactionPayment`
+  - `app/Services/ProofFileService.php` — penyimpanan, thumbnail, dan penghapusannya sudah umum dan bisa dipakai apa adanya
+  - `database/migrations/..._create_cash_drawer_movements_table.php` — belum punya kolom `proof_path`
+- **Deskripsi:** `[BL-087]` mewajibkan alasan tertulis, dan itu yang membedakan pencatatan dari uang yang hilang begitu saja. Yang belum ada: bukti yang bisa diperiksa. Untuk pengeluaran yang punya struk — galon, belanja bahan, parkir — foto mengubah keterangan jadi sesuatu yang bisa dicocokkan.
+- **Kenapa tidak ikut mendarat bersama `[BL-087]`:** jalur unggahnya menuntut direktori sendiri dan mekanisme klaim berkas — pekerjaan yang berdiri sendiri dan tidak ada hubungannya dengan rumus `expected_amount` yang jadi inti `[BL-087]`. Menyelipkannya berarti menahan fitur yang sudah selesai demi pelengkap yang tidak menentukan.
+- **KOREKSI 2026-08-31 — penghalang yang semula tercatat di sini tidak pernah ada.** Entri ini dibuat dengan alasan "kebijakan retensi belum pernah diputuskan untuk foto bukti mana pun" dan menunggu keputusan itu turun di `[BL-076]`. Dua-duanya keliru, dan keduanya sudah keliru sejak entri ini ditulis:
+  1. **Retensinya sudah diputuskan** — keputusan pemilik 2026-08-19 di dalam `[BL-075]` (`docs/BACKLOG-ARCHIVE.md`, "KEPUTUSAN PEMILIK 2026-08-19" butir 1): **tanpa batas untuk sekarang**, tidak ada pembersihan otomatis untuk foto yang sudah melekat. Yang punya perintah pembersih hanya berkas TERTUNDA yang tak pernah diklaim (`payment-proofs:prune-unclaimed`, harian, batas 24 jam), dan di sana ditulis tegas bahwa itu kebersihan disk, **bukan** kebijakan retensi.
+  2. **`[BL-076]` tidak memegang persoalan retensi.** Keempat usulannya soal **lokasi** berkas — `DISK` jadi konfigurasi, pemindahan berkas lama, alirkan byte vs URL bertanda tangan, dan larangan melonggarkan privasi. Tidak ada satu baris pun tentang berapa lama berkas disimpan. Menunggu retensi diputuskan di sana berarti menunggu selamanya.
+
+  Yang **memang** bertahan sebagai singgungan dengan `[BL-076]`: butir (c)-nya, "putuskan per jenis berkas, jangan satu kebijakan untuk semuanya". Foto struk galon tidak memuat nama dan nomor pelanggan seperti tangkapan layar e-wallet, jadi ia lebih dekat ke foto produk daripada ke bukti bayar `[BL-075]`. Itu keputusan saat `[BL-076]` dikerjakan, **bukan** syarat untuk menambah kolom di sini.
+- **Usulan Perbaikan:** kolom `proof_path` nullable pada `cash_drawer_movements`, tombol unggah opsional di modal pencatatan, dan pratinjaunya di daftar persetujuan pemilik. Presedennya sudah lengkap dan tinggal ditiru apa adanya: direktori sendiri di bawah disk privat, pola unggah-lalu-klaim, perintah pembersih untuk `pending/`-nya sendiri, dan retensi mengikuti kebijakan yang sama — tanpa batas untuk foto yang sudah melekat.
+- **Catatan penutup — usulan "tiru presedennya apa adanya" TIDAK diikuti, dan itu perbaikan bukan penyimpangan.** Entri ini menyarankan menyalin pola unggah-lalu-klaim `PaymentProofService` lengkap dengan direktori `pending/`, token, langkah klaim, dan perintah pembersihnya sendiri. Docblock preseden itu menuliskan sendiri kenapa dua langkah ada: checkout POS mengirim JSON BERSARANG, dan menyelipkan berkas ke dalamnya memaksa seluruh payload pindah ke multipart. Formulir mutasi kas datar, jadi syarat itu tidak pernah berlaku di sini. Bersama langkah kedua hilang pula seluruh kelas masalahnya — tidak ada berkas terlantar, jadi tidak ada perintah pembersih kedua yang harus ditulis dan dijaga.
+- **Yang justru butuh keputusan ternyata bukan retensinya, melainkan WAJIB atau TIDAK.** Fotonya dibuat opsional: mewajibkannya mengulang persis kesalahan yang `[BL-087]` hindari dari sisi lain — kasir yang tidak bisa mencatat karena struknya tidak ada tetap mengeluarkan uangnya, dan yang hilang bukan fotonya melainkan seluruh keterangan uangnya.
+
 ### [BL-100] Nama Varian di Hasil AI Belum Bisa Ditelusuri — Owner Membacanya, Lalu Mencarinya Sendiri
 - **Ditemukan:** 2026-09-03 (saat merapikan tampilan & prompt AI Analysis)
 - **Sumber:** Permintaan pemilik di sesi yang sama — "tambahkan agar user bisa direferensi atau clickable barangnya, mungkin nanti entah dengan url params atau bagaimana cocoknya"

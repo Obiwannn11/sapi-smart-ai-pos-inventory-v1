@@ -42,7 +42,7 @@ class CashDrawerMovement extends Model
 
     protected $fillable = [
         'tenant_id', 'cash_drawer_id', 'user_id',
-        'type', 'amount', 'reason', 'status', 'reviewed_by', 'reviewed_at',
+        'type', 'amount', 'reason', 'proof_path', 'status', 'reviewed_by', 'reviewed_at',
     ];
 
     protected $attributes = [

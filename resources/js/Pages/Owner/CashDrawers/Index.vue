@@ -68,7 +68,26 @@ const formatDateTime = (datetime) => {
 
             <ul class="divide-y divide-gray-50">
                 <li v-for="movement in pendingMovements" :key="movement.id" class="px-5 py-3 flex items-start justify-between gap-4">
-                    <div class="min-w-0">
+                    <!-- Foto struk ([BL-093]) mendahului keterangannya, bukan
+                         menyusul di bawah: ia satu-satunya bagian baris ini yang
+                         bisa DIPERIKSA, sedangkan nominal dan alasan sama-sama
+                         ucapan orang yang mencatatnya. -->
+                    <a
+                        v-if="movement.proof_path"
+                        :href="`/media/bukti-kas/${movement.id}/full`"
+                        target="_blank"
+                        rel="noopener"
+                        class="shrink-0"
+                        title="Lihat foto struk"
+                    >
+                        <img
+                            :src="`/media/bukti-kas/${movement.id}/thumb`"
+                            alt="Foto struk"
+                            class="h-12 w-12 rounded object-cover border border-gray-200 bg-white"
+                        />
+                    </a>
+
+                    <div class="min-w-0 flex-1">
                         <p class="text-sm text-gray-800">
                             <span class="font-semibold font-mono">
                                 {{ movement.type === 'payout' ? '−' : '+' }}{{ formatCurrency(movement.amount) }}

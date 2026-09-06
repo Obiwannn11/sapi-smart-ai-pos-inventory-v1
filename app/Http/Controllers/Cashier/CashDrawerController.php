@@ -10,6 +10,7 @@ use App\Models\CashDrawer;
 use App\Models\CashDrawerMovement;
 use App\Models\CashDrawerReveal;
 use App\Services\CashDrawerReconciliation;
+use App\Services\CashMovementProofService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -19,6 +20,7 @@ class CashDrawerController extends Controller
 {
     public function __construct(
         private CashDrawerReconciliation $reconciliation,
+        private CashMovementProofService $movementProofs,
     ) {}
 
     /**
@@ -114,6 +116,11 @@ class CashDrawerController extends Controller
      * Catat uang keluar dari laci atau masuk ke laci di luar penjualan
      * ([BL-087]).
      *
+     * Fotonya OPSIONAL ([BL-093]). Untuk pengeluaran yang punya struk ia
+     * mengubah "katanya beli galon" jadi sesuatu yang bisa dicocokkan; untuk
+     * yang tidak punya struk — parkir, tukar receh — mewajibkannya hanya akan
+     * menghentikan pencatatannya sama sekali.
+     *
      * **Kasir selalu boleh mencatat.** Yang bergantung pada ambang tenant
      * hanyalah apakah angkanya langsung menggerakkan `expected_amount` atau
      * menunggu pemilik. Menolak pencatatannya justru akan mengosongkan catatan
@@ -150,6 +157,14 @@ class CashDrawerController extends Controller
             'type' => $request->validated('type'),
             'amount' => $amount,
             'reason' => $request->validated('reason'),
+            // Berkasnya ikut permintaan yang sama, bukan lewat unggahan
+            // terpisah ([BL-093]). Formulir ini datar, jadi ia memang boleh
+            // membawa berkasnya sendiri — dan bersama langkah kedua hilang
+            // pula berkas terlantar yang harus dibersihkan belakangan.
+            // Alasan lengkapnya di CashMovementProofService.
+            'proof_path' => $request->hasFile('proof')
+                ? $this->movementProofs->store($request->file('proof'), $drawer->tenant_id)
+                : null,
             'status' => $autoApproved
                 ? CashDrawerMovement::STATUS_APPROVED
                 : CashDrawerMovement::STATUS_PENDING,

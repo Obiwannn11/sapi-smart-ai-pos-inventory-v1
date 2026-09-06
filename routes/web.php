@@ -67,6 +67,15 @@ Route::middleware('auth')
     ->whereIn('size', ['full', 'thumb'])
     ->name('media.payment-proof');
 
+// Foto struk mutasi kas ([BL-093]). Alasannya sama dengan dua rute media di
+// atas: <img> tidak bisa menampilkan halaman pengalihan. Isinya lebih ringan
+// daripada bukti bayar — struk galon tidak memuat nama dan nomor pelanggan —
+// tapi ia tetap berkas milik satu toko, jadi gerbangnya sama persis.
+Route::middleware('auth')
+    ->get('/media/bukti-kas/{movement}/{size}', [\App\Http\Controllers\MediaController::class, 'cashMovementProof'])
+    ->whereIn('size', ['full', 'thumb'])
+    ->name('media.cash-movement-proof');
+
 // --- Langganan (sisi tenant) ---
 // Satu-satunya halaman bertenant yang tetap terbuka saat tenant ditangguhkan —
 // lihat daftar ALWAYS_ALLOWED di EnsureSubscriptionActive. Menutupnya berarti

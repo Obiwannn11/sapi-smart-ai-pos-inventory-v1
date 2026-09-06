@@ -172,12 +172,45 @@ const movementReason = ref('');
 const movementErrors = ref({});
 const savingMovement = ref(false);
 
+/* Foto struk ([BL-093]) — OPSIONAL. Sebagian pengeluaran memang tidak
+   berstruk; mewajibkannya hanya akan menghentikan pencatatannya sama sekali,
+   dan yang hilang bukan fotonya melainkan seluruh keterangan uangnya.
+
+   Berkasnya ikut permintaan yang sama, bukan diunggah lebih dulu: formulir ini
+   datar, jadi Inertia boleh mengirimnya sebagai multipart tanpa merusak apa
+   pun. Alasan lengkapnya di CashMovementProofService. */
+const movementProof = ref(null);
+const movementProofPreview = ref('');
+
+const releaseMovementProof = () => {
+    if (movementProofPreview.value) {
+        URL.revokeObjectURL(movementProofPreview.value);
+    }
+    movementProof.value = null;
+    movementProofPreview.value = '';
+};
+
+const onMovementProofPicked = (event) => {
+    const file = event.target.files?.[0];
+    // Input-nya dikosongkan supaya memilih berkas yang SAMA dua kali tetap
+    // memicu `change` — kalau tidak, mengganti lalu memilih ulang foto yang
+    // sama terlihat seperti tombol yang tidak berbuat apa-apa.
+    event.target.value = '';
+
+    if (!file) return;
+
+    releaseMovementProof();
+    movementProof.value = file;
+    movementProofPreview.value = URL.createObjectURL(file);
+};
+
 const openMovement = (type) => {
     movementType.value = type;
     movementAmount.value = 0;
     movementAmountDisplay.value = '';
     movementReason.value = '';
     movementErrors.value = {};
+    releaseMovementProof();
     movementOpen.value = true;
 };
 
@@ -209,9 +242,15 @@ const submitMovement = () => {
         type: movementType.value,
         amount: movementAmount.value,
         reason: movementReason.value,
+        // Inertia beralih sendiri ke multipart begitu ada File di sini, dan
+        // tetap JSON biasa kalau tidak ada.
+        proof: movementProof.value,
     }, {
         preserveScroll: true,
-        onSuccess: () => { movementOpen.value = false; },
+        onSuccess: () => {
+            movementOpen.value = false;
+            releaseMovementProof();
+        },
         onError: (errors) => { movementErrors.value = errors; },
         onFinish: () => { savingMovement.value = false; },
     });
@@ -413,6 +452,26 @@ const movementStatusLabel = (movement) => {
                                     }"
                                 >{{ movementStatusLabel(movement) }}</span>
                             </span>
+
+                            <!-- Fotonya bisa dibuka kembali oleh yang mencatatnya
+                                 ([BL-093]). Tanpa ini kasir tidak punya cara
+                                 memastikan yang terkirim benar foto yang ia
+                                 maksud, dan salah foto baru ketahuan dari mulut
+                                 pemilik. -->
+                            <a
+                                v-if="movement.proof_path"
+                                :href="`/media/bukti-kas/${movement.id}/full`"
+                                target="_blank"
+                                rel="noopener"
+                                class="shrink-0"
+                                title="Lihat foto struk"
+                            >
+                                <img
+                                    :src="`/media/bukti-kas/${movement.id}/thumb`"
+                                    alt="Foto struk"
+                                    class="h-8 w-8 rounded object-cover border border-border bg-card"
+                                />
+                            </a>
                             <span
                                 class="font-mono shrink-0"
                                 :class="[
@@ -478,6 +537,42 @@ const movementStatusLabel = (movement) => {
                             required
                         />
                         <p v-if="movementErrors.reason" class="mt-1 text-xs text-destructive">{{ movementErrors.reason }}</p>
+                    </div>
+
+                    <!-- Foto struk ([BL-093]), opsional. `capture="environment"`
+                         membuka kamera belakang langsung di ponsel, tanpa mampir
+                         ke galeri — struknya biasanya masih di tangan kasir. -->
+                    <div class="space-y-2">
+                        <input
+                            id="movement_proof"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            class="hidden"
+                            @change="onMovementProofPicked"
+                        />
+
+                        <div v-if="movementProofPreview" class="flex items-center gap-3 rounded-lg border border-success/30 bg-success/5 p-2">
+                            <img :src="movementProofPreview" alt="Pratinjau foto struk" class="h-14 w-14 rounded object-cover border border-border bg-card" />
+                            <span class="flex-1 text-xs font-medium text-success">Foto struk terlampir</span>
+                            <button type="button" class="text-xs text-destructive hover:opacity-80" @click="releaseMovementProof">
+                                Hapus
+                            </button>
+                        </div>
+
+                        <label
+                            v-else
+                            for="movement_proof"
+                            class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-3 py-2.5 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary"
+                        >
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Foto struk (opsional)
+                        </label>
+
+                        <p v-if="movementErrors.proof" class="text-xs text-destructive">{{ movementErrors.proof }}</p>
                     </div>
 
                     <!-- Diberitahukan SELAGI mengetik. Aturan yang baru diketahui
