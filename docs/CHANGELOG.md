@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | HOTFIX | Promosi | Satu Barang Berhenti Memakan Dua Slot Kasir Lewat Dua Jenis Saran Berbeda (BL-101) |
 | 2026-09-06 | DEPRECATE | Platform | `Platform\InvoiceController::index()` Dihapus — 30 Baris yang Terbaca seperti Fitur Hidup (BL-098) |
 | 2026-09-04 | DECISION | Stok | Manajemen Stok Berhenti Jadi Accordion — Satu Baris per Varian, Disaring dan Dipaginasi di Server |
 | 2026-09-04 | DECISION | Pengaturan | Ketiga Halaman Pengaturan Berhenti Merakit Kontrolnya Sendiri — Centang, Dropdown, dan Tombol Dipulangkan ke Komponen Bersama |
@@ -231,6 +232,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [HOTFIX] Satu Barang Berhenti Memakan Dua Slot Kasir Lewat Dua Jenis Saran Berbeda (BL-101)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-101]`.
+- **Dampak:** `UpsellIndexBuilder::rankForCart()` (pratinjau owner + self-order) dan `useUpsell.js` (layar kasir). `Suggestion::key()` tidak disentuh.
+- **Breaking Change:** Tidak. Bentuk indeks, prop POS, dan pencatatan event tetap sama persis.
+- **Deskripsi:** Owner menulis aturan "dorong Espresso Double" (tanpa pemicu), sementara mesin sudah menyarankan Espresso Double sebagai naik ukuran dari Espresso Single. Begitu Espresso Single masuk keranjang, strip kasir memuat Espresso Double **dua kali** — dengan dua lencana berbeda dan dua alasan berbeda — memakan dua dari tiga slot yang ada untuk satu barang yang sama.
+- **Alasan:** Dedup satu-satunya memakai `Suggestion::key()`, dan kunci itu memuat **jenis** sarannya (`type:pemicu:varian`). Dua strategi yang kebetulan menunjuk varian yang sama karena itu menghasilkan dua kunci berbeda dan lolos berdua.
+- **`key()` sengaja TIDAK diubah, dan itu keputusannya.** Kunci yang sama juga dipakai client untuk mengingat saran mana yang sudah ditutup kasir, dan checkout untuk mencocokkan event ke sarannya. Menyamakan kunci dua saran berbeda akan membuat laporan kehilangan kemampuan memisahkan `attach` dari `upsize` — yang justru inti tabel "Per Jenis Saran". Perbaikannya karena itu berupa **dedup kedua** di atas hasil pengurutan skor, bukan perubahan identitas.
+- **Yang bertahan adalah yang skornya tertinggi,** dan itu memberi hasil yang benar tanpa aturan tambahan: aturan manual menang karena lantai skornya sendiri, jadi yang tampil "Pilihan pemilik", bukan "Naik ukuran".
+- **Perbaikannya mendarat di DUA tempat, dan harus.** Entri `[BL-101]` hanya menyebut `rankForCart()`, tapi kasir tidak memanggilnya — ia memilih slotnya sendiri di `useUpsell.js`, di atas indeks yang sama. Menambal server saja akan membersihkan pratinjau owner sementara layar kasir, tempat cacatnya dilaporkan, tetap memuat barang yang sama dua kali. Satu test membaca sumber `useUpsell.js` supaya kedua sisi tidak diam-diam bercabang.
+- **Saran add-on sengaja dilewati dedup ini.** `suggested_variant_id`-nya null untuk semua saran `attach`, dan menyaring null sebagai satu nilai akan membuang dua add-on **berbeda** pada produk yang sama — dua tindakan yang sungguh berbeda. Ini butir peringatan yang sudah ditulis di entri backlog-nya, dan ada testnya sendiri.
+- **File Terdampak:**
+  - `app/Services/Upsell/UpsellIndexBuilder.php` — `onePerSuggestedVariant()`, dipanggil di ujung `rankForCart()`
+  - `resources/js/composables/useUpsell.js` — cerminannya untuk layar kasir
+  - `tests/Feature/Upsell/UpsellSlotDedupTest.php` — empat test: tabrakan manual dengan naik ukuran, ekor pratinjau, dua add-on yang harus selamat, dan penjaga cerminan client
 
 ---
 

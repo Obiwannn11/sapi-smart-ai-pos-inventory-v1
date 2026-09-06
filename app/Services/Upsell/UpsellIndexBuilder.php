@@ -143,7 +143,56 @@ class UpsellIndexBuilder
 
         usort($picked, fn (array $a, array $b) => $b['score'] <=> $a['score']);
 
-        return $picked;
+        return $this->onePerSuggestedVariant($picked);
+    }
+
+    /**
+     * Dedup KEDUA: satu varian hanya boleh diusulkan satu kali ([BL-101]).
+     *
+     * Dedup pertama memakai `Suggestion::key()`, dan kunci itu memuat JENIS
+     * sarannya — jadi dua strategi yang kebetulan menunjuk varian yang sama
+     * menghasilkan dua kunci berbeda dan lolos berdua. Owner yang menulis
+     * aturan "dorong Espresso Double" melihatnya persis begitu: satu barang,
+     * dua lencana, dua slot kasir terpakai dari tiga yang ada.
+     *
+     * `key()` sengaja TIDAK disentuh. Ia juga dipakai client untuk mengingat
+     * saran mana yang sudah ditutup kasir, dan checkout untuk mencocokkan
+     * event ke sarannya — menyamakan kunci dua saran berbeda akan membuat
+     * laporan kehilangan kemampuan memisahkan `attach` dari `upsize`.
+     *
+     * Dijalankan SESUDAH pengurutan skor, jadi yang bertahan otomatis yang
+     * paling mendesak; aturan manual menang karena lantai skornya sendiri.
+     *
+     * Saran ber-modifier (`attach`) dilewati, bukan digabung: `suggested_variant_id`-nya
+     * null, dan menyaring null sebagai satu nilai akan membuang dua add-on
+     * BERBEDA pada produk yang sama — dua tindakan yang sungguh berbeda.
+     *
+     * @param  list<array<string, mixed>>  $suggestions
+     * @return list<array<string, mixed>>
+     */
+    private function onePerSuggestedVariant(array $suggestions): array
+    {
+        $seen = [];
+        $kept = [];
+
+        foreach ($suggestions as $suggestion) {
+            $variantId = $suggestion['suggested_variant_id'] ?? null;
+
+            if ($variantId === null) {
+                $kept[] = $suggestion;
+
+                continue;
+            }
+
+            if (isset($seen[$variantId])) {
+                continue;
+            }
+
+            $seen[$variantId] = true;
+            $kept[] = $suggestion;
+        }
+
+        return $kept;
     }
 
     /**

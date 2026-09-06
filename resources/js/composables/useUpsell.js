@@ -116,6 +116,40 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
         return true;
     };
 
+    /**
+     * Satu varian hanya boleh mengisi satu slot ([BL-101]).
+     *
+     * Kunci saran memuat JENIS-nya, jadi `pool` di atas — yang mendedup lewat
+     * kunci itu — meloloskan dua saran yang menunjuk varian yang SAMA lewat
+     * dua strategi berbeda. Yang dilihat kasir: Espresso Double dua kali,
+     * sekali sebagai "Pilihan pemilik" dan sekali sebagai "Naik ukuran",
+     * memakan dua dari tiga slot untuk satu barang.
+     *
+     * Cerminan `UpsellIndexBuilder::onePerSuggestedVariant()`, dan harus tetap
+     * jadi cerminannya: kasir memilih di sini, sedangkan pratinjau owner dan
+     * jalur self-order memilih di server. Perbedaan di antara keduanya berarti
+     * pratinjau berbohong soal apa yang akan dilihat kasir.
+     *
+     * Dijalankan sesudah pengurutan skor, jadi yang bertahan yang skornya
+     * tertinggi. Saran ber-modifier dilewati — `suggested_variant_id`-nya null,
+     * dan menyaring null sebagai satu nilai akan membuang dua add-on berbeda
+     * pada produk yang sama.
+     */
+    const onePerSuggestedVariant = (sorted) => {
+        const seen = new Set();
+
+        return sorted.filter((suggestion) => {
+            const variantId = suggestion.suggested_variant_id;
+
+            if (!variantId) return true;
+            if (seen.has(variantId)) return false;
+
+            seen.add(variantId);
+
+            return true;
+        });
+    };
+
     const suggestions = computed(() => {
         if (cart.value.length === 0) return [];
 
@@ -131,10 +165,9 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
             pool.set(suggestion.key, suggestion);
         }
 
-        return [...pool.values()]
-            .filter(isRelevant)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, maxPerTransaction.value);
+        return onePerSuggestedVariant(
+            [...pool.values()].filter(isRelevant).sort((a, b) => b.score - a.score)
+        ).slice(0, maxPerTransaction.value);
     });
 
     // Apa pun yang sempat terlihat kasir masuk penyebut, sekali saja.
