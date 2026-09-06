@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CashDrawer;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\ProductVariant;
@@ -221,8 +222,16 @@ class TransactionService
                 $this->recordPayment($transaction, $payment, $user->tenant_id);
             }
 
-            // 8. Update status
-            $transaction->update(['status' => Transaction::STATUS_COMPLETED]);
+            // 8. Update status, berikut laci yang menerima uangnya.
+            //
+            // Ditulis DI SINI dan bukan saat `create()` di langkah 3, karena
+            // langkah 3 juga melahirkan open bill — dan open bill belum
+            // menerima uang siapa pun. Lacinya baru ditentukan saat ia dilunasi
+            // (`payOpenBill()`), oleh laci yang melunasi. Lihat drawerReceiving().
+            $transaction->update([
+                'status' => Transaction::STATUS_COMPLETED,
+                'cash_drawer_id' => $this->drawerReceiving($user),
+            ]);
 
             return $transaction->load(['items.modifiers', 'payments.paymentMethod']);
         });
@@ -339,6 +348,10 @@ class TransactionService
             }
 
             // 3. Update status + aktifkan fulfillment
+            //
+            // `cash_drawer_id` tetap null dan itu disengaja ([BL-028] Tahap B
+            // langkah 1): pembayarannya lewat Xendit, tidak ada kasir yang
+            // menerimanya dan tidak ada laci yang kemasukan uangnya.
             $transaction->update([
                 'status' => Transaction::STATUS_COMPLETED,
                 'fulfillment_status' => Transaction::FULFILLMENT_WAITING,
@@ -389,7 +402,7 @@ class TransactionService
      * berbunyi "sudah dibayar", dan kasir yang membaca itu akan mencari uang
      * yang tidak pernah masuk alih-alih memanggil pemilik.
      */
-    public function payOpenBill(Transaction $transaction, array $payments): Transaction
+    public function payOpenBill(Transaction $transaction, array $payments, ?User $paidBy = null): Transaction
     {
         if ($transaction->isUnsettled()) {
             throw new \Exception(
@@ -401,7 +414,19 @@ class TransactionService
             throw new \Exception('Transaksi ini bukan open bill / sudah dibayar.');
         }
 
-        return $this->completeWithPayments($transaction, $payments);
+        // Uangnya jatuh ke laci yang MELUNASI ([BL-028]) — itu sudah jadi
+        // aturan sejak Tahap A, tapi sampai kolomnya ada ia tidak pernah
+        // benar-benar berlaku: rekonsiliasi mencocokkan `user_id` pembuat
+        // tagihan dengan tanggal saat tagihan itu DIBUKA, jadi tagihan pagi
+        // yang dilunasi malam menaruh uangnya di laci pagi.
+        //
+        // `$paidBy` opsional supaya pemanggil lama tetap sah; tanpanya ia jatuh
+        // ke pembuat tagihan, yaitu perilaku sebelum kolom ini ada.
+        return $this->completeWithPayments(
+            $transaction,
+            $payments,
+            cashDrawerId: $this->drawerReceiving($paidBy ?? $transaction->user),
+        );
     }
 
     /**
@@ -430,7 +455,41 @@ class TransactionService
             throw new \Exception('Hanya pemilik yang dapat melunasi kas negatif.');
         }
 
+        // `cash_drawer_id` sengaja dibiarkan null: alinea di atas menyebutnya
+        // sebagai keputusan, dan kolomnya sekarang menyatakannya.
         return $this->completeWithPayments($transaction, $payments, $owner);
+    }
+
+    /**
+     * Laci yang menerima uang sebuah penjualan ([BL-028] Tahap B langkah 1).
+     *
+     * Satu-satunya cara sebuah penjualan memperoleh `cash_drawer_id`-nya lewat
+     * jalur online. Sebelum kolom ini ada, jawabannya DITURUNKAN saat membaca —
+     * `transactions.user_id` dicocokkan dengan rentang jam sesi — dan turunan
+     * itu benar hanya selama satu kasir per outlet.
+     *
+     * Kebijakan lengkapnya, karena tiap barisnya keputusan dan bukan penurunan
+     * mekanis:
+     *
+     *   checkout() selesai        laci terbuka kasirnya — uang masuk sekarang
+     *   checkout() open bill      null; belum ada uang, lacinya menyusul
+     *   payOpenBill()             laci YANG MELUNASI, bukan pembuat tagihan
+     *   paySettledLateBill()      null — sesudah 24 jam tak ada laci yang
+     *                             menerimanya ([BL-031])
+     *   commitOffline()           laci yang jendelanya melingkupi occurred_at,
+     *                             boleh yang sudah tertutup
+     *   confirmSelfOrderPayment() null — non-tunai, tak ada kasir dan tak ada
+     *                             laci
+     *   void()                    tidak disentuh; jejak bahwa transaksi itu
+     *                             memang pernah ada di laci itu
+     *
+     * `null` juga sah untuk penjualan biasa: pemilik berjualan di POS tanpa
+     * pernah membuka sesi kas, dan kasir bisa menjual di sela dua sesi. Itu
+     * keadaan nyata, bukan kegagalan — jangan diubah jadi pengecualian.
+     */
+    private function drawerReceiving(?User $receiver): ?int
+    {
+        return $receiver ? CashDrawer::openFor($receiver)?->id : null;
     }
 
     /**
@@ -442,9 +501,13 @@ class TransactionService
      *
      * @param  array<int, array<string, mixed>>  $payments
      */
-    private function completeWithPayments(Transaction $transaction, array $payments, ?User $settledBy = null): Transaction
-    {
-        return DB::transaction(function () use ($transaction, $payments, $settledBy) {
+    private function completeWithPayments(
+        Transaction $transaction,
+        array $payments,
+        ?User $settledBy = null,
+        ?int $cashDrawerId = null,
+    ): Transaction {
+        return DB::transaction(function () use ($transaction, $payments, $settledBy, $cashDrawerId) {
             $totalPaid = collect($payments)->sum('amount');
             $totalAmount = (float) $transaction->total_amount;
             $changeAmount = max(0, $totalPaid - $totalAmount);
@@ -463,6 +526,11 @@ class TransactionService
             $transaction->update([
                 'change_amount' => $changeAmount,
                 'status' => Transaction::STATUS_COMPLETED,
+                // Laci yang MELUNASI, bukan yang membuat tagihannya
+                // ([BL-028]). Ditentukan pemanggil karena hanya ia tahu siapa
+                // yang membayar — dan untuk pelunasan terlambat oleh pemilik
+                // jawabannya memang `null`.
+                'cash_drawer_id' => $cashDrawerId,
             ] + ($settledBy ? [
                 'edited_at' => now(),
                 'edited_by' => $settledBy->id,
@@ -803,6 +871,17 @@ class TransactionService
             $transaction = Transaction::create([
                 'tenant_id' => $tenantId,
                 'user_id' => $cashier->id,
+                // Laci yang benar-benar menerima uangnya, yaitu yang terbuka
+                // saat penjualannya TERJADI — bukan yang terbuka saat payload
+                // ini sampai, dan boleh sesi yang sudah lama ditutup
+                // ([BL-028] Tahap B langkah 1).
+                //
+                // Sesi yang sudah tertutup tidak akan berubah angkanya karena
+                // itu: `expected_amount`-nya dibekukan saat tutup kas. Yang
+                // berubah adalah penjualan ini berhenti tak-bertuan — sesudah
+                // sakelar baca langkah 2, ia bisa muncul sebagai penjualan yang
+                // datang terlambat ke sesi yang benar alih-alih hilang.
+                'cash_drawer_id' => CashDrawer::coveringAt($cashier, $occurredAt)?->id,
                 'code' => $this->generateTransactionCodeFor($tenantId, $occurredAt),
                 'client_uuid' => $data['client_uuid'],
                 'status' => Transaction::STATUS_COMPLETED,

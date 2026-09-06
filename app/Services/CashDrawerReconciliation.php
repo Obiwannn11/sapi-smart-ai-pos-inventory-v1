@@ -31,6 +31,15 @@ use Illuminate\Support\Carbon;
  *   `created_at` melemparkan uang yang masuk laci kemarin ke laci hari ini.
  *   Alasan yang sama sudah tertulis untuk papan antrian di
  *   TransactionService::assignQueuePosition().
+ *
+ * **Kolom `transactions.cash_drawer_id` sudah ada dan sudah terisi, tapi
+ * SENGAJA belum dibaca di sini** ([BL-028] Tahap B langkah 1). Ia hanya terisi
+ * untuk penjualan yang lahir sesudah migrasinya; membacanya sekarang akan
+ * membuat 248 sesi lama menghitung nol. Sakelar bacanya adalah langkah 2, dan
+ * syaratnya salah satu dari — seluruh sesi yang masih hidup lahir sesudah
+ * migrasi itu, atau backfill benar-benar dijalankan. Sampai itu terjadi,
+ * turunan `user_id` + jendela di bawah ini tetap satu-satunya jawaban; ia
+ * bukan sisa yang terlewat.
  */
 class CashDrawerReconciliation
 {

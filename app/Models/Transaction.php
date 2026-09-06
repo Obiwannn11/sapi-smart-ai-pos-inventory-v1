@@ -69,7 +69,7 @@ class Transaction extends Model
     const FULFILLMENT_DONE = 'done';
 
     protected $fillable = [
-        'tenant_id', 'user_id', 'code', 'client_uuid', 'status',
+        'tenant_id', 'user_id', 'cash_drawer_id', 'code', 'client_uuid', 'status',
         'subtotal_amount', 'tax_amount', 'total_amount', 'change_amount', 'notes',
         'tax_rate', 'tax_mode', 'tax_label',
         'source', 'order_type', 'fulfillment_status',
@@ -267,6 +267,18 @@ class Transaction extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Laci yang menerima uang penjualan ini ([BL-028] Tahap B langkah 1).
+     *
+     * `null` pada baris lama berarti "lahir sebelum kolomnya ada", bukan
+     * "tidak jatuh ke laci mana pun" — keduanya tidak bisa dibedakan dari
+     * nilainya. Lihat docblock migrasi `add_cash_drawer_id_to_transactions_table`.
+     */
+    public function cashDrawer(): BelongsTo
+    {
+        return $this->belongsTo(CashDrawer::class);
     }
 
     public function items(): HasMany

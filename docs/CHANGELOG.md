@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | ADDITION | Kas | Setiap Penjualan Membawa Laci yang Menerima Uangnya — Diisi Maju, Tanpa Backfill (BL-028 Tahap B Langkah 1) |
 | 2026-09-06 | ADDITION | Kas | Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093) |
 | 2026-09-06 | ADDITION | AI Analysis | Nama Varian di Hasil AI Jadi Bisa Diklik — dan yang Barangnya Sudah Hilang Ditandai (BL-100 Tahap 2 & 3) |
 | 2026-09-06 | ADDITION | Promosi | Saklar Per-Jenis Saran Jual Pindah dari Berkas PHP ke Layar Owner — dan Config Tetap Menang (BL-099) |
@@ -236,6 +237,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Setiap Penjualan Membawa Laci yang Menerima Uangnya — Diisi Maju, Tanpa Backfill (BL-028 Tahap B Langkah 1)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-028]` Tahap B **langkah 1**. Langkah 2 (sakelar baca + backfill) sengaja masih ditunda.
+- **Dampak:** Migration (satu kolom pada `transactions`), `Transaction`, `CashDrawer`, `TransactionService`, `Cashier\POSController`, `Api\V1\Mobile\MobileTransactionController`, `Cashier\CashDrawerController`, satu berkas test baru.
+- **Breaking Change:** Tidak. Tanpa backfill, tanpa perubahan jalur baca, tanpa satu pun angka di layar kasir yang bergeser. `payOpenBill()` menerima satu parameter baru yang **opsional**.
+- **Deskripsi:** `transactions` sekarang punya `cash_drawer_id`, diisi saat penjualannya dicatat. Sampai sekarang kepemilikan laci selalu DITURUNKAN saat membaca — `transactions.user_id` dicocokkan dengan rentang `opened_at`–`closed_at` sesi — dan turunan itu benar hanya selama satu kasir per outlet dan satu sesi per hari.
+- **Alasan:** Pemicu Tahap B belum menyala satu pun (diperiksa ulang 2026-09-06: 248 sesi, 1 kasir per tenant, 0 sesi tumpang-tindih, 0 sesi tertutup paksa). Keberatan pemilik atas Tahap B tertuju pada **backfill**-nya — *"risiko tanpa imbalan di atas data yang belum pernah salah"* — dan itu masih benar. Yang dikerjakan di sini hanya bagian yang tidak menyentuh data lama sama sekali, dengan pola yang sudah dipakai `[BL-019]`: penjaga dipasang sebelum fasenya dibuka karena hari ini nyaris tak berbiaya dan mahal sekali kalau baru disadari nanti.
+- **File Terdampak:**
+  - `database/migrations/..._add_cash_drawer_id_to_transactions_table.php` — **baru**; nullable, `nullOnDelete`, indeks `[cash_drawer_id, status]`
+  - `app/Services/TransactionService.php` — `drawerReceiving()` (baru, memuat kebijakan lengkapnya), pengisian di `checkout()` & `commitOffline()`, `payOpenBill()` menerima `?User $paidBy`, `completeWithPayments()` menerima `?int $cashDrawerId`
+  - `app/Models/CashDrawer.php` — `openFor()` & `coveringAt()` (baru), relasi `transactions()`
+  - `app/Models/Transaction.php` — `$fillable` + relasi `cashDrawer()`
+  - `app/Http/Controllers/Cashier/CashDrawerController.php` — enam pencarian laci yang ditulis ulang sendiri-sendiri kini memakai `CashDrawer::openFor()`
+  - `app/Services/CashDrawerReconciliation.php` — **komentar saja**, nol perubahan logika
+  - `tests/Feature/Cashier/CashDrawerAttributionTest.php` — **baru**, 10 test
+- **Aturan yang ternyata belum pernah berlaku, dan baru sekarang berlaku:**
+  `[BL-028]` menetapkan uang milik laci yang **MELUNASI**. Kode tidak melakukannya: tagihan terbuka membawa `user_id` **pembuatnya**, dan `whereEffectiveBetween()` menyaring pakai tanggal saat tagihan itu **DIBUKA**. Tagihan pagi yang dilunasi malam karena itu menaruh uangnya di laci **pagi**. Laten selama satu kasir — tapi ini bukan kekurangan yang menunggu masa depan, melainkan aturan yang selama ini dilanggar diam-diam, dan tidak tertulis di mana pun sampai sekarang.
+- **Keputusan yang perlu diingat:**
+  - **`null` berarti DUA hal sampai langkah 2:** "lahir sebelum kolomnya ada" dan "memang tidak jatuh ke laci mana pun" (pelunasan terlambat oleh pemilik `[BL-031]`, self-order lewat webhook Xendit, penjualan saat tak ada sesi terbuka — pemilik berjualan di POS, misalnya). Keduanya tidak bisa dibedakan dari nilainya sendiri, hanya dari umur barisnya. Inilah harga yang dibayar untuk tidak melakukan backfill, dan ia ditulis di docblock migrasinya supaya tidak ditemukan ulang dengan cara mahal.
+  - **Jalur baca sengaja TIDAK dipindahkan.** `CashDrawerReconciliation` tetap memakai `user_id` + jendela tanggal efektif. Memindahkannya sekarang akan membuat 248 sesi lama menghitung nol. Syarat memindahkannya ditulis di docblock service-nya: seluruh sesi yang masih hidup lahir sesudah migrasi ini, **atau** backfill dijalankan.
+  - **Penjualan offline memakai laci saat ia TERJADI, bukan saat ia tersinkron** — `CashDrawer::coveringAt()`, dan sesi yang sudah tertutup boleh menerimanya. Angka sesi itu tetap tidak berubah (`expected_amount` dibekukan saat tutup kas); yang berubah adalah penjualannya berhenti tak-bertuan, sehingga sesudah langkah 2 ia bisa muncul sebagai penjualan yang datang terlambat ke sesi yang benar alih-alih hilang. Jendelanya dibuat sama persis dengan `CashDrawerReconciliation::window()` — dua bentuk jendela berbeda untuk pertanyaan yang sama adalah cara termurah membuat penjualan tercatat di laci yang tidak akan memungutnya.
+  - **`void()` tidak menyentuh kolomnya.** Transaksi yang dibatalkan memang pernah ada di laci itu; menghapus jejaknya membuat penelusuran bulan depan mustahil.
+  - **Pemicu ketiga ditambahkan ke `[BL-028]`:** sesi pertama yang ditutup paksa `[BL-088]`. Tutup-paksa 24 jam lahir sesudah keputusan penundaan 2026-07-31, dan ia bentuk ketiga dari kegagalan yang sama — penjualan berlanjut saat tidak ada laci terbuka.
 
 ---
 

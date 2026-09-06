@@ -243,7 +243,10 @@ class POSController extends Controller
         try {
             $transaction = $this->transactionService->payOpenBill(
                 $transaction,
-                $request->input('payments')
+                $request->input('payments'),
+                // Uangnya masuk laci YANG MELUNASI, bukan laci yang membuka
+                // tagihannya ([BL-028]).
+                $user,
             );
 
             $transaction->loadMissing('user:id,name');

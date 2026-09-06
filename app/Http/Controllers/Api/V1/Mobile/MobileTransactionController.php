@@ -149,7 +149,13 @@ class MobileTransactionController extends Controller
         ]);
 
         try {
-            $transaction = $this->transactionService->payOpenBill($transaction, $validated['payments']);
+            // Kasir yang melunasi menentukan lacinya ([BL-028]), bukan pembuat
+            // tagihannya.
+            $transaction = $this->transactionService->payOpenBill(
+                $transaction,
+                $validated['payments'],
+                $request->user(),
+            );
 
             return response()->json([
                 'message' => 'Open bill berhasil dibayar.',

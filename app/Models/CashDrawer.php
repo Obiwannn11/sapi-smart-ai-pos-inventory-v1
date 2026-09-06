@@ -72,6 +72,59 @@ class CashDrawer extends Model
         return is_null($this->closed_at);
     }
 
+    /**
+     * Sesi yang masih terbuka milik seorang kasir, bila ada.
+     *
+     * Satu tempat untuk pencarian yang sebelumnya ditulis ulang di tiap
+     * pemanggil. Sejak `[BL-028]` Tahap B langkah 1 ia bukan lagi sekadar
+     * kenyamanan: inilah yang menjawab "uang ini masuk laci mana" saat
+     * penjualan dicatat, jadi jawabannya harus sama persis di layar kas dan di
+     * jalur checkout.
+     */
+    public static function openFor(User|int $user): ?self
+    {
+        return self::where('user_id', $user instanceof User ? $user->id : $user)
+            ->whereNull('closed_at')
+            ->first();
+    }
+
+    /**
+     * Sesi milik kasir itu yang jendelanya MELINGKUPI satu titik waktu —
+     * termasuk sesi yang sudah ditutup ([BL-028] Tahap B langkah 1).
+     *
+     * Hanya jalur offline yang membutuhkannya. Penjualan offline sudah terjadi
+     * secara fisik berjam-jam (bisa berhari-hari) sebelum payload-nya sampai,
+     * jadi ia milik laci yang benar-benar menerima uangnya, bukan laci yang
+     * kebetulan terbuka saat sinkronisasi berjalan. Alasan yang sama sudah
+     * dipakai papan antrian dan tanggal efektif rekonsiliasi.
+     *
+     * Batas jendelanya dibuat sama persis dengan
+     * `CashDrawerReconciliation::window()` — `opened_at` sampai `closed_at`,
+     * atau sampai sekarang bila sesinya masih terbuka. Dua bentuk jendela yang
+     * berbeda untuk pertanyaan yang sama adalah cara termurah membuat sebuah
+     * penjualan tercatat di laci yang tidak akan memungutnya.
+     */
+    public static function coveringAt(User|int $user, mixed $at): ?self
+    {
+        $moment = $at instanceof \DateTimeInterface ? Carbon::instance($at) : Carbon::parse($at);
+
+        return self::where('user_id', $user instanceof User ? $user->id : $user)
+            ->where('opened_at', '<=', $moment)
+            ->where(function (Builder $query) use ($moment) {
+                $query->where('closed_at', '>=', $moment);
+
+                // Sesi yang masih terbuka melingkupi apa pun sampai sekarang,
+                // dan TIDAK melingkupi waktu di masa depan — `commitOffline()`
+                // memberi toleransi clock skew beberapa menit, jadi kasusnya
+                // bukan hipotesis.
+                if ($moment->lessThanOrEqualTo(Carbon::now())) {
+                    $query->orWhereNull('closed_at');
+                }
+            })
+            ->orderByDesc('opened_at')
+            ->first();
+    }
+
     /** Titik waktu sebelum mana sesi yang masih terbuka dianggap lewat umur. */
     public static function staleCutoff(mixed $now = null): Carbon
     {
@@ -117,5 +170,16 @@ class CashDrawer extends Model
     public function movements(): HasMany
     {
         return $this->hasMany(CashDrawerMovement::class);
+    }
+
+    /**
+     * Penjualan yang uangnya masuk ke laci ini ([BL-028] Tahap B langkah 1).
+     *
+     * Hanya terisi untuk penjualan yang lahir sesudah migrasi kolomnya;
+     * rekonsiliasi belum membaca relasi ini. Lihat docblock migrasinya.
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
     }
 }

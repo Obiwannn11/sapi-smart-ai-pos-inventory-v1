@@ -33,9 +33,7 @@ class CashDrawerController extends Controller
             return redirect()->route('cashier.pos');
         }
 
-        $openDrawer = CashDrawer::where('user_id', Auth::id())
-            ->whereNull('closed_at')
-            ->first();
+        $openDrawer = CashDrawer::openFor(Auth::id());
 
         return Inertia::render('Cashier/CashDrawer', [
             'openDrawer' => $openDrawer,
@@ -92,9 +90,7 @@ class CashDrawerController extends Controller
     {
         $user = Auth::user();
 
-        $openDrawer = $user
-            ? CashDrawer::where('user_id', $user->id)->whereNull('closed_at')->first()
-            : null;
+        $openDrawer = $user ? CashDrawer::openFor($user) : null;
 
         // Tanpa sesi terbuka tidak ada angka yang bisa dibuka, jadi tidak ada
         // yang perlu dicatat. Diam-diam saja: ini bukan kesalahan pengguna,
@@ -136,9 +132,11 @@ class CashDrawerController extends Controller
             abort(403, 'Hanya kasir yang dapat mencatat mutasi kas.');
         }
 
-        $drawer = CashDrawer::where('user_id', $user->id)
-            ->whereNull('closed_at')
-            ->firstOrFail();
+        $drawer = CashDrawer::openFor($user);
+
+        if (! $drawer) {
+            abort(404, 'Tidak ada sesi kas yang terbuka.');
+        }
 
         $amount = (float) $request->validated('amount');
         $threshold = (float) $user->tenant->cash_payout_approval_threshold;
@@ -196,9 +194,7 @@ class CashDrawerController extends Controller
             return redirect()->route('cashier.pos');
         }
 
-        $openDrawer = CashDrawer::where('user_id', $user->id)
-            ->whereNull('closed_at')
-            ->first();
+        $openDrawer = CashDrawer::openFor($user);
 
         // Tanpa sesi terbuka tidak ada yang bisa ditutup. Dikembalikan ke
         // halaman kas — di sana ada formulir membukanya — alih-alih 404, yang
@@ -234,11 +230,7 @@ class CashDrawerController extends Controller
         }
 
         // Validasi: tidak boleh ada sesi terbuka
-        $existingOpen = CashDrawer::where('user_id', $user->id)
-            ->whereNull('closed_at')
-            ->exists();
-
-        if ($existingOpen) {
+        if (CashDrawer::openFor($user)) {
             return back()->with('error', 'Anda masih memiliki sesi kas yang terbuka.');
         }
 
@@ -257,9 +249,11 @@ class CashDrawerController extends Controller
      */
     public function close(CloseCashDrawerRequest $request): RedirectResponse
     {
-        $drawer = CashDrawer::where('user_id', Auth::id())
-            ->whereNull('closed_at')
-            ->firstOrFail();
+        $drawer = CashDrawer::openFor(Auth::id());
+
+        if (! $drawer) {
+            abort(404, 'Tidak ada sesi kas yang terbuka.');
+        }
 
         $expectedAmount = $this->reconciliation->for($drawer)['expected_amount'];
         $closingAmount = $request->validated('closing_amount');
