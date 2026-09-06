@@ -180,3 +180,89 @@ test('BYOK tenant bypasses quota and does not increment usage', function () {
 
     expect($usage)->toBe(5);
 });
+
+// --- Bentuk prompt ---
+// Versi pertama hanya meminta jawaban "ringkas, actionable, dengan angka
+// konkret", dan yang kembali adalah nasihat yang benar untuk kafe mana pun:
+// "perbaiki layanan dan atmosfer", "diversifikasi menu". Larangannya kini
+// ditulis eksplisit, dan tiap tipe analisis meminta susunan bagiannya sendiri
+// — hal yang tidak akan ketahuan hilang tanpa dipatok di sini, karena jawaban
+// yang buruk tetap terlihat seperti jawaban.
+
+/**
+ * Teks prompt yang benar-benar dikirim ke provider pada permintaan terakhir.
+ */
+function sentPrompt(): string
+{
+    $text = '';
+
+    Http::assertSent(function ($request) use (&$text) {
+        $text = $request->data()['contents'][0]['parts'][0]['text'] ?? '';
+
+        return true;
+    });
+
+    return $text;
+}
+
+test('prompt melarang saran umum dan mewajibkan dasar angka di tiap rekomendasi', function () {
+    fakeGeminiSuccess();
+
+    runAnalysis();
+
+    expect(sentPrompt())
+        ->toContain('DILARANG memberi saran yang bisa ditempel ke toko mana pun')
+        ->toContain('tingkatkan pelayanan')
+        ->toContain('diversifikasi menu')
+        ->toContain('perkiraan dampaknya dalam rupiah atau persen')
+        ->toContain('Belum bisa dijawab dari data:')
+        // `others` bukan nama produk — tanpa kalimat ini model pernah
+        // menyebutnya sebagai barang yang bisa didiskon.
+        ->toContain('ia bukan produk bernama "others"')
+        // Penomoran yang berulang "1." tidak cuma soal renderer.
+        ->toContain('Nomori berurutan');
+});
+
+test('tiap tipe analisis meminta susunan bagiannya sendiri', function () {
+    fakeGeminiSuccess();
+
+    runAnalysis(['type' => AiAnalysis::TYPE_GENERAL]);
+    expect(sentPrompt())->toContain('## Yang Menyimpang')->toContain('## Tindakan');
+
+    runAnalysis(['type' => AiAnalysis::TYPE_DISCOUNT]);
+    expect(sentPrompt())
+        ->toContain('## Kandidat Diskon')
+        ->toContain('## Titik Impas')
+        ->toContain('jatuh di bawah 0%');
+
+    runAnalysis(['type' => AiAnalysis::TYPE_PROFIT_PROJECTION]);
+    expect(sentPrompt())
+        ->toContain('## Profit Periode Ini')
+        ->toContain('## Pendorong & Penghambat');
+});
+
+test('pertanyaan sendiri dibawa apa adanya tapi tetap dipagari datanya', function () {
+    fakeGeminiSuccess();
+
+    runAnalysis([
+        'type' => AiAnalysis::TYPE_CUSTOM,
+        'prompt' => 'Menu apa yang paling menguntungkan?',
+    ]);
+
+    expect(sentPrompt())
+        ->toContain('PERTANYAAN: Menu apa yang paling menguntungkan?')
+        ->toContain('jangan diganti saran umum');
+});
+
+test('kalimat pajak hanya ikut untuk tenant yang memungut', function () {
+    fakeGeminiSuccess();
+
+    runAnalysis();
+    expect(sentPrompt())->not->toContain('PAJAK:');
+
+    $this->tenant->update(['tax_enabled' => true]);
+
+    runAnalysis();
+    expect(sentPrompt())->toContain('PAJAK:')
+        ->toContain('jangan dari `revenue`');
+});
