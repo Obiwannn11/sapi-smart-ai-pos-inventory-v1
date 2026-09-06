@@ -1,5 +1,6 @@
 /**
- * Cermin sisi-klien dari `App\Services\TaxCalculator` ([BL-065]).
+ * Cermin sisi-klien dari `App\Services\TaxCalculator` ([BL-065], diperluas
+ * oleh [BL-097]).
  *
  * Ada dua salinan aturan pajak di proyek ini — satu PHP, satu JavaScript —
  * dan itu tidak bisa dihindari: kasir offline harus mencetak struk sebelum
@@ -9,50 +10,76 @@
  *
  * Invarian yang sama dijaga di sini seperti di sisi PHP:
  *
- *     subtotal + pajak = total, TEPAT.
+ *     subtotal + biaya layanan + pajak = total, TEPAT.
  *
  * Kalau rumus di bawah menyimpang dari `TaxCalculator`, akibatnya bukan
  * angka yang beda sedikit di layar: penjualan offline akan tercatat
  * `needs_review` satu per satu saat sinkronisasi, karena server menghitung
  * ulang dan menemukan selisih. Ubah keduanya bersamaan, atau jangan ubah
  * sama sekali.
+ *
+ * Urutannya — biaya layanan lebih dulu, lalu pajak atas subtotal + biaya
+ * layanan — mengikuti DPP PBJT ("jumlah pembayaran yang diterima penyedia",
+ * UU HKPD Pasal 51). Alasan lengkapnya ada di docblock `TaxCalculator`.
  */
 
 export const TAX_MODE_EXCLUSIVE = 'exclusive';
 export const TAX_MODE_INCLUSIVE = 'inclusive';
 
 /**
- * Rupiah tidak punya pecahan yang beredar — pajak dibulatkan ke rupiah
- * penuh dan angka ketiga diturunkan dengan pengurangan, sehingga
- * penjumlahan di struk tidak pernah bisa meleset.
+ * Rupiah tidak punya pecahan yang beredar — biaya layanan dan pajak
+ * dibulatkan ke rupiah penuh dan angka keempat diturunkan dengan
+ * pengurangan, sehingga penjumlahan di struk tidak pernah bisa meleset.
  */
 const roundToRupiah = (value) => Math.round(value);
 
 /**
- * Urai satu angka dasar jadi tiga angka uang.
+ * Biaya layanan atas jumlah baris penjualan — selalu dari `base` apa adanya,
+ * di kedua mode pajak. Cermin `TaxCalculator::serviceChargeOn()`.
+ *
+ * @param {number} base
+ * @param {{enabled?: boolean, rate?: number}} service
+ * @returns {number}
+ */
+function serviceChargeOn(base, service) {
+    const rate = Number(service?.rate) || 0;
+
+    if (!service?.enabled || rate <= 0) {
+        return 0;
+    }
+
+    return roundToRupiah((base * rate) / 100);
+}
+
+/**
+ * Urai satu angka dasar jadi empat angka uang.
  *
  * @param {number} base
  * @param {{enabled?: boolean, mode?: string, rate?: number}} context
- * @returns {{subtotal: number, tax: number, total: number}}
+ * @param {{enabled?: boolean, rate?: number, label?: string}} service
+ * @returns {{subtotal: number, serviceCharge: number, tax: number, total: number}}
  */
-export function applyTax(base, context = {}) {
+export function applyTax(base, context = {}, service = {}) {
+    const serviceCharge = serviceChargeOn(base, service);
     const rate = Number(context.rate) || 0;
 
     if (!context.enabled || rate <= 0) {
-        return { subtotal: base, tax: 0, total: base };
+        return { subtotal: base, serviceCharge, tax: 0, total: base + serviceCharge };
     }
 
     if (context.mode === TAX_MODE_INCLUSIVE) {
         // rate/(100+rate), BUKAN rate/100 — harganya sudah mengandung pajak,
         // jadi yang dicari adalah bagian pajak DI DALAM angka itu.
-        const tax = roundToRupiah((base * rate) / (100 + rate));
+        const total = base + serviceCharge;
+        const tax = roundToRupiah((total * rate) / (100 + rate));
 
-        return { subtotal: base - tax, tax, total: base };
+        return { subtotal: total - serviceCharge - tax, serviceCharge, tax, total };
     }
 
-    const tax = roundToRupiah((base * rate) / 100);
+    // Dasar pengenaan pajak = subtotal + biaya layanan.
+    const tax = roundToRupiah(((base + serviceCharge) * rate) / 100);
 
-    return { subtotal: base, tax, total: base + tax };
+    return { subtotal: base, serviceCharge, tax, total: base + serviceCharge + tax };
 }
 
 /**
@@ -69,7 +96,19 @@ export function applyTax(base, context = {}) {
  */
 export function receiptTotals(transaction) {
     if (!transaction) {
-        return { subtotal: 0, tax: 0, total: 0, label: null, rate: 0, mode: null, hasTax: false };
+        return {
+            subtotal: 0,
+            serviceCharge: 0,
+            tax: 0,
+            total: 0,
+            label: null,
+            rate: 0,
+            mode: null,
+            hasTax: false,
+            serviceChargeLabel: null,
+            serviceChargeRate: 0,
+            hasServiceCharge: false,
+        };
     }
 
     const items = transaction.items || [];
@@ -83,6 +122,7 @@ export function receiptTotals(transaction) {
 
     return {
         subtotal,
+        serviceCharge: Number(transaction.service_charge_amount ?? 0),
         tax,
         total,
         label: transaction.tax_label ?? null,
@@ -92,6 +132,11 @@ export function receiptTotals(transaction) {
         // penjualan bertarif yang kebetulan menghasilkan pajak nol karena
         // nilainya terlalu kecil tetap penjualan berpajak.
         hasTax: transaction.tax_mode != null,
+        serviceChargeLabel: transaction.service_charge_label ?? null,
+        serviceChargeRate: Number(transaction.service_charge_rate ?? 0),
+        // Penandanya tarif beku, bukan nominalnya — alasan yang sama seperti
+        // `hasTax` di atas.
+        hasServiceCharge: transaction.service_charge_rate != null,
     };
 }
 
@@ -117,4 +162,27 @@ export function taxLine(totals) {
     }
 
     return { inline: true, text: `${label} ${rate}%`, amount: totals.tax };
+}
+
+/**
+ * Baris biaya layanan untuk dicetak, atau `null` bila tidak dipungut
+ * ([BL-097]).
+ *
+ * Selalu `inline` — berbeda dari pajak, biaya layanan TIDAK pernah "sudah
+ * termasuk di harga". Ia selalu ditambahkan di atas jumlah baris, jadi ia
+ * selalu baris yang menaikkan total dan pelanggan berhak melihat nominalnya.
+ *
+ * Di mode pajak inclusive nominal ini adalah angka KOTOR (dihitung dari harga
+ * katalog yang sudah mengandung pajak) sementara "Subtotal" tercetak bersih.
+ * Itu konsekuensi yang disadari, bukan cacat — lihat docblock `TaxCalculator`.
+ */
+export function serviceChargeLine(totals) {
+    if (!totals.hasServiceCharge) {
+        return null;
+    }
+
+    const rate = String(totals.serviceChargeRate);
+    const label = totals.serviceChargeLabel || 'Biaya Layanan';
+
+    return { inline: true, text: `${label} ${rate}%`, amount: totals.serviceCharge };
 }

@@ -94,6 +94,7 @@ class Tenant extends Model
         'upsell_mandatory', 'order_identity_mode',
         'upsell_attach_enabled', 'upsell_pressed_stock_enabled', 'upsell_upsize_enabled', 'upsell_manual_enabled',
         'tax_enabled', 'tax_mode', 'tax_rate', 'tax_label', 'tax_lock_opened_until',
+        'service_charge_enabled', 'service_charge_rate', 'service_charge_label',
     ];
 
     protected $hidden = ['ai_api_key'];
@@ -131,6 +132,9 @@ class Tenant extends Model
         // `tax_label` sengaja tidak punya bawaan — lihat migrasinya. Menebak
         // kata yang tercetak di struk adalah kesalahan yang `[BL-079]` baru
         // saja hentikan.
+        'service_charge_enabled' => false,
+        'service_charge_rate' => 0,
+        // `service_charge_label` juga tidak, dan alasannya sama ([BL-097]).
     ];
 
     protected function casts(): array
@@ -153,6 +157,8 @@ class Tenant extends Model
             'tax_enabled' => 'boolean',
             'tax_lock_opened_until' => 'datetime',
             'tax_rate' => 'decimal:2',
+            'service_charge_enabled' => 'boolean',
+            'service_charge_rate' => 'decimal:2',
         ];
     }
 
