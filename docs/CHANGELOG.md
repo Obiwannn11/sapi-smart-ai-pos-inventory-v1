@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | ADDITION | Produk | Katalog Produk Akhirnya Bisa Dicari — dan Kata Kuncinya Boleh Datang dari URL (BL-100 Tahap 1) |
 | 2026-09-06 | HOTFIX | Promosi | Satu Barang Berhenti Memakan Dua Slot Kasir Lewat Dua Jenis Saran Berbeda (BL-101) |
 | 2026-09-06 | DEPRECATE | Platform | `Platform\InvoiceController::index()` Dihapus — 30 Baris yang Terbaca seperti Fitur Hidup (BL-098) |
 | 2026-09-04 | DECISION | Stok | Manajemen Stok Berhenti Jadi Accordion — Satu Baris per Varian, Disaring dan Dipaginasi di Server |
@@ -232,6 +233,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Katalog Produk Akhirnya Bisa Dicari — dan Kata Kuncinya Boleh Datang dari URL (BL-100 Tahap 1)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-100]` tahap 1 dari tiga.
+- **Dampak:** `Owner\ProductController::index()` dan halaman `Owner/Products/Index`. Tidak ada skema, tidak ada rute baru, tidak ada perubahan pada create/edit/delete.
+- **Breaking Change:** Tidak. Prop `filters` bertambah; `products` dan `categories` tetap apa adanya, dan kunjungan tanpa query string berperilaku persis seperti sebelumnya.
+- **Deskripsi:** Halaman Produk punya dua penyaring — kategori dan status — dan tidak punya kotak pencarian sama sekali. Pada katalog yang isinya lebih dari satu layar, satu-satunya cara menemukan satu barang adalah menggulir dan mencocokkan dengan mata. Sekarang ada kotak pencarian, dan nilainya bisa datang dari `?q=` di URL.
+- **Alasan:** Ini tahap pertama `[BL-100]`, dan sengaja tahap yang **berguna sendirian**. Dua tahap sisanya (memetakan nama varian dari hasil AI ke id-nya di server, lalu menautkannya di renderer markdown) baru masuk akal kalau tujuannya sudah ada — menautkan ke `owner/products` hari ini hanya mendarat di katalog penuh yang sama. Yang dikerjakan di sini adalah tujuannya.
+- **Pencarian berjalan di client, URL hanya menyalakannya.** Katalognya memang sudah dikirim utuh dan disaring di client — kategori dan status pun begitu — jadi menyaring di server berarti satu perjalanan bolak-balik untuk tiap huruf yang diketik, demi hasil yang sudah ada di layar. Controller karena itu hanya membaca `?q=`, memangkas spasinya, dan meneruskannya sebagai **nilai awal** kotak pencarian.
+- **Yang dicari termasuk nama varian, bukan cuma nama produk.** Nama yang dibawa owner ke halaman ini sering justru nama varian — "Iced", "Large" — sementara kartunya berjudul nama produk. Pencarian yang hanya membaca judul kartu akan menjawab "tidak ada" untuk barang yang jelas-jelas ada. Nama kategori ikut dicocokkan dengan alasan yang sama.
+- **Keadaan kosong dipecah dua.** "Belum ada produk" dan "tidak ada yang cocok" bukan hal yang sama, dan menyuruh owner "tambah produk pertama" padahal katalognya penuh dan yang salah cuma kata kuncinya adalah jawaban yang menyesatkan. Yang kedua menyebut kata kuncinya kembali dan menawarkan satu tombol untuk menghapus seluruh penyaring.
+- **`?variant=` sengaja BELUM dibuat.** `[BL-100]` menyebutnya opsional, dan hari ini belum ada satu pun yang melahirkannya — bentuk tautannya baru diputuskan di tahap 2, saat pemetaan nama ke id ada. Membuatnya sekarang berarti menambahkan parameter yang tidak dipanggil siapa pun, persis bentuk yang entri `[BL-098]` di bawah ini justru menghapus.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/ProductController.php` — `index()` menerima `Request`, membaca `?q=`, mengirim prop `filters`
+  - `resources/js/Pages/Owner/Products/Index.vue` — kotak pencarian, pencocokan nama produk/kategori/varian, keadaan "tidak ada yang cocok", tombol hapus penyaring; impor `router` yang tidak pernah dipakai ikut dibuang
+  - `tests/Feature/Owner/ProductTest.php` — empat test baru: kata kunci dari URL, kunjungan tanpa kata kunci, pemangkasan spasi, dan payload yang masih membawa nama varian
 
 ---
 

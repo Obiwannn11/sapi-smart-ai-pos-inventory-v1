@@ -10,6 +10,7 @@ use App\Models\ModifierGroup;
 use App\Models\Product;
 use App\Services\ImageService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -20,12 +21,25 @@ class ProductController extends Controller
         private ImageService $imageService
     ) {}
 
-    public function index(): Response
+    /**
+     * Katalog produk, dengan keadaan awal penyaringnya diambil dari URL.
+     *
+     * `?q=` dibaca di sini dan diteruskan sebagai NILAI AWAL kotak pencarian,
+     * bukan sebagai penyaring query ([BL-100] tahap 1). Katalognya memang
+     * dikirim utuh dan disaring di client — sama seperti kategori dan status —
+     * jadi menyaring di server berarti satu perjalanan bolak-balik untuk tiap
+     * huruf yang diketik, demi hasil yang sudah ada di layar.
+     *
+     * Yang dijawab parameter ini adalah pertanyaan lain: sebuah tautan dari
+     * luar halaman ini harus bisa mendarat pada barang yang dimaksudnya, bukan
+     * pada katalog penuh yang sama.
+     */
+    public function index(Request $request): Response
     {
         return Inertia::render('Owner/Products/Index', [
             // Ditunda ([BL-037]): katalog lengkap beserta varian dan stoknya
             // adalah bagian terberat halaman ini, sementara tombol "Tambah
-            // Produk" dan kedua penyaringnya sudah bisa dipakai tanpanya.
+            // Produk" beserta ketiga penyaringnya sudah bisa dipakai tanpanya.
             //
             // URL gambar tidak ditempel di sini: Product meng-append image_url
             // dan image_thumb_url sendiri, jadi setiap permukaan mendapatkannya.
@@ -33,6 +47,9 @@ class ProductController extends Controller
                 ->latest()
                 ->get()),
             'categories' => Category::select('id', 'name')->get(),
+            'filters' => [
+                'q' => trim((string) $request->query('q', '')),
+            ],
         ]);
     }
 

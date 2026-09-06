@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Intervention\Image\ImageManager;
 
 beforeEach(function () {
@@ -175,4 +176,57 @@ test('an image never lands on the publicly served disk', function () {
         ]);
 
     expect(Storage::disk('public')->allFiles())->toBeEmpty();
+});
+
+// --- Pencarian katalog ([BL-100] tahap 1) ---
+
+test('kata kunci di URL jadi keadaan awal kotak pencarian', function () {
+    // Tautan dari luar halaman ini — hari ini diketik orang, kelak dilahirkan
+    // hasil analisis AI — harus mendarat pada barang yang dimaksudnya, bukan
+    // pada katalog penuh yang sama.
+    $this->actingAs($this->owner)
+        ->get('/owner/products?q=Iced')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Owner/Products/Index')
+            ->where('filters.q', 'Iced')
+        );
+});
+
+test('kunjungan tanpa kata kunci tetap membawa penyaring, bukan null', function () {
+    // Halaman Vue-nya membaca `filters.q` sebagai nilai awal `v-model`. Prop
+    // yang hilang berarti kotak pencariannya lahir `undefined` dan Vue
+    // memperingatkan tiap kunjungan biasa.
+    $this->actingAs($this->owner)
+        ->get('/owner/products')
+        ->assertInertia(fn (Assert $page) => $page->where('filters.q', ''));
+});
+
+test('spasi di sekitar kata kunci dibuang sebelum sampai ke layar', function () {
+    // Tautan yang disalin-tempel hampir selalu membawa spasi ikut serta, dan
+    // pencarian client mencocokkan apa adanya.
+    $this->actingAs($this->owner)
+        ->get('/owner/products?q='.urlencode('  Iced  '))
+        ->assertInertia(fn (Assert $page) => $page->where('filters.q', 'Iced'));
+});
+
+test('katalog membawa nama varian, yang justru paling sering dicari', function () {
+    // Nama yang dibawa owner ke halaman ini sering nama VARIAN ("Iced"),
+    // sementara kartunya berjudul nama produk. Pencarian client mencocokkan
+    // keduanya — dan itu hanya mungkin selama payload-nya masih memuat nama
+    // varian.
+    $product = Product::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Kopi Susu',
+    ]);
+
+    ProductVariant::factory()->create([
+        'product_id' => $product->id,
+        'name' => 'Iced',
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/products')
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps(
+            fn (Assert $reload) => $reload->where('products.0.variants.0.name', 'Iced')
+        ));
 });

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Deferred, useForm, Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, useForm, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
@@ -14,9 +14,17 @@ const props = defineProps({
     // Ditunda ([BL-037]) — null selama katalognya masih dalam perjalanan.
     products: { type: Array, default: null },
     categories: Array,
+    // Keadaan awal penyaring, dibaca dari query string oleh controller
+    // ([BL-100] tahap 1). Bawaannya sengaja objek utuh: halaman ini juga
+    // dirender oleh tautan lama yang belum membawa `filters` sama sekali.
+    filters: { type: Object, default: () => ({ q: '' }) },
 });
 
 // --- Filters ---
+// Katalognya disaring di client, jadi URL hanya MENYALAKAN pencarian, tidak
+// menjalankannya. Konsekuensinya disengaja: mengetik tidak memuat ulang apa
+// pun, dan tautan `?q=Iced` dari luar tetap mendarat pada barang yang dimaksud.
+const search = ref(props.filters?.q ?? '');
 const filterCategory = ref('');
 const filterStatus = ref('');
 
@@ -32,8 +40,31 @@ const statusOptions = [
     { value: 'inactive', label: 'Nonaktif' },
 ];
 
+/**
+ * Pencarian mencakup nama varian, bukan cuma nama produk.
+ *
+ * Itu bukan kelebihan yang kebetulan: nama yang dibawa owner ke halaman ini
+ * sering justru nama varian ("Iced", "Large"), sementara kartunya berjudul
+ * nama produk. Pencarian yang hanya membaca judul kartu akan menjawab "tidak
+ * ada" untuk barang yang jelas-jelas ada.
+ */
+const matchesSearch = (product, needle) => {
+    if (needle === '') return true;
+
+    return [
+        product.name,
+        product.category?.name,
+        ...(product.variants ?? []).map(v => v.name),
+    ].some(text => (text ?? '').toLowerCase().includes(needle));
+};
+
 const filteredProducts = computed(() => {
     let items = props.products ?? [];
+    const needle = search.value.trim().toLowerCase();
+
+    if (needle !== '') {
+        items = items.filter(p => matchesSearch(p, needle));
+    }
     if (filterCategory.value) {
         items = items.filter(p =>
             filterCategory.value === 'none'
@@ -46,6 +77,16 @@ const filteredProducts = computed(() => {
     }
     return items;
 });
+
+const isFiltering = computed(
+    () => search.value.trim() !== '' || filterCategory.value !== '' || filterStatus.value !== ''
+);
+
+const resetFilters = () => {
+    search.value = '';
+    filterCategory.value = '';
+    filterStatus.value = '';
+};
 
 // --- Delete ---
 const deleteTarget = ref(null);
@@ -107,6 +148,28 @@ const formatCurrency = (val) => {
 
         <!-- Filters -->
         <div class="flex flex-wrap items-center gap-3 mb-6">
+            <div class="relative flex-1 min-w-[220px] max-w-md">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+                <input
+                    v-model="search"
+                    type="text"
+                    placeholder="Cari produk, kategori, atau varian..."
+                    class="w-full pl-9 pr-9 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+                />
+                <button
+                    v-if="search"
+                    type="button"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                    aria-label="Hapus pencarian"
+                    @click="search = ''"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
             <SelectDropdown
                 v-model="filterCategory"
                 :options="categoryOptions"
@@ -200,6 +263,25 @@ const formatCurrency = (val) => {
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Tidak ada yang cocok. Dipisahkan dari katalog kosong: menyuruh
+             owner "tambah produk pertama" padahal katalognya penuh dan yang
+             salah cuma kata kuncinya adalah jawaban yang menyesatkan. -->
+        <div v-else-if="isFiltering" class="bg-white rounded-lg shadow-sm border border-gray-200 py-16 text-center">
+            <svg class="mx-auto w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+            <p class="mt-3 text-sm text-gray-500">
+                Tidak ada produk yang cocok<span v-if="search.trim()"> dengan “{{ search.trim() }}”</span>.
+            </p>
+            <button
+                type="button"
+                class="mt-2 text-sm text-primary hover:text-primary/80 font-medium"
+                @click="resetFilters"
+            >
+                Hapus semua penyaring
+            </button>
         </div>
 
         <!-- Empty state -->
