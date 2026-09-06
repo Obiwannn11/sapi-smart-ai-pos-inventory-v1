@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | DEPRECATE | Platform | `Platform\InvoiceController::index()` Dihapus — 30 Baris yang Terbaca seperti Fitur Hidup (BL-098) |
 | 2026-09-04 | DECISION | Stok | Manajemen Stok Berhenti Jadi Accordion — Satu Baris per Varian, Disaring dan Dipaginasi di Server |
 | 2026-09-04 | DECISION | Pengaturan | Ketiga Halaman Pengaturan Berhenti Merakit Kontrolnya Sendiri — Centang, Dropdown, dan Tombol Dipulangkan ke Komponen Bersama |
 | 2026-09-04 | DECISION | AI Analysis | Hasil AI Berhenti Menasihati dan Mulai Menunjuk Angka — Prompt Ditulis Ulang, Penomoran & Polling-nya Diperbaiki |
@@ -230,6 +231,21 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [DEPRECATE] `Platform\InvoiceController::index()` Dihapus — 30 Baris yang Terbaca seperti Fitur Hidup (BL-098)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-098]`.
+- **Dampak:** `Platform\InvoiceController`. Tidak ada rute yang berubah, tidak ada halaman yang hilang, tidak ada perilaku pengguna yang bergeser.
+- **Breaking Change:** Tidak — tidak ada satu pun rute yang memanggil method ini, dan komponen Vue yang direndernya sudah terhapus sejak `fc284f0` (2026-08-01).
+- **Deskripsi:** Daftar tagihan pindah ke halaman Langganan saat konsol platform diseragamkan. Alamat lamanya sengaja dipertahankan sebagai pengalihan; yang tertinggal adalah `index()`-nya sendiri — lengkap dengan query, paginasi, dan pencatatan audit, dan mati dua lapis sekaligus: tidak ada rute yang memanggilnya, dan seandainya ada, permintaannya berakhir 500 karena halamannya tidak ada di disk.
+- **Alasan:** Kode yang tidak bisa dijalankan siapa pun tetap dibaca orang, dan ia berbohong tentang apa yang bisa dilakukan sistem ini. `PlatformAuditLog::recordRoutine('invoices.index')` di dalamnya adalah aksi audit yang tidak akan pernah tercatat lagi — dan itu baru terlihat setelah methodnya dibuka.
+- **Yang TIDAK ikut dihapus, dan sudah diperiksa satu per satu:** rute pengalihannya tetap (ia melayani tautan dan bookmark lama, dan alasannya sudah tertulis di tempatnya), `InvoiceResource` tetap hidup karena `Services/Platform/AccountOverview.php` memakainya, dan impor `Tenant` tetap karena `store()` memanggilnya.
+- **Penjaganya yang justru jadi bagian paling berguna dari entri ini.** Satu-satunya cara menemukan cacat ini adalah membandingkan daftar `Inertia::render()` di seluruh controller dengan daftar berkas yang benar-benar ada — pekerjaan yang tidak dilakukan siapa pun sehari-hari. Sekarang ada test yang melakukannya: 57 pemanggilan (`Inertia::render()` dan helper `inertia()`) atas 54 nama halaman berbeda disisir, dan tiap nama dituntut punya `.vue`-nya. Diverifikasi bisa gagal, bukan cuma bisa lulus — sebuah render ke halaman yang hilang ditanam sementara, dan penjaganya menangkapnya.
+- **File Terdampak:**
+  - `app/Http/Controllers/Platform/InvoiceController.php` — `index()` dihapus, beserta tiga impor yang jadi yatim (`Inertia\Inertia`, `Inertia\Response`, `Http\Resources\Platform\InvoiceResource`)
+  - `tests/Feature/RenderedPagesExistTest.php` — penjaga baru "halaman yang dirender harus ada"
 
 ---
 

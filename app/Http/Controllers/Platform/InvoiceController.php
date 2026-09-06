@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\Platform\InvoiceResource;
 use App\Models\Invoice;
 use App\Models\PlatformAuditLog;
 use App\Models\Subscription;
@@ -18,8 +17,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
-use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -37,36 +34,6 @@ class InvoiceController extends Controller
         private readonly PricingService $pricing,
         private readonly InvoiceSettlement $settlement,
     ) {}
-
-    public function index(Request $request): Response
-    {
-        $filter = $request->string('status')->toString();
-
-        $invoices = Invoice::query()
-            ->with(['tenant:id,name,status', 'verifier:id,name'])
-            ->when($filter !== '', fn ($query) => $query->where('status', $filter))
-            // Yang menunggu diperiksa naik ke atas: itulah satu-satunya baris
-            // di halaman ini yang menunggu tindakan seseorang.
-            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [Invoice::STATUS_AWAITING_VERIFICATION])
-            ->orderByDesc('period')
-            ->orderByDesc('id')
-            ->paginate(25)
-            ->withQueryString();
-
-        PlatformAuditLog::recordRoutine('invoices.index');
-
-        return Inertia::render('Platform/Invoices/Index', [
-            'invoices' => InvoiceResource::collection($invoices),
-            'filters' => ['status' => $filter],
-            'tenants' => Tenant::query()->orderBy('name')->get(['id', 'name']),
-            'statuses' => [
-                Invoice::STATUS_UNPAID,
-                Invoice::STATUS_AWAITING_VERIFICATION,
-                Invoice::STATUS_PAID,
-                Invoice::STATUS_REJECTED,
-            ],
-        ]);
-    }
 
     /**
      * Nominal yang disarankan aturan harga untuk satu tenant & periode.
