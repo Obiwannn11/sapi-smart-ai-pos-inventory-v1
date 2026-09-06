@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import { useForm, router, Link, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import DatePicker from '@/Components/DatePicker.vue';
@@ -80,6 +80,7 @@ const submit = () => {
             if (form.type !== 'custom') {
                 form.reset('prompt');
             }
+            scrollToResult();
         },
     });
 };
@@ -92,23 +93,47 @@ const submit = () => {
 // BERHASIL — di antrean, bukan saat tombol ditekan. Tanpa ini meternya masih
 // memperlihatkan angka sebelum analisis ini berjalan, dan owner baru tahu
 // jatahnya berkurang setelah memuat ulang halaman.
+//
+// Jadwalnya dipasang ulang sesudah SETIAP muat ulang, bukan hanya saat
+// statusnya berubah. Versi sebelumnya menggantungkan seluruh rantai pada
+// watcher: satu muat ulang dijadwalkan, dan jadwal berikutnya baru lahir kalau
+// `status` bernilai lain. Analisis yang butuh lebih dari 3 detik menjawab
+// `processing` dua kali berturut-turut — nilainya sama, watcher-nya diam, dan
+// polling-nya mati di situ. Pemutarnya lalu berputar selamanya di layar owner
+// untuk analisis yang di basis data sudah `completed`. Terlihat sekali:
+// analisis yang cepat selesai memang berpindah pending → processing →
+// completed, tiga nilai berbeda, jadi rantainya utuh secara kebetulan.
 let timer = null;
-watch(
-    () => displayed.value?.status,
-    (status) => {
-        if (timer) {
-            clearTimeout(timer);
-            timer = null;
-        }
-        if (status === 'pending' || status === 'processing') {
-            timer = setTimeout(() => {
-                router.reload({ only: ['active', 'analyses', 'aiQuota'] });
-            }, 3000);
-        }
-    },
-    { immediate: true },
-);
-onUnmounted(() => timer && clearTimeout(timer));
+
+const stopPolling = () => {
+    if (timer) {
+        clearTimeout(timer);
+        timer = null;
+    }
+};
+
+const schedulePoll = () => {
+    stopPolling();
+
+    const status = displayed.value?.status;
+    if (status !== 'pending' && status !== 'processing') {
+        return;
+    }
+
+    timer = setTimeout(() => {
+        router.reload({
+            only: ['active', 'analyses', 'aiQuota'],
+            // Dipasang ulang apa pun hasilnya — termasuk saat statusnya tidak
+            // berubah sama sekali, yang justru keadaan paling lazim.
+            onFinish: schedulePoll,
+        });
+    }, 3000);
+};
+
+// Watcher-nya tetap ada untuk pemicu yang BUKAN muat ulang: analisis yang
+// dipilih dari riwayat, dan pemuatan halaman pertama.
+watch(() => displayed.value?.status, schedulePoll, { immediate: true });
+onUnmounted(stopPolling);
 
 // ── Result metrics ───────────────────────────────────────────────────────────
 const formatDate = (value) => {
@@ -130,7 +155,24 @@ const periodLabel = (analysis) => {
     return `${formatDate(analysis.params.from)} – ${formatDate(analysis.params.to)}`;
 };
 
-const numberFmt = new Intl.NumberFormat('id-ID');
+/**
+ * Panjang rentang yang dianalisis, dalam hari (inklusif kedua ujungnya).
+ *
+ * Menggantikan "Token Terpakai" di kartu tengah: jumlah token adalah ongkos
+ * internal yang tidak bisa ditindaklanjuti owner, sedangkan panjang rentang
+ * justru yang menentukan cara membaca hasilnya — proyeksi di bawahnya adalah
+ * rata-rata harian dikali angka ini.
+ */
+const periodDays = (analysis) => {
+    if (!analysis?.params?.from || !analysis?.params?.to) {
+        return null;
+    }
+    const from = new Date(`${analysis.params.from}T00:00:00`);
+    const to = new Date(`${analysis.params.to}T00:00:00`);
+    const days = Math.round((to - from) / 86400000) + 1;
+
+    return days > 0 ? days : null;
+};
 
 // ── Minimal, safe markdown renderer ──────────────────────────────────────────
 // Escapes HTML first, then applies a small subset of markdown so LLM output
@@ -148,57 +190,99 @@ const renderMarkdown = (raw) => {
 
     const lines = escapeHtml(raw).split('\n');
     const html = [];
-    let listType = null; // 'ul' | 'ol'
 
-    const bulletRe = /^[-*]\s+(.*)$/;
-    const orderedRe = /^\d+\.\s+(.*)$/;
+    // Daftar yang sedang terbuka, terluar dulu: `{ type, itemOpen }`.
+    //
+    // Penomoran yang meloncat kembali ke 1 lahir dari sini, bukan dari model.
+    // Model menulis langkah bernomor lalu menjelaskannya dengan butir-butir di
+    // bawahnya; renderer lama menutup <ol> begitu bertemu butir pertama, lalu
+    // membukanya lagi di langkah berikutnya — dan <ol> yang baru selalu mulai
+    // dari 1. Karena itu <li> dibiarkan TERBUKA di sini: daftar bertitik di
+    // bawah sebuah langkah ditulis DI DALAM langkah itu, <ol>-nya tidak pernah
+    // tertutup, dan nomornya berjalan 1, 2, 3 apa pun angka yang diketik model.
+    const stack = [];
+    const top = () => stack[stack.length - 1] ?? null;
 
-    const closeList = () => {
-        if (listType) {
-            html.push(`</${listType}>`);
-            listType = null;
-        }
-    };
-
-    // Whether the next non-empty line continues the currently open list. LLMs
-    // often insert a blank line between list items for readability; without this
-    // each item would close and reopen the list, restarting <ol> numbering at 1.
-    const nextLineContinuesList = (startIndex) => {
-        for (let j = startIndex; j < lines.length; j++) {
-            const next = lines[j].trim();
-            if (next === '') {
-                continue;
-            }
-            if (listType === 'ul') {
-                return bulletRe.test(next);
-            }
-            if (listType === 'ol') {
-                return orderedRe.test(next);
-            }
-            return false;
-        }
-        return false;
-    };
+    const bulletRe = /^[-*+]\s+(.*)$/;
+    const orderedRe = /^\d+[.)]\s+(.*)$/;
 
     const inline = (text) =>
         text
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             .replace(/(^|[^*])\*(?!\s)(.+?)\*/g, '$1<em>$2</em>');
 
-    for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trim();
+    const closeItem = () => {
+        const level = top();
+        if (level && level.itemOpen) {
+            html.push('</li>');
+            level.itemOpen = false;
+        }
+    };
 
-        if (trimmed === '') {
-            // Keep the list open across blank separators between items.
-            if (!nextLineContinuesList(i + 1)) {
+    const closeList = () => {
+        closeItem();
+        html.push(`</${stack.pop().type}>`);
+    };
+
+    const closeAll = () => {
+        while (stack.length) {
+            closeList();
+        }
+    };
+
+    const openList = (type) => {
+        html.push(`<${type}>`);
+        stack.push({ type, itemOpen: false });
+    };
+
+    /**
+     * Mulai satu butir bertipe `type`, membuka atau menutup daftar seperlunya.
+     *
+     * Hanya SATU arah yang dianggap bersarang: butir bertitik di bawah langkah
+     * bernomor. Arah sebaliknya — daftar bernomor sesudah daftar bertitik —
+     * jauh lebih sering berarti dua daftar terpisah daripada satu di dalam
+     * yang lain, jadi yang lama ditutup.
+     */
+    const pushItem = (type, content) => {
+        let level = -1;
+        for (let d = stack.length - 1; d >= 0; d--) {
+            if (stack[d].type === type) {
+                level = d;
+                break;
+            }
+        }
+
+        if (level === -1) {
+            if (type === 'ul' && top()?.type === 'ol' && top().itemOpen) {
+                openList('ul');
+            } else {
+                closeAll();
+                openList(type);
+            }
+        } else {
+            while (stack.length - 1 > level) {
                 closeList();
             }
+            closeItem();
+        }
+
+        html.push(`<li>${inline(content)}`);
+        top().itemOpen = true;
+    };
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+
+        // Baris kosong tidak lagi menutup apa pun: model menyelanginya di
+        // antara butir demi keterbacaan, dan menutup daftar di situ persis
+        // yang dulu memutus penomoran.
+        if (trimmed === '') {
             continue;
         }
 
         const heading = trimmed.match(/^(#{1,4})\s+(.*)$/);
         if (heading) {
-            closeList();
+            closeAll();
             const level = heading[1].length + 2; // # → h3
             html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
             continue;
@@ -206,38 +290,47 @@ const renderMarkdown = (raw) => {
 
         const bullet = trimmed.match(bulletRe);
         if (bullet) {
-            if (listType !== 'ul') {
-                closeList();
-                html.push('<ul>');
-                listType = 'ul';
-            }
-            html.push(`<li>${inline(bullet[1])}</li>`);
+            pushItem('ul', bullet[1]);
             continue;
         }
 
         const ordered = trimmed.match(orderedRe);
         if (ordered) {
-            if (listType !== 'ol') {
-                closeList();
-                html.push('<ol>');
-                listType = 'ol';
-            }
-            html.push(`<li>${inline(ordered[1])}</li>`);
+            pushItem('ol', ordered[1]);
             continue;
         }
 
-        closeList();
+        // Paragraf menjorok di bawah daftar yang terbuka adalah lanjutan
+        // butirnya, bukan penutupnya.
+        if (top()?.itemOpen && /^\s{2,}/.test(line)) {
+            html.push(`<p>${inline(trimmed)}</p>`);
+            continue;
+        }
+
+        closeAll();
         html.push(`<p>${inline(trimmed)}</p>`);
     }
 
-    closeList();
+    closeAll();
     return html.join('');
 };
 
 const resultHtml = computed(() => renderMarkdown(displayed.value?.result ?? ''));
 
+// Kartu hasil berdiri DI ATAS tabel riwayat, jadi menekan "Lihat" pada baris
+// yang jauh ke bawah dulu terasa seperti tombol yang tidak berbuat apa-apa:
+// isinya berganti di luar layar. Barisnya digulirkan ke hasilnya sendiri.
+const resultCard = ref(null);
+
+const scrollToResult = () => {
+    nextTick(() => {
+        resultCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+};
+
 const selectAnalysis = (analysis) => {
     selectedId.value = analysis.id;
+    scrollToResult();
 };
 </script>
 
@@ -257,8 +350,25 @@ const selectAnalysis = (analysis) => {
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 class="text-base font-semibold text-gray-900 mb-4">Buat Analisis</h2>
 
-            <form @submit.prevent="submit" class="space-y-4">
-                <div class="grid gap-4 sm:grid-cols-2">
+            <!-- `@container`: kisinya diukur terhadap LEBAR KARTU, bukan lebar
+                 jendela. Bedanya bukan teori — dengan breakpoint jendela biasa,
+                 `lg:` menyala tepat di 1024px sementara sidebar owner memakan
+                 ~224px, menyisakan kolom 153px; tanggalnya terpotong justru di
+                 lebar yang paling lazim dipakai laptop. Yang menentukan muat
+                 atau tidak memang kartunya, dan hanya query kontainer yang bisa
+                 melihatnya. -->
+            <form @submit.prevent="submit" class="@container space-y-4">
+                <!-- Empat kolom SAMA BESAR, satu baris di layar lebar.
+                     Lebarnya sengaja tidak mengikuti panjang isinya: "Insight
+                     Umum" jauh lebih pendek daripada "Jum, 4 September 2026",
+                     dan kolom yang menyesuaikan diri pada teks menghasilkan
+                     baris yang ragged — tiap kontrol berhenti di tempat yang
+                     berbeda tanpa alasan yang bisa dilihat pemakainya.
+                     Rentangnya juga dipecah jadi dua field berlabel sendiri:
+                     dengan begitu keduanya jadi kolom penuh yang sederajat,
+                     dan pemisah "–" yang dulu memakan ruang di tengah baris
+                     tidak lagi diperlukan. -->
+                <div class="grid gap-4 @md:grid-cols-2 @4xl:grid-cols-4 @4xl:items-end">
                     <!-- Type -->
                     <SelectDropdown
                         v-model="form.type"
@@ -269,41 +379,49 @@ const selectAnalysis = (analysis) => {
 
                     <!-- Period -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Periode</label>
-                        <div class="flex items-center gap-2">
-                            <DatePicker v-model="form.from" />
-                            <span class="text-gray-400 text-sm">–</span>
-                            <DatePicker v-model="form.to" />
-                        </div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Dari Tanggal</label>
+                        <DatePicker v-model="form.from" block />
                         <p v-if="form.errors.from" class="mt-1 text-xs text-red-600">{{ form.errors.from }}</p>
-                        <p v-else-if="form.errors.to" class="mt-1 text-xs text-red-600">{{ form.errors.to }}</p>
                     </div>
-                </div>
 
-                <!-- Custom prompt -->
-                <div v-if="form.type === 'custom'">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Pertanyaan</label>
-                    <textarea
-                        v-model="form.prompt"
-                        rows="3"
-                        placeholder="Contoh: Menu apa yang paling menguntungkan dan bagaimana cara meningkatkan penjualannya?"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-                        :class="{ 'border-red-300': form.errors.prompt }"
-                    />
-                    <p v-if="form.errors.prompt" class="mt-1 text-xs text-red-600">{{ form.errors.prompt }}</p>
-                </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sampai Tanggal</label>
+                        <DatePicker v-model="form.to" block />
+                        <p v-if="form.errors.to" class="mt-1 text-xs text-red-600">{{ form.errors.to }}</p>
+                    </div>
 
-                <!-- Sisa kuota berdiri tepat di sebelah tombol yang
-                     membelanjakannya, dan tombolnya mati saat jatahnya nol:
-                     menolak di layar jauh lebih murah — dan jauh lebih jelas —
-                     daripada menolak di antrean beberapa detik kemudian. -->
-                <div class="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
-                    <AiQuotaMeter :quota="aiQuota" variant="compact" class="sm:max-w-md" />
+                    <!-- Custom prompt — ikut di dalam kisi yang sama, dan
+                         DITARUH SEBELUM tombolnya. Kalau ia berdiri di luar
+                         kisi, tombol kirim berakhir di atas kolom isian yang
+                         dikirimnya. -->
+                    <div v-if="form.type === 'custom'" class="@md:col-span-2 @4xl:col-span-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Pertanyaan</label>
+                        <textarea
+                            v-model="form.prompt"
+                            rows="3"
+                            placeholder="Contoh: Menu apa yang paling menguntungkan dan bagaimana cara meningkatkan penjualannya?"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                            :class="{ 'border-red-300': form.errors.prompt }"
+                        />
+                        <p v-if="form.errors.prompt" class="mt-1 text-xs text-red-600">{{ form.errors.prompt }}</p>
+                    </div>
 
-                    <!-- Alasannya tidak diulang di bawah tombol: meternya
-                         berdiri di baris yang sama, dan menuliskannya dua kali
-                         hanya membuat keduanya lebih mudah diabaikan. -->
-                    <Button type="submit" :loading="form.processing" :disabled="quotaBlocked" class="shrink-0">
+                    <!-- Tombolnya ikut ke dalam baris yang sama, dan ikut
+                         selebar kolomnya. Sebelumnya ia berdiri sendiri di
+                         baris kedua bersama meter kuota, padahal seluruh
+                         kontrolnya muat dalam satu baris.
+                         `col-start-4` dipatok, bukan dibiarkan mengalir:
+                         begitu kolom pertanyaan muncul dan memakan satu baris
+                         penuh, tombol yang mengalir akan mendarat di kolom
+                         pertama — kiri bawah, tempat yang tidak dicari orang
+                         saat mencari tombol kirim. -->
+                    <Button
+                        type="submit"
+                        :loading="form.processing"
+                        :disabled="quotaBlocked"
+                        block
+                        class="@md:col-start-2 @4xl:col-start-4"
+                    >
                         <template #icon>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -313,11 +431,22 @@ const selectAnalysis = (analysis) => {
                         {{ form.processing ? 'Memproses...' : 'Analisa' }}
                     </Button>
                 </div>
+
+                <!-- Sisa kuota tetap berdiri tepat di bawah tombol yang
+                     membelanjakannya, dan tombolnya tetap mati saat jatahnya
+                     nol: menolak di layar jauh lebih murah — dan jauh lebih
+                     jelas — daripada menolak di antrean beberapa detik
+                     kemudian. Yang berubah hanya arahnya, dari di sebelah
+                     tombol jadi di bawahnya, karena tombolnya naik ke baris
+                     kontrol. Alasannya tidak diulang di bawah tombol:
+                     menuliskannya dua kali hanya membuat keduanya lebih mudah
+                     diabaikan. -->
+                <AiQuotaMeter :quota="aiQuota" variant="compact" />
             </form>
         </div>
 
         <!-- ── Result ──────────────────────────────────────────────────────── -->
-        <div v-if="displayed" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div v-if="displayed" ref="resultCard" class="scroll-mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <h2 class="text-base font-semibold text-gray-900">{{ typeLabels[displayed.type] }}</h2>
@@ -374,8 +503,9 @@ const selectAnalysis = (analysis) => {
                         color="primary"
                     />
                     <MetricCard
-                        title="Token Terpakai"
-                        :value="displayed.tokens_used ? numberFmt.format(displayed.tokens_used) : '—'"
+                        title="Rentang Data"
+                        :value="periodDays(displayed) ? `${periodDays(displayed)} hari` : '—'"
+                        :subtitle="periodLabel(displayed)"
                         icon="average"
                         color="muted"
                     />
@@ -432,14 +562,18 @@ const selectAnalysis = (analysis) => {
                             </span>
                         </td>
                         <td class="px-6 py-3 text-gray-400 hidden md:table-cell">{{ formatDate(analysis.created_at) }}</td>
+                        <!-- Tombol betulan, bukan teks berwarna: baris riwayat
+                             sudah punya beberapa teks berwarna sendiri (badge
+                             status), jadi satu-satunya hal yang bisa DITEKAN di
+                             baris ini perlu terlihat seperti tombol. -->
                         <td class="px-6 py-3 text-right">
-                            <button
-                                type="button"
-                                class="text-primary hover:text-primary/80 text-sm font-medium"
+                            <Button
+                                :variant="displayed && displayed.id === analysis.id ? 'primary' : 'soft'"
+                                size="sm"
                                 @click="selectAnalysis(analysis)"
                             >
-                                Lihat →
-                            </button>
+                                {{ displayed && displayed.id === analysis.id ? 'Ditampilkan' : 'Lihat' }}
+                            </Button>
                         </td>
                     </tr>
                 </tbody>
@@ -455,7 +589,18 @@ const selectAnalysis = (analysis) => {
     color: #111827;
     margin: 1rem 0 0.5rem;
 }
-.ai-result :deep(h4),
+/* `##` adalah penanda bagian yang diminta prompt, dan ia mendarat di sini
+   sebagai h4 — jadi h4 perlu terbaca sebagai judul bagian, bukan sebagai teks
+   biasa yang kebetulan tebal. */
+.ai-result :deep(h4) {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 1.25rem 0 0.5rem;
+}
+.ai-result :deep(h4:first-child) {
+    margin-top: 0;
+}
 .ai-result :deep(h5),
 .ai-result :deep(h6) {
     font-size: 0.9375rem;
@@ -470,6 +615,15 @@ const selectAnalysis = (analysis) => {
 .ai-result :deep(ol) {
     margin: 0.5rem 0;
     padding-left: 1.25rem;
+}
+/* Butir penjelas di bawah satu langkah bernomor sekarang benar-benar berada DI
+   DALAM langkahnya; tanpa ini jaraknya menggandakan margin butir induknya. */
+.ai-result :deep(li > ul),
+.ai-result :deep(li > ol) {
+    margin: 0.25rem 0 0.25rem;
+}
+.ai-result :deep(li > p) {
+    margin: 0.25rem 0;
 }
 .ai-result :deep(ul) {
     list-style: disc;
