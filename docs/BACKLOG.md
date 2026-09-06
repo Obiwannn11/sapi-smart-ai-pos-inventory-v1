@@ -105,6 +105,32 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`. Dua yang terakhir menambah skema, dan `[BL-087]` mengubah rumus `expected_amount` — ia harus mendarat **sesudah** `[BL-086]`, kalau tidak layar tutup kas dibongkar dua kali.
 
+### [BL-102] Konektor Data Lewat URL — Jalur Non-MCP untuk Pemula, dengan Kredensial yang Menumpang di Query String
+- **Ditemukan:** 2026-09-05 (permintaan pemilik, belum diputuskan)
+- **Sumber:** "selain MCP, itu ada konektor langsung via fetch, karena kredensialnya itu langsung di params url, cocok untuk pemula dan sisa copy url dan prompt bawaan untuk petunjuk ke AI pengguna, jadi nanti AI pengguna tahu untuk fetch website datanya — dan beri tahu kalau ini cukup bahaya"
+- **Status:** Open — **ditahan atas permintaan pemilik**, masih dipikirkan. Jangan dikerjakan sebelum ada keputusan; entri ini sengaja menyimpan alasannya, bukan rancangannya
+- **Prioritas:** Low (sebagai pekerjaan) / High (sebagai keputusan) — tidak ada yang rusak hari ini, tapi bentuk yang dipilih menentukan apakah data satu tenant bisa dibaca siapa pun yang memegang satu baris teks
+- **Area Terdampak (kalau kelak dikerjakan):**
+  - `routes/ai.php:18-19` — `Mcp::web('/mcp/business')` di balik `auth:sanctum` + `tenant.api` + `feature.api:ai` + `role:owner` + `throttle:mcp`; jalur baru harus menjawab gerbang yang sama, bukan melewatinya
+  - `app/Mcp/Tools/` — `GetSalesSummaryTool`, `GetProfitTool`, `GetMenuTool`; datanya sudah ada dan sudah teragregasi, jadi yang dibicarakan di sini **hanya pintunya**, bukan isinya
+  - `app/Http/Controllers/Owner/Settings/IntegrationController.php` — `generateMcpToken()`/`revokeMcpToken()`, token Sanctum bernama `mcp-client` dengan ability `mcp:use`, plaintext hanya di-flash sekali
+  - `resources/js/Pages/Owner/Settings/Integrations.vue` — tempat URL dan prompt bawaan itu akan disalin owner
+- **Deskripsi (apa yang diminta):**
+  MCP hari ini mensyaratkan pengguna memasang server MCP di klien AI-nya — langkah yang wajar bagi orang teknis dan tembok bagi pemilik warung. Usulan pemilik: sediakan jalur kedua yang tidak butuh pemasangan apa pun. Owner menyalin **satu URL** (kredensialnya ikut di dalam URL sebagai query param) dan **satu prompt bawaan**, menempelkannya ke AI apa pun yang sudah bisa mengambil halaman web, lalu AI itu mengambil sendiri datanya dan menjawab pertanyaan bisnis. Nol konfigurasi, nol istilah teknis.
+- **Kenapa ini memang menarik, supaya tidak ditolak karena alasan yang salah:** jalurnya bukan mengendurkan keamanan demi kemalasan — ia menjangkau kelompok pengguna yang MCP tidak akan pernah jangkau. Datanya pun sudah agregat tanpa data pelanggan (lihat `#[Instructions]` di `SapiBusinessServer`), jadi yang bocor kalau bocor adalah angka penjualan dan margin, bukan identitas orang.
+- **Kenapa pemilik sendiri menyebutnya "cukup bahaya" — dan ini bagian yang harus utuh sebelum ada kode:**
+  1. **Query string bocor ke tempat yang tidak dikendalikan siapa pun di sini.** Ia tercatat di access log server dan proxy, di riwayat peramban, di header `Referer`, dan — yang paling menentukan — **di riwayat percakapan penyedia AI pengguna**. Token yang ditempel ke chat pihak ketiga sudah keluar dari kendali aplikasi ini sejak detik pertama.
+  2. **Menempel = menyerahkan.** Sekali URL itu ada di sebuah percakapan, siapa pun yang bisa membaca percakapan itu bisa membaca data tokonya, kapan saja, tanpa membuka SAPI.
+  3. **Token `mcp-client` hari ini tidak punya masa berlaku dan tidak dibatasi lingkupnya selain `mcp:use`.** Untuk MCP itu memadai — tokennya masuk ke konfigurasi klien, bukan ke percakapan. Untuk konektor URL, umur tak terbatas berarti kebocoran juga tak terbatas.
+  4. **Prompt bawaan mengajari AI pengguna mengambil URL berkredensial.** Yang diajarkan bukan cuma cara memakai fitur, tapi kebiasaan — dan kebiasaan itu terbawa ke URL lain.
+- **Yang perlu diputuskan pemilik lebih dulu (bukan detail teknis, ini yang menentukan bentuknya):**
+  - Apakah konektor ini memakai **kredensial terpisah** dari token MCP — token khusus, hanya-baca, berumur pendek, bisa dicabut satu-satu dan terlihat kapan terakhir dipakai — atau menumpang token yang sudah ada. (Menumpang berarti mencabut kebocoran juga mematikan MCP-nya.)
+  - Apakah ia **berumur** (mis. 7/30 hari, otomatis mati) atau hidup sampai dicabut.
+  - Apakah ia mengembalikan **satu ringkasan tetap** atau tetap bisa memilih rentang tanggal lewat parameter.
+  - Bagaimana bahayanya **disampaikan** — kalimat peringatan tidak cukup kalau tombolnya tetap berlabel "Salin URL". Kelompok pengguna yang jadi alasan fitur ini ada adalah kelompok yang paling kecil kemungkinannya membaca peringatan.
+- **Catatan arah (bukan keputusan):** bahaya nomor 1 dan 2 melekat pada "kredensial di URL", bukan pada "konektor tanpa pemasangan". Sebelum menerima keduanya, pantas dicek dulu apakah tujuannya bisa dicapai tanpa itu — misalnya URL berumur pendek yang bisa dicabut, atau kredensial di header yang tetap bisa disalin sekali. Kalau ternyata tidak bisa, terimalah risikonya dengan sadar, jangan diam-diam.
+- **Yang JANGAN dilakukan saat mengerjakannya kelak:** membuka rute konektor di luar gerbang yang sudah dipakai `/mcp/business` (`tenant.api`, `feature.api:ai`, `role:owner`, throttle). Pintu yang lebih mudah tidak boleh berarti pagar yang lebih rendah — kalau modul AI tenant mati atau langganannya lewat tenggat, konektor ini harus ikut mati.
+
 ### [BL-099] Saklar Per-Jenis Saran Jual Hanya Ada di `config/upsell.php` — Owner Tak Punya Jalan ke Sana
 - **Ditemukan:** 2026-09-03 (saat merombak tampilan tiga halaman Saran Jual & Aturan)
 - **Sumber:** Keterangan di halaman Saran Jual yang berbunyi "Jenis yang tak pernah diterima bisa dimatikan di `config/upsell.php`" — kalimat yang menyuruh pemilik warung menyunting berkas PHP, dan dibuang saat perombakan
