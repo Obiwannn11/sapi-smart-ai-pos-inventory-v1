@@ -197,7 +197,7 @@ test('halaman berisi satu daftar menunda daftarnya', function (string $url, stri
     'modifier' => ['/owner/modifiers', 'Owner/Modifiers/Index', 'modifierGroups'],
     'metode bayar' => ['/owner/payment-methods', 'Owner/PaymentMethods/Index', 'paymentMethods'],
     'role' => ['/owner/roles', 'Owner/Roles/Index', 'roles'],
-    'stok' => ['/owner/stock', 'Owner/Stock/Index', 'products'],
+    'stok' => ['/owner/stock', 'Owner/Stock/Index', 'variants'],
     'mutasi stok' => ['/owner/stock/movements', 'Owner/Stock/Movements', 'movements'],
     'sesi kas' => ['/owner/cash-drawers', 'Owner/CashDrawers/Index', 'cashDrawers'],
     'tinjauan offline' => ['/owner/offline-review', 'Owner/OfflineReview/Index', 'transactions'],
