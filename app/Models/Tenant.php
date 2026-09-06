@@ -92,6 +92,7 @@ class Tenant extends Model
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
         'min_margin_percent', 'cash_payout_approval_threshold',
         'upsell_mandatory', 'order_identity_mode',
+        'upsell_attach_enabled', 'upsell_pressed_stock_enabled', 'upsell_upsize_enabled', 'upsell_manual_enabled',
         'tax_enabled', 'tax_mode', 'tax_rate', 'tax_label', 'tax_lock_opened_until',
     ];
 
@@ -115,6 +116,14 @@ class Tenant extends Model
         'min_margin_percent' => 10.00,
         'cash_payout_approval_threshold' => 50000.00,
         'upsell_mandatory' => false,
+        // Bawaannya HIDUP, kebalikan dari `upsell_mandatory` di atas:
+        // keempat jenis ini sudah berjalan untuk setiap tenant sebelum
+        // saklarnya ada, jadi bawaan mati akan mematikan fitur yang sedang
+        // dipakai ([BL-099]).
+        'upsell_attach_enabled' => true,
+        'upsell_pressed_stock_enabled' => true,
+        'upsell_upsize_enabled' => true,
+        'upsell_manual_enabled' => true,
         'order_identity_mode' => self::ORDER_IDENTITY_NONE,
         'tax_enabled' => false,
         'tax_mode' => self::TAX_MODE_EXCLUSIVE,
@@ -136,6 +145,10 @@ class Tenant extends Model
             'min_margin_percent' => 'decimal:2',
             'cash_payout_approval_threshold' => 'decimal:2',
             'upsell_mandatory' => 'boolean',
+            'upsell_attach_enabled' => 'boolean',
+            'upsell_pressed_stock_enabled' => 'boolean',
+            'upsell_upsize_enabled' => 'boolean',
+            'upsell_manual_enabled' => 'boolean',
             'is_demo' => 'boolean',
             'tax_enabled' => 'boolean',
             'tax_lock_opened_until' => 'datetime',
@@ -164,6 +177,45 @@ class Tenant extends Model
             'payment_proof' => $this->payment_proof_enabled,
             default => false,
         };
+    }
+
+    /**
+     * Jenis saran jual dan kolom saklarnya, satu daftar untuk semua pembaca
+     * ([BL-099]).
+     *
+     * Dipakai model ini, halaman Setelan (baca + validasi), dan pratinjau
+     * halaman Aturan. Daftar yang disalin ke tiga tempat akan bercabang pada
+     * jenis kelima, dan cabangnya berupa saklar yang tidak menyalakan apa pun.
+     *
+     * @return array<string, string>
+     */
+    public static function upsellTypeColumns(): array
+    {
+        return [
+            UpsellEvent::TYPE_ATTACH => 'upsell_attach_enabled',
+            UpsellEvent::TYPE_PRESSED_STOCK => 'upsell_pressed_stock_enabled',
+            UpsellEvent::TYPE_UPSIZE => 'upsell_upsize_enabled',
+            UpsellEvent::TYPE_MANUAL => 'upsell_manual_enabled',
+        ];
+    }
+
+    /**
+     * Apakah toko ini masih mengizinkan satu jenis saran.
+     *
+     * Menjawab HANYA lapisan tenant. Saklar darurat global di
+     * `config/upsell.php` diperiksa terpisah oleh `UpsellIndexBuilder`, dan
+     * pemisahan itu disengaja: layar perlu bisa membedakan "Anda yang
+     * mematikannya" dari "dimatikan untuk semua toko", karena hanya yang
+     * pertama punya tombol.
+     *
+     * `default => false` mengikuti `hasFeature()` — nama jenis yang salah
+     * ketik harus MENUTUP, bukan membuka diam-diam.
+     */
+    public function upsellTypeEnabled(string $type): bool
+    {
+        $column = self::upsellTypeColumns()[$type] ?? null;
+
+        return $column === null ? false : (bool) $this->{$column};
     }
 
     /**

@@ -22,7 +22,7 @@
  * diperagakan tab pratinjau, pada barang milik owner sendiri.
  */
 import { ref, computed } from 'vue';
-import { Deferred, useForm, Head } from '@inertiajs/vue3';
+import { Deferred, useForm, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
@@ -69,9 +69,13 @@ const TYPE_NAMES = {
     manual: 'aturan Anda sendiri',
 };
 
-const disabledTypeNames = computed(() =>
-    (props.preview?.disabled_types ?? []).map((type) => TYPE_NAMES[type] ?? type).join(', ')
-);
+const typeNameList = (types) => (types ?? []).map((type) => TYPE_NAMES[type] ?? type).join(', ');
+
+// Dua daftar terpisah, dan bedanya bukan gaya bahasa: yang pertama punya
+// saklar di Setelan, yang kedua tidak punya jalan apa pun dari layar owner
+// ([BL-099]).
+const disabledTypeNames = computed(() => typeNameList(props.preview?.disabled_types));
+const unavailableTypeNames = computed(() => typeNameList(props.preview?.unavailable_types));
 
 const variantOptions = computed(() =>
     (props.variants ?? []).map((variant) => ({
@@ -320,12 +324,27 @@ const doDelete = () => {
                     saran apa pun, termasuk aturan yang Anda tulis di sini.
                 </div>
 
-                <div
-                    v-else-if="disabledTypeNames"
-                    class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
-                >
-                    Jenis saran berikut sedang dimatikan di setelan sistem: <strong>{{ disabledTypeNames }}</strong>.
-                </div>
+                <template v-else>
+                    <div
+                        v-if="disabledTypeNames"
+                        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+                    >
+                        Jenis saran berikut Anda matikan sendiri: <strong>{{ disabledTypeNames }}</strong>.
+                        Nyalakan lagi di
+                        <Link href="/owner/settings/operations" class="underline font-medium">Setelan &rarr; Cara Kerja Sistem</Link>.
+                    </div>
+
+                    <!-- Tanpa tautan, dan itu disengaja: tidak ada layar yang bisa
+                         dibuka owner untuk mengubahnya. Menawarkan jalan yang tidak
+                         bisa ditempuh terbaca seperti izin ([BL-099]). -->
+                    <div
+                        v-if="unavailableTypeNames"
+                        class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600"
+                    >
+                        Jenis saran berikut sedang dimatikan untuk semua toko: <strong>{{ unavailableTypeNames }}</strong>.
+                        Aturan yang menunjuk jenis itu tidak akan muncul di kasir sampai ia dinyalakan kembali.
+                    </div>
+                </template>
             </div>
         </Deferred>
 

@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | ADDITION | Promosi | Saklar Per-Jenis Saran Jual Pindah dari Berkas PHP ke Layar Owner — dan Config Tetap Menang (BL-099) |
 | 2026-09-06 | ADDITION | Produk | Katalog Produk Akhirnya Bisa Dicari — dan Kata Kuncinya Boleh Datang dari URL (BL-100 Tahap 1) |
 | 2026-09-06 | HOTFIX | Promosi | Satu Barang Berhenti Memakan Dua Slot Kasir Lewat Dua Jenis Saran Berbeda (BL-101) |
 | 2026-09-06 | DEPRECATE | Platform | `Platform\InvoiceController::index()` Dihapus — 30 Baris yang Terbaca seperti Fitur Hidup (BL-098) |
@@ -233,6 +234,36 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Saklar Per-Jenis Saran Jual Pindah dari Berkas PHP ke Layar Owner — dan Config Tetap Menang (BL-099)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-099]`.
+- **Dampak:** Migration (4 kolom boolean pada `tenants`), `Tenant`, `UpsellIndexBuilder`, `SystemBehaviorController`, `UpsellRuleController`, `ReportController`, tiga halaman Vue.
+- **Breaking Change:** Tidak. Bawaan keempat kolom `true`, jadi tidak ada satu pun tenant yang perilakunya berubah pada hari migrasinya jalan. Untuk kode: prop `preview.disabled_types` pada halaman Aturan berganti arti (kini hanya yang dimatikan owner) dan mendapat pasangan `preview.unavailable_types`; satu test lama ikut diperbarui.
+- **Deskripsi:** Laporan Saran Jual memecah angkanya per jenis saran, dan alasan pemecahan itu tertulis di `config/upsell.php` sendiri: jenis yang tak pernah diterima sebaiknya dimatikan berdasarkan bukti, bukan tebakan. Kesimpulannya bisa diambil owner dari layar; tindakannya tidak — satu-satunya saklar ada di berkas PHP yang hanya bisa disentuh orang dengan akses server. Sekarang keempat jenis (`attach`, `pressed_stock`, `upsize`, `manual`) punya saklarnya sendiri di Setelan → Cara Kerja Sistem.
+- **Empat kolom nyata, bukan satu kolom JSON.** Setelan per-tenant di aplikasi ini selalu berbentuk kolom (`kitchen_queue_enabled`, `upsell_mandatory`, `min_margin_percent`, `cash_payout_approval_threshold`). Satu kolom serba guna akan jadi satu-satunya tempat yang polanya berbeda, dan pola yang punya satu pengecualian berhenti jadi pola.
+- **Bawaannya HIDUP, kebalikan dari `upsell_mandatory`.** Bukan selera: keempat jenis ini sudah berjalan untuk setiap tenant sebelum saklarnya ada, jadi bawaan mati akan mematikan fitur yang sedang dipakai pada saat migrasinya jalan. `upsell_mandatory` bawaannya mati karena kebalikannya — ia bisa menahan tombol bayar, dan fitur seperti itu tidak boleh menyala tanpa ada yang memilihnya.
+- **Config tetap ada dan tetap menang, dan arah itu yang dijaga tesnya.** `config/upsell.php` adalah saklar darurat GLOBAL milik pemilik SaaS; saklar tenant hanya boleh mematikan yang masih hidup secara global, tidak pernah sebaliknya. Kalau owner bisa menghidupkan kembali jenis yang dimatikan pemilik SaaS, saklar daruratnya bukan saklar darurat — dan tidak ada satu pun layar yang akan memperlihatkan kesalahan itu.
+- **Pilihan owner tetap DISIMPAN walau jenisnya sedang mati global.** Saklarnya tampil terkunci, bukan disembunyikan, dan nilai yang dikirim tetap ditulis. Menolaknya berarti kehendak owner hilang diam-diam begitu pemilik SaaS menyalakan jenisnya kembali.
+- **Halaman Aturan memisahkan dua sebab yang sebelumnya satu daftar.** "Anda yang mematikannya" mendapat peringatan kuning **dengan tautan** ke Setelan; "dimatikan untuk semua toko" mendapat catatan abu-abu **tanpa tautan ke mana pun**, dan tanpa menyebut nama berkasnya. Menyebut jalan yang tidak bisa ditempuh pembacanya lebih buruk daripada diam, karena ia terbaca seperti izin — itu peringatan yang sudah tertulis di entri backlog-nya, dan dua daftar terpisah adalah satu-satunya cara memenuhinya tanpa berbohong pada kasus yang lain.
+- **Laporan justru MENGGABUNG kedua lapisan itu, dan itu bukan ketidakkonsistenan.** Tabel "Per Jenis Saran" hanya menjawab satu pertanyaan — "apakah angka nol ini berarti jenisnya gagal, atau berarti jenisnya mati" — dan untuk itu asal matinya tidak penting. Barisnya diberi lencana `dimatikan`, dan kepala tabelnya diberi tautan **Atur jenis** supaya kesimpulan dan tindakannya bersebelahan. Bedanya kedua sebab terlihat satu tautan jauhnya, di layar yang memang bisa mengubahnya.
+- **Kalimat saklarnya menyebut apa yang HILANG, bukan mendefinisikan jenisnya.** Owner sampai ke layar ini dari tabel per jenis, jadi ia sudah tahu jenisnya apa; yang belum ia tahu adalah apa yang berhenti muncul. Baris `manual` menyebut terang-terangan bahwa mematikannya membungkam SELURUH aturan sekaligus — saklar darurat, bukan cara mengatur satu per satu.
+- **Riwayatnya tidak ikut terhapus,** dan itu ditulis di layar: angka lama tetap terbaca di laporan, jadi keputusan mematikan sebuah jenis bisa ditinjau ulang nanti.
+- **Satu daftar untuk semua pembaca.** `Tenant::upsellTypeColumns()` memetakan jenis ke kolomnya, dipakai model, halaman Setelan (baca + validasi), pratinjau halaman Aturan, dan laporan. Daftar yang disalin ke empat tempat akan bercabang pada jenis kelima, dan cabangnya berupa saklar yang tidak menyalakan apa pun.
+- **File Terdampak:**
+  - `database/migrations/2026_09_06_202019_add_upsell_type_switches_to_tenants_table.php` — empat kolom boolean, bawaan `true`
+  - `app/Models/Tenant.php` — `upsellTypeColumns()`, `upsellTypeEnabled()`, `$fillable`/`$attributes`/`casts()`
+  - `app/Services/Upsell/UpsellIndexBuilder.php` — `enabled()` jadi dua lapisan, config lebih dulu
+  - `app/Http/Controllers/Owner/Settings/SystemBehaviorController.php` — baca, kirim daftar terkunci global, validasi
+  - `app/Http/Controllers/Owner/UpsellRuleController.php` — `disabledTypes()` dipecah jadi dua dengan `unavailableTypes()`
+  - `app/Http/Controllers/Owner/ReportController.php` — `inactiveUpsellTypes()`
+  - `resources/js/Pages/Owner/Settings/Operations.vue` — bagian "Jenis Saran Jual", saklar terkunci, tautan ke laporan
+  - `resources/js/Pages/Owner/UpsellRules/Index.vue` — dua peringatan, hanya satu yang bertautan
+  - `resources/js/Pages/Owner/Reports/Upsell.vue` — lencana `dimatikan` + tautan "Atur jenis"
+  - `tests/Feature/Upsell/UpsellTypeSwitchTest.php` — 11 test; `tests/Feature/Upsell/ManualUpsellRuleTest.php` — test pratinjau diperbarui jadi dua
+- **Catatan Migrasi:** `php artisan migrate`. Tidak ada backfill — bawaan kolomnya sudah menjaga tenant lama berperilaku persis seperti sebelumnya.
 
 ---
 

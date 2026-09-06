@@ -211,7 +211,7 @@ class UpsellIndexBuilder
             // menang bukan tempatnya di daftar ini, melainkan lantai skornya —
             // lihat ManualRuleStrategy.
             'manual' => $this->manualRule,
-        ], fn (string $type) => $this->enabled($type), ARRAY_FILTER_USE_KEY);
+        ], fn (string $type) => $this->enabled($tenant, $type), ARRAY_FILTER_USE_KEY);
 
         foreach ($strategies as $strategy) {
             foreach ($strategy->suggestFor($tenant, $sellable) as $variantId => $suggestions) {
@@ -233,14 +233,25 @@ class UpsellIndexBuilder
     private function cartLevelSuggestions(Tenant $tenant): array
     {
         return array_merge(
-            $this->enabled('pressed_stock') ? $this->pressedStock->suggest($tenant) : [],
-            $this->enabled('manual') ? $this->manualRule->suggest($tenant) : [],
+            $this->enabled($tenant, 'pressed_stock') ? $this->pressedStock->suggest($tenant) : [],
+            $this->enabled($tenant, 'manual') ? $this->manualRule->suggest($tenant) : [],
         );
     }
 
-    private function enabled(string $type): bool
+    /**
+     * Apakah satu jenis saran masih boleh dihasilkan untuk tenant ini.
+     *
+     * Dua lapisan, dan urutannya menentukan artinya ([BL-099]):
+     * `config/upsell.php` adalah saklar darurat GLOBAL milik pemilik SaaS,
+     * dan ia menang. Saklar per-tenant hanya boleh mematikan yang masih hidup
+     * secara global — tidak pernah sebaliknya. Kalau owner bisa menghidupkan
+     * kembali jenis yang dimatikan pemilik SaaS, saklar daruratnya bukan
+     * saklar darurat.
+     */
+    private function enabled(Tenant $tenant, string $type): bool
     {
-        return (bool) config("upsell.types.{$type}", true);
+        return (bool) config("upsell.types.{$type}", true)
+            && $tenant->upsellTypeEnabled($type);
     }
 
     /**

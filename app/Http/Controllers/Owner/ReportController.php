@@ -7,6 +7,7 @@ use App\Models\CashDrawer;
 use App\Models\CashDrawerMovement;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\TransactionPayment;
@@ -655,6 +656,26 @@ class ReportController extends Controller
      * — padahal justru itu satu-satunya cara ia tahu tebakannya sendiri lebih
      * baik atau lebih buruk daripada tebakan sistem.
      */
+    /**
+     * Jenis saran jual yang tidak sedang menghasilkan apa pun untuk tenant ini.
+     *
+     * Kedua lapisan digabung di sini dengan sengaja, berbeda dari halaman
+     * Aturan yang memisahkannya. Yang dijawab layar ini cuma satu pertanyaan —
+     * "apakah angka nol ini berarti jenisnya gagal, atau berarti jenisnya
+     * mati" — dan untuk itu asal matinya tidak penting. Tempat mengubahnya
+     * ada satu tautan jauhnya, dan di sanalah bedanya terlihat.
+     *
+     * @return list<string>
+     */
+    private function inactiveUpsellTypes(Tenant $tenant): array
+    {
+        return array_values(array_filter(
+            array_keys(Tenant::upsellTypeColumns()),
+            fn (string $type) => ! config("upsell.types.{$type}", true)
+                || ! $tenant->upsellTypeEnabled($type),
+        ));
+    }
+
     public function upsell(Request $request): Response
     {
         $from = $request->input('from', BusinessClock::daysAgo(29));
@@ -691,6 +712,14 @@ class ReportController extends Controller
         return Inertia::render('Owner/Reports/Upsell', [
             'filters' => ['from' => $from, 'to' => $to],
             'summary' => $summary,
+
+            // Jenis yang saat ini tidak menghasilkan apa pun — entah dimatikan
+            // owner sendiri, entah dimatikan untuk seluruh toko ([BL-099]).
+            // Tabel "Per Jenis Saran" di bawah memecah angkanya per jenis
+            // SUPAYA jenis yang tak pernah diterima bisa dimatikan; tanpa
+            // penanda ini, jenis yang sudah mati terbaca seperti jenis yang
+            // gagal, dan owner menonaktifkan sesuatu dua kali.
+            'inactiveTypes' => $this->inactiveUpsellTypes($request->user()->tenant),
 
             // Dua sumber saran yang bersaing memperebutkan slot yang sama di
             // layar kasir, jadi hanya berguna kalau bisa dibandingkan

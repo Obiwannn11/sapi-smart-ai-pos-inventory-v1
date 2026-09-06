@@ -45,6 +45,13 @@ class SystemBehaviorController extends Controller
                 // mata owner, tapi sengaja TIDAK masuk Tenant::hasFeature() —
                 // ia tidak menggerbangi rute atau modul apa pun ([BL-025]).
                 'upsell_mandatory' => $tenant->upsell_mandatory,
+                // Empat saklar per-jenis saran jual ([BL-099]). Bukan
+                // kapabilitas modul dan bukan aturan kerja: ia menentukan
+                // JENIS saran apa yang boleh dihasilkan mesin untuk toko ini.
+                // Ada di sini karena laporan Saran Jual memisahkan angkanya
+                // per jenis supaya kesimpulan itu bisa ditindaklanjuti, dan
+                // sampai sekarang tindakannya tidak punya tempat.
+                ...$this->upsellTypeSwitches($tenant),
                 // Bukan boolean seperti yang lain, dan bukan kapabilitas modul:
                 // ini cara outlet mengenali pesanannya. Ikut di sini karena
                 // tempatnya sama di mata owner ([BL-026]).
@@ -81,6 +88,14 @@ class SystemBehaviorController extends Controller
                     ? $tenant->tax_lock_opened_until->toIso8601String()
                     : null,
             ],
+            // Jenis yang dimatikan untuk SELURUH toko lewat `config/upsell.php`.
+            // Dikirim supaya layarnya bisa mengunci saklarnya alih-alih
+            // menawarkan tombol yang tidak mengubah apa pun — tanpa menyebut
+            // berkas yang pembacanya tidak bisa buka ([BL-099]).
+            'upsellTypesLockedGlobally' => array_values(array_filter(
+                array_keys(Tenant::upsellTypeColumns()),
+                fn (string $type) => ! config("upsell.types.{$type}", true),
+            )),
             'taxModes' => Tenant::taxModes(),
             'orderIdentityModes' => Tenant::orderIdentityModes(),
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
@@ -95,6 +110,23 @@ class SystemBehaviorController extends Controller
         ]);
     }
 
+    /**
+     * Keempat saklar jenis saran, dibaca lewat satu daftar yang sama dengan
+     * yang dipakai `UpsellIndexBuilder` dan pratinjau halaman Aturan.
+     *
+     * @return array<string, bool>
+     */
+    private function upsellTypeSwitches(Tenant $tenant): array
+    {
+        $switches = [];
+
+        foreach (Tenant::upsellTypeColumns() as $column) {
+            $switches[$column] = (bool) $tenant->{$column};
+        }
+
+        return $switches;
+    }
+
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -103,6 +135,14 @@ class SystemBehaviorController extends Controller
             'ai_enabled' => 'boolean',
             'payment_proof_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
+            'upsell_attach_enabled' => 'boolean',
+            'upsell_pressed_stock_enabled' => 'boolean',
+            'upsell_upsize_enabled' => 'boolean',
+            // Sengaja TIDAK ditolak walau jenisnya sedang mati secara global:
+            // saklar tenant menyimpan kehendak owner, dan config yang menang
+            // saat dibaca. Menolaknya berarti kehendak itu hilang begitu
+            // pemilik SaaS menyalakan jenisnya kembali ([BL-099]).
+            'upsell_manual_enabled' => 'boolean',
             // Batas atas 90%: lantai yang menuntut margin lebih tinggi dari
             // itu membuat fitur diskonnya tidak pernah bisa menawarkan apa pun,
             // dan owner akan menyimpulkan ia rusak.

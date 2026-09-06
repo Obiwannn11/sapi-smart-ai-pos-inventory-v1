@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Deferred, Head, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import DatePicker from '@/Components/DatePicker.vue';
@@ -18,6 +18,10 @@ const props = defineProps({
     byType: { type: Array, default: null },
     bySurface: { type: Array, default: null },
     topSuggestions: { type: Array, default: null },
+    // Jenis yang saat ini tidak menghasilkan apa pun ([BL-099]). Tanpa ini,
+    // nol pada baris jenis yang sudah dimatikan terbaca sebagai jenis yang
+    // gagal — dan owner mematikan sesuatu yang sudah mati.
+    inactiveTypes: { type: Array, default: () => [] },
 });
 
 const from = ref(props.filters.from);
@@ -251,8 +255,18 @@ const applyFilter = () => {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div class="px-5 py-3 border-b border-gray-100">
+                    <!-- Kesimpulan dan tindakannya bersebelahan ([BL-099]): tabel
+                         inilah yang memperlihatkan jenis mana yang tidak pernah
+                         diterima, dan sampai sekarang tempat mematikannya tidak
+                         punya jalan dari sini. -->
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
                         <h2 class="text-sm font-semibold text-gray-800">Per Jenis Saran</h2>
+                        <Link
+                            href="/owner/settings/operations"
+                            class="text-xs text-primary hover:underline font-medium shrink-0"
+                        >
+                            Atur jenis
+                        </Link>
                     </div>
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50 text-xs text-gray-500">
@@ -265,7 +279,15 @@ const applyFilter = () => {
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             <tr v-for="row in byType" :key="row.bucket">
-                                <td class="px-5 py-2.5 text-gray-800">{{ bucketLabel(row.bucket, TYPE_LABELS) }}</td>
+                                <td class="px-5 py-2.5 text-gray-800">
+                                    {{ bucketLabel(row.bucket, TYPE_LABELS) }}
+                                    <span
+                                        v-if="inactiveTypes.includes(row.bucket)"
+                                        class="ml-1.5 align-middle rounded px-1.5 py-0.5 bg-muted text-muted-foreground text-[10px] font-medium"
+                                    >
+                                        dimatikan
+                                    </span>
+                                </td>
                                 <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
                                 <td class="px-3 py-2.5 text-right text-gray-600">
                                     {{ row.accepted }}

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { useForm, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import Checkbox from '@/Components/Checkbox.vue';
@@ -16,6 +16,10 @@ const props = defineProps({
     featureWarnings: Object,
     tax: { type: Object, default: () => ({}) },
     taxModes: { type: Object, default: () => ({}) },
+    // Jenis saran yang dimatikan untuk SELURUH toko ([BL-099]). Saklarnya
+    // tetap tampil, tapi terkunci — menyembunyikannya membuat owner mengira
+    // jenis itu tidak pernah ada.
+    upsellTypesLockedGlobally: { type: Array, default: () => [] },
 });
 
 const form = useForm({
@@ -24,10 +28,50 @@ const form = useForm({
     ai_enabled:            props.features.ai_enabled,
     payment_proof_enabled: props.features.payment_proof_enabled,
     upsell_mandatory:      props.features.upsell_mandatory,
+    upsell_attach_enabled:        props.features.upsell_attach_enabled ?? true,
+    upsell_pressed_stock_enabled: props.features.upsell_pressed_stock_enabled ?? true,
+    upsell_upsize_enabled:        props.features.upsell_upsize_enabled ?? true,
+    upsell_manual_enabled:        props.features.upsell_manual_enabled ?? true,
     order_identity_mode:   props.features.order_identity_mode ?? 'none',
     min_margin_percent:    props.features.min_margin_percent ?? 10,
     cash_payout_approval_threshold: props.features.cash_payout_approval_threshold ?? 50000,
 });
+
+/**
+ * Keempat jenis saran jual, dengan kalimat yang menyebut apa yang HILANG kalau
+ * saklarnya dimatikan — bukan definisi jenisnya ([BL-099]).
+ *
+ * Owner sampai ke layar ini dari tabel "Per Jenis Saran" di laporan, jadi ia
+ * sudah tahu jenisnya apa; yang belum ia tahu adalah apa yang berhenti muncul.
+ */
+const UPSELL_TYPES = [
+    {
+        key: 'attach',
+        field: 'upsell_attach_enabled',
+        title: 'Tambahan (add-on)',
+        detail: 'Topping atau pelengkap yang sering menyertai barang di keranjang. Jenis yang paling sering muncul, dan paling kecil nilainya per saran.',
+    },
+    {
+        key: 'pressed_stock',
+        field: 'upsell_pressed_stock_enabled',
+        title: 'Barang tertekan',
+        detail: 'Barang yang mendekati kedaluwarsa atau lama tidak bergerak. Mematikannya berarti stok yang terdesak waktu tidak lagi ditawarkan lebih dulu.',
+    },
+    {
+        key: 'upsize',
+        field: 'upsell_upsize_enabled',
+        title: 'Naik ukuran',
+        detail: 'Varian lain dari produk yang sama dengan harga sedikit lebih tinggi.',
+    },
+    {
+        key: 'manual',
+        field: 'upsell_manual_enabled',
+        title: 'Aturan yang Anda tulis sendiri',
+        detail: 'Mematikannya membungkam SELURUH aturan di halaman Aturan Saran Jual sekaligus — saklar darurat, bukan cara mengatur satu per satu.',
+    },
+];
+
+const isTypeLocked = (key) => props.upsellTypesLockedGlobally.includes(key);
 
 // Peringatan hanya relevan saat owner sedang MEMATIKAN fitur yang masih punya
 // pekerjaan berjalan. Menampilkannya saat fitur sudah mati sejak awal hanya
@@ -364,6 +408,47 @@ const submitTax = () => {
                             </span>
                         </div>
                     </div>
+                </div>
+
+                <!-- Jenis Saran Jual -->
+                <div class="pt-5 border-t border-gray-200">
+                    <h2 class="text-base font-semibold text-gray-900">Jenis Saran Jual</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Jenis saran apa saja yang boleh dihasilkan untuk kasir. Angka yang menentukan pilihan ini ada di
+                        <Link href="/owner/reports/upsell" class="text-primary hover:underline font-medium">Laporan &rarr; Saran Jual</Link>,
+                        tabel <strong>Per Jenis Saran</strong> — jenis yang berkali-kali tampil tapi hampir tidak pernah diterima
+                        hanya memakan slot yang bisa dipakai jenis lain.
+                    </p>
+
+                    <div class="space-y-3">
+                        <div v-for="type in UPSELL_TYPES" :key="type.key">
+                            <Checkbox
+                                v-model="form[type.field]"
+                                variant="card"
+                                align="start"
+                                :disabled="isTypeLocked(type.key)"
+                            >
+                                <span class="text-sm">
+                                    <span class="font-medium text-gray-900 block">{{ type.title }}</span>
+                                    <span class="text-xs text-gray-500">{{ type.detail }}</span>
+                                </span>
+                            </Checkbox>
+
+                            <!-- Dimatikan untuk semua toko. Disebutkan supaya owner tidak
+                                 mengira aturannya sendiri yang rusak, tanpa menunjuk jalan
+                                 yang tidak bisa ia tempuh ([BL-099]). -->
+                            <p v-if="isTypeLocked(type.key)" class="mt-1 ml-1 text-xs text-gray-400">
+                                Sedang dimatikan untuk semua toko, jadi saklar ini belum berpengaruh.
+                                Pilihan Anda tetap tersimpan.
+                            </p>
+                        </div>
+                    </div>
+
+                    <p class="mt-3 text-xs text-gray-500 leading-relaxed">
+                        Mematikan sebuah jenis <strong>tidak menghapus riwayatnya</strong> — angka lama tetap terbaca di laporan,
+                        jadi keputusan ini bisa ditinjau ulang nanti. Kasir tidak melihat perubahan apa pun selain
+                        saran jenis itu berhenti muncul.
+                    </p>
                 </div>
 
                 <!-- Submit -->

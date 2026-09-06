@@ -83,7 +83,7 @@ class UpsellRuleController extends Controller
      * Pemilihan slotnya memakai `UpsellIndexBuilder`, kode yang sama persis
      * dengan yang dipakai kasir; yang berbeda hanya keranjang yang diandaikan.
      *
-     * @return array{enabled: bool, max_per_transaction: int, disabled_types: list<string>, cart_level: list<array<string, mixed>>, triggers: list<array<string, mixed>>, triggers_truncated: int}
+     * @return array{enabled: bool, max_per_transaction: int, disabled_types: list<string>, unavailable_types: list<string>, cart_level: list<array<string, mixed>>, triggers: list<array<string, mixed>>, triggers_truncated: int}
      */
     private function slotPreview(Tenant $tenant): array
     {
@@ -121,7 +121,11 @@ class UpsellRuleController extends Controller
         return [
             'enabled' => (bool) config('upsell.enabled', true),
             'max_per_transaction' => $max,
-            'disabled_types' => $this->disabledTypes(),
+            // Dua daftar, bukan satu, karena hanya salah satunya punya tombol
+            // ([BL-099]). Menggabungkannya memaksa layar memilih antara
+            // menawarkan jalan yang tidak ada dan diam soal jalan yang ada.
+            'disabled_types' => $this->disabledTypes($tenant),
+            'unavailable_types' => $this->unavailableTypes(),
             'cart_level' => $this->asSlots($cartLevel, $max),
             'triggers' => array_slice($triggers, 0, $limit),
             'triggers_truncated' => max(0, count($triggers) - $limit),
@@ -172,18 +176,41 @@ class UpsellRuleController extends Controller
     }
 
     /**
-     * Jenis saran yang dimatikan lewat `config/upsell.php` — saklar darurat
-     * yang, kalau tidak disebutkan di layar, membuat owner mengira aturannya
-     * sendiri yang rusak.
+     * Jenis saran yang DIMATIKAN OWNER SENDIRI di Setelan ([BL-099]).
+     *
+     * Yang masih hidup secara global saja yang dihitung: jenis yang sudah
+     * dimatikan pemilik SaaS tidak akan menyala walau saklar tenant-nya
+     * hidup, dan menyebutnya di sini akan mengarahkan owner ke saklar yang
+     * tidak mengubah apa pun.
      *
      * @return list<string>
      */
-    private function disabledTypes(): array
+    private function disabledTypes(Tenant $tenant): array
     {
-        return array_values(array_keys(array_filter(
-            (array) config('upsell.types', []),
-            fn ($enabled) => ! $enabled,
-        )));
+        return array_values(array_filter(
+            array_keys(Tenant::upsellTypeColumns()),
+            fn (string $type) => config("upsell.types.{$type}", true)
+                && ! $tenant->upsellTypeEnabled($type),
+        ));
+    }
+
+    /**
+     * Jenis yang dimatikan untuk SELURUH toko lewat `config/upsell.php`.
+     *
+     * Disebutkan di layar tanpa menyebut berkasnya dan tanpa tautan ke mana
+     * pun. Owner tetap perlu tahu kenapa jenis itu tidak pernah muncul —
+     * tanpa keterangan ia akan menyimpulkan aturannya sendiri yang rusak —
+     * tapi menunjukkan jalan yang tidak bisa ia tempuh lebih buruk daripada
+     * diam, karena terbaca seperti izin ([BL-099]).
+     *
+     * @return list<string>
+     */
+    private function unavailableTypes(): array
+    {
+        return array_values(array_filter(
+            array_keys(Tenant::upsellTypeColumns()),
+            fn (string $type) => ! config("upsell.types.{$type}", true),
+        ));
     }
 
     public function store(StoreUpsellRuleRequest $request): RedirectResponse

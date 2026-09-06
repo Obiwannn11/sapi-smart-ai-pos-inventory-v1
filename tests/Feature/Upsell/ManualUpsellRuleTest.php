@@ -408,13 +408,32 @@ test('pratinjau menandai saran yang tergeser batas jumlah slot', function () {
         );
 });
 
-test('pratinjau menyebutkan jenis saran yang dimatikan lewat config', function () {
+test('pratinjau memisahkan jenis yang owner matikan dari yang mati untuk semua toko', function () {
+    // Dua daftar, karena hanya salah satunya punya tombol ([BL-099]).
     config(['upsell.types.pressed_stock' => false]);
+    $this->tenant->update(['upsell_upsize_enabled' => false]);
 
     get('/owner/upsell-rules')
         ->assertInertia(fn ($page) => $page
             ->loadDeferredProps('pratinjau', fn ($reload) => $reload
-                ->where('preview.disabled_types', ['pressed_stock'])
+                ->where('preview.unavailable_types', ['pressed_stock'])
+                ->where('preview.disabled_types', ['upsize'])
+            )
+        );
+});
+
+test('jenis yang mati global tidak ikut daftar yang bisa dinyalakan owner', function () {
+    // Saklar tenant-nya ikut mati, tapi menyebutnya sebagai "Anda yang
+    // mematikannya" akan mengarahkan owner ke saklar yang tidak mengubah
+    // apa pun — jenisnya tetap tidak akan muncul.
+    config(['upsell.types.upsize' => false]);
+    $this->tenant->update(['upsell_upsize_enabled' => false]);
+
+    get('/owner/upsell-rules')
+        ->assertInertia(fn ($page) => $page
+            ->loadDeferredProps('pratinjau', fn ($reload) => $reload
+                ->where('preview.disabled_types', [])
+                ->where('preview.unavailable_types', ['upsize'])
             )
         );
 });

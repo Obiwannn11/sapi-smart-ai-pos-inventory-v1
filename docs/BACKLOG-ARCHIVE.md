@@ -10,6 +10,24 @@
 
 ## Daftar Entri
 
+### [BL-099] Saklar Per-Jenis Saran Jual Hanya Ada di `config/upsell.php` — Owner Tak Punya Jalan ke Sana
+- **Ditemukan:** 2026-09-03 (saat merombak tampilan tiga halaman Saran Jual & Aturan)
+- **Sumber:** Keterangan di halaman Saran Jual yang berbunyi "Jenis yang tak pernah diterima bisa dimatikan di `config/upsell.php`" — kalimat yang menyuruh pemilik warung menyunting berkas PHP, dan dibuang saat perombakan
+- **Status:** **Selesai 2026-09-06** — empat kolom boolean per-tenant, dibaca sebagai lapisan di ATAS config. Lihat `[ADDITION] Saklar Per-Jenis Saran Jual Pindah dari Berkas PHP ke Layar Owner — dan Config Tetap Menang (BL-099)` di `docs/CHANGELOG.md`.
+- **Prioritas:** Medium — bukan cacat, tapi lubang di sebuah lingkaran yang sudah hampir tertutup: laporannya memisahkan angka per jenis SUPAYA jenis yang tak pernah laku bisa dimatikan, lalu tidak menyediakan tempat mematikannya
+- **Area Terdampak:**
+  - `config/upsell.php` — array `types` (`attach`, `pressed_stock`, `upsize`, `manual`); komentarnya sendiri menulis "jenis yang terbukti tidak pernah diterima dimatikan di sini, bukan ditebak"
+  - `app/Http/Controllers/Owner/UpsellRuleController.php` — `disabledTypes()`; sisi bacanya sudah ada dan sudah tampil di halaman Aturan Saran Jual sebagai peringatan kuning
+  - `resources/js/Pages/Owner/Reports/Upsell.vue` — tabel "Per Jenis Saran", tempat kesimpulannya diambil
+  - `resources/js/Pages/Owner/Settings/Operations.vue` + `app/Http/Controllers/Owner/Settings/SystemBehaviorController.php` — tempat saklarnya semestinya berada, bersama `upsell_mandatory` yang sudah per-tenant
+- **Deskripsi:**
+  Laporan Saran Jual memecah angkanya per jenis saran, dan alasan pemecahan itu ditulis terang-terangan di `config/upsell.php`: jenis yang tak pernah diterima sebaiknya dimatikan berdasarkan bukti, bukan tebakan. Kesimpulannya bisa diambil owner dari layar; tindakannya tidak — satu-satunya saklar ada di berkas PHP yang hanya bisa disentuh orang dengan akses server.
+  Sisi bacanya sudah lengkap: `disabledTypes()` mengirim jenis yang mati ke layar, dan halaman Aturan Saran Jual menampilkannya sebagai peringatan kuning. Yang belum ada hanya sisi tulisnya.
+- **Yang membuatnya lebih mahal daripada kelihatannya:** `upsell.types` adalah konfigurasi **global**, satu nilai untuk seluruh tenant, sedangkan saklar yang berguna bagi owner harus **per-tenant**. Setelan per-tenant di aplikasi ini berbentuk kolom nyata di tabel `tenants` (`kitchen_queue_enabled`, `upsell_mandatory`, `min_margin_percent`, …), bukan satu kolom JSON serba guna — jadi ongkosnya migrasi berisi empat kolom boolean baru (atau satu kolom JSON yang memutus pola yang sudah ada), bukan sekadar menambah tiga checkbox di layar Setelan.
+- **Usulan Perbaikan:** empat kolom boolean per-tenant dengan bawaan `true`, dibaca `UpsellIndexBuilder` sebagai lapisan di ATAS `config/upsell.php` — config tetap jadi saklar darurat global, tenant hanya boleh mematikan yang masih hidup secara global, tidak sebaliknya. Saklarnya diletakkan di Setelan → Cara Kerja Sistem bersama `upsell_mandatory`, dan diberi tautan dari tabel "Per Jenis Saran" di laporan supaya kesimpulan dan tindakannya bersebelahan.
+- **Yang JANGAN dilakukan:** menghidupkan lagi kalimat "dimatikan di `config/upsell.php`" di layar mana pun. Menyebut jalan yang tidak bisa ditempuh pembacanya lebih buruk daripada diam, karena ia terbaca seperti izin.
+- **Catatan penutup — larangan "jangan sebut `config/upsell.php` di layar" ternyata menuntut DUA daftar, bukan satu.** Sebelum ini `disabled_types` adalah satu daftar datar. Begitu ada saklar tenant, satu daftar memaksa layarnya memilih antara menawarkan tautan untuk jenis yang tidak punya tombol, atau diam soal jenis yang punya — keduanya melanggar entri ini. Jadi halaman Aturan kini menerima `disabled_types` (dimatikan owner, bertautan ke Setelan) dan `unavailable_types` (mati global, tanpa tautan dan tanpa menyebut berkasnya). Laporan justru menggabungkan keduanya, dengan sengaja: di sana pertanyaannya cuma "nol ini gagal atau mati", dan asal matinya tidak menentukan apa pun.
+
 ### [BL-101] Satu Barang Bisa Mengisi Dua Slot Kasir Sekaligus Lewat Dua Jenis Saran Berbeda
 - **Ditemukan:** 2026-09-04 (saat memeriksa pratinjau slot secara visual, dengan aturan uji buatan sendiri)
 - **Sumber:** Baris pratinjau "Espresso - Single" menampilkan **Espresso - Double dua kali** — sekali sebagai `Pilihan pemilik`, sekali sebagai `Naik ukuran` — dan keduanya menang slot
