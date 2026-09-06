@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-06 | ADDITION | AI Analysis | Nama Varian di Hasil AI Jadi Bisa Diklik — dan yang Barangnya Sudah Hilang Ditandai (BL-100 Tahap 2 & 3) |
 | 2026-09-06 | ADDITION | Promosi | Saklar Per-Jenis Saran Jual Pindah dari Berkas PHP ke Layar Owner — dan Config Tetap Menang (BL-099) |
 | 2026-09-06 | ADDITION | Produk | Katalog Produk Akhirnya Bisa Dicari — dan Kata Kuncinya Boleh Datang dari URL (BL-100 Tahap 1) |
 | 2026-09-06 | HOTFIX | Promosi | Satu Barang Berhenti Memakan Dua Slot Kasir Lewat Dua Jenis Saran Berbeda (BL-101) |
@@ -234,6 +235,36 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Nama Varian di Hasil AI Jadi Bisa Diklik — dan yang Barangnya Sudah Hilang Ditandai (BL-100 Tahap 2 & 3)
+- **Tanggal:** 2026-09-06
+- **Fase Terkait:** Di Luar Fase — `[BL-100]` tahap 2 dan 3, penutup entrinya. Tahap 1 (pencarian katalog) mendarat lebih dulu di hari yang sama.
+- **Dampak:** Migration (satu kolom JSON pada `ai_analyses`), `AiAnalysis`, `RunAiAnalysisJob`, `Services\Ai\VariantLinkResolver` (baru), `AiAnalysisController`, `ProductController`, dua halaman Vue.
+- **Breaking Change:** Tidak. Analisis lama tidak punya catatan nama dan namanya tetap tampil sebagai teks biasa. Prop baru: `variantLinks` pada halaman AI, `focus` dan `filters.variant` pada halaman Produk.
+- **Deskripsi:** Hasil analisis menyebut varian dengan namanya — "margin `Iced` 70%", "`Croissant Plain` sudah kedaluwarsa" — dan di situ jejaknya berhenti; untuk menindaklanjutinya owner membuka Produk di tab lain dan mencocokkan dengan mata. Sekarang nama yang dikenali jadi tautan ke barangnya, dan nama yang barangnya sudah tidak ada diberi tanda.
+- **Alasan mendesaknya naik sejak hari yang sama:** prompt yang baru (`[HOTFIX]` prompt AI, 2026-09-06) MEWAJIBKAN model menyebut nama varian persis seperti di data. Jumlah nama yang muncul di layar karena itu naik, sementara jalan dari nama ke barangnya masih nol.
+- **Pemetaannya di SERVER, bukan di teks model.** Menyuruh model menulis markdown link sendiri terdengar lebih murah dan ditolak dengan sengaja: ia akan mengarang tujuan untuk nama yang tidak ada, dan tautan mati yang terlihat sah lebih buruk daripada teks biasa.
+- **Tiga keluaran, bukan dua** — dan yang ketiga adalah keputusan pemilik 2026-09-06. `linked`: tepat satu varian bernama itu, jadi tautan. `missing`: tidak ada satu pun, **ditandai** garis putus-putus tanpa tautan, karena "produk ini sudah tidak ada di katalog" justru sering informasi yang dicari. Lebih dari satu varian bernama sama: **tidak masuk peta sama sekali** dan tetap teks biasa — memilih salah satu diam-diam berarti mengantar owner ke barang yang keliru, dan ia tidak punya cara tahu.
+- **Kolom yang lahir menyimpan NAMA, bukan id — dan itu keputusan yang menentukan kebenarannya.** `ai_analyses.context_variants` mencatat nama varian yang benar-benar ada di payload konteks analisis itu. Menyimpan id akan membekukan tautan pada katalog bulan lalu; pemetaan nama ke barang karena itu dikerjakan saat DIBACA, terhadap katalog hari ini.
+- **Yang dicatat saat dibuat adalah bahan bakunya, dan itu satu-satunya penjaga terhadap halusinasi.** Nama karangan model juga tidak punya varian aktif, jadi tanpa daftar ini ia akan ditandai "sudah dihapus" — mengubah karangan jadi pernyataan yang terlihat berwenang, tepat di tempat hasilnya paling salah. Renderer karena itu memakai PERPOTONGAN dua daftar: `variantLinks` menjawab "ada di katalog?", `context_variants` menjawab "benar-benar disodorkan ke model?".
+- **Analisis lama sengaja tidak ikut.** Konteksnya tidak pernah disimpan dan tidak bisa direkonstruksi, jadi tidak ada cara jujur mengetahui nama mana yang dulu sampai ke model. Namanya tetap teks biasa — lebih baik daripada menautkan berdasarkan tebakan.
+- **`?variant=` akhirnya dibuat, dan baru sekarang.** Tahap 1 sengaja menolak membuatnya karena belum ada yang melahirkannya; entri ini pemakainya. Ia dipisahkan dari `?q=` karena artinya berbeda — `?q=` kata kunci yang boleh cocok dengan banyak hal, `?variant=` menunjuk satu barang — dan memakai **id**, bukan nama, supaya tautannya tidak putus saat variannya diganti nama.
+- **Tautan yang menunjuk barang yang sudah dihapus MENGAKU.** `filters.variant` terisi sementara `focus` null; halaman Produk mengatakannya dan menampilkan katalog penuh. Katalog penuh yang muncul tanpa keterangan terbaca seperti tautannya rusak.
+- **Penyisipan tautannya menghindari dua jebakan yang merusak HTML atau menyesatkan pembacanya:** hanya potongan DI LUAR tag yang dicocokkan (varian bernama `strong` tidak merusak `<strong>` yang baru disisipkan), dan nama terpanjang dicocokkan lebih dulu (tanpa itu `Iced` menang atas `Iced Tea` dan menautkan separuh nama barang lain). Lookbehind sengaja tidak dipakai — peramban yang tidak mendukungnya akan gagal memuat halaman, dan itu jauh lebih buruk daripada satu tautan yang sesekali terlewat.
+- **Tautan di dalam `v-html` ditangkap di kartunya** lalu diteruskan ke `router.visit`. Tanpa itu tiap klik memuat ulang seluruh aplikasi, karena HTML-nya lahir dari string dan tidak ada tempat menempelkan `<Link>`.
+- **File Terdampak:**
+  - `database/migrations/2026_09_06_204149_add_context_variants_to_ai_analyses_table.php` — kolom JSON nullable
+  - `app/Models/AiAnalysis.php` — `context_variants` fillable + cast array
+  - `app/Jobs/RunAiAnalysisJob.php` — `contextVariantNames()`, dicatat bersama hasilnya
+  - `app/Services/Ai/VariantLinkResolver.php` — **baru**, tiga keluaran pemetaan
+  - `app/Http/Controllers/Owner/AiAnalysisController.php` — prop `variantLinks`
+  - `app/Http/Controllers/Owner/ProductController.php` — `?variant=` + `focusedVariant()`
+  - `resources/js/Pages/Owner/AiAnalysis/Index.vue` — penautan di renderer, keterangan nama yang hilang, `router.visit`
+  - `resources/js/Pages/Owner/Products/Index.vue` — panel fokus dan panel tautan basi
+  - `tests/Feature/Ai/VariantLinkTest.php` — **baru**, 12 test; `tests/Feature/Ai/RunAiAnalysisJobTest.php` — 3 test tambahan
+- **Catatan Migrasi:** `php artisan migrate`. Tidak ada backfill dan tidak mungkin ada — lihat "analisis lama" di atas.
 
 ---
 

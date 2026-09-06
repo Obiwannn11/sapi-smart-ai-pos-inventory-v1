@@ -68,6 +68,12 @@ class RunAiAnalysisJob implements ShouldQueue
                 'status' => AiAnalysis::STATUS_COMPLETED,
                 'result' => $result->text,
                 'tokens_used' => $result->tokensUsed,
+                // Dicatat bersama hasilnya, bukan diturunkan lagi saat dibaca
+                // ([BL-100] tahap 2): hanya di sini diketahui nama mana yang
+                // BENAR-BENAR disodorkan ke model. Konteksnya sendiri tidak
+                // disimpan, dan tanpa daftar ini nama karangan model tidak
+                // bisa dibedakan dari nama yang barangnya sudah dihapus.
+                'context_variants' => $this->contextVariantNames($data),
             ]);
 
             if ($usingFreeTier) {
@@ -81,6 +87,48 @@ class RunAiAnalysisJob implements ShouldQueue
         } finally {
             Auth::forgetGuards();
         }
+    }
+
+    /**
+     * Nama varian yang benar-benar muncul di payload konteks.
+     *
+     * Ketiga sumbernya adalah tempat nama varian betul-betul tertulis di
+     * konteks: dua rekap penjualan yang dikelompokkan `variant_name`, dan
+     * daftar varian di tiap peringatan stok. Bagian konteks yang lain — omzet,
+     * tren harian, proyeksi — tidak menyebut satu pun nama barang.
+     *
+     * Sengaja TIDAK menyisir seluruh array mencari kunci `variant_name`:
+     * penyisir seperti itu akan diam-diam ikut memungut nama dari bagian
+     * konteks yang kelak ditambahkan, termasuk yang tidak pernah sampai ke
+     * mata model.
+     *
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private function contextVariantNames(array $data): array
+    {
+        $names = [];
+
+        foreach ($data['top_products'] ?? [] as $row) {
+            $names[] = $row['variant_name'] ?? null;
+        }
+
+        foreach ($data['profit_by_item']['items'] ?? [] as $row) {
+            $names[] = $row['variant_name'] ?? null;
+        }
+
+        foreach ($data['inventory'] ?? [] as $badge) {
+            foreach ($badge['items'] ?? [] as $item) {
+                $names[] = $item['variant_name'] ?? null;
+            }
+        }
+
+        $names = array_filter(
+            array_map(fn ($name) => is_string($name) ? trim($name) : '', $names),
+            fn (string $name) => $name !== '',
+        );
+
+        return array_values(array_unique($names));
     }
 
     /**

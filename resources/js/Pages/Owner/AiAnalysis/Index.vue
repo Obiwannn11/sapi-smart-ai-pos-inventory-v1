@@ -20,6 +20,11 @@ const props = defineProps({
     // di sinilah ia dibelanjakan, jadi di sinilah sisanya perlu terbaca
     // SEBELUM tombolnya ditekan.
     aiQuota: { type: Object, default: () => ({}) },
+    // Peta nama varian ke barangnya ([BL-100] tahap 2). SATU peta untuk semua
+    // analisis — pemetaannya cuma bergantung pada katalog hari ini. Yang
+    // membedakan antar-analisis adalah nama mana yang BOLEH dipetakan, dan itu
+    // dibawa tiap barisnya sendiri lewat `context_variants`.
+    variantLinks: { type: Object, default: () => ({}) },
 });
 
 // Keadaan kuota dipakai dua kali di halaman ini — oleh meternya dan oleh tombol
@@ -183,7 +188,105 @@ const escapeHtml = (str) =>
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
-const renderMarkdown = (raw) => {
+/**
+ * Nama varian yang boleh disentuh renderer untuk analisis yang sedang dibuka
+ * ([BL-100] tahap 3), sudah dalam bentuk HTML-escaped.
+ *
+ * Perpotongan dua daftar, dan perpotongan itulah penjaganya: `variantLinks`
+ * menjawab "nama ini ada di katalog?", sedangkan `context_variants` menjawab
+ * "nama ini benar-benar disodorkan ke model?". Nama karangan model lolos
+ * pertanyaan pertama sebagai `missing` — ia memang tidak ada di katalog — dan
+ * tanpa pertanyaan kedua ia akan ditandai "sudah dihapus", yang mengubah
+ * halusinasi jadi pernyataan yang terlihat berwenang.
+ */
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const activeVariantLinks = computed(() => {
+    const eligible = displayed.value?.context_variants ?? [];
+    const map = {};
+
+    for (const name of eligible) {
+        const link = props.variantLinks?.[name];
+        if (link) {
+            // Dikunci pakai nama yang sudah di-escape: teksnya sudah lewat
+            // `escapeHtml` saat dicocokkan nanti, jadi varian bernama "A&W"
+            // muncul di sana sebagai "A&amp;W".
+            map[escapeHtml(name)] = { ...link, label: name };
+        }
+    }
+
+    return map;
+});
+
+const variantPattern = computed(() => {
+    const names = Object.keys(activeVariantLinks.value);
+
+    if (names.length === 0) {
+        return null;
+    }
+
+    // Terpanjang dulu. Tanpa itu "Iced" menang atas "Iced Tea" dan menautkan
+    // separuh nama barang yang lain ke barang yang salah.
+    const alternatives = names
+        .slice()
+        .sort((a, b) => b.length - a.length)
+        .map(escapeRegExp)
+        .join('|');
+
+    // Batas kiri ditangkap, batas kanan cuma dilihat: lookbehind dihindari
+    // supaya peramban lama tidak melempar SyntaxError saat memuat halaman —
+    // dan halaman yang gagal dimuat jauh lebih buruk daripada tautan yang
+    // sesekali terlewat karena dua nama berdempetan.
+    return new RegExp(`(^|[^\\p{L}\\p{N}])(${alternatives})(?![\\p{L}\\p{N}])`, 'gu');
+});
+
+/**
+ * Satu nama varian, sudah jadi tautan atau penanda ([BL-100] tahap 3).
+ *
+ * `linked` mendarat di `?variant=` dan bukan di `?q=`: pencarian boleh cocok
+ * dengan banyak barang, sedangkan yang dimaksud analisis cuma satu. Id, bukan
+ * nama, supaya tautannya tidak putus saat variannya diganti nama.
+ *
+ * `missing` DITANDAI dan sengaja tidak bertautan — keputusan pemilik
+ * 2026-09-06. Barangnya sudah tidak ada, jadi tidak ada tempat untuk dituju;
+ * yang perlu diketahui owner justru bahwa ia sudah tidak ada, karena tanpa itu
+ * ia mengira sarannya belum ditindaklanjuti.
+ */
+const decorateVariant = (name, link) => {
+    if (!link) {
+        return name;
+    }
+
+    if (link.state === 'linked') {
+        return `<a href="/owner/products?variant=${link.variant_id}" data-variant-link class="text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid">${name}</a>`;
+    }
+
+    return `<span class="text-gray-500 border-b border-dashed border-gray-400" title="Sudah tidak ada di katalog">${name}</span>`;
+};
+
+/**
+ * Sisipkan tautan ke dalam HTML yang sudah jadi, tanpa merusaknya.
+ *
+ * Hanya potongan DI LUAR tag yang disentuh. `<strong>` yang baru saja
+ * disisipkan di atas — dan `href` yang ditulis fungsi ini sendiri — tidak boleh
+ * ikut dicocokkan; satu varian yang kebetulan bernama sepotong markup akan
+ * melahirkan HTML yang rusak, dan `v-html` merendernya apa adanya.
+ */
+const linkVariants = (html, links, pattern) => {
+    if (!pattern) {
+        return html;
+    }
+
+    return html.replace(/(<[^>]*>)|([^<]+)/g, (match, tag, text) => {
+        if (tag !== undefined) {
+            return tag;
+        }
+
+        return text.replace(pattern, (full, before, name) => before + decorateVariant(name, links[name]));
+    });
+};
+
+const renderMarkdown = (raw, links = {}, pattern = null) => {
     if (!raw) {
         return '';
     }
@@ -207,9 +310,13 @@ const renderMarkdown = (raw) => {
     const orderedRe = /^\d+[.)]\s+(.*)$/;
 
     const inline = (text) =>
-        text
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/(^|[^*])\*(?!\s)(.+?)\*/g, '$1<em>$2</em>');
+        linkVariants(
+            text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/(^|[^*])\*(?!\s)(.+?)\*/g, '$1<em>$2</em>'),
+            links,
+            pattern,
+        );
 
     const closeItem = () => {
         const level = top();
@@ -315,7 +422,55 @@ const renderMarkdown = (raw) => {
     return html.join('');
 };
 
-const resultHtml = computed(() => renderMarkdown(displayed.value?.result ?? ''));
+const resultHtml = computed(() => renderMarkdown(
+    displayed.value?.result ?? '',
+    activeVariantLinks.value,
+    variantPattern.value,
+));
+
+/**
+ * Nama yang barangnya sudah tidak ada DAN benar-benar disebut hasil ini.
+ *
+ * Dipakai untuk satu baris keterangan di bawah kartu. Menerangkan garis
+ * putus-putus di tiap kemunculannya akan membuat teksnya penuh lencana; sekali
+ * di bawah sudah cukup, dan hanya kalau memang ada yang perlu diterangkan.
+ */
+const missingMentioned = computed(() => {
+    const pattern = variantPattern.value;
+
+    if (!pattern) {
+        return [];
+    }
+
+    const links = activeVariantLinks.value;
+    const found = new Set();
+
+    escapeHtml(displayed.value?.result ?? '').replace(pattern, (full, before, name) => {
+        if (links[name]?.state === 'missing') {
+            found.add(links[name].label);
+        }
+
+        return full;
+    });
+
+    return [...found];
+});
+
+/**
+ * Tautan di dalam `v-html` bukan `<Link>`, jadi tanpa ini tiap klik memuat
+ * ulang seluruh aplikasi. Ditangkap di kartunya, bukan dipasang per tautan —
+ * HTML-nya lahir dari string, tidak ada tempat menempelkan handler Vue.
+ */
+const openVariantLink = (event) => {
+    const anchor = event.target.closest?.('a[data-variant-link]');
+
+    if (!anchor) {
+        return;
+    }
+
+    event.preventDefault();
+    router.visit(anchor.getAttribute('href'));
+};
 
 // Kartu hasil berdiri DI ATAS tabel riwayat, jadi menekan "Lihat" pada baris
 // yang jauh ke bawah dulu terasa seperti tombol yang tidak berbuat apa-apa:
@@ -519,8 +674,15 @@ const selectAnalysis = (analysis) => {
 
                 <article
                     class="ai-result max-w-none text-sm text-gray-700 leading-relaxed"
+                    @click="openVariantLink"
                     v-html="resultHtml"
                 ></article>
+
+                <p v-if="missingMentioned.length" class="text-xs text-gray-500 leading-relaxed">
+                    Nama bergaris putus-putus sudah tidak ada di katalog:
+                    <strong>{{ missingMentioned.join(', ') }}</strong>.
+                    Angkanya tetap benar — barangnya memang pernah terjual di rentang ini.
+                </p>
             </div>
         </div>
 

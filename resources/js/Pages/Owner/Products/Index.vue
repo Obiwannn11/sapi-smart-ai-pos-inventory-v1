@@ -17,7 +17,12 @@ const props = defineProps({
     // Keadaan awal penyaring, dibaca dari query string oleh controller
     // ([BL-100] tahap 1). Bawaannya sengaja objek utuh: halaman ini juga
     // dirender oleh tautan lama yang belum membawa `filters` sama sekali.
-    filters: { type: Object, default: () => ({ q: '' }) },
+    filters: { type: Object, default: () => ({ q: '', variant: null }) },
+    // Barang yang ditunjuk `?variant=`, sudah dipetakan server ([BL-100]
+    // tahap 2). Null berarti salah satu dari dua hal, dan layar membedakannya
+    // lewat `filters.variant`: tidak ada yang diminta, atau yang diminta sudah
+    // tidak ada.
+    focus: { type: Object, default: null },
 });
 
 // --- Filters ---
@@ -61,6 +66,15 @@ const matchesSearch = (product, needle) => {
 const filteredProducts = computed(() => {
     let items = props.products ?? [];
     const needle = search.value.trim().toLowerCase();
+
+    // Penyaring paling sempit lebih dulu: kalau sebuah tautan menunjuk satu
+    // barang, itulah yang diminta, dan kata kunci atau kategori yang kebetulan
+    // tersimpan di layar tidak boleh ikut membuangnya.
+    if (props.focus) {
+        items = items.filter(p => p.id === props.focus.product_id);
+
+        return items;
+    }
 
     if (needle !== '') {
         items = items.filter(p => matchesSearch(p, needle));
@@ -144,6 +158,25 @@ const formatCurrency = (val) => {
                 </svg>
                 Tambah Produk
             </Link>
+        </div>
+
+        <!-- Datang dari sebuah tautan ([BL-100] tahap 3). Dua keadaan, dan
+             bedanya penting: barangnya ketemu, atau tautannya menunjuk barang
+             yang sudah tidak ada. Yang kedua harus dikatakan — katalog penuh
+             yang muncul diam-diam terbaca seperti tautannya tidak berfungsi. -->
+        <div
+            v-if="focus"
+            class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-gray-700"
+        >
+            <span>Menampilkan <strong>{{ focus.label }}</strong>, dari hasil analisis AI.</span>
+            <Link href="/owner/products" class="text-primary hover:underline font-medium">Tampilkan semua produk</Link>
+        </div>
+
+        <div
+            v-else-if="filters.variant"
+            class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+            <span>Barang yang dituju tautan ini <strong>sudah tidak ada di katalog</strong>. Berikut seluruh produk yang ada.</span>
         </div>
 
         <!-- Filters -->

@@ -4,6 +4,8 @@ use App\Jobs\RunAiAnalysisJob;
 use App\Models\AiAnalysis;
 use App\Models\AiUsage;
 use App\Models\Plan;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
@@ -265,4 +267,51 @@ test('kalimat pajak hanya ikut untuk tenant yang memungut', function () {
     runAnalysis();
     expect(sentPrompt())->toContain('PAJAK:')
         ->toContain('jangan dari `revenue`');
+});
+
+// --- Nama varian yang disodorkan ke model ([BL-100] tahap 2) ---
+
+test('analisis yang selesai mencatat nama varian dari konteksnya', function () {
+    // Konteksnya sendiri tidak disimpan, jadi daftar ini satu-satunya bukti
+    // nama mana yang BENAR-BENAR sampai ke model. Tanpanya, nama karangan
+    // model tak bisa dibedakan dari nama yang barangnya sudah dihapus.
+    $product = Product::factory()->create(['tenant_id' => $this->tenant->id, 'name' => 'Cafe Latte']);
+    ProductVariant::factory()->create([
+        'product_id' => $product->id,
+        'name' => 'Iced',
+        // Masuk peringatan stok kritis, jadi namanya ikut ke konteks.
+        'stock' => 3,
+    ]);
+
+    fakeGeminiSuccess();
+
+    expect(runAnalysis()->context_variants)->toContain('Iced');
+});
+
+test('nama yang muncul di dua tempat konteks hanya dicatat sekali', function () {
+    foreach (['Cafe Latte', 'Matcha Latte'] as $name) {
+        $product = Product::factory()->create(['tenant_id' => $this->tenant->id, 'name' => $name]);
+        ProductVariant::factory()->create([
+            'product_id' => $product->id,
+            'name' => 'Iced',
+            'stock' => 3,
+        ]);
+    }
+
+    fakeGeminiSuccess();
+
+    $names = runAnalysis()->context_variants;
+
+    expect(array_count_values($names)['Iced'])->toBe(1);
+});
+
+test('analisis yang gagal tidak meninggalkan catatan nama', function () {
+    // Tidak ada hasil, jadi tidak ada nama yang perlu ditelusuri. Mencatatnya
+    // hanya melahirkan peta untuk teks yang tidak pernah ada.
+    Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 500)]);
+
+    $analysis = runAnalysis();
+
+    expect($analysis->status)->toBe(AiAnalysis::STATUS_FAILED)
+        ->and($analysis->context_variants)->toBeNull();
 });

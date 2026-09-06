@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Jobs\RunAiAnalysisJob;
 use App\Models\AiAnalysis;
 use App\Services\Ai\AiQuota;
+use App\Services\Ai\VariantLinkResolver;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,12 +15,18 @@ use Inertia\Response;
 
 class AiAnalysisController extends Controller
 {
-    public function __construct(protected AiQuota $quota) {}
+    public function __construct(
+        protected AiQuota $quota,
+        protected VariantLinkResolver $variantLinks,
+    ) {}
 
     public function index(): Response
     {
+        $analyses = AiAnalysis::latest()->take(20)->get();
+
         return Inertia::render('Owner/AiAnalysis/Index', [
-            'analyses' => AiAnalysis::latest()->take(20)->get(),
+            'analyses' => $analyses,
+            'variantLinks' => $this->variantLinksFor($analyses),
             'aiQuota' => $this->quotaSnapshot(),
         ]);
     }
@@ -60,14 +68,47 @@ class AiAnalysisController extends Controller
 
     public function show(AiAnalysis $aiAnalysis): Response
     {
+        $analyses = AiAnalysis::latest()->take(20)->get();
+
         return Inertia::render('Owner/AiAnalysis/Index', [
-            'analyses' => AiAnalysis::latest()->take(20)->get(),
+            'analyses' => $analyses,
             'active' => $aiAnalysis,
+            // Analisis yang dibuka lewat tautannya belum tentu ada di 20
+            // terbaru, jadi namanya ikut disodorkan — kalau tidak, satu-satunya
+            // hasil yang sedang dibaca justru jadi satu-satunya yang namanya
+            // tidak bisa ditelusuri.
+            'variantLinks' => $this->variantLinksFor($analyses->push($aiAnalysis)),
             // Ikut dikirim di sini juga: `show()` me-render komponen yang SAMA,
             // jadi melewatkannya membuat angkanya hilang begitu satu analisis
             // dibuka lewat tautannya (`[BL-062]`(a)).
             'aiQuota' => $this->quotaSnapshot(),
         ]);
+    }
+
+    /**
+     * Peta nama varian ke barangnya, untuk seluruh analisis yang dikirim
+     * ([BL-100] tahap 2).
+     *
+     * SATU peta untuk semua analisis, bukan satu peta per analisis: pemetaannya
+     * hanya bergantung pada katalog hari ini, bukan pada analisis mana yang
+     * sedang dibuka. Yang membedakan antar-analisis adalah nama mana yang BOLEH
+     * dipetakan, dan itu sudah dibawa tiap barisnya sendiri lewat
+     * `context_variants`.
+     *
+     * Peta ini karena itu tidak boleh dipakai tanpa menyaringnya dulu terhadap
+     * `context_variants` analisis yang sedang ditampilkan — di situlah penjaga
+     * terhadap nama karangan model berada.
+     *
+     * @param  Collection<int, AiAnalysis>  $analyses
+     * @return array<string, array{state: string, variant_id?: int, product_id?: int}>
+     */
+    protected function variantLinksFor(Collection $analyses): array
+    {
+        $names = $analyses
+            ->flatMap(fn (AiAnalysis $analysis) => $analysis->context_variants ?? [])
+            ->all();
+
+        return $this->variantLinks->resolve(auth()->user()->tenant, $names);
     }
 
     /**
