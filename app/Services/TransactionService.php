@@ -165,6 +165,7 @@ class TransactionService
             $taxColumns = $this->tax->columnsFor(
                 $baseAmount,
                 $this->tax->contextFor($user->tenant),
+                $this->tax->serviceContextFor($user->tenant),
             );
 
             $transaction->update($taxColumns);
@@ -280,6 +281,7 @@ class TransactionService
             $transaction->update($this->tax->columnsFor(
                 $baseAmount,
                 $this->tax->contextFor($user->tenant),
+                $this->tax->serviceContextFor($user->tenant),
             ));
 
             $this->upsellEventRecorder->record(
@@ -920,6 +922,7 @@ class TransactionService
             $taxColumns = $this->tax->columnsFor(
                 $baseAmount,
                 $this->tax->contextFor($cashier->tenant),
+                $this->tax->serviceContextFor($cashier->tenant),
             );
 
             $totalAmount = $taxColumns['total_amount'];

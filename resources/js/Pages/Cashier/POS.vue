@@ -33,6 +33,8 @@ const props = defineProps({
     // Konteks pajak toko ([BL-065]). Eager, bukan ditunda: keranjang harus
     // bisa menunjukkan totalnya sejak barang pertama masuk.
     tax: { type: Object, default: null },
+    // Konteks biaya layanan ([BL-097]) — jalur yang sama persis.
+    serviceCharge: { type: Object, default: null },
 });
 
 const { show: showFlash } = useFlash();
@@ -73,6 +75,13 @@ const catalogUpsell = computed(() =>
 // server, dan penjualannya mendarat sebagai needs_review ([BL-065]).
 const taxContext = computed(() =>
     usingCachedCatalog.value ? (snapshot.value.tax ?? null) : (props.tax ?? null)
+);
+
+// Biaya layanan menumpang jalur yang sama, dan HARUS ikut ([BL-097]):
+// snapshot yang membawa pajak tanpa biaya layanan menghitung total yang
+// meleset persis sebesar biaya layanannya.
+const serviceChargeContext = computed(() =>
+    usingCachedCatalog.value ? (snapshot.value.serviceCharge ?? null) : (props.serviceCharge ?? null)
 );
 
 /**
@@ -178,6 +187,7 @@ watch(() => props.products, (products) => {
         paymentMethods: props.paymentMethods,
         upsell: props.upsell,
         tax: props.tax,
+        serviceCharge: props.serviceCharge,
     });
 }, { immediate: true });
 
@@ -354,7 +364,11 @@ const cartBase = computed(() => {
 // ([BL-065]). Menuliskannya ulang di sini berarti salinan ketiga, dan salinan
 // yang menyimpang tidak muncul sebagai galat — ia muncul sebagai penjualan
 // offline yang mendarat needs_review satu per satu.
-const cartTotals = computed(() => applyTax(cartBase.value, taxContext.value ?? {}));
+const cartTotals = computed(() => applyTax(
+    cartBase.value,
+    taxContext.value ?? {},
+    serviceChargeContext.value ?? {},
+));
 
 // Yang dibayar pelanggan. Nama lamanya dipertahankan karena inilah arti yang
 // dipakai seluruh pemanggilnya — tombol bayar, modal pembayaran, dan payload
@@ -1263,14 +1277,21 @@ onUnmounted(stopResizeCart);
                         Diskon yang sudah disetujui pemilik berlaku otomatis. Harga di bawah batas untung hanya bisa ditetapkan pemilik.
                     </p>
 
-                    <!-- Pembagian pajak hanya muncul kalau ada pajaknya; toko
-                         yang tidak memungut melihat baris Total seperti dulu. -->
-                    <template v-if="cartTotals.tax > 0">
+                    <!-- Pembagian hanya muncul kalau ada yang dipungut; toko
+                         yang tidak memungut apa pun melihat baris Total
+                         seperti dulu. Biaya layanan ikut membukanya
+                         ([BL-097]) — toko yang memungutnya tanpa pajak tetap
+                         harus menunjukkan subtotalnya. -->
+                    <template v-if="cartTotals.tax > 0 || cartTotals.serviceCharge > 0">
                         <div class="flex items-center justify-between text-xs text-gray-500">
                             <span>Subtotal</span>
                             <span>{{ formatCurrency(cartTotals.subtotal) }}</span>
                         </div>
-                        <div class="flex items-center justify-between text-xs text-gray-500">
+                        <div v-if="cartTotals.serviceCharge > 0" class="flex items-center justify-between text-xs text-gray-500">
+                            <span>{{ (serviceChargeContext?.label || 'Biaya Layanan') }} {{ Number(serviceChargeContext?.rate || 0) }}%</span>
+                            <span>{{ formatCurrency(cartTotals.serviceCharge) }}</span>
+                        </div>
+                        <div v-if="cartTotals.tax > 0" class="flex items-center justify-between text-xs text-gray-500">
                             <span>{{ (taxContext?.label || 'Pajak') }} {{ Number(taxContext?.rate || 0) }}%</span>
                             <span>{{ formatCurrency(cartTotals.tax) }}</span>
                         </div>

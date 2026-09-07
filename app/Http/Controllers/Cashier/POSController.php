@@ -80,6 +80,16 @@ class POSController extends Controller
                 'rate' => (float) $user->tenant->tax_rate,
                 'label' => $user->tenant->tax_label,
             ],
+            // Biaya layanan ([BL-097]), dan alasannya sama persis dengan
+            // pajak di atas: ia ikut menentukan total yang dihitung kasir
+            // offline. Kalau hanya salah satu yang dikirim, penjualan
+            // offline meleset sebesar biaya layanannya dan mendarat
+            // sebagai needs_review satu per satu.
+            'serviceCharge' => [
+                'enabled' => $user->tenant->service_charge_enabled,
+                'rate' => (float) $user->tenant->service_charge_rate,
+                'label' => $user->tenant->service_charge_label,
+            ],
 
             // --- Katalog dan indeks upsell: ditunda ([BL-037]) ---
             // Keduanya kueri terberat di halaman ini (produk membawa varian,

@@ -9,7 +9,7 @@
  */
 
 import { BUSINESS_TZ } from '@/support/date';
-import { receiptTotals, taxLine } from '@/support/tax';
+import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 
 // ── Low-level command bytes ──────────────────────────────────────────────
 const ESC = 0x1b;
@@ -183,8 +183,13 @@ export function buildReceipt(transaction, options = {}) {
     // datang, dan di sini ia sudah terlanjur tercetak.
     const totals = receiptTotals(transaction);
     const tax = taxLine(totals);
+    const serviceCharge = serviceChargeLine(totals);
 
     b.line(twoCols('Subtotal', formatCurrency(totals.subtotal), width));
+    // Sebelum pajak, karena pajak dipungut ATAS jumlah keduanya ([BL-097]).
+    if (serviceCharge) {
+        b.line(twoCols(serviceCharge.text, formatCurrency(serviceCharge.amount), width));
+    }
     if (tax && tax.inline) {
         b.line(twoCols(tax.text, formatCurrency(tax.amount), width));
     }

@@ -333,6 +333,14 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::patch('settings/operations/tax', [\App\Http\Controllers\Owner\Settings\TaxSettingsController::class, 'update'])
             ->name('settings.operations.tax.update');
 
+        // Biaya layanan menumpang halaman yang sama dan mengikuti alasan
+        // pemisahan yang sama ([BL-097]) — walau di baliknya TIDAK ada
+        // satu field pun yang terkunci. Endpointnya sendiri supaya
+        // menyimpan tarif yang tercetak di struk tidak pernah satu
+        // permintaan dengan sakelar fitur.
+        Route::patch('settings/operations/service-charge', [\App\Http\Controllers\Owner\Settings\ServiceChargeSettingsController::class, 'update'])
+            ->name('settings.operations.service-charge.update');
+
         Route::get('settings/integrations', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'index'])
             ->name('settings.integrations.index');
         Route::patch('settings/integrations', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'update'])

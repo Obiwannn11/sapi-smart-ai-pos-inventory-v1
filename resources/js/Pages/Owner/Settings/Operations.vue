@@ -16,6 +16,7 @@ const props = defineProps({
     featureWarnings: Object,
     tax: { type: Object, default: () => ({}) },
     taxModes: { type: Object, default: () => ({}) },
+    serviceCharge: { type: Object, default: () => ({}) },
     // Jenis saran yang dimatikan untuk SELURUH toko ([BL-099]). Saklarnya
     // tetap tampil, tapi terkunci — menyembunyikannya membuat owner mengira
     // jenis itu tidak pernah ada.
@@ -189,6 +190,58 @@ const rupiah = (value) => Number(value || 0).toLocaleString('id-ID');
 
 const submitTax = () => {
     taxForm.patch('/owner/settings/operations/tax', { preserveScroll: true });
+};
+
+// Biaya layanan ([BL-097]) — form dan endpoint tersendiri lagi.
+//
+// Tidak ada padanan `taxLocked` di sini, dan itu bukan yang terlewat: biaya
+// layanan sengaja tidak pernah dikunci. Ia pilihan komersial pemilik toko,
+// bukan kewajiban hukum, jadi boleh dinyalakan dan dimatikan kapan pun. Yang
+// menjaga angka lama tetap benar adalah pembekuan per transaksi.
+const serviceChargeForm = useForm({
+    service_charge_enabled: props.serviceCharge.service_charge_enabled ?? false,
+    service_charge_rate:    props.serviceCharge.service_charge_rate ?? 0,
+    service_charge_label:   props.serviceCharge.service_charge_label ?? '',
+});
+
+// Contohnya menunjukkan hal yang berbeda dari contoh pajak di atas: bukan
+// siapa yang menanggung, melainkan bahwa pajak dipungut ATAS jumlah harga
+// plus biaya layanan. Itu satu-satunya bagian yang tidak bisa ditebak owner
+// sendiri, dan satu-satunya yang berubah kalau urutannya salah.
+const serviceChargeExample = computed(() => {
+    const serviceRate = Number(serviceChargeForm.service_charge_rate) || 0;
+    const price = 10000;
+
+    if (serviceRate <= 0) {
+        return null;
+    }
+
+    const service = Math.round(price * serviceRate / 100);
+    const taxRate = taxForm.tax_enabled ? (Number(taxForm.tax_rate) || 0) : 0;
+
+    if (taxRate <= 0) {
+        return { service, tax: 0, paid: price + service, taxed: false };
+    }
+
+    if (taxForm.tax_mode === 'inclusive') {
+        const paid = price + service;
+
+        return { service, tax: Math.round(paid * taxRate / (100 + taxRate)), paid, taxed: true };
+    }
+
+    const tax = Math.round((price + service) * taxRate / 100);
+
+    return { service, tax, paid: price + service + tax, taxed: true };
+});
+
+const serviceChargeLabelOptions = [
+    { value: 'Biaya Layanan', label: 'Biaya Layanan' },
+    { value: 'Service Charge', label: 'Service Charge' },
+    { value: 'Biaya Pelayanan', label: 'Biaya Pelayanan' },
+];
+
+const submitServiceCharge = () => {
+    serviceChargeForm.patch('/owner/settings/operations/service-charge', { preserveScroll: true });
 };
 </script>
 
@@ -579,6 +632,108 @@ const submitTax = () => {
                 <div class="flex justify-end pt-2">
                     <Button type="submit" size="lg" :loading="taxForm.processing">
                         {{ taxForm.processing ? 'Menyimpan...' : 'Simpan Pajak' }}
+                    </Button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Biaya layanan ([BL-097]) - kartu & endpoint tersendiri.
+             Tidak ada blok penguncian di sini; lihat komentar formnya. -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+            <form @submit.prevent="submitServiceCharge" class="space-y-5">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">Biaya Layanan</h2>
+                    <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                        Bawaannya <strong>mati</strong>. Berbeda dari pajak, ini <strong>pilihan Anda sendiri</strong> —
+                        tidak ada aturan yang mewajibkannya, dan Anda bebas menyalakan atau mematikannya kapan saja.
+                        Perubahannya berlaku untuk penjualan berikutnya; struk yang sudah tercetak tidak ikut berubah.
+                    </p>
+
+                    <Checkbox
+                        v-model="serviceChargeForm.service_charge_enabled"
+                        variant="card"
+                        align="start"
+                    >
+                        <span class="text-sm">
+                            <span class="font-medium text-gray-900 block">Pungut biaya layanan pada setiap penjualan</span>
+                            <span class="text-xs text-gray-500">
+                                Struk menampilkannya sebagai baris tersendiri di atas pajak, dan laporan
+                                memisahkannya dari omzet toko.
+                            </span>
+                        </span>
+                    </Checkbox>
+
+                    <p v-if="serviceChargeForm.errors.service_charge_enabled" class="mt-1.5 text-xs text-destructive">
+                        {{ serviceChargeForm.errors.service_charge_enabled }}
+                    </p>
+                </div>
+
+                <div v-if="serviceChargeForm.service_charge_enabled" class="space-y-4 pt-1">
+                    <!-- Namanya: ditanyakan, tidak pernah ditebak -->
+                    <div>
+                        <p class="text-sm font-medium text-gray-700 mb-1">Nama di Struk</p>
+                        <p class="text-xs text-gray-500 mb-2">
+                            Kata ini yang <strong>tercetak di struk pelanggan</strong>.
+                        </p>
+                        <SelectDropdown
+                            v-model="serviceChargeForm.service_charge_label"
+                            :options="serviceChargeLabelOptions"
+                            placeholder="— pilih —"
+                            :error="serviceChargeForm.errors.service_charge_label"
+                        />
+                    </div>
+
+                    <div>
+                        <p class="text-sm font-medium text-gray-700 mb-1">Tarif</p>
+                        <div class="flex items-center gap-3">
+                            <div class="relative w-32">
+                                <input
+                                    v-model.number="serviceChargeForm.service_charge_rate"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.5"
+                                    class="w-full pr-8 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                />
+                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
+                            </div>
+                            <p class="text-xs text-gray-500">
+                                Umumnya <strong>5%</strong>. Tidak ada batas yang ditetapkan aturan — ini keputusan usaha Anda.
+                            </p>
+                        </div>
+                        <p v-if="serviceChargeForm.errors.service_charge_rate" class="mt-1.5 text-xs text-destructive">
+                            {{ serviceChargeForm.errors.service_charge_rate }}
+                        </p>
+                    </div>
+
+                    <!-- Akibatnya, dalam angka. Yang ditunjukkan terutama:
+                         pajak dipungut ATAS harga + biaya layanan. -->
+                    <div v-if="serviceChargeExample" class="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 text-xs text-gray-600 leading-relaxed">
+                        Barang berharga <strong>Rp {{ rupiah(10000) }}</strong>:
+                        biaya layanan <strong>Rp {{ rupiah(serviceChargeExample.service) }}</strong>,
+                        <template v-if="serviceChargeExample.taxed">
+                            pajak <strong>Rp {{ rupiah(serviceChargeExample.tax) }}</strong>
+                            (dihitung dari harga <em>ditambah</em> biaya layanan, sesuai ketentuan pajak daerah),
+                        </template>
+                        pelanggan membayar <strong>Rp {{ rupiah(serviceChargeExample.paid) }}</strong>.
+                    </div>
+
+                    <!-- Yang tidak boleh disembunyikan dari pemilik toko -->
+                    <div class="flex gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-900">
+                        <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>
+                            Biaya layanan <strong>tidak dihitung sebagai omzet toko</strong> di laporan laba —
+                            di banyak usaha ia dikumpulkan untuk dibagikan ke staf. Uangnya tetap masuk laci
+                            dan tetap terhitung di total penjualan; yang memisahkannya hanya perhitungan margin.
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex justify-end pt-2">
+                    <Button type="submit" size="lg" :loading="serviceChargeForm.processing">
+                        {{ serviceChargeForm.processing ? 'Menyimpan...' : 'Simpan Biaya Layanan' }}
                     </Button>
                 </div>
             </form>

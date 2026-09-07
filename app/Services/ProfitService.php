@@ -35,6 +35,16 @@ use Illuminate\Support\Collection;
  *     dinyalakan — dan justru itu jebakannya. Marginnya tetap terbaca seperti
  *     sebelumnya padahal margin sebenarnya sudah turun.
  *
+ * **Biaya layanan dan margin ([BL-097] jawaban 3).** Bawaannya: biaya
+ * layanan BUKAN pendapatan toko — di banyak tempat ia dikumpulkan lalu
+ * dibagikan ke staf. Menganggapnya pendapatan mengulang persis cacat yang
+ * baru diperbaiki di atas, dan cacat itu tidak terlihat dari angkanya
+ * sendiri. Karena `service_charge_amount` kolomnya sendiri dan tidak pernah
+ * dilebur ke `subtotal_amount`, `net_revenue` mengecualikannya DENGAN
+ * SENDIRINYA — tidak ada satu kueri pun yang perlu diubah untuk itu.
+ * Membalik jawabannya nanti cukup dengan menjumlahkannya kembali di sini,
+ * tanpa migrasi dan tanpa menyentuh satu baris transaksi lama.
+ *
  * Untuk tarif 11% pada toko bermargin nyata 30%, memakai `total_amount`
  * melaporkan 36,9% — meleset hampir tujuh poin, sama besar di kedua mode.
  * Angka ini tidak pernah dilihat manusia yang bisa curiga: pembacanya konteks
@@ -54,7 +64,7 @@ class ProfitService
      * yang memungut pajak, dan itu memang benar: selisihnya bukan keuntungan
      * yang hilang, melainkan pajak yang tidak pernah jadi milik toko.
      *
-     * @return array{revenue: float, net_revenue: float, tax: float, cogs: float, gross_profit: float, margin_pct: float}
+     * @return array{revenue: float, net_revenue: float, tax: float, service_charge: float, cogs: float, gross_profit: float, margin_pct: float}
      */
     public function overallProfit(Carbon $from, Carbon $to): array
     {
@@ -63,6 +73,7 @@ class ProfitService
             ->selectRaw('COALESCE(SUM(total_amount), 0) as paid')
             ->selectRaw('COALESCE(SUM(subtotal_amount), 0) as net_revenue')
             ->selectRaw('COALESCE(SUM(tax_amount), 0) as tax')
+            ->selectRaw('COALESCE(SUM(service_charge_amount), 0) as service_charge')
             ->first();
 
         $netRevenue = (float) $totals->net_revenue;
@@ -75,6 +86,9 @@ class ProfitService
             'revenue' => (float) $totals->paid,
             'net_revenue' => $netRevenue,
             'tax' => (float) $totals->tax,
+            // Angka keempat, dibawa apa adanya alih-alih menyerahkan
+            // pengurangannya ke model ([BL-097]).
+            'service_charge' => (float) $totals->service_charge,
             'cogs' => $cogs,
             'gross_profit' => $grossProfit,
             'margin_pct' => $marginPct,

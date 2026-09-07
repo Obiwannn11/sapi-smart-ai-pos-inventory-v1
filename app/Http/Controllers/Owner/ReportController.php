@@ -53,9 +53,11 @@ class ReportController extends Controller
         $taxTotals = (clone $completed)
             ->selectRaw('COALESCE(SUM(subtotal_amount), 0) as net_revenue')
             ->selectRaw('COALESCE(SUM(tax_amount), 0) as tax_collected')
+            ->selectRaw('COALESCE(SUM(service_charge_amount), 0) as service_charge_collected')
             ->first();
 
         $taxCollected = (float) $taxTotals->tax_collected;
+        $serviceChargeCollected = (float) $taxTotals->service_charge_collected;
 
         $tenantId = auth()->user()->tenant_id;
 
@@ -70,10 +72,15 @@ class ReportController extends Controller
                 // dua angka ini yang ditambahkan di sebelahnya.
                 'net_revenue' => (float) $taxTotals->net_revenue,
                 'tax_collected' => $taxCollected,
+                // Angka keempat ([BL-097]). `net_revenue` sudah
+                // mengecualikannya tanpa perubahan kueri apa pun, karena
+                // ia dibaca dari `subtotal_amount`.
+                'service_charge_collected' => $serviceChargeCollected,
                 'total_transactions' => $totalTransactions,
                 'voided_count' => $voidedCount,
             ],
             'tax' => $this->taxContext(clone $completed, $taxCollected),
+            'serviceCharge' => $this->serviceChargeContext(clone $completed, $serviceChargeCollected),
 
             // --- Bagian yang ditunda ([BL-037]) ---
             // Daftar transaksi lengkap (dengan item dan pembayaran tiap baris)
@@ -203,6 +210,7 @@ class ReportController extends Controller
             ],
             'summary' => $summary,
             'tax' => $this->taxContext($this->completedIn($month), $summary['tax_collected']),
+            'serviceCharge' => $this->serviceChargeContext($this->completedIn($month), $summary['service_charge_collected']),
             'comparison' => [
                 'month' => $previous->format('Y-m'),
                 'label' => $this->monthLabel($previous),
@@ -245,8 +253,9 @@ class ReportController extends Controller
         $topProducts = $this->topProductsFor($month);
         $label = $this->monthLabel($month);
         $tax = $this->taxContext($this->completedIn($month), $summary['tax_collected']);
+        $service = $this->serviceChargeContext($this->completedIn($month), $summary['service_charge_collected']);
 
-        return response()->streamDownload(function () use ($label, $summary, $dailySeries, $paymentSummary, $topProducts, $tax) {
+        return response()->streamDownload(function () use ($label, $summary, $dailySeries, $paymentSummary, $topProducts, $tax, $service) {
             $out = fopen('php://output', 'w');
 
             // BOM UTF-8: tanpa ini Excel membaca CSV-nya sebagai ANSI dan nama
@@ -259,8 +268,20 @@ class ReportController extends Controller
             // Kolom pajak hanya muncul untuk tenant yang memang memungut.
             // Kolom nol di setiap baris bukan kejujuran, melainkan derau yang
             // harus dibaca ulang tiap bulan oleh mayoritas yang tidak memungut.
+            if ($tax['active'] || $service['active']) {
+                // Judulnya menyebut apa saja yang sudah dikeluarkan dari
+                // angka ini. Membiarkannya 'Omzet sebelum pajak' saat biaya
+                // layanan ikut dikeluarkan berarti menamai angka dengan
+                // separuh isinya ([BL-097]).
+                fputcsv($out, [
+                    $service['active'] ? 'Omzet toko (sebelum biaya layanan dan pajak)' : 'Omzet sebelum pajak',
+                    $summary['net_revenue'],
+                ]);
+            }
+            if ($service['active']) {
+                fputcsv($out, [$service['label'].' terpungut', $summary['service_charge_collected']]);
+            }
             if ($tax['active']) {
-                fputcsv($out, ['Omzet sebelum pajak', $summary['net_revenue']]);
                 fputcsv($out, [$tax['label'].' terpungut', $summary['tax_collected']]);
             }
             fputcsv($out, ['Transaksi selesai', $summary['total_transactions']]);
@@ -271,17 +292,35 @@ class ReportController extends Controller
             fputcsv($out, []);
 
             fputcsv($out, ['RINCIAN HARIAN']);
-            fputcsv($out, $tax['active']
-                ? ['Tanggal', 'Transaksi', 'Omzet', $tax['label'], 'Void']
-                : ['Tanggal', 'Transaksi', 'Omzet', 'Void']);
-            foreach ($dailySeries as $day) {
-                fputcsv($out, $tax['active']
-                    ? [$day['date'], $day['count'], $day['revenue'], $day['tax_collected'], $day['voided']]
-                    : [$day['date'], $day['count'], $day['revenue'], $day['voided']]);
+            // Dua kolom opsional yang saling bebas; ternary bersarang di
+            // tiga tempat sekaligus akan menyimpang satu sama lain begitu
+            // kolom ketiga lahir. Urutannya mengikuti aliran uang:
+            // omzet -> biaya layanan -> pajak.
+            $optional = [];
+            if ($service['active']) {
+                $optional[] = ['label' => $service['label'], 'key' => 'service_charge_collected'];
             }
-            fputcsv($out, $tax['active']
-                ? ['TOTAL', $summary['total_transactions'], $summary['total_revenue'], $summary['tax_collected'], $summary['voided_count']]
-                : ['TOTAL', $summary['total_transactions'], $summary['total_revenue'], $summary['voided_count']]);
+            if ($tax['active']) {
+                $optional[] = ['label' => $tax['label'], 'key' => 'tax_collected'];
+            }
+
+            fputcsv($out, array_merge(
+                ['Tanggal', 'Transaksi', 'Omzet'],
+                array_column($optional, 'label'),
+                ['Void'],
+            ));
+            foreach ($dailySeries as $day) {
+                fputcsv($out, array_merge(
+                    [$day['date'], $day['count'], $day['revenue']],
+                    array_map(fn (array $c) => $day[$c['key']], $optional),
+                    [$day['voided']],
+                ));
+            }
+            fputcsv($out, array_merge(
+                ['TOTAL', $summary['total_transactions'], $summary['total_revenue']],
+                array_map(fn (array $c) => $summary[$c['key']], $optional),
+                [$summary['voided_count']],
+            ));
             fputcsv($out, []);
 
             fputcsv($out, ['METODE PEMBAYARAN']);
@@ -367,6 +406,47 @@ class ReportController extends Controller
     }
 
     /**
+     * Pasangan `taxContext()` untuk biaya layanan ([BL-097]).
+     *
+     * Aturan munculnya sama persis — sakelar tenant ATAU ada yang benar-benar
+     * terpungut di periode itu — dan alasannya juga sama: kolom nol di setiap
+     * baris bukan kejujuran, melainkan derau bagi mayoritas yang tidak
+     * memungut.
+     *
+     * Satu hal yang berbeda dan disengaja: tidak ada padanan `taxLocked()`
+     * yang perlu dijaga di sini. Biaya layanan boleh dimatikan pemilik toko
+     * kapan pun, jadi periode lampau yang memungutnya JAUH lebih mungkin
+     * ditemui daripada pada pajak — dan justru itu sebabnya cabang "sakelar
+     * mati tapi ada yang terpungut" di bawah menanggung beban lebih besar
+     * di sini daripada di `taxContext()`.
+     *
+     * @return array{active: bool, label: string}
+     */
+    private function serviceChargeContext(Builder $completed, float $collected): array
+    {
+        $tenant = auth()->user()->tenant;
+
+        if (! ($tenant?->service_charge_enabled ?? false) && $collected <= 0) {
+            return ['active' => false, 'label' => 'Biaya Layanan'];
+        }
+
+        $labels = $completed
+            ->whereNotNull('service_charge_label')
+            ->where('service_charge_amount', '>', 0)
+            ->distinct()
+            ->orderBy('service_charge_label')
+            ->pluck('service_charge_label')
+            ->all();
+
+        return [
+            'active' => true,
+            'label' => $labels === []
+                ? ($tenant?->service_charge_label ?: 'Biaya Layanan')
+                : implode(', ', $labels),
+        ];
+    }
+
+    /**
      * Awal bulan dari parameter `month` (format `Y-m`).
      *
      * Parameter yang tidak terbaca jatuh ke bulan berjalan, bukan 422: ini
@@ -392,7 +472,7 @@ class ReportController extends Controller
      * hilang dari deret akan tersambung jadi garis lurus di grafik dan
      * terbaca seolah toko tetap ramai.
      *
-     * @return array<int, array{date: string, count: int, revenue: float, net_revenue: float, tax_collected: float, voided: int}>
+     * @return array<int, array{date: string, count: int, revenue: float, net_revenue: float, tax_collected: float, service_charge_collected: float, voided: int}>
      */
     private function dailySeriesFor(Carbon $month): array
     {
@@ -411,6 +491,7 @@ class ReportController extends Controller
             // ringkasan bulan diturunkan dari deret ini juga.
             ->selectRaw('SUM(CASE WHEN status = ? THEN subtotal_amount ELSE 0 END) as net_revenue', [$completed])
             ->selectRaw('SUM(CASE WHEN status = ? THEN tax_amount ELSE 0 END) as tax_collected', [$completed])
+            ->selectRaw('SUM(CASE WHEN status = ? THEN service_charge_amount ELSE 0 END) as service_charge_collected', [$completed])
             ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as voided_count', [$voided])
             ->groupByRaw("DATE({$effectiveDate})")
             ->get()
@@ -430,6 +511,7 @@ class ReportController extends Controller
                 'revenue' => (float) ($row->revenue ?? 0),
                 'net_revenue' => (float) ($row->net_revenue ?? 0),
                 'tax_collected' => (float) ($row->tax_collected ?? 0),
+                'service_charge_collected' => (float) ($row->service_charge_collected ?? 0),
                 'voided' => (int) ($row->voided_count ?? 0),
             ];
 
@@ -445,8 +527,8 @@ class ReportController extends Controller
      * Menjumlahkan 28–31 baris di PHP jauh lebih murah daripada mengirim
      * query agregat baru untuk tiap angka.
      *
-     * @param  array<int, array{date: string, count: int, revenue: float, net_revenue: float, tax_collected: float, voided: int}>  $series
-     * @return array{total_revenue: float, net_revenue: float, tax_collected: float, total_transactions: int, voided_count: int, average_transaction: float, days_in_month: int, active_days: int, average_active_day_revenue: float, best_day: array{date: string, revenue: float, count: int}|null}
+     * @param  array<int, array{date: string, count: int, revenue: float, net_revenue: float, tax_collected: float, service_charge_collected: float, voided: int}>  $series
+     * @return array{total_revenue: float, net_revenue: float, tax_collected: float, service_charge_collected: float, total_transactions: int, voided_count: int, average_transaction: float, days_in_month: int, active_days: int, average_active_day_revenue: float, best_day: array{date: string, revenue: float, count: int}|null}
      */
     private function summarizeSeries(array $series): array
     {
@@ -467,6 +549,7 @@ class ReportController extends Controller
             'total_revenue' => $totalRevenue,
             'net_revenue' => (float) array_sum(array_column($series, 'net_revenue')),
             'tax_collected' => (float) array_sum(array_column($series, 'tax_collected')),
+            'service_charge_collected' => (float) array_sum(array_column($series, 'service_charge_collected')),
             'total_transactions' => $totalTransactions,
             'voided_count' => $voidedCount,
             'average_transaction' => $totalTransactions > 0 ? round($totalRevenue / $totalTransactions, 2) : 0.0,

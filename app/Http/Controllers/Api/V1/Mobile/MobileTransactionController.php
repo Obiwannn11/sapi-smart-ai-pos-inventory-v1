@@ -60,6 +60,7 @@ class MobileTransactionController extends Controller
                 'code' => $transaction->code,
                 'subtotal_amount' => $transaction->subtotal_amount,
                 'tax_amount' => $transaction->tax_amount,
+                'service_charge_amount' => $transaction->service_charge_amount,
                 'total_amount' => $transaction->total_amount,
                 'change_amount' => $transaction->change_amount,
                 'status' => $transaction->status,
@@ -232,6 +233,11 @@ class MobileTransactionController extends Controller
                     'tax_rate' => $transaction->tax_rate,
                     'tax_mode' => $transaction->tax_mode,
                     'tax_label' => $transaction->tax_label,
+                    // Konteks beku biaya layanan ikut ([BL-097]) — struk
+                    // mobile membacanya lewat `receiptTotals()` yang sama.
+                    'service_charge_amount' => $transaction->service_charge_amount,
+                    'service_charge_rate' => $transaction->service_charge_rate,
+                    'service_charge_label' => $transaction->service_charge_label,
                     'total_amount' => $transaction->total_amount,
                     'change_amount' => $transaction->change_amount,
                     'status' => $transaction->status,

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { useThermalPrinter } from '@/composables/useThermalPrinter';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 import { BUSINESS_TZ } from '@/support/date';
-import { receiptTotals, taxLine } from '@/support/tax';
+import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -46,6 +46,7 @@ const formatTime = (date) => {
 const totals = computed(() => receiptTotals(props.transaction));
 const subtotal = computed(() => totals.value.subtotal);
 const tax = computed(() => taxLine(totals.value));
+const serviceCharge = computed(() => serviceChargeLine(totals.value));
 
 const totalPaid = computed(() => {
     if (!props.transaction?.payments) return 0;
@@ -179,6 +180,14 @@ const printThermal = async () => {
                                 <div class="flex justify-between">
                                     <span class="text-gray-500">Subtotal</span>
                                     <span>{{ formatCurrency(subtotal) }}</span>
+                                </div>
+                                <!-- Biaya layanan selalu baris yang menaikkan
+                                     total ([BL-097]): ia tidak punya mode
+                                     inclusive. Letaknya sebelum pajak karena
+                                     pajak dipungut ATAS jumlah keduanya. -->
+                                <div v-if="serviceCharge" class="flex justify-between">
+                                    <span class="text-gray-500">{{ serviceCharge.text }}</span>
+                                    <span>{{ formatCurrency(serviceCharge.amount) }}</span>
                                 </div>
                                 <!-- Mode exclusive: pajak baris tersendiri yang menaikkan total -->
                                 <div v-if="tax && tax.inline" class="flex justify-between">

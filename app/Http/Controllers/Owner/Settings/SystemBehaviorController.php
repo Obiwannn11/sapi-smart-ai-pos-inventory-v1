@@ -88,6 +88,15 @@ class SystemBehaviorController extends Controller
                     ? $tenant->tax_lock_opened_until->toIso8601String()
                     : null,
             ],
+            // Biaya layanan ([BL-097]), endpoint tulisnya sendiri dan
+            // dibaca di sini dengan alasan yang sama. Tidak ada `locked`
+            // maupun `lock_opened_until` di sini — biaya layanan memang
+            // tidak pernah dikunci; lihat `ServiceChargeSettingsController`.
+            'serviceCharge' => [
+                'service_charge_enabled' => $tenant->service_charge_enabled,
+                'service_charge_rate' => (float) $tenant->service_charge_rate,
+                'service_charge_label' => $tenant->service_charge_label,
+            ],
             // Jenis yang dimatikan untuk SELURUH toko lewat `config/upsell.php`.
             // Dikirim supaya layarnya bisa mengunci saklarnya alih-alih
             // menawarkan tombol yang tidak mengubah apa pun — tanpa menyebut

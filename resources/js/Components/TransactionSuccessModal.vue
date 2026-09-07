@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { BUSINESS_TZ } from '@/support/date';
-import { receiptTotals, taxLine } from '@/support/tax';
+import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -13,6 +13,7 @@ const props = defineProps({
 // angka yang sama dengan yang dipegang penanya.
 const totals = computed(() => receiptTotals(props.transaction));
 const tax = computed(() => taxLine(totals.value));
+const serviceCharge = computed(() => serviceChargeLine(totals.value));
 
 const emit = defineEmits(['close', 'print']);
 
@@ -155,12 +156,19 @@ const print = () => emit('print');
 
                         <!-- Totals -->
                         <div class="pt-3 mt-1 border-t border-dashed border-gray-200 space-y-1.5">
-                            <template v-if="tax">
+                            <!-- Biaya layanan ikut membuka pembagian ini
+                                 ([BL-097]): toko yang memungutnya tanpa pajak
+                                 tetap harus menunjukkan subtotalnya. -->
+                            <template v-if="tax || serviceCharge">
                                 <div class="flex justify-between text-xs text-gray-500">
                                     <span>Subtotal</span>
                                     <span>{{ formatCurrency(totals.subtotal) }}</span>
                                 </div>
-                                <div v-if="tax.inline" class="flex justify-between text-xs text-gray-500">
+                                <div v-if="serviceCharge" class="flex justify-between text-xs text-gray-500">
+                                    <span>{{ serviceCharge.text }}</span>
+                                    <span>{{ formatCurrency(serviceCharge.amount) }}</span>
+                                </div>
+                                <div v-if="tax && tax.inline" class="flex justify-between text-xs text-gray-500">
                                     <span>{{ tax.text }}</span>
                                     <span>{{ formatCurrency(tax.amount) }}</span>
                                 </div>

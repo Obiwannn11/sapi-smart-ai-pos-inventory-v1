@@ -108,6 +108,12 @@ class TransactionEditService
             $taxColumns = $this->tax->columnsFor(
                 $baseAmount,
                 $this->tax->contextOf($transaction),
+                // Alasan yang sama persis berlaku untuk biaya layanan
+                // ([BL-097]): `serviceContextOf`, BUKAN `serviceContextFor`.
+                // Pemilik toko boleh menaikkan atau mematikannya kapan pun
+                // — ia tidak terkunci — jadi justru di sinilah tarif hari
+                // ini paling sering berbeda dari tarif hari penjualannya.
+                $this->tax->serviceContextOf($transaction),
             );
 
             $totalAmount = $taxColumns['total_amount'];
