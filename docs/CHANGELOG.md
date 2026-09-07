@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-08 | SCHEMA | Stok | Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105) |
 | 2026-09-07 | ADDITION | Promosi | Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2) |
 | 2026-09-07 | HOTFIX | Kasir | Katalog POS Berhenti Mencari Aturan Diskon Sekali per Varian — 34 Kueri Jadi 5 (BL-103 Butir 1, Sisa) |
 | 2026-09-07 | SCHEMA | Kasir | Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097) |
@@ -243,6 +244,41 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [SCHEMA] Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105)
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Migration | Model | Service | Command | Schedule
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Tabel `expired_stock_records` dan perintah terjadwal `stock:record-expired` (harian, **00:05**). Satu baris = satu varian yang melewati tanggal kedaluwarsanya dengan stok tersisa, beserta jumlah dan nilai modalnya saat diamati.
+
+  **Belum ada satu pun layar yang membacanya, dan itu disengaja.** Sama seperti `upsell_events` yang lahir sebelum permukaannya (`[BL-017]` usulan 5), pencatatan yang ditambal belakangan berarti kehilangan periode awal justru saat datanya paling dibutuhkan.
+- **Alasan:**
+  `StockRescueService::spoiled()` sudah menjawab "berapa yang basi di rak SEKARANG" (`[BL-105]` butir 2, mendarat 2026-09-07), dan itu jujur. Yang tidak bisa dijawabnya adalah "berapa yang basi bulan lalu" — dan bukan karena kueri yang belum ditulis. `product_variants.stock` menyimpan nilai sekarang, bukan sejarah: begitu pemilik membuang barangnya dan menyetel stok jadi nol, kerugiannya lenyap tanpa jejak. `stock_movements` tidak menolong, karena tidak satu pun dari lima jenisnya berarti "dibuang" — pembuangan tersamar sebagai `adjustment` bersama koreksi hitung dan barang pecah. Sekali sebuah bulan lewat tanpa pencatat, angkanya hilang selamanya.
+- **Jam 00:05 adalah setengah dari keputusan ini, bukan detail operasional.**
+  Varian yang kedaluwarsa tanggal X **masih sah dijual sepanjang tanggal X** — `DiscountService` baru menolaknya lewat tengah malam, dan potongan `near_expiry` justru paling dalam di hari itu. Ia baru jadi barang basi pada X+1 pukul 00:00. Mengamatinya lima menit sesudah itu menangkap keadaan rak yang benar dan menutup hampir seluruh jendela di mana pemilik sempat membuangnya lebih dulu.
+
+  Menggesernya ke jam sepi bersama tugas terjadwal lain **akan merusak angkanya, bukan sekadar menundanya**: setiap barang yang dibuang antara tengah malam dan jam itu hilang dari catatan tanpa jejak, dan kerugian yang dilaporkan akan selalu terlalu kecil tanpa satu pun tanda. Peringatan ini ditulis di `routes/console.php` dan di tabel tugas terjadwal README.
+- **Barang yang sudah telanjur basi ditahan, bukan ditebak — dan migrasinya yang menahannya.**
+  Tanpa langkah ini, sapuan pertama akan memungut setiap varian yang kedaluwarsanya sudah lewat — termasuk yang basi berbulan-bulan lalu — lalu menstempelnya dengan stok **hari ini**. Dua-duanya salah sekaligus: jumlahnya karangan (stok sudah berubah sejak hari ia basi) dan periodenya salah (kedaluwarsa Juli mendarat di ember September).
+
+  Migrasi karena itu menulis satu baris `source = 'pre_existing'` untuk tiap varian yang sudah basi saat ia dijalankan, dengan **`qty` NULL — yang berarti tidak diketahui, bukan nol**. Barisnya ada untuk menahan pencatat, bukan untuk dihitung; `ExpiredStockRecord::scopeMeasured()` menyaringnya keluar, dan setiap angka yang kelak ditampilkan ke pemilik wajib lewat sana. Diverifikasi di basis data pengembangan: satu varian (`Croissant - Plain`, kedaluwarsa 2026-07-13, sisa 18) mendapat penandanya, dan sapuan berikutnya melaporkan 0.
+
+  SQL-nya ditulis langsung di dalam migrasi alih-alih memanggil `ExpiredStockRecorder`: migrasi harus tetap berarti sama bertahun-tahun kemudian, sementara service boleh berubah kapan saja.
+- **Kunci uniknya `(varian, tanggal kedaluwarsa)`, bukan varian saja.** Varian yang direstok mendapat tanggal kedaluwarsa baru, dan tanggal itu harus bisa dicatat lagi ketika ia lewat. Menyaring per varian akan membuat tiap varian hanya bisa basi sekali seumur hidupnya — dan barang yang paling sering basi justru yang paling sering direstok.
+- **File Terdampak:**
+  - `database/migrations/2026_09_07_235759_create_expired_stock_records_table.php` — **baru**; tabel + penandaan barang yang basi sebelum pencatat ini ada
+  - `app/Models/ExpiredStockRecord.php` — **baru**; dua konstanta sumber dan scope `measured()`
+  - `app/Services/ExpiredStockRecorder.php` — **baru**; sapuan lintas tenant, `insertOrIgnore` di balik indeks unik
+  - `app/Console/Commands/RecordExpiredStock.php` — **baru**; `--date` untuk menjalankan ulang hari yang terlewat, `--dry-run` untuk melihat tanpa menulis
+  - `app/Models/ProductVariant.php` — relasi `expiredStockRecords()`
+  - `routes/console.php` — jadwal 00:05 beserta alasan jamnya
+  - `README.md` — baris baru di tabel tugas terjadwal
+  - `database/factories/ExpiredStockRecordFactory.php`, `tests/Feature/Stock/ExpiredStockRecorderTest.php` — **baru**; 11 uji
+- **Catatan Migrasi:** `php artisan migrate` biasa. Migrasinya menulis baris penanda untuk barang yang sudah basi di basis data yang ada — tidak merusak apa pun, tapi **jangan dijalankan mundur lalu maju lagi di produksi**: `down()` membuang tabelnya beserta seluruh pengamatan yang sudah terkumpul, dan tidak ada satu pun dari itu yang bisa dihitung ulang.
+
+---
 
 ### [ADDITION] Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2)
 - **Tanggal:** 2026-09-07

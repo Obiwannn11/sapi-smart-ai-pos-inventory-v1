@@ -40,4 +40,16 @@ class ProductVariant extends Model
     {
         return $this->hasMany(StockMovement::class);
     }
+
+    /**
+     * Tiap kali varian ini melewati tanggal kedaluwarsanya dengan stok tersisa.
+     *
+     * Jamak, bukan tunggal: varian yang direstok mendapat tanggal kedaluwarsa
+     * baru, dan tiap tanggal yang lewat meninggalkan barisnya sendiri
+     * ([BL-105]).
+     */
+    public function expiredStockRecords(): HasMany
+    {
+        return $this->hasMany(ExpiredStockRecord::class);
+    }
 }

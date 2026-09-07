@@ -74,3 +74,19 @@ Schedule::command('open-bills:expire')->hourly();
 // melainkan supaya keduanya tidak muncul sebagai satu lonjakan yang sama di
 // log ketika ada yang salah pada salah satunya.
 Schedule::command('cash-drawers:expire')->hourlyAt(5);
+
+// Stempel harian barang yang basi ([BL-105] butir 2).
+//
+// 00:05, dan jamnya adalah setengah dari keputusannya. Varian yang kedaluwarsa
+// tanggal X masih SAH DIJUAL sepanjang tanggal X — potongan `near_expiry`
+// justru paling dalam di hari itu — jadi ia baru jadi barang basi pada X+1
+// pukul 00:00. Mengamatinya lima menit sesudah itu menangkap keadaan rak yang
+// benar, dan menutup hampir seluruh jendela di mana pemilik sempat
+// membuangnya lebih dulu.
+//
+// Menggesernya ke jam sepi bersama tetangga-tetangganya di atas akan MERUSAK
+// angkanya, bukan sekadar menunda: setiap barang yang dibuang antara tengah
+// malam dan jam itu hilang dari catatan tanpa jejak, dan kerugian yang
+// dilaporkan akan selalu terlalu kecil tanpa ada satu pun tanda. Kalau jam ini
+// harus digeser, geser LEBIH AWAL, tidak pernah lebih siang.
+Schedule::command('stock:record-expired')->dailyAt('00:05');

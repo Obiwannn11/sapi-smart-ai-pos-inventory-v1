@@ -220,6 +220,7 @@ Dokumen persetujuannya terpisah per jalur (`resources/consents/`) dan **tidak pe
 | `open-bills:expire` | tiap jam — tagihan terbuka lewat 24 jam jadi kas negatif (`[BL-031]`) |
 | `cash-drawers:expire` | tiap jam menit ke-5 — sesi kas lewat 24 jam ditutup sistem (`[BL-088]`) |
 | `payment-proofs:prune-unclaimed` | harian, 03:50 |
+| `stock:record-expired` | harian, **00:05** — stempel barang yang basi (`[BL-105]`). Jamnya bagian dari keputusannya: barang yang kedaluwarsa tanggal X masih sah dijual sepanjang hari X, jadi ia diamati tepat sesudah hari berganti. **Kalau harus digeser, geser lebih awal — tidak pernah lebih siang.** |
 
 `schedule:run` harus aktif di produksi agar semua ini berjalan.
 
