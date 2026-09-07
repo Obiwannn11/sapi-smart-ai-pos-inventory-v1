@@ -6,6 +6,7 @@ use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\UpsellEvent;
 use App\Models\UpsellRule;
+use App\Services\DiscountService;
 use App\Services\Upsell\CartLevelStrategy;
 use App\Services\Upsell\SellableVariantQuery;
 use App\Services\Upsell\Suggestion;
@@ -52,6 +53,8 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
      */
     private const SCORE_FLOOR = 1000.0;
 
+    public function __construct(private DiscountService $discounts) {}
+
     /**
      * Aturan berpemicu, dipetakan per varian pemicunya.
      *
@@ -61,6 +64,7 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
     public function suggestFor(Tenant $tenant, Collection $sellableVariants): array
     {
         $sellableIds = $sellableVariants->keyBy('id');
+        $discountRules = $this->discounts->rulesFor($tenant, $sellableIds->keys()->all());
         $mapped = [];
 
         foreach ($this->rules($tenant)->whereNotNull('trigger_variant_id') as $rule) {
@@ -70,7 +74,11 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
                 continue;
             }
 
-            $mapped[$rule->trigger_variant_id][] = $this->toSuggestion($rule, $suggested);
+            $mapped[$rule->trigger_variant_id][] = $this->toSuggestion(
+                $rule,
+                $suggested,
+                $this->discounts->effectivePrice($suggested, $tenant, $discountRules),
+            );
         }
 
         return $mapped;
@@ -84,6 +92,7 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
     public function suggest(Tenant $tenant): array
     {
         $sellableIds = SellableVariantQuery::for($tenant)->with('product:id,name')->get()->keyBy('id');
+        $discountRules = $this->discounts->rulesFor($tenant, $sellableIds->keys()->all());
 
         $suggestions = [];
 
@@ -94,7 +103,11 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
                 continue;
             }
 
-            $suggestions[] = $this->toSuggestion($rule, $suggested);
+            $suggestions[] = $this->toSuggestion(
+                $rule,
+                $suggested,
+                $this->discounts->effectivePrice($suggested, $tenant, $discountRules),
+            );
         }
 
         return $suggestions;
@@ -119,7 +132,13 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
             ->get();
     }
 
-    private function toSuggestion(UpsellRule $rule, ProductVariant $suggested): Suggestion
+    /**
+     * @param  float  $price  harga EFEKTIF varian yang disarankan — aturan yang
+     *                        ditulis owner tidak membebaskan strip ini dari
+     *                        mengutip harga yang benar-benar akan ditagih
+     *                        ([BL-103] butir 1)
+     */
+    private function toSuggestion(UpsellRule $rule, ProductVariant $suggested, float $price): Suggestion
     {
         $name = $this->displayName($suggested);
 
@@ -132,12 +151,12 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
             // strategi ini punya dan mesin tidak: alasan yang ditulis orang
             // yang tahu barangnya.
             note: $rule->note ?: 'Pilihan pemilik',
-            extraAmount: (float) $suggested->price,
+            extraAmount: $price,
             score: self::SCORE_FLOOR + $rule->priority,
             triggerVariantId: $rule->trigger_variant_id,
             suggestedVariantId: $suggested->id,
             suggestedVariantName: $name,
-            suggestedVariantPrice: (float) $suggested->price,
+            suggestedVariantPrice: $price,
         );
     }
 

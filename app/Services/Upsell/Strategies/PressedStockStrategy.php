@@ -6,6 +6,7 @@ use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\UpsellEvent;
+use App\Services\DiscountService;
 use App\Services\Upsell\CartLevelStrategy;
 use App\Services\Upsell\SellableVariantQuery;
 use App\Services\Upsell\Suggestion;
@@ -21,12 +22,19 @@ use Illuminate\Database\Eloquent\Builder;
  * Ambangnya sengaja sama dengan BadgeHelperService supaya owner tidak melihat
  * dua definisi "mendekati kedaluwarsa" yang berbeda di dua layar.
  *
- * Fase ini menawarkannya pada HARGA KATALOG — tanpa potongan. Versi berdiskonnya
- * menunggu [BL-018], karena hari ini sistem belum punya tempat sah untuk
- * mencatat harga di bawah harga katalog.
+ * Yang ditawarkan adalah harga EFEKTIF — sudah termasuk potongan dinamis bila
+ * varian ini sedang punya aturannya ([BL-018] menyediakan tempat sahnya).
+ * Sebelum [BL-103] butir 1, strip ini mengutip harga katalog sementara grid
+ * katalog sudah memakai harga berdiskon: barang yang sama masuk keranjang
+ * dengan dua harga berbeda tergantung tombol mana yang ditekan kasir.
+ *
+ * Bundling berdiskon — potongan yang lahir dari KOMBINASI barang — masih belum
+ * ada wujudnya; tempatnya `[BL-103]` butir 2, bukan di sini.
  */
 class PressedStockStrategy implements CartLevelStrategy
 {
+    public function __construct(private DiscountService $discounts) {}
+
     public function suggest(Tenant $tenant): array
     {
         $nearExpiryDays = (int) config('upsell.pressed_stock.near_expiry_days', 7);
@@ -50,21 +58,29 @@ class PressedStockStrategy implements CartLevelStrategy
             ->with('product:id,name')
             ->get();
 
+        // Satu kueri untuk seluruh kandidat, bukan satu per varian — jalur ini
+        // ikut dibangun ulang tiap kali props POS dirakit.
+        $rules = $this->discounts->rulesFor($tenant, $candidates->pluck('id')->all());
+
         $suggestions = [];
 
         foreach ($candidates as $variant) {
             [$reason, $note, $score] = $this->classify($variant, $nearExpiryDays, $deadStockDays);
+
+            // Baris baru di keranjang, jadi "tambahan"-nya adalah harga barang
+            // itu sendiri — harga yang benar-benar akan ditagih, bukan katalog.
+            $price = $this->discounts->effectivePrice($variant, $tenant, $rules);
 
             $suggestions[] = new Suggestion(
                 type: UpsellEvent::TYPE_PRESSED_STOCK,
                 reason: $reason,
                 label: $this->displayName($variant),
                 note: $note,
-                extraAmount: (float) $variant->price,
+                extraAmount: $price,
                 score: $score,
                 suggestedVariantId: $variant->id,
                 suggestedVariantName: $this->displayName($variant),
-                suggestedVariantPrice: (float) $variant->price,
+                suggestedVariantPrice: $price,
             );
         }
 

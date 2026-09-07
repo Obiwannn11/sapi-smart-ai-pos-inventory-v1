@@ -559,8 +559,11 @@ const applyUpsell = (suggestion) => {
         return;
     }
 
-    // pressed_stock — baris baru, harga katalog. Tanpa potongan: sistem belum
-    // punya tempat sah untuk menaruh harga di bawah katalog (lihat [BL-018]).
+    // pressed_stock dan manual — baris baru pada harga yang dikirim server, dan
+    // sejak [BL-103] butir 1 harga itu sudah BERDISKON bila varian tersebut
+    // punya aturannya ([BL-018]). Jangan menghitungnya ulang di sini: hanya
+    // server yang tahu lantai untungnya, dan strip yang menghitung sendiri
+    // akan jadi jalur harga kelima yang perlahan menyimpang.
     const price = Number(suggestion.suggested_variant_price ?? suggestion.extra_amount);
     const before = cart.value.length;
 
