@@ -147,14 +147,69 @@ class DiscountService
      * Aturan Diskon: baris yang diam menyebut sebabnya sendiri, alih-alih
      * menyuruh owner menebak di antara empat kemungkinan.
      *
+     * **`$rule` null di sini berarti "belum dicari", BUKAN "tidak ada"**, dan
+     * yang menyusul adalah satu kueri untuk varian ini. Pemanggil yang sudah
+     * memuat aturan sekumpulan varian lewat `rulesFor()` HARUS memakai
+     * `priceFromRules()`: menyerahkan `$rules->get($id)` ke sini membuat setiap
+     * varian tanpa diskon dicari ulang satu per satu — persis N+1 yang
+     * `rulesFor()` ada untuk mencegahnya.
+     *
      * @return array{price: float, discount: float, rule: ?DiscountRule, floor: ?float, reason: ?string, clamped: bool}
      */
     public function priceFor(ProductVariant $variant, Tenant $tenant, ?DiscountRule $rule = null): array
     {
+        return $this->priceWithRule($variant, $tenant, $rule ?? $this->ruleFor($variant, $tenant));
+    }
+
+    /**
+     * Harga varian ini dari peta aturan yang SUDAH dimuat sekaligus — tanpa
+     * kueri tambahan, berapa pun isi petanya.
+     *
+     * Bentuk kembaliannya sama persis dengan `priceFor()`. Itulah gunanya:
+     * pemanggil yang juga butuh `discount` dan `rule` — props POS mengisi
+     * `discount_amount` dan `discount_reason` darinya — tidak perlu turun ke
+     * `priceFor()` dan menghidupkan lagi pencariannya. Varian yang tidak ada di
+     * peta memang tidak punya aturan yang berlaku hari ini; itu jawaban akhir,
+     * bukan tanda bahwa pencariannya belum dilakukan.
+     *
+     * @param  Collection<int, DiscountRule>  $rules  hasil `rulesFor()`, per product_variant_id
+     * @return array{price: float, discount: float, rule: ?DiscountRule, floor: ?float, reason: ?string, clamped: bool}
+     */
+    public function priceFromRules(ProductVariant $variant, Tenant $tenant, Collection $rules): array
+    {
+        return $this->priceWithRule($variant, $tenant, $rules->get($variant->id));
+    }
+
+    /**
+     * Harga efektif satu varian dari peta aturan yang SUDAH dimuat sekaligus.
+     *
+     * Ada karena `priceFor()` menerima `?DiscountRule` dan tidak bisa
+     * membedakan "varian ini memang tidak punya aturan" dari "aturannya belum
+     * dicari": ia menjawab `null` dengan mencarinya sendiri, satu kueri per
+     * varian. Pemanggil yang hanya butuh angkanya memakai ini; yang butuh
+     * potongan dan aturannya sekalian memakai `priceFromRules()`.
+     *
+     * @param  Collection<int, DiscountRule>  $rules  hasil `rulesFor()`, per product_variant_id
+     */
+    public function effectivePrice(ProductVariant $variant, Tenant $tenant, Collection $rules): float
+    {
+        return $this->priceFromRules($variant, $tenant, $rules)['price'];
+    }
+
+    /**
+     * Rumus harganya sendiri, dengan aturan yang sudah PASTI.
+     *
+     * `null` di sini hanya punya satu arti — varian ini tidak punya aturan yang
+     * berlaku — jadi tidak ada lagi yang dicari. Semua pintu masuk di atas
+     * bermuara ke sini supaya lantai, pembulatan, dan keempat `reason`-nya
+     * tetap punya satu definisi.
+     *
+     * @return array{price: float, discount: float, rule: ?DiscountRule, floor: ?float, reason: ?string, clamped: bool}
+     */
+    private function priceWithRule(ProductVariant $variant, Tenant $tenant, ?DiscountRule $rule): array
+    {
         $catalog = (float) $variant->price;
         $floor = $this->floorFor($variant, $tenant);
-
-        $rule ??= $this->ruleFor($variant, $tenant);
 
         $none = fn (string $reason): array => [
             'price' => $catalog,

@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
 use App\Services\DiscountService;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -509,6 +510,75 @@ test('katalog POS membawa harga efektif, bukan hanya harga katalog', function ()
             ->etc()
         )
     );
+});
+
+test('katalog POS tidak mencari aturan diskon sekali per varian', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant] = makeDiscountContext(price: 20000, cost: 5000);
+
+    // Satu varian berdiskon di antara tiga puluh — bentuk katalog yang
+    // sebenarnya. Mayoritas barang TIDAK sedang didiskon, dan justru merekalah
+    // yang mahal: aturan yang tidak ketemu di peta bisa terbaca sebagai "belum
+    // dicari", lalu dicari satu per satu di jalur terpanas aplikasi.
+    ProductVariant::factory()->count(29)->create([
+        'product_id' => $variant->product_id,
+        'price' => 20000,
+        'cost_price' => 5000,
+        'stock' => 100,
+        'expiry_date' => null,
+    ]);
+
+    DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id,
+        'product_variant_id' => $variant->id,
+        'percent' => 25,
+        'reason' => 'Stok menumpuk',
+    ]);
+
+    actingAs($cashier);
+
+    $discountQueries = 0;
+
+    DB::listen(function ($query) use (&$discountQueries) {
+        if (str_contains($query->sql, 'discount_rules')) {
+            $discountQueries++;
+        }
+    });
+
+    get('/cashier/pos')->assertInertia(fn (Assert $page) => $page
+        ->component('Cashier/POS')
+        ->loadDeferredProps(fn (Assert $reload) => $reload
+            // Harganya tetap benar; yang diuji di sini adalah ONGKOSNYA.
+            ->where('products.0.variants.0.effective_price', 15000)
+            ->etc()
+        )
+    );
+
+    // Katalog dan tiap strategi upsell boleh memuat aturannya masing-masing
+    // sekaligus. Yang tidak boleh adalah angka ini ikut tumbuh bersama jumlah
+    // varian — dengan tiga puluh varian, N+1-nya sendiri sudah lewat ambang ini.
+    expect($discountQueries)->toBeLessThan(10);
+});
+
+test('harga dari peta aturan yang sudah dimuat tidak menyentuh basis data', function () {
+    ['tenant' => $tenant, 'variant' => $variant] = makeDiscountContext(price: 20000, cost: 5000);
+
+    $service = app(DiscountService::class);
+
+    $queries = 0;
+
+    DB::listen(function () use (&$queries) {
+        $queries++;
+    });
+
+    // Peta kosong berarti varian ini memang tidak punya aturan hari ini. Itu
+    // jawaban akhir — bukan tanda bahwa pencariannya belum dilakukan.
+    $pricing = $service->priceFromRules($variant, $tenant, collect());
+
+    expect($queries)->toBe(0)
+        ->and($pricing['price'])->toBe(20000.0)
+        ->and($pricing['discount'])->toBe(0.0)
+        ->and($pricing['rule'])->toBeNull()
+        ->and($pricing['reason'])->toBe(DiscountService::REASON_NO_RULE);
 });
 
 // --- Laporan ---

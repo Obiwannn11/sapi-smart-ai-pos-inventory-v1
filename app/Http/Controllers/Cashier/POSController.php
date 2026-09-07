@@ -140,7 +140,11 @@ class POSController extends Controller
         $rules = $this->discounts->rulesFor($tenant, $variants->pluck('id')->all());
 
         foreach ($variants as $variant) {
-            $pricing = $this->discounts->priceFor($variant, $tenant, $rules->get($variant->id));
+            // `priceFromRules()`, BUKAN `priceFor()`: yang kedua membaca `null`
+            // sebagai "aturannya belum dicari" dan mencarinya sendiri, jadi
+            // setiap varian TANPA diskon — mayoritas katalog — akan menambah
+            // satu kueri dan kueri tunggal di atas jadi sia-sia.
+            $pricing = $this->discounts->priceFromRules($variant, $tenant, $rules);
 
             // `price` sengaja TIDAK ditimpa. Layar kasir perlu menunjukkan
             // keduanya — harga coret dan harga bayar — karena potongan yang

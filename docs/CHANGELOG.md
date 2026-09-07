@@ -61,7 +61,10 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-07 | HOTFIX | Kasir | Katalog POS Berhenti Mencari Aturan Diskon Sekali per Varian — 34 Kueri Jadi 5 (BL-103 Butir 1, Sisa) |
 | 2026-09-07 | SCHEMA | Kasir | Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097) |
+| 2026-09-07 | ADDITION | Pendaftaran | "Mode Bazar" Mendarat Sebagai Paket Setelan, Bukan Mode — dan Kuncinya Lepas dari Penetapan Harga (BL-035) |
+| 2026-09-07 | HOTFIX | Promosi | Strip Saran Berhenti Mengutip Harga Katalog untuk Barang yang Sedang Berdiskon (BL-103 Butir 1) |
 | 2026-09-07 | ADDITION | Langganan | Seat yang Dibeli di Tengah Periode Ditagih per Hari — dan Celah Jendela Tagihan Ikut Tertutup (BL-070) |
 | 2026-09-06 | ADDITION | Kas | Setiap Penjualan Membawa Laci yang Menerima Uangnya — Diisi Maju, Tanpa Backfill (BL-028 Tahap B Langkah 1) |
 | 2026-09-06 | ADDITION | Kas | Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093) |
@@ -240,49 +243,149 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 ## Revision History
 
+### [HOTFIX] Katalog POS Berhenti Mencari Aturan Diskon Sekali per Varian — 34 Kueri Jadi 5 (BL-103 Butir 1, Sisa)
+- **Tanggal:** 2026-09-07
+- **Fase Terkait:** Di Luar Fase — jebakan yang sudah ditunjuk namanya di entri `[BL-103]` butir 1 hari yang sama dan sengaja ditinggalkan untuk dikerjakan tersendiri.
+- **Dampak:** `DiscountService` (satu method publik baru, rumusnya dipindah ke satu method privat) dan `POSController::catalogWithDiscounts()`. Tidak ada prop, bentuk kembalian, maupun angka harga yang berubah.
+- **Breaking Change:** Tidak. `priceFor()` tetap punya signature dan perilaku yang sama persis, termasuk mencari sendiri saat `$rule` tidak diberikan.
+- **Deskripsi:** `catalogWithDiscounts()` sudah memuat seluruh aturan diskon dalam SATU kueri lewat `rulesFor()`, dan komentarnya menyatakan itu — "satu kueri untuk seluruh katalog, bukan satu per varian". Yang dilakukan baris berikutnya justru sebaliknya: ia menyerahkan `$rules->get($variant->id)` ke `priceFor()`, dan `null` di sana berarti "belum dicari", bukan "tidak ada". Setiap varian yang TIDAK sedang didiskon — mayoritas katalog — karena itu memicu satu kueri tambahan. Katalog 200 varian dengan 3 aturan aktif menembak ~197 kueri ekstra pada setiap muat halaman kasir.
+- **Yang membuatnya lolos sekian lama: hasilnya tidak pernah salah.** `ruleFor()` yang dipanggil diam-diam itu mengembalikan jawaban yang sama dengan peta yang sudah dimuat, jadi tidak ada harga yang meleset, tidak ada test yang merah, dan tidak ada yang terlihat aneh di layar mana pun. Yang dibayar hanyalah waktu — di jalur terpanas aplikasi, di perangkat kasir yang paling lambat.
+- **Perbaikannya di `DiscountService`, bukan di pemanggilnya, dan itu disengaja.** Menambal `POSController` saja akan meninggalkan jebakan yang sama utuh untuk pemanggil berikutnya, sementara `DiscountService` didokumentasikan sebagai satu-satunya tempat aritmetika diskon tinggal. `priceFromRules(ProductVariant, Tenant, Collection): array` menjawab dari peta hasil `rulesFor()` dan TIDAK PERNAH mencari sendiri, dengan bentuk kembalian identik `priceFor()` — jadi pemanggil yang juga butuh `discount` dan `rule` (props POS mengisi `discount_amount` dan `discount_reason` darinya) tidak lagi punya alasan turun ke `priceFor()`. Rumus harganya sendiri pindah ke satu method privat `priceWithRule()` yang menerima aturan yang sudah PASTI, sehingga lantai, pembulatan, dan keenam `reason`-nya tetap punya satu definisi. `effectivePrice()` dari butir 1 kini tinggal mengambil `['price']` dari method baru itu.
+- **Pemanggil lain sudah disisir, dan tidak ada yang berbentuk sama.** `DiscountRuleController` selalu mengoper aturan yang benar-benar ada, dan ketiga strategi upsell sudah memakai `effectivePrice()` sejak butir 1. **Yang masih tersisa berbentuk lain dan sengaja tidak diikutkan di sini:** `StoreTransactionRequest::expectedTotal()` dan `TransactionService::resolveItemPrice()`/`matchesAnyValidPrice()` memanggil `priceFor()` sekali per BARIS KERANJANG tanpa memuat petanya lebih dulu. Jumlahnya terbatas isi keranjang, bukan besar katalog, jadi ongkosnya beda kelas — tapi jalannya sama, dan memperbaikinya berarti menyentuh jalur checkout yang tidak sedang dibuka pekerjaan ini.
+- **Ambang testnya dipasang di angka, bukan di niat.** `DB::listen` menghitung kueri yang menyentuh `discount_rules` selama satu muat halaman POS berisi 30 varian dengan 1 aturan aktif: 34 sebelum, 5 sesudah (1 katalog + 4 dari strategi upsell). Ambangnya `< 10` — cukup longgar untuk strategi upsell yang mungkin bertambah, cukup ketat untuk gagal begitu jumlahnya mulai tumbuh mengikuti jumlah varian. Diverifikasi dua arah: jebakannya dipasang ulang sekali, testnya merah di angka 34.
+- **File Terdampak:**
+  - `app/Services/DiscountService.php` — `priceFromRules()` baru; rumus harga pindah ke `priceWithRule()` privat; `priceFor()` dan `effectivePrice()` jadi pembungkus tipis; docblock `priceFor()` menyebut jebakannya dengan nama
+  - `app/Http/Controllers/Cashier/POSController.php` — `catalogWithDiscounts()` memakai `priceFromRules()`, dengan komentar yang menyebut sebab `priceFor()` tidak boleh dipakai di sana
+  - `tests/Feature/DynamicDiscountTest.php` — dua test: hitungan kueri katalog POS, dan `priceFromRules()` yang tidak menyentuh basis data saat petanya kosong
+
+---
+
 ### [SCHEMA] Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097)
 - **Tanggal:** 2026-09-07
 - **Fase Terkait:** Di Luar Fase (`[BL-097]`, pecahan `[BL-065]`)
 - **Dampak:** Migration | Model | Service | Controller | Route | Frontend
 - **Breaking Change:** Tidak
 - **Deskripsi:**
-  Uang transaksi berhenti jadi tiga angka dan menjadi empat. `tenants` mendapat `service_charge_enabled` (bawaan mati), `service_charge_rate`, dan `service_charge_label` (nullable tanpa bawaan — kata yang tercetak di struk tidak pernah ditebak). `transactions` mendapat `service_charge_amount` plus tarif dan label yang **dibekukan** pada saat penjualan.
+  Uang transaksi berhenti jadi tiga angka dan menjadi empat. `tenants` mendapat
+  `service_charge_enabled` (bawaan mati), `service_charge_rate`, dan
+  `service_charge_label` (nullable tanpa bawaan — kata yang tercetak di struk tidak
+  pernah ditebak). `transactions` mendapat `service_charge_amount` plus tarif dan
+  label yang **dibekukan** pada saat penjualan.
 
-  Invarian `[BL-065]` butir 8 ditulis ulang jadi `subtotal + biaya layanan + pajak = total`: empat angka, dua yang dibulatkan, dan tetap **tepat satu** yang diturunkan dengan pengurangan. Jangkarnya tetap berbeda per mode — di exclusive harga katalog yang nyata, di inclusive uang yang berpindah tangan.
+  Invarian `[BL-065]` butir 8 ditulis ulang jadi
+  `subtotal + biaya layanan + pajak = total`: empat angka, dua yang dibulatkan, dan
+  tetap **tepat satu** yang diturunkan dengan pengurangan. Jangkarnya tetap berbeda
+  per mode — di exclusive harga katalog yang nyata, di inclusive uang yang berpindah
+  tangan.
 
-  **Urutannya: biaya layanan lebih dulu, lalu pajak atas subtotal + biaya layanan.** Ini bukan pilihan gaya. Dasar pengenaan PBJT adalah "jumlah pembayaran yang diterima penyedia makanan dan/atau minuman" (UU HKPD Pasal 51, dirinci PP 35/2023 Pasal 19), dan biaya layanan adalah uang yang diterima restoran. Urutan terbalik menyetorkan pajak lebih kecil dari yang terutang, dan yang menanggung kekurangannya tenant — bukan aplikasi ini.
+  **Urutannya: biaya layanan lebih dulu, lalu pajak atas subtotal + biaya layanan.**
+  Ini bukan pilihan gaya. Dasar pengenaan PBJT adalah "jumlah pembayaran yang
+  diterima penyedia makanan dan/atau minuman" (UU HKPD Pasal 51, dirinci PP 35/2023
+  Pasal 19), dan biaya layanan adalah uang yang diterima restoran. Urutan terbalik
+  menyetorkan pajak lebih kecil dari yang terutang, dan yang menanggung kekurangannya
+  tenant — bukan aplikasi ini.
 
-  Pemilik toko menyalakannya dari halaman Cara Kerja Sistem lewat endpoint tersendiri. Laporan harian, bulanan, dan unduhan CSV memisahkan biaya layanan dari omzet toko.
+  Pemilik toko menyalakannya dari halaman Cara Kerja Sistem lewat endpoint tersendiri.
+  Laporan harian, bulanan, dan unduhan CSV memisahkan biaya layanan dari omzet toko.
 - **Alasan:**
-  Dipisah dari `[BL-065]` pada 2026-08-30 karena ia bukan tentang pajak, lalu ditahan dengan syarat masuk "ada calon klien yang benar-benar memungut". Syarat itu **tidak pernah terpenuhi**; pemilik mengesampingkannya pada 2026-09-07 dan meminta pekerjaan ini dikerjakan atas dasar keempat usulan bawaan yang ditulis 2026-09-06.
+  Dipisah dari `[BL-065]` pada 2026-08-30 karena ia bukan tentang pajak, lalu ditahan
+  dengan syarat masuk "ada calon klien yang benar-benar memungut". Syarat itu **tidak
+  pernah terpenuhi**; pemilik mengesampingkannya pada 2026-09-07 dan meminta
+  pekerjaan ini dikerjakan atas dasar keempat usulan bawaan yang ditulis 2026-09-06.
 
-  Yang membuat itu aman bukan keberanian, melainkan bentuk kolomnya: keempat jawaban menghasilkan **skema yang sama persis**, jadi tak ada tebakan yang membeku di basis data. Yang benar-benar mahal kalau salah cuma bentuk kolomnya, dan bentuk itu tidak bergantung pada jawabannya.
+  Yang membuat itu aman bukan keberanian, melainkan bentuk kolomnya: keempat jawaban
+  menghasilkan **skema yang sama persis**, jadi tak ada tebakan yang membeku di basis
+  data. Yang benar-benar mahal kalau salah cuma bentuk kolomnya, dan bentuk itu tidak
+  bergantung pada jawabannya.
 - **Keputusan yang diambil (nomor mengikuti `[BL-097]`):**
-  1. **Urutan → A**, dan ini satu-satunya yang **terverifikasi**, bukan diusulkan. Lihat dasar hukumnya di atas.
-  2. **Inclusive → A.** Biaya layanan dihitung dari harga katalog, pajak diurai dari `harga + biaya layanan`. Ongkos yang disadari: di mode inclusive nominal biaya layanan yang tercetak adalah angka **kotor** sementara "Subtotal" tercetak bersih. Benar secara aritmetika, tapi tidak semua pemilik toko akan membacanya begitu. Alternatif **C** (melarang kombinasi inclusive + biaya layanan) tetap bisa ditambahkan kapan saja sebagai satu baris validasi.
-  3. **Atribusi → B: bukan pendapatan toko.** Ternyata gratis — karena `service_charge_amount` kolomnya sendiri dan tidak pernah dilebur ke `subtotal_amount`, `net_revenue` mengecualikannya tanpa satu pun kueri yang diubah. Membaliknya nanti cukup dengan menjumlahkannya kembali di `ProfitService`.
-  4. **Dasar penagihan → A: `total_amount` dibiarkan.** Konsisten dengan butir 7 `[BL-065]` yang sudah menerima ongkos yang sama untuk pajak secara sadar.
+  1. **Urutan → A**, dan ini satu-satunya yang **terverifikasi**, bukan diusulkan.
+     Lihat dasar hukumnya di atas.
+  2. **Inclusive → A.** Biaya layanan dihitung dari harga katalog, pajak diurai dari
+     `harga + biaya layanan`. Ongkos yang disadari: di mode inclusive nominal biaya
+     layanan yang tercetak adalah angka **kotor** sementara "Subtotal" tercetak bersih.
+     Benar secara aritmetika, tapi tidak semua pemilik toko akan membacanya begitu.
+     Alternatif **C** (melarang kombinasi inclusive + biaya layanan) tetap bisa
+     ditambahkan kapan saja sebagai satu baris validasi.
+  3. **Atribusi → B: bukan pendapatan toko.** Ternyata gratis — karena
+     `service_charge_amount` kolomnya sendiri dan tidak pernah dilebur ke
+     `subtotal_amount`, `net_revenue` mengecualikannya tanpa satu pun kueri yang
+     diubah. Membaliknya nanti cukup dengan menjumlahkannya kembali di `ProfitService`.
+  4. **Dasar penagihan → A: `total_amount` dibiarkan.** Konsisten dengan butir 7
+     `[BL-065]` yang sudah menerima ongkos yang sama untuk pajak secara sadar.
 - **Yang sengaja TIDAK dibangun:**
-  Seluruh mesin penguncian. Tidak ada `serviceChargeLocked()`, tidak ada padanan `tax_lock_opened_until`, tidak ada jalur operator platform. Penguncian `tax_mode` dibeli oleh kewajiban hukum memungut dan riwayat pungutan yang tidak boleh berlubang; biaya layanan tidak punya keduanya. Yang menjaga kebenaran angka lama bukan kunci, melainkan pembekuan per transaksi. Kira-kira satu tahap penuh yang tidak perlu ada.
+  Seluruh mesin penguncian. Tidak ada `serviceChargeLocked()`, tidak ada padanan
+  `tax_lock_opened_until`, tidak ada jalur operator platform. Penguncian `tax_mode`
+  dibeli oleh kewajiban hukum memungut dan riwayat pungutan yang tidak boleh berlubang;
+  biaya layanan tidak punya keduanya. Yang menjaga kebenaran angka lama bukan kunci,
+  melainkan pembekuan per transaksi. Kira-kira satu tahap penuh yang tidak perlu ada.
 - **File Terdampak:**
-  - `database/migrations/2026_09_07_073544_add_service_charge_columns_to_tenants_table.php` — setelan tenant; bawaan mati, label nullable tanpa default
+  - `database/migrations/2026_09_07_073544_add_service_charge_columns_to_tenants_table.php` — setelan tenant, bawaan mati, label nullable tanpa default
   - `database/migrations/2026_09_07_073545_add_service_charge_columns_to_transactions_table.php` — angka keempat + dua kolom konteks beku; tanpa backfill, karena 0 memang jawaban yang benar untuk seluruh masa sebelumnya
-  - `app/Services/TaxCalculator.php` — `apply()` dan `columnsFor()` menerima konteks kedua dan mengembalikan empat angka; `serviceContextFor()` / `serviceContextOf()` / `noServiceCharge()`
+  - `app/Services/TaxCalculator.php` — `apply()` dan `columnsFor()` menerima konteks kedua dan mengembalikan empat angka; `serviceContextFor()`/`serviceContextOf()`/`noServiceCharge()`
   - `resources/js/support/tax.js` — cerminnya, plus `serviceChargeLine()`
   - `app/Services/TransactionService.php` — ketiga jalur penulis (kasir, pesanan mandiri, sinkronisasi offline)
-  - `app/Services/TransactionEditService.php` — `serviceContextOf()`; tarif **beku**, bukan tarif hari ini
-  - `app/Http/Controllers/Cashier/POSController.php` — konteks ikut snapshot offline; tanpa itu penjualan offline mendarat `needs_review` satu per satu
+  - `app/Services/TransactionEditService.php` — `serviceContextOf()`, tarif **beku**, bukan tarif hari ini
+  - `app/Http/Controllers/Cashier/POSController.php` — konteks ikut snapshot offline; tanpa itu penjualan offline mendarat `needs_review`
   - `app/Http/Controllers/Api/V1/Mobile/MobileTransactionController.php` — kolom beku diteruskan ke struk mobile
-  - `resources/js/Pages/Cashier/POS.vue`, `resources/js/Components/ReceiptModal.vue`, `resources/js/Components/TransactionSuccessModal.vue`, `resources/js/services/escpos.js` — keranjang dan ketiga struk
+  - `resources/js/Pages/Cashier/POS.vue`, `Components/ReceiptModal.vue`, `Components/TransactionSuccessModal.vue`, `services/escpos.js` — keranjang dan ketiga struk
   - `app/Services/ProfitService.php` — angka keempat di payload analisis AI dan MCP
   - `app/Http/Controllers/Owner/ReportController.php` — laporan harian/bulanan + `serviceChargeContext()`; ekspor CSV berhenti memakai ternary bersarang karena kolom opsionalnya kini dua dan saling bebas
   - `app/Http/Controllers/Owner/Settings/ServiceChargeSettingsController.php` — **baru**, tanpa mesin penguncian
   - `routes/web.php`, `app/Http/Controllers/Owner/Settings/SystemBehaviorController.php`, `resources/js/Pages/Owner/Settings/Operations.vue` — endpoint dan kartu setelannya
   - `tests/Unit/TaxCalculatorTest.php`, `tests/Feature/TaxFoundationTest.php`, `tests/Feature/ServiceChargeTest.php` — invarian empat-angka di kedua mode, pembekuan tarif saat edit, dan bahwa biaya layanan **tidak** terkunci
 - **Catatan Migrasi:**
-  `php artisan migrate`. Tidak ada backfill dan tidak ada yang perlu disiapkan: seluruh transaksi lama lahir dengan `service_charge_amount = 0` dan konteks `NULL`, yang berarti "lahir sebelum biaya layanan ada" — berbeda artinya dari "dipungut nol persen". Tenant yang tidak menyalakannya tidak melihat perubahan apa pun, di layar mana pun.
+  `php artisan migrate`. Tidak ada backfill dan tidak ada yang perlu disiapkan:
+  seluruh transaksi lama lahir dengan `service_charge_amount = 0` dan konteks `NULL`,
+  yang berarti "lahir sebelum biaya layanan ada" — berbeda artinya dari "dipungut nol
+  persen". Tenant yang tidak menyalakannya tidak melihat perubahan apa pun, di layar
+  mana pun.
 
 ---
+
+---
+
+### [ADDITION] "Mode Bazar" Mendarat Sebagai Paket Setelan, Bukan Mode — dan Kuncinya Lepas dari Penetapan Harga (BL-035)
+- **Tanggal:** 2026-09-07
+- **Fase Terkait:** Di Luar Fase — `[BL-035]`, yang dibuka 2026-07-31 dan menunggu keputusan pemilik sampai 2026-09-06.
+- **Dampak:** `config/business-presets.php` (bentuk barunya), `BusinessPresetService`, `AuthController::showRegister()`/`register()`, `SystemBehaviorController` (satu aksi baru), satu rute baru, `tenants.selling_style`, `Register.vue`, dan `Operations.vue`.
+- **Breaking Change:** Bentuk `config/business-presets.php` berubah — kunci `features` jadi `settings`, dan `presets` sekarang dikunci CARA BERJUALAN, bukan jenis usaha. Tidak ada API publik yang terpengaruh; `business_type_styles` menjaga agar klien yang cuma mengirim `business_type` tetap mendarat dengan setelan yang masuk akal.
+- **Deskripsi:**
+  Permintaan pemilik berbunyi "mode bazar atau tenant khusus untuk jualan di cfd, event, dll", dan selama tiga belas bulan entri ini macet karena pertanyaannya bukan teknis: **apa yang berubah saat mode itu aktif?** Jawaban pemilik 2026-09-06 justru mengubah jenis barangnya — *"lebih ke paketan settings saja, sangat berguna untuk first time experienced user agar tidak bingung pilih settingannya."*
+
+  Jadi tidak ada mode. Tidak ada `bazar_enabled`, tidak ada `hasFeature('bazar')`, tidak ada rute yang digerbangi, dan tidak ada satu baris pun perilaku baru. Yang ada adalah **bundel nilai awal** yang menjawab satu pertanyaan tambahan di pendaftaran: "paling mirip yang mana cara Anda berjualan?"
+
+  Pemeriksaan ke kode lebih dulu memangkas separuh pekerjaan yang dikira ada. Dua dari empat kandidat pembeda di catatan asli ternyata **sudah jalan**: operasi offline utuh untuk semua tenant tanpa flag apa pun (`SyncOfflineTransactionsRequest`, `OfflineReviewController`), dan "nomor antrian ditonjolkan" sudah bisa hari ini lewat `kitchen_queue` + `order_identity_mode = 'code'`. Keduanya dicoret, bukan dibangun ulang.
+- **Keputusan yang membentuknya:**
+  **(a) Kunci paket TERPISAH dari `business_type`.** Kolom barunya `tenants.selling_style`, dan pemisahan ini bukan kerapian: `business_type` adalah dimensi di `config/pricing-dimensions.php` yang dibekukan per tagihan di `invoices.pricing_context`. Penjual di CFD tetap `kuliner` di mata tarif — yang berbeda cuma cara ia bekerja. Menumpangkan "gerai acara" pada `business_type` akan menyeretnya ke `PricingRule` dan `BusinessTypeResolver`. Ada dua uji yang menjaganya dari kedua arah.
+  **(b) Batas dari pemilik yang membentuk seluruhnya:** *"perbedaan harga hanya dari adaptif atau premium urutannya, semua setting dan fitur lainnya tetap terbuka."* Paket karena itu **nilai awal, tidak pernah pembatas** — tidak ada setelan yang dikunci di baliknya, dan tidak ada paket yang menggeser tarif. Diverifikasi: tidak ada satu pun `PricingRuleCondition` yang memakai `business_type`; seluruhnya memakai `monthly_revenue`.
+  **(c) Aturan kerja boleh ikut paket — PEMBALIKAN aturan yang tertulis di `config/business-presets.php`.** Berkas itu dulu menyatakan preset sengaja hanya menyentuh kapabilitas modul. Aturan itu ditulis untuk mencegah aplikasi memutuskan **diam-diam**, dan syaratnya sekarang ditegakkan mesin: setelan yang `visible` tampil di formulir dan bisa diubah saat itu juga; yang tidak tampil **wajib** muncul di blok "Disetel otomatis untuk Anda" lewat `hiddenSummaryFor()`. Yang tetap terlarang adalah setelan yang mendarat tanpa muncul di layar mana pun. Komentar di config sudah ditulis ulang — kalau tidak, kode akan menyatakan aturan yang sudah dicabut.
+  **(d) Penerapan ulang hanya kalau DIMINTA.** Tombol "Terapkan paket ini" di Pengaturan punya rute dan aksi sendiri (`POST owner/settings/operations/preset`), bukan cabang di `update()`. Selama begitu, "apa yang bisa menyalakan fitur tanpa saya minta" punya satu jawaban yang bisa dicari, dan aturan `[BL-034]` tetap utuh: membetulkan jenis usaha tidak pernah menerapkan ulang apa pun. Layarnya memperlihatkan selisihnya lebih dulu, dan tombolnya mati kalau tidak ada yang berubah.
+- **Isi paket "Gerai Acara & Bazar":** antrian dapur menyala, analisis AI menyala, pesan mandiri mati, identitas pesanan **kode panggil otomatis**, saran jual wajib dijawab mati, foto bukti pembayaran mati.
+- **Yang sengaja TIDAK boleh masuk paket mana pun:** pajak (`tax_*`) karena status pajak urusan hukum, serta `min_margin_percent` dan `cash_payout_approval_threshold` karena keduanya angka kebijakan. Ketiganya tidak punya baris di katalog, dan ada uji yang gagal kalau ada yang menambahkannya.
+- **Jebakan yang ditemukan saat mengerjakan, dan bentuknya sekarang jadi penjaga:**
+  1. **Daftar centang tidak boleh jadi sumber kebenaran untuk setelan yang tak pernah ditawarkan.** `columnsFor()` semula menyetel SETIAP kolom boolean dari daftar centang. Karena formulir hanya menampilkan setelan `visible`, ketidakhadiran yang tersembunyi terbaca sebagai "dilepas centangnya" — dan setiap setelan tersembunyi akan dipaksa mati, termasuk yang paketnya justru ingin nyalakan. Sekarang `presetColumnsFor()` jadi dasar, lalu jawaban formulir menimpanya; `columnsFor()` hanya menyentuh yang `visible`, dan `featureNames()` hanya menerima yang `visible` supaya permintaan buatan tangan tidak bisa menyetel sesuatu yang tak punya tombol.
+  2. **Tidak semua saklar adalah kapabilitas.** `upsell_mandatory` boolean dan punya kolom, tapi `Tenant::hasFeature()` sengaja tidak mengenalinya karena ia tidak menggerbangi rute apa pun (`[BL-025]`). Katalog karena itu punya `capability`, dan ujinya memeriksa `hasFeature()` menjawab persis sesuai penandaan itu — bukan "true untuk semua boolean", yang justru membuat uji pertama gagal dan menyingkap perbedaan ini.
+- **Yang tersisa:** `[BL-104]` (menutup tagihan terbuka untuk gerai acara) berdiri sendiri dan tidak diblokir entri ini. `[BL-036]` — seeder studi kasus kedua — sekarang terbuka.
+
+---
+
+### [HOTFIX] Strip Saran Berhenti Mengutip Harga Katalog untuk Barang yang Sedang Berdiskon (BL-103 Butir 1)
+- **Tanggal:** 2026-09-07
+- **Fase Terkait:** Di Luar Fase — `[BL-103]` butir 1, yaitu sisa `[BL-018]` yang tertinggal di jalur upsell.
+- **Dampak:** Ketiga strategi upsell yang menyarankan VARIAN (`PressedStockStrategy`, `UpsizeVariantStrategy`, `ManualRuleStrategy`), ditambah satu method baru di `DiscountService`. Bentuk indeks, prop POS, `Suggestion`, dan pencatatan event tidak berubah sama sekali.
+- **Breaking Change:** Tidak. Yang berubah hanya NILAI `suggested_variant_price` dan `extra_amount`, bukan bentuknya.
+- **Deskripsi:** Grid katalog memakai `effective_price` sejak `[BL-018]`, sementara strip saran masih mengutip `$variant->price`. Barang yang sama karena itu masuk keranjang dengan dua harga berbeda tergantung tombol mana yang ditekan kasir — dari grid ia masuk berdiskon, dari strip ia masuk pada harga penuh.
+- **Yang salah BUKAN yang ditagih, dan itu yang membuatnya bertahan lama.** `TransactionService::resolveItemPrice()` selalu menghitung ulang harga di server dan mengabaikan `unit_price` kiriman klien, jadi uang yang masuk selalu benar dan tidak ada laporan yang terlihat aneh. Yang salah adalah angka yang dibacakan kasir kepada pelanggan dan total keranjang sebelum bayar — dan arahnya selalu sama: strip mengutip LEBIH MAHAL daripada yang akan ditagih, karena potongan hanya pernah menurunkan harga. Kasir yang menyebut satu angka lalu menagih angka lain tidak punya cara menjelaskan selisihnya.
+- **Naik ukuran memakai DUA harga sekaligus, dan pembagiannya disengaja.** TANGGA ukurannya tetap ditentukan harga KATALOG — urutan Small → Medium → Large adalah sifat produknya dan tidak boleh berubah gara-gara potongan hari ini — sedangkan angka yang DIKUTIP ke kasir (harga varian besarnya dan selisih yang dibayar pelanggan) memakai harga EFEKTIF. Konsekuensinya `extra_amount` kini bisa **negatif**, yaitu saat varian besar sedang berdiskon sampai lebih murah daripada pemicunya. `UpsellStrip.vue` sudah hanya mencetak "+Rp" saat angkanya di atas nol, jadi tampilannya tidak perlu ikut diubah — dan rasio selisihnya ditahan di nol supaya skor naik ukuran tetap di pita 30–40 seperti sebelumnya, bukan melompat ke luar pita yang dipakai seluruh strategi mesin.
+- **`ManualRuleStrategy` ikut diperbaiki walau entri backlognya hanya menyebut dua strategi.** Cacatnya sama persis, di dua baris yang bentuknya sama, dan aturan yang ditulis owner tidak membebaskan strip dari mengutip harga yang benar-benar akan ditagih. Membiarkannya berarti meninggalkan instansi keempat dari cacat yang sedang diperbaiki.
+- **Satu method baru di `DiscountService`, dan alasannya jebakan N+1 yang nyata.** `priceFor()` menerima `?DiscountRule` dan tidak bisa membedakan "varian ini memang tidak punya aturan" dari "aturannya belum dicari": ia menjawab `null` dengan mencarinya sendiri — satu kueri per varian. `effectivePrice()` menerima peta hasil `rulesFor()` dan menjawab dari peta itu, sehingga tiap strategi cukup **satu** kueri untuk seluruh kumpulannya. Jebakan yang sama masih terpasang di `POSController::catalogWithDiscounts()`, di jalur terpanas aplikasi; ia sengaja tidak ikut diperbaiki di sini dan dicatat sebagai pekerjaan tersendiri.
+- **File Terdampak:**
+  - `app/Services/DiscountService.php` — `effectivePrice()`, harga efektif dari peta aturan yang sudah dimuat
+  - `app/Services/Upsell/Strategies/PressedStockStrategy.php` — harga efektif untuk `extra_amount` dan `suggested_variant_price`; docblock yang menunggu `[BL-018]` diperbarui
+  - `app/Services/Upsell/Strategies/UpsizeVariantStrategy.php` — selisih dari dua harga efektif, tangga ukuran tetap dari harga katalog
+  - `app/Services/Upsell/Strategies/ManualRuleStrategy.php` — harga efektif untuk saran yang ditulis owner
+  - `resources/js/Pages/Cashier/POS.vue` — komentar jalur saran diperbarui; harga tetap datang dari server, tidak dihitung ulang di klien
+  - `tests/Feature/Upsell/UpsellDiscountedPriceTest.php` — enam test: harga tertekan berdiskon, lantai untung, selisih naik ukuran, varian besar yang lebih murah, saran manual, dan varian tanpa aturan
 
 ---
 
