@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-07 | ADDITION | Langganan | Seat yang Dibeli di Tengah Periode Ditagih per Hari — dan Celah Jendela Tagihan Ikut Tertutup (BL-070) |
 | 2026-09-06 | ADDITION | Kas | Setiap Penjualan Membawa Laci yang Menerima Uangnya — Diisi Maju, Tanpa Backfill (BL-028 Tahap B Langkah 1) |
 | 2026-09-06 | ADDITION | Kas | Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093) |
 | 2026-09-06 | ADDITION | AI Analysis | Nama Varian di Hasil AI Jadi Bisa Diklik — dan yang Barangnya Sudah Hilang Ditandai (BL-100 Tahap 2 & 3) |
@@ -237,6 +238,31 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+---
+
+### [ADDITION] Seat yang Dibeli di Tengah Periode Ditagih per Hari — dan Celah Jendela Tagihan Ikut Tertutup (BL-070)
+- **Tanggal:** 2026-09-07
+- **Fase Terkait:** Di Luar Fase — `[BL-070]`, sisa `[BL-053]` butir (b)(2) yang sengaja dipisahkan untuk dipikirkan ulang
+- **Dampak:** Migration (satu kolom JSON pada `subscriptions`), `Subscription`, `SubscriptionService` (`grantSeats()`, `seatProrataFor()` baru, `consumeSeatProrata()` baru, `draftSubscriptionInvoice()`, kedua penerbit tagihan), `tests/Feature/Subscription/AutoInvoiceTest.php`
+- **Breaking Change:** Tidak untuk data yang sudah ada — kolomnya `nullable` dan kosong untuk seluruh langganan lama, sehingga seat yang dibeli SEBELUM perubahan ini tetap gratis sampai periodenya habis, persis seperti yang dijanjikan saat ia dibeli. Yang berubah adalah nominal tagihan untuk pembelian seat SESUDAHNYA.
+- **Deskripsi:** Seat yang dibeli di tengah periode tidak lagi gratis sampai periode itu habis. `grantSeats()` mencatat tanggal belinya beserta panjang periode yang mengandungnya ke `subscriptions.pending_seat_prorata`; `draftSubscriptionInvoice()` mengubahnya jadi satu komponen tagihan di samping komponen seat dan kuota AI, dan rinciannya — hari, cacah seat, nominal, DAN entri pembelian aslinya — ikut dibekukan di `pricing_context.billing_breakdown`. Entrinya dikosongkan hanya setelah tagihannya benar-benar tersimpan.
+- **Alasan:** Sampai sekarang tenant yang membeli sehari setelah periodenya dibuka mendapat 29 hari cuma-cuma dan yang membeli sehari sebelum habis mendapat satu, sementara keduanya membayar sama. Itu keputusan sadar pemilik 2026-08-08 ("paling sederhana, bukan paling adil"), dan `[BL-070]` menahan pertanyaannya untuk ditinjau ulang dengan data pemakaian nyata. Keputusan 2026-09-07 memilih bentuk **(a)** tanpa menunggu data itu — pengukuran 2026-09-06 menemukan nol pembelian tercatat, jadi ambang peninjauan yang entri itu tetapkan tidak pernah terjawab.
+- **File Terdampak:**
+  - `database/migrations/..._add_pending_seat_prorata_to_subscriptions_table.php` — **baru**; kolom JSON `nullable`
+  - `app/Models/Subscription.php` — `$fillable` + cast `array`
+  - `app/Services/SubscriptionService.php` — `seatProrataFor()` & `consumeSeatProrata()` **baru**; `grantSeats()` mencatat tanggal; `draftSubscriptionInvoice()` menambah komponen & rincian; kedua penerbit mengonsumsi entrinya setelah `Invoice::create()`
+  - `tests/Feature/Subscription/AutoInvoiceTest.php` — **6 test baru**
+- **Yang ternyata lebih rusak daripada yang dicatat entrinya:**
+  `[BL-070]` menghitung kerugiannya "paling banyak satu periode per seat, sekali seumur pembelian". Itu meleset. Tagihan periode berikutnya terbit `invoice_lead_days` **sebelum** periode berjalan habis, dan penjaga periode-ganda (`[BL-058]`) menolak tagihan kedua untuk periode yang sama — sehingga seat yang dibeli di dalam jendela itu tidak ikut tagihan yang sudah terbit, dan baru tertagih penuh **dua periode** kemudian. Karena itu yang ditagih di sini adalah **hari yang belum tertutup tagihan penuh mana pun**, dihitung dari tanggal beli sampai awal periode yang benar-benar menagihnya — bukan sisa periode berjalan. Rumus "sisa periode" akan menagih beberapa hari lalu membiarkan sisanya lewat.
+- **Keputusan yang perlu diingat:**
+  - **Penyebutnya dibekukan di dalam entri, tidak dihitung ulang.** `period_days` disimpan saat pembelian karena periode yang mengandungnya sudah lewat saat tagihan disusun, dan mengukurnya dengan jangkar hari ini meleset tiap kali bulan pendek ada di antaranya. Alasan yang sama dengan `billing_breakdown` (`[BL-053]`).
+  - **Dikosongkan sesudah tagihan tersimpan, bukan saat disusun.** `draftSubscriptionInvoice()` tidak menyimpan apa pun dan dipakai juga oleh `dryRun`; entri yang hangus untuk tagihan yang batal terbit adalah hari-hari yang tidak akan pernah tertagih kepada siapa pun. Yang dibuang dicocokkan per entri, bukan dengan mengosongkan kolomnya, supaya pembelian yang menyelip antara penyusunan dan penyimpanan tetap menunggu tagihan berikutnya.
+  - **Pembelian yang jatuh pada atau sesudah awal periode yang ditagih bernominal nol tapi tetap dikonsumsi.** Ia sudah tertutup penuh oleh komponen seat tagihan itu; dibiarkan menggantung, ia akan tertagih lagi sebagai satu periode penuh untuk hari-hari yang sudah dibayar. Keadaan ini nyata pada tenant yang periodenya beku di masa lalu (`suspended`, `[BL-051]`).
+  - **Pembulatan sekali di total, bukan per entri.** Membulatkan tiap entri lalu menjumlahkannya menggeser total sebesar jumlah entrinya.
+  - **Rincian prorata WAJIB ikut `billing_breakdown`**, termasuk entri pembelian aslinya — syarat yang `[BL-070]` tetapkan sendiri untuk bentuk (a). Tanpa itu pecahan tagihan tidak bisa ditelusuri sampai ke tanggal belinya oleh siapa pun, karena entrinya sudah dikosongkan.
+  - **`releaseSeats()` tidak disentuh.** Pelepasan tetap berlaku satu periode penuh ke depan, dan celah "beli lalu lepas tanpa pernah bayar" tetap tertutup dari sisi itu.
+  - **Data lama sengaja tidak di-backfill.** Seat yang dibeli sebelum perubahan ini dibeli dengan janji "gratis sampai periode habis"; menagihnya surut berarti mengubah harga yang sudah disepakati.
 
 ---
 

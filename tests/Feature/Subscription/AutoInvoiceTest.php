@@ -629,3 +629,131 @@ test('the platform can still type a subscription invoice for a month that has an
     // jalan untuk menagih langganan bulan itu.
     expect(Invoice::where('tenant_id', $tenant->id)->where('kind', Invoice::KIND_SUBSCRIPTION)->count())->toBe(1);
 });
+
+/**
+ * Prorata seat — `[BL-070]` bentuk (a), keputusan pemilik 2026-09-07.
+ *
+ * Sampai keputusan itu, seat yang dibeli tanggal berapa pun gratis sampai
+ * periode berjalan habis: yang membeli sehari setelah periode dibuka mendapat
+ * 29 hari cuma-cuma, yang membeli sehari sebelum habis mendapat satu. Keduanya
+ * membayar sama.
+ */
+test('a seat bought mid-period is charged for the days it was already entitled', function () {
+    // Dibekukan supaya penyebutnya tidak ikut panjang bulan saat tes dijalankan:
+    // 10 Juni - 10 Juli genap 30 hari.
+    Carbon::setTestNow('2026-07-07');
+
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    app(SubscriptionService::class)->grantSeats($tenant, 2);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $invoice = Invoice::where('tenant_id', $tenant->id)->firstOrFail();
+    $breakdown = $invoice->pricing_context['billing_breakdown'];
+
+    // Tiga hari tersisa dari periode 30 hari, dua seat, Rp 5.000 per seat:
+    // 2 x 5000 x 3/30 = 1000. Di atas tarif paket dan komponen seat penuh
+    // periode berikutnya.
+    expect($breakdown['seat_prorata_days'])->toBe(3)
+        ->and($breakdown['seat_prorata_seats'])->toBe(2)
+        ->and($breakdown['seat_prorata_amount'])->toEqual(1000)
+        ->and((float) $invoice->amount)->toBe(111000.0);
+});
+
+test('the frozen breakdown says which purchase the prorata came from', function () {
+    Carbon::setTestNow('2026-07-07');
+
+    ['tenant' => $tenant] = billableTenant(daysUntilPeriodEnd: 3);
+
+    app(SubscriptionService::class)->grantSeats($tenant, 1);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    $entries = Invoice::where('tenant_id', $tenant->id)->firstOrFail()
+        ->pricing_context['billing_breakdown']['seat_prorata_entries'];
+
+    // Nominalnya saja tidak cukup: entrinya dikosongkan begitu tagihan
+    // tersimpan, jadi tanpa ini pecahan tagihan tidak bisa ditelusuri sampai ke
+    // tanggal belinya oleh siapa pun.
+    expect($entries)->toHaveCount(1)
+        ->and($entries[0]['on'])->toBe(now()->toDateString())
+        ->and($entries[0]['seats'])->toBe(1)
+        ->and($entries[0]['period_days'])->toBe(30);
+});
+
+test('a prorata entry is consumed once the invoice carrying it exists', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    app(SubscriptionService::class)->grantSeats($tenant, 1);
+    expect($subscription->refresh()->pending_seat_prorata)->toHaveCount(1);
+
+    artisan('subscriptions:advance-lifecycle')->assertSuccessful();
+
+    // Dibiarkan menggantung, hari-hari yang sama tertagih lagi di tagihan
+    // berikutnya — kali ini sebagai satu periode penuh, karena jaraknya sudah
+    // melewati satu periode.
+    expect($subscription->refresh()->pending_seat_prorata)->toBeNull();
+});
+
+test('a dry run never consumes the prorata it just counted', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    app(SubscriptionService::class)->grantSeats($tenant, 1);
+
+    app(SubscriptionService::class)->issueDuePeriodInvoices(dryRun: true);
+
+    // Penyusun tagihan tidak menyimpan apa pun. Entri yang hangus untuk tagihan
+    // yang tidak pernah terbit adalah hari-hari yang tidak akan pernah tertagih
+    // kepada siapa pun.
+    expect($subscription->refresh()->pending_seat_prorata)->toHaveCount(1)
+        ->and(Invoice::where('tenant_id', $tenant->id)->count())->toBe(0);
+});
+
+test('a seat that missed a whole invoice is charged for more than one period', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    // Tagihan periode berikutnya terbit `invoice_lead_days` SEBELUM periode
+    // berjalan habis, dan penjaga periode-ganda menolak tagihan kedua untuk
+    // periode yang sama. Seat yang dibeli di dalam jendela itu karena itu baru
+    // tertagih penuh DUA periode kemudian — celah yang tidak tercatat di entri
+    // `[BL-070]`, yang mengklaim kerugiannya "paling banyak satu periode".
+    $subscription->update([
+        'pending_seat_prorata' => [[
+            'on' => $subscription->current_period_end->copy()->subDays(35)->toDateString(),
+            'seats' => 1,
+            'period_days' => 30,
+        ]],
+    ]);
+
+    $prorata = app(SubscriptionService::class)
+        ->seatProrataFor($subscription, $subscription->current_period_end);
+
+    // 35 hari tak tertutup atas periode 30 hari: pecahannya memang di atas 1,
+    // dan itu benar. Rumus "sisa periode berjalan" akan menagih 3 hari saja.
+    expect($prorata['days'])->toBe(35)
+        ->and($prorata['amount'])->toEqual(round(5000 * 35 / 30));
+});
+
+test('a purchase already covered by this invoice costs nothing but is still consumed', function () {
+    ['tenant' => $tenant, 'subscription' => $subscription] = billableTenant(daysUntilPeriodEnd: 3);
+
+    // Periode yang beku di masa lalu — keadaan tenant `suspended` (`[BL-051]`).
+    // Pembelian sesudah awal periode yang ditagih sudah tertutup penuh oleh
+    // komponen seat tagihan ini.
+    $subscription->update([
+        'pending_seat_prorata' => [[
+            'on' => $subscription->current_period_end->copy()->addDays(2)->toDateString(),
+            'seats' => 1,
+            'period_days' => 30,
+        ]],
+    ]);
+
+    $prorata = app(SubscriptionService::class)
+        ->seatProrataFor($subscription, $subscription->current_period_end);
+
+    // Dibiarkan menggantung, ia tertagih lagi sebagai satu periode penuh untuk
+    // hari-hari yang sudah dibayar.
+    expect($prorata['amount'])->toEqual(0)
+        ->and($prorata['entries'])->toHaveCount(1);
+});

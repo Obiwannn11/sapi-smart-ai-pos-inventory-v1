@@ -430,6 +430,91 @@ class SubscriptionService
     }
 
     /**
+     * Prorata seat: hari-hari yang sudah jadi hak tenant tapi belum tertutup
+     * tagihan penuh mana pun (`[BL-070]`, bentuk (a), keputusan pemilik
+     * 2026-09-07).
+     *
+     * Sebelum ini seat yang dibeli tanggal berapa pun gratis sampai periode
+     * habis. Itu pilihan sadar, bukan cacat — yang mengubahnya adalah keputusan
+     * memilih bentuk (a) setelah ternyata penyimpanannya, bukan aritmetikanya,
+     * yang jadi ongkos sebenarnya: bentuk (b) yang "lebih murah" membutuhkan
+     * state yang sama persis dan hanya menghemat beberapa baris hitungan.
+     *
+     * **Yang ditagih adalah hari yang tak tertutup, bukan sisa periode.** Kedua
+     * rumus itu sama untuk kasus biasa dan berbeda untuk kasus yang justru
+     * paling merugikan: tagihan periode berikutnya terbit `invoice_lead_days`
+     * SEBELUM periode berjalan habis, dan seat yang dibeli di dalam jendela itu
+     * tidak ikut tagihan yang sudah terbit — sementara penjaga periode-ganda
+     * menolak tagihan kedua untuk periode yang sama. Seat itu baru tertagih
+     * penuh DUA periode kemudian. Menghitung "sisa periode berjalan" akan
+     * menagih beberapa hari dan membiarkan sisanya lewat; menghitung dari
+     * tanggal beli sampai awal periode yang benar-benar menagihnya menutup
+     * seluruhnya, dan menghasilkan pecahan di atas 1 justru ketika memang
+     * seharusnya. Celah ini tidak tercatat di entri `[BL-070]` — ia mengklaim
+     * kerugiannya "paling banyak satu periode per seat".
+     *
+     * **Penyebutnya dibaca dari entri, tidak dihitung ulang.** `period_days`
+     * dibekukan saat pembelian karena periode yang mengandungnya sudah lewat
+     * saat tagihan disusun, dan mengukurnya dengan jangkar hari ini meleset tiap
+     * kali bulan pendek ada di antaranya. Entri lama tanpa `period_days` jatuh
+     * ke panjang bulan periode yang ditagih — hampiran, dan hanya berlaku untuk
+     * data yang tidak bisa lahir dari `grantSeats()`.
+     *
+     * `entries` dikembalikan supaya pemanggilnya bisa mengosongkan PERSIS yang
+     * ikut tertagih. Mengosongkan seluruh kolom akan menghanguskan pembelian
+     * yang menyelip antara penyusunan dan penyimpanan tagihan.
+     *
+     * @return array{days: int, seats: int, unit_price: float, amount: float, entries: list<array<string, mixed>>}
+     */
+    public function seatProrataFor(Subscription $subscription, ?Carbon $periodStart = null): array
+    {
+        $subscription->loadMissing('plan');
+
+        $billedFrom = ($periodStart ?? now())->copy()->startOfDay();
+        $unitPrice = (float) ($subscription->plan?->extra_seat_price ?? 0);
+
+        $days = 0;
+        $seats = 0;
+        $amount = 0.0;
+        $entries = [];
+
+        foreach ($subscription->pending_seat_prorata ?? [] as $entry) {
+            $on = Carbon::parse($entry['on'])->startOfDay();
+            $entrySeats = (int) ($entry['seats'] ?? 0);
+            $periodDays = (int) ($entry['period_days'] ?? 0);
+
+            if ($periodDays <= 0) {
+                $periodDays = $billedFrom->daysInMonth;
+            }
+
+            // Pembelian yang jatuh pada atau sesudah awal periode yang ditagih
+            // sudah tertutup penuh oleh komponen seat tagihan ini. Ia tetap
+            // DIKONSUMSI dengan nominal nol — dibiarkan menggantung, ia akan
+            // tertagih lagi sebagai satu periode penuh di tagihan berikutnya,
+            // untuk hari-hari yang sudah dibayar. Keadaan ini nyata pada tenant
+            // yang periodenya beku di masa lalu (`suspended`, `[BL-051]`).
+            $uncovered = $on->lt($billedFrom) ? (int) $on->diffInDays($billedFrom) : 0;
+
+            $days = max($days, $uncovered);
+            $seats += $entrySeats;
+            $amount += $entrySeats * $unitPrice * $uncovered / $periodDays;
+            $entries[] = $entry;
+        }
+
+        return [
+            'days' => $days,
+            'seats' => $seats,
+            'unit_price' => $unitPrice,
+            // Dibulatkan ke rupiah utuh sekali di sini, bukan per entri:
+            // membulatkan tiap entri lalu menjumlahkannya menggeser total
+            // sebesar jumlah entrinya, dan selisih itu muncul di tagihan yang
+            // harus bisa dijelaskan pecahannya.
+            'amount' => round($amount),
+            'entries' => $entries,
+        ];
+    }
+
+    /**
      * Komponen kuota AI tambahan untuk satu periode (`[BL-069]`).
      *
      * Kembaran `seatChargeFor()` sampai ke perkara `$periodStart`-nya, dan
@@ -458,6 +543,48 @@ class SubscriptionService
             'unit_price' => $unitPrice,
             'amount' => $blocks * $unitPrice,
         ];
+    }
+
+    /**
+     * Kosongkan entri prorata yang baru saja ikut tertagih (`[BL-070]`).
+     *
+     * Dipanggil SESUDAH tagihannya tersimpan, tidak pernah saat disusun.
+     * `draftSubscriptionInvoice()` sengaja tidak menyimpan apa pun, dan entri
+     * yang hangus untuk tagihan yang batal terbit adalah hari-hari yang tidak
+     * akan pernah tertagih kepada siapa pun.
+     *
+     * Yang dibuang dicocokkan per entri, bukan dengan mengosongkan kolomnya:
+     * pembelian yang menyelip antara penyusunan dan penyimpanan harus tetap
+     * menunggu tagihan berikutnya.
+     *
+     * @param  list<array<string, mixed>>  $consumed
+     */
+    private function consumeSeatProrata(Subscription $subscription, array $consumed): void
+    {
+        if ($consumed === []) {
+            return;
+        }
+
+        $remaining = [];
+
+        foreach ($subscription->pending_seat_prorata ?? [] as $entry) {
+            $index = array_search($entry, $consumed, strict: true);
+
+            if ($index === false) {
+                $remaining[] = $entry;
+
+                continue;
+            }
+
+            // Dibuang sekali per kecocokan: dua pembelian identik di hari yang
+            // sama adalah dua entri yang sama persis, dan membuang keduanya
+            // karena satu cocok akan menggratiskan yang satunya.
+            unset($consumed[$index]);
+        }
+
+        $subscription->update([
+            'pending_seat_prorata' => $remaining === [] ? null : $remaining,
+        ]);
     }
 
     /**
@@ -679,6 +806,8 @@ class SubscriptionService
             if (! $dryRun) {
                 $invoice = Invoice::create($draft['attributes']);
 
+                $this->consumeSeatProrata($subscription, $draft['prorata']);
+
                 PlatformAuditLog::record('invoices.auto-create', $invoice, $draft['audit']);
             }
         }
@@ -710,7 +839,7 @@ class SubscriptionService
      * tenggat", sementara penerbit atas permintaan tenant hanya perlu menolak.
      * Keduanya harus memeriksanya SEBELUM memanggil metode ini.
      *
-     * @return array{status: string, amount: float, attributes: array<string, mixed>, audit: array<string, mixed>}
+     * @return array{status: string, amount: float, attributes: array<string, mixed>, audit: array<string, mixed>, prorata: list<array<string, mixed>>}
      */
     private function draftSubscriptionInvoice(
         Tenant $tenant,
@@ -723,7 +852,7 @@ class SubscriptionService
         $price = $resolved['price'];
 
         if ($price === null) {
-            return ['status' => self::DRAFT_UNPRICED, 'amount' => 0.0, 'attributes' => [], 'audit' => []];
+            return ['status' => self::DRAFT_UNPRICED, 'amount' => 0.0, 'attributes' => [], 'audit' => [], 'prorata' => []];
         }
 
         // Komponen seat, dihitung untuk periode yang DITAGIH — bukan untuk
@@ -742,15 +871,23 @@ class SubscriptionService
         // itu cuma-cuma.
         $aiQuota = $this->aiQuotaChargeFor($subscription, $periodStart);
 
-        $amount = $price + $seat['amount'] + $aiQuota['amount'];
+        // Prorata seat (`[BL-070]`): hari-hari yang sudah jadi hak tapi belum
+        // tertutup tagihan penuh mana pun. Ikut sebelum penjaga nominal-nol
+        // dengan alasan yang sama seperti seat dan kuota AI di atasnya — tenant
+        // di paket Rp 0 yang membeli seat di tengah periode punya nominal yang
+        // benar-benar harus dibayar.
+        $prorata = $this->seatProrataFor($subscription, $periodStart);
+
+        $amount = $price + $seat['amount'] + $aiQuota['amount'] + $prorata['amount'];
 
         if ($amount <= 0.0) {
-            return ['status' => self::DRAFT_FREE, 'amount' => 0.0, 'attributes' => [], 'audit' => []];
+            return ['status' => self::DRAFT_FREE, 'amount' => 0.0, 'attributes' => [], 'audit' => [], 'prorata' => []];
         }
 
         return [
             'status' => self::DRAFT_OK,
             'amount' => $amount,
+            'prorata' => $prorata['entries'],
             'attributes' => [
                 'tenant_id' => $tenant->id,
                 'subscription_id' => $subscription->id,
@@ -781,6 +918,16 @@ class SubscriptionService
                         'ai_block_size' => $aiQuota['block_size'],
                         'ai_block_price' => $aiQuota['unit_price'],
                         'ai_blocks_amount' => $aiQuota['amount'],
+                        // Rincian prorata WAJIB ikut dibekukan, bukan sekadar
+                        // nominalnya (`[BL-070]`). Satu baris tagihan yang
+                        // pecahannya tak bisa ditelusuri sampai ke tanggal
+                        // belinya adalah tiket dukungan pertama, dan
+                        // menghitungnya ulang belakangan hanya mengembalikan
+                        // angka hari ini karena entrinya sudah dikosongkan.
+                        'seat_prorata_days' => $prorata['days'],
+                        'seat_prorata_seats' => $prorata['seats'],
+                        'seat_prorata_amount' => $prorata['amount'],
+                        'seat_prorata_entries' => $prorata['entries'],
                         'total' => $amount,
                     ],
                 ],
@@ -924,6 +1071,8 @@ class SubscriptionService
         }
 
         $invoice = Invoice::create($draft['attributes']);
+
+        $this->consumeSeatProrata($subscription, $draft['prorata']);
 
         // Dicatat sebagai kejadian sensitif, dan `requested_by` bukan hiasan:
         // `platform_user_id` selalu null di sini — tak ada orang platform yang
@@ -1422,11 +1571,30 @@ class SubscriptionService
 
         $sebelum = $subscription->purchased_extra_seats;
 
+        // Tanggal belinya dicatat di sini, dan hanya di sini (`[BL-070]`).
+        // `purchased_extra_seats` menjawab "berapa", tidak pernah "sejak
+        // kapan"; satu-satunya jejak tanggal sebelum ini ada di
+        // `platform_audit_logs`, yang tidak boleh jadi sumber kebenaran
+        // penagihan. Panjang periodenya ikut dibekukan — lihat
+        // `seatProrataFor()`.
+        $periodDays = $subscription->current_period_start !== null
+            && $subscription->current_period_end !== null
+                ? (int) $subscription->current_period_start->diffInDays($subscription->current_period_end)
+                : 0;
+
+        $pending = $subscription->pending_seat_prorata ?? [];
+        $pending[] = [
+            'on' => now()->toDateString(),
+            'seats' => $additionalSeats,
+            'period_days' => $periodDays > 0 ? $periodDays : now()->daysInMonth,
+        ];
+
         $subscription->update([
             'purchased_extra_seats' => $sebelum + $additionalSeats,
             'seats' => $subscription->seats + $additionalSeats,
             'scheduled_extra_seats' => null,
             'seat_release_at' => null,
+            'pending_seat_prorata' => $pending,
         ]);
 
         PlatformAuditLog::record('subscriptions.seats-granted', $subscription, [
@@ -1435,6 +1603,7 @@ class SubscriptionService
             'extra_seats_before' => $sebelum,
             'extra_seats_after' => $subscription->purchased_extra_seats,
             'seats' => $subscription->seats,
+            'prorata_from' => now()->toDateString(),
         ]);
 
         return $subscription;

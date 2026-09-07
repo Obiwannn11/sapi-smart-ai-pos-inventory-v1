@@ -40,6 +40,7 @@ class Subscription extends Model
         'track_revert_reason',
         'seats', 'seat_high_water', 'provisional_blocked', 'price_locked',
         'purchased_extra_seats', 'scheduled_extra_seats', 'seat_release_at',
+        'pending_seat_prorata',
         'purchased_ai_blocks', 'scheduled_ai_blocks', 'ai_quota_release_at',
         'trial_ends_at', 'current_period_start', 'current_period_end', 'billing_anchor_day',
     ];
@@ -52,6 +53,7 @@ class Subscription extends Model
             'track_changed_at' => 'datetime',
             'track_reverts_at' => 'date',
             'seat_release_at' => 'date',
+            'pending_seat_prorata' => 'array',
             'ai_quota_release_at' => 'date',
             'trial_ends_at' => 'datetime',
             'current_period_start' => 'date',
