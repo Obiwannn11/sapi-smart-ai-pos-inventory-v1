@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-07 | SCHEMA | Kasir | Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097) |
 | 2026-09-07 | ADDITION | Langganan | Seat yang Dibeli di Tengah Periode Ditagih per Hari — dan Celah Jendela Tagihan Ikut Tertutup (BL-070) |
 | 2026-09-06 | ADDITION | Kas | Setiap Penjualan Membawa Laci yang Menerima Uangnya — Diisi Maju, Tanpa Backfill (BL-028 Tahap B Langkah 1) |
 | 2026-09-06 | ADDITION | Kas | Uang Keluar Laci Bisa Dilampiri Foto Struk — Opsional, dan Tanpa Langkah Kedua (BL-093) |
@@ -238,6 +239,50 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [SCHEMA] Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097)
+- **Tanggal:** 2026-09-07
+- **Fase Terkait:** Di Luar Fase (`[BL-097]`, pecahan `[BL-065]`)
+- **Dampak:** Migration | Model | Service | Controller | Route | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Uang transaksi berhenti jadi tiga angka dan menjadi empat. `tenants` mendapat `service_charge_enabled` (bawaan mati), `service_charge_rate`, dan `service_charge_label` (nullable tanpa bawaan — kata yang tercetak di struk tidak pernah ditebak). `transactions` mendapat `service_charge_amount` plus tarif dan label yang **dibekukan** pada saat penjualan.
+
+  Invarian `[BL-065]` butir 8 ditulis ulang jadi `subtotal + biaya layanan + pajak = total`: empat angka, dua yang dibulatkan, dan tetap **tepat satu** yang diturunkan dengan pengurangan. Jangkarnya tetap berbeda per mode — di exclusive harga katalog yang nyata, di inclusive uang yang berpindah tangan.
+
+  **Urutannya: biaya layanan lebih dulu, lalu pajak atas subtotal + biaya layanan.** Ini bukan pilihan gaya. Dasar pengenaan PBJT adalah "jumlah pembayaran yang diterima penyedia makanan dan/atau minuman" (UU HKPD Pasal 51, dirinci PP 35/2023 Pasal 19), dan biaya layanan adalah uang yang diterima restoran. Urutan terbalik menyetorkan pajak lebih kecil dari yang terutang, dan yang menanggung kekurangannya tenant — bukan aplikasi ini.
+
+  Pemilik toko menyalakannya dari halaman Cara Kerja Sistem lewat endpoint tersendiri. Laporan harian, bulanan, dan unduhan CSV memisahkan biaya layanan dari omzet toko.
+- **Alasan:**
+  Dipisah dari `[BL-065]` pada 2026-08-30 karena ia bukan tentang pajak, lalu ditahan dengan syarat masuk "ada calon klien yang benar-benar memungut". Syarat itu **tidak pernah terpenuhi**; pemilik mengesampingkannya pada 2026-09-07 dan meminta pekerjaan ini dikerjakan atas dasar keempat usulan bawaan yang ditulis 2026-09-06.
+
+  Yang membuat itu aman bukan keberanian, melainkan bentuk kolomnya: keempat jawaban menghasilkan **skema yang sama persis**, jadi tak ada tebakan yang membeku di basis data. Yang benar-benar mahal kalau salah cuma bentuk kolomnya, dan bentuk itu tidak bergantung pada jawabannya.
+- **Keputusan yang diambil (nomor mengikuti `[BL-097]`):**
+  1. **Urutan → A**, dan ini satu-satunya yang **terverifikasi**, bukan diusulkan. Lihat dasar hukumnya di atas.
+  2. **Inclusive → A.** Biaya layanan dihitung dari harga katalog, pajak diurai dari `harga + biaya layanan`. Ongkos yang disadari: di mode inclusive nominal biaya layanan yang tercetak adalah angka **kotor** sementara "Subtotal" tercetak bersih. Benar secara aritmetika, tapi tidak semua pemilik toko akan membacanya begitu. Alternatif **C** (melarang kombinasi inclusive + biaya layanan) tetap bisa ditambahkan kapan saja sebagai satu baris validasi.
+  3. **Atribusi → B: bukan pendapatan toko.** Ternyata gratis — karena `service_charge_amount` kolomnya sendiri dan tidak pernah dilebur ke `subtotal_amount`, `net_revenue` mengecualikannya tanpa satu pun kueri yang diubah. Membaliknya nanti cukup dengan menjumlahkannya kembali di `ProfitService`.
+  4. **Dasar penagihan → A: `total_amount` dibiarkan.** Konsisten dengan butir 7 `[BL-065]` yang sudah menerima ongkos yang sama untuk pajak secara sadar.
+- **Yang sengaja TIDAK dibangun:**
+  Seluruh mesin penguncian. Tidak ada `serviceChargeLocked()`, tidak ada padanan `tax_lock_opened_until`, tidak ada jalur operator platform. Penguncian `tax_mode` dibeli oleh kewajiban hukum memungut dan riwayat pungutan yang tidak boleh berlubang; biaya layanan tidak punya keduanya. Yang menjaga kebenaran angka lama bukan kunci, melainkan pembekuan per transaksi. Kira-kira satu tahap penuh yang tidak perlu ada.
+- **File Terdampak:**
+  - `database/migrations/2026_09_07_073544_add_service_charge_columns_to_tenants_table.php` — setelan tenant; bawaan mati, label nullable tanpa default
+  - `database/migrations/2026_09_07_073545_add_service_charge_columns_to_transactions_table.php` — angka keempat + dua kolom konteks beku; tanpa backfill, karena 0 memang jawaban yang benar untuk seluruh masa sebelumnya
+  - `app/Services/TaxCalculator.php` — `apply()` dan `columnsFor()` menerima konteks kedua dan mengembalikan empat angka; `serviceContextFor()` / `serviceContextOf()` / `noServiceCharge()`
+  - `resources/js/support/tax.js` — cerminnya, plus `serviceChargeLine()`
+  - `app/Services/TransactionService.php` — ketiga jalur penulis (kasir, pesanan mandiri, sinkronisasi offline)
+  - `app/Services/TransactionEditService.php` — `serviceContextOf()`; tarif **beku**, bukan tarif hari ini
+  - `app/Http/Controllers/Cashier/POSController.php` — konteks ikut snapshot offline; tanpa itu penjualan offline mendarat `needs_review` satu per satu
+  - `app/Http/Controllers/Api/V1/Mobile/MobileTransactionController.php` — kolom beku diteruskan ke struk mobile
+  - `resources/js/Pages/Cashier/POS.vue`, `resources/js/Components/ReceiptModal.vue`, `resources/js/Components/TransactionSuccessModal.vue`, `resources/js/services/escpos.js` — keranjang dan ketiga struk
+  - `app/Services/ProfitService.php` — angka keempat di payload analisis AI dan MCP
+  - `app/Http/Controllers/Owner/ReportController.php` — laporan harian/bulanan + `serviceChargeContext()`; ekspor CSV berhenti memakai ternary bersarang karena kolom opsionalnya kini dua dan saling bebas
+  - `app/Http/Controllers/Owner/Settings/ServiceChargeSettingsController.php` — **baru**, tanpa mesin penguncian
+  - `routes/web.php`, `app/Http/Controllers/Owner/Settings/SystemBehaviorController.php`, `resources/js/Pages/Owner/Settings/Operations.vue` — endpoint dan kartu setelannya
+  - `tests/Unit/TaxCalculatorTest.php`, `tests/Feature/TaxFoundationTest.php`, `tests/Feature/ServiceChargeTest.php` — invarian empat-angka di kedua mode, pembekuan tarif saat edit, dan bahwa biaya layanan **tidak** terkunci
+- **Catatan Migrasi:**
+  `php artisan migrate`. Tidak ada backfill dan tidak ada yang perlu disiapkan: seluruh transaksi lama lahir dengan `service_charge_amount = 0` dan konteks `NULL`, yang berarti "lahir sebelum biaya layanan ada" — berbeda artinya dari "dipungut nol persen". Tenant yang tidak menyalakannya tidak melihat perubahan apa pun, di layar mana pun.
+
+---
 
 ---
 
