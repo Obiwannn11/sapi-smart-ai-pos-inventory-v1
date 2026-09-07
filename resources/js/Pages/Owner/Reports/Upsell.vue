@@ -22,6 +22,11 @@ const props = defineProps({
     // nol pada baris jenis yang sudah dimatikan terbaca sebagai jenis yang
     // gagal — dan owner mematikan sesuatu yang sudah mati.
     inactiveTypes: { type: Array, default: () => [] },
+    // Penyelamat Stok ([BL-105]).
+    rescue: {
+        type: Object,
+        default: () => ({ rescued: { amount: 0, accepted: 0, shown: 0 }, spoiled: { amount: 0, variants: 0, units: 0 } }),
+    },
 });
 
 const from = ref(props.filters.from);
@@ -120,6 +125,46 @@ const applyFilter = () => {
         preserveScroll: true,
     });
 };
+
+/**
+ * Penyelamat Stok — dua angka yang menjawab pertanyaan pemilik, bukan
+ * pertanyaan analis ([BL-105]).
+ *
+ * Keduanya BERPERIODE BEDA dengan sengaja, dan subtitle-nya yang memikul beda
+ * itu: yang kiri mengikuti filter tanggal di kepala halaman, yang kanan potret
+ * hari ini karena `stock` tidak menyimpan sejarah. Dua angka berperiode beda
+ * yang dipajang berdampingan TANPA label pembeda adalah angka yang berbohong —
+ * pembaca akan menghitung selisihnya, dan selisih itu tidak berarti apa-apa.
+ */
+const rescueCards = computed(() => {
+    const { rescued, spoiled } = props.rescue;
+
+    return [
+        {
+            key: 'rescued',
+            title: 'Omzet dari barang tertekan',
+            value: formatCurrency(rescued.amount),
+            color: 'success',
+            subtitle: rescued.shown > 0
+                ? `${rescued.accepted} dari ${rescued.shown} saran diambil · rentang tanggal di atas`
+                : 'Belum ada saran barang tertekan pada rentang ini',
+        },
+        {
+            key: 'spoiled',
+            title: 'Modal mati di rak',
+            value: formatCurrency(spoiled.amount),
+            color: 'warning',
+            subtitle: spoiled.variants > 0
+                ? `${spoiled.variants} varian kedaluwarsa, ${spoiled.units} pcs · posisi hari ini, bukan rentang`
+                : 'Tidak ada barang kedaluwarsa yang masih tercatat',
+        },
+    ];
+});
+
+/** Tenant yang tidak pernah mengisi tanggal kedaluwarsa tidak perlu melihat dua nol. */
+const showRescue = computed(
+    () => props.rescue.rescued.shown > 0 || props.rescue.spoiled.variants > 0,
+);
 </script>
 
 <template>
@@ -136,6 +181,31 @@ const applyFilter = () => {
                 <DatePicker v-model="to" @update:modelValue="applyFilter" />
             </div>
         </div>
+
+        <!-- Penyelamat Stok ([BL-105]). Ditaruh PALING ATAS, di atas corong,
+             karena inilah satu-satunya bagian halaman ini yang bisa diceritakan
+             pemilik ke orang lain: corong menerangkan seberapa baik mesinnya
+             bekerja, dua angka ini menerangkan apa gunanya. -->
+        <section v-if="showRescue" class="space-y-3">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-800">Penyelamat Stok</h2>
+                <p class="mt-0.5 text-xs text-gray-500">
+                    Barang yang mendekati kedaluwarsa atau tak terjual sebulan didorong lewat saran di layar kasir.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <MetricCard
+                    v-for="card in rescueCards"
+                    :key="card.key"
+                    :title="card.title"
+                    :value="card.value"
+                    :subtitle="card.subtitle"
+                    icon="currency"
+                    :color="card.color"
+                />
+            </div>
+        </section>
 
         <!-- Bentuknya sendiri yang menjelaskan: batang yang menyempit ADALAH
              saran yang hilang di tiap tahap, dan tiap persentase menempel pada

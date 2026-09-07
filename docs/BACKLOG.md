@@ -105,6 +105,48 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
+### [BL-105] Penyelamat Stok Tidak Pernah Menyebut Angkanya — Rantainya Sudah Utuh, Hasilnya Berhenti Jadi Satu Baris Tabel
+- **Ditemukan:** 2026-09-07
+- **Sumber:** Pertanyaan pemilik — *"fitur apa yang bisa saya maksimalkan dan menjadi keunikan dari semua POS yang ada? saya mau unggulkan 1 fitur"* — dijawab dengan penyisiran seluruh sistem, bukan dengan usulan fitur baru.
+- **Status:** In Progress — **butir 1 & 2 selesai 2026-09-07** (lihat `[ADDITION] Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2)` di `docs/CHANGELOG.md`). **Butir 3 & 4 terbuka**, dan bersama keduanya satu pekerjaan yang lahir dari butir 2 sendiri: pencatat harian barang yang melewati kedaluwarsa, tanpanya angka "terlanjur basi" tidak akan pernah bisa dijawab per periode. Ia yang paling mendesak dari ketiganya — alasannya di blok "Batas yang harus disadari" di bawah.
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Services/Upsell/Strategies/PressedStockStrategy.php` — penghasil sarannya
+  - `app/Models/DiscountRule.php:26` — trigger `near_expiry`, potongan yang mendalam ke arah hari kedaluwarsa
+  - `database/migrations/2026_07_27_100000_create_upsell_events_table.php` — nasib tiap saran, termasuk `extra_amount`
+  - `app/Http/Controllers/Owner/ReportController.php:762` — `upsell()`, tempat angkanya hari ini berhenti sebagai satu baris rekap
+  - `app/Services/BadgeHelperService.php:97-120` — Badge 4 "Sudah Expired": tahu varian mana, tidak pernah tahu berapa rupiah
+  - `app/Models/StockMovement.php:17-25` — lima jenis mutasi, tidak satu pun berarti "dibuang"
+
+- **Deskripsi:**
+  Ini bukan temuan cacat. Rantai lengkapnya sudah berdiri dan berjalan:
+
+  ```
+  sinyal stok  →  diskon otomatis  →  mulut kasir  →  hasilnya diukur
+  (near expiry)   (makin dalam)      (strip saran)   (upsell_events)
+  ```
+
+  Keempat mata rantai itu ada, dan tidak satu pun POS pembanding yang disebut di `PRODUCT.md` punya keempatnya sekaligus — yang lain berhenti di mata rantai pertama, yaitu **memberi tahu** bahwa stok akan basi. Yang tidak ada di sini cuma satu hal: **angkanya tidak pernah diucapkan.** `pressed_stock` hari ini hanyalah satu baris berlabel "Barang tertekan" di tabel rekap per jenis pada Laporan Saran Jual. Pemilik tidak pernah membaca kalimat yang akan membuatnya menceritakan SAPI ke orang lain:
+
+  > Bulan ini SAPI menyelamatkan Rp 1.240.000 barang yang tadinya akan basi.
+
+  Bahannya sudah tersimpan sejak 2026-07-27 (`upsell_events.type = pressed_stock`, `status`, `extra_amount`). Yang kurang murni penyajian.
+
+- **Yang perlu dikerjakan, empat butir:**
+  1. **Angka "diselamatkan"** — `SUM(extra_amount)` atas `type = pressed_stock` yang diterima, dinaikkan jadi angka utama, bukan sel tabel. Tidak ada skema baru.
+  2. **Lawan tandingnya, "terlanjur basi"** — varian yang lewat `expiry_date` dengan `stock > 0`, dinilai pada `cost_price`. Belum ada valuasi kerugian di mana pun di `app/`; Badge 4 menghitung varian, tidak pernah rupiah.
+  3. **Sinyal pagi** — barang tertekan hari ini hanya muncul kalau kasir kebetulan sudah punya keranjang berisi (`PressedStockStrategy` hidup di `cart_level`). Owner tidak pernah diberi tahu *"hari ini ada 6 barang yang harus keluar"*.
+  4. **Penamaan.** Fitur ini dijual sebagai "Saran Jual (Upsell)" — istilah yang menerangkan mekanismenya kepada orang yang sudah paham, dan tidak menerangkan apa pun kepada yang belum. Nama yang diusulkan: **Penyelamat Stok**, dengan kalimat pembeda *"POS lain memberi tahu stok Anda mau basi. SAPI menjualnya."*
+
+- **Batas yang harus disadari sebelum butir 2 dikerjakan — dan ia yang menentukan bentuknya.**
+  "Terlanjur basi" **tidak bisa dijawab per periode** dengan data yang ada hari ini. `stock` adalah nilai SEKARANG, bukan sejarah: begitu owner membuang barang kedaluwarsa dan menyesuaikan stoknya jadi nol, kerugian itu lenyap dari basis data tanpa meninggalkan jejak. `stock_movements` tidak menolong — kelima jenisnya (`sale`, `restock`, `adjustment`, `void`, `edit`) tidak ada yang berarti "dibuang", jadi pembuangan tersamar sebagai `adjustment` bersama koreksi hitung dan barang pecah.
+
+  Karena itu butir 2 mendarat sebagai **potret hari ini**, bukan angka periode: *"sekarang ada Rp Y barang kedaluwarsa di rak Anda"*. Itu jujur, dan tetap angka yang bisa ditindaklanjuti. Yang **tidak boleh** dilakukan adalah menyandingkannya dengan angka butir 1 seolah keduanya satu perbandingan berperiode sama — satu angka 30 hari di sebelah satu potret hari ini, dengan label yang tidak membedakannya, adalah grafik yang berbohong. Labelnya yang memikul beban ini, dan karena itu ia bagian dari pekerjaannya, bukan hiasan di atasnya.
+
+  **Angka periodenya menuntut pencatat, dan pencatat itu tidak bisa ditambal mundur** — persis alasan `upsell_events` dulu lahir sebelum permukaannya (`[BL-017]` usulan 5). Bentuk yang disarankan: tugas harian yang menstempel satu baris saat sebuah varian melewati `expiry_date` dengan sisa stok, dinilai pada `cost_price` saat itu. Selama pencatat itu belum ada, tiap bulan yang lewat adalah bulan yang angkanya hilang selamanya. **Ia layak didahulukan atas butir 3 dan 4** justru karena keduanya bisa menyusul kapan saja tanpa kehilangan apa pun.
+
+- **Yang sengaja TIDAK masuk entri ini:** ramalan permintaan berbasis ML. `about.md` masih menjanjikannya sebagai diferensiator Fase 2, dan `[BL-083]` sudah mencabut janji itu dari hero landing pada 2026-08-20. Perbedaannya bukan selera: "menyelamatkan barang yang mau basi" adalah janji yang datanya sudah ada hari ini; "meramal permintaan 30 hari" menuntut tiga bulan data nyata yang belum terkumpul. Menghidupkannya lagi berarti mengulang persis yang sudah dicabut `[BL-083]`.
+
 ### [BL-103] Bundling Berdiskon Belum Ada Wujudnya — dan Dua Komentar Kode Masih Menunggu Entri yang Sudah Selesai
 - **Ditemukan:** 2026-09-06 (saat membersihkan catatan usang di `docs/BACKLOG.md`)
 - **Sumber:** Catatan penutup `[BL-018]` sendiri, 2026-08-19: *"YANG TERSISA, dan ia entri tersendiri: bundling berdiskon."* Baris arsipnya juga menuliskannya (*"bundling berdiskon tetap pekerjaan tersendiri"*), dan catatan pemilik 2026-08-13 menyebutnya sekali lagi. Disebut tiga kali sebagai pekerjaan tersendiri, dan tidak pernah dibuatkan entrinya — jadi begitu `[BL-018]` diarsipkan, ia tidak punya rumah di mana pun

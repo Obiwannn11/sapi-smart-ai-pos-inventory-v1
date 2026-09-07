@@ -13,6 +13,7 @@ use App\Models\TransactionItem;
 use App\Models\TransactionPayment;
 use App\Models\UpsellEvent;
 use App\Services\BusinessClock;
+use App\Services\StockRescueService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -22,6 +23,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
+    public function __construct(private StockRescueService $stockRescue) {}
+
     /**
      * Laporan penjualan harian.
      */
@@ -764,20 +767,13 @@ class ReportController extends Controller
         $from = $request->input('from', BusinessClock::daysAgo(29));
         $to = $request->input('to', BusinessClock::today());
 
-        $scoped = fn () => UpsellEvent::query()
-            ->whereDate('created_at', '>=', $from)
-            ->whereDate('created_at', '<=', $to)
-            // Transaksi yang di-void bukan penjualan, jadi upsell di dalamnya
-            // bukan upsell yang berhasil ([BL-092]). Sebelum ini, kasir yang
-            // membatalkan lalu memasukkan ulang satu transaksi membuat saran
-            // yang sama terhitung DUA KALI — sekali pada transaksi yang sudah
-            // dibatalkan, sekali lagi pada penggantinya.
-            //
-            // `whereDoesntHave` sengaja, bukan join: `transaction_id` boleh
-            // NULL karena transaksi yang benar-benar dihapus melepasnya, dan
-            // migrasinya memilih itu justru supaya menghapus transaksi tidak
-            // diam-diam memperbaiki angka konversi.
-            ->whereDoesntHave('transaction', fn ($query) => $query->where('status', Transaction::STATUS_VOIDED));
+        // Definisinya milik StockRescueService, bukan halaman ini: angka utama
+        // "diselamatkan" di kepala halaman dan tabel rekap di bawahnya harus
+        // menghitung himpunan yang sama persis ([BL-105]). Alasan menyaring
+        // transaksi batal ada di sana ([BL-092]).
+        $tenant = $request->user()->tenant;
+
+        $scoped = fn () => $this->stockRescue->countableEvents($tenant, $from, $to);
 
         // Satu kali baca, dipakai tiga kali. Memisahkan mesin dari manual
         // dengan tiga rombongan query terpisah akan mengalikan biaya halaman
@@ -796,13 +792,27 @@ class ReportController extends Controller
             'filters' => ['from' => $from, 'to' => $to],
             'summary' => $summary,
 
+            // Penyelamat Stok ([BL-105]) — satu-satunya bagian halaman ini yang
+            // menjawab pertanyaan pemilik, bukan pertanyaan analis: berapa uang
+            // yang masuk lewat barang yang sedang tertekan, dan berapa yang
+            // terlanjur mati di rak.
+            //
+            // Kedua angkanya BERPERIODE BEDA dengan sengaja: `rescued` mengikuti
+            // filter tanggal di atas, `spoiled` adalah potret hari ini karena
+            // `stock` tidak menyimpan sejarah. Labelnya di Upsell.vue yang
+            // memikul beda itu — lihat catatan di StockRescueService::spoiled().
+            'rescue' => [
+                'rescued' => $this->stockRescue->rescued($tenant, $from, $to),
+                'spoiled' => $this->stockRescue->spoiled($tenant),
+            ],
+
             // Jenis yang saat ini tidak menghasilkan apa pun — entah dimatikan
             // owner sendiri, entah dimatikan untuk seluruh toko ([BL-099]).
             // Tabel "Per Jenis Saran" di bawah memecah angkanya per jenis
             // SUPAYA jenis yang tak pernah diterima bisa dimatikan; tanpa
             // penanda ini, jenis yang sudah mati terbaca seperti jenis yang
             // gagal, dan owner menonaktifkan sesuatu dua kali.
-            'inactiveTypes' => $this->inactiveUpsellTypes($request->user()->tenant),
+            'inactiveTypes' => $this->inactiveUpsellTypes($tenant),
 
             // Dua sumber saran yang bersaing memperebutkan slot yang sama di
             // layar kasir, jadi hanya berguna kalau bisa dibandingkan

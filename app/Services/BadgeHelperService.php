@@ -8,6 +8,8 @@ use App\Models\Transaction;
 
 class BadgeHelperService
 {
+    public function __construct(private StockRescueService $stockRescue) {}
+
     /**
      * Generate semua badges untuk tenant.
      *
@@ -95,20 +97,27 @@ class BadgeHelperService
         }
 
         // --- Badge 4: Sudah Expired (expiry_date < hari ini) ---
-        $alreadyExpired = (clone $variantScope)
-            ->whereNotNull('expiry_date')
-            ->where('expiry_date', '<', now()->startOfDay())
-            ->where('stock', '>', 0)
+        // Kuerinya milik StockRescueService supaya daftar di kartu ini dan
+        // angka rupiah di Laporan Saran Jual selalu menghitung barang yang sama
+        // ([BL-105]).
+        $alreadyExpired = $this->stockRescue->expiredOnShelf($tenant)
             ->with('product:id,name')
             ->get();
 
         if ($alreadyExpired->count() > 0) {
+            // Menghitung varian tidak pernah membuat siapa pun bertindak;
+            // menyebut modal yang mati di dalamnya membuatnya bertindak. Nilai
+            // pada `cost_price`, alasannya di StockRescueService::spoiled().
+            $expiredValue = $alreadyExpired->sum(fn ($v) => $v->stock * (float) $v->cost_price);
+
             $badges[] = [
                 'type' => 'expired',
                 'severity' => 'danger',
                 'title' => 'Sudah Expired',
                 'count' => $alreadyExpired->count(),
-                'message' => "{$alreadyExpired->count()} varian sudah kedaluwarsa",
+                'value' => $expiredValue,
+                'message' => "{$alreadyExpired->count()} varian sudah kedaluwarsa · Rp "
+                    .number_format($expiredValue, 0, ',', '.').' modal mati di rak',
                 'items' => $alreadyExpired->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,

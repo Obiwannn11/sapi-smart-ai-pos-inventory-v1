@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-07 | ADDITION | Promosi | Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2) |
 | 2026-09-07 | HOTFIX | Kasir | Katalog POS Berhenti Mencari Aturan Diskon Sekali per Varian — 34 Kueri Jadi 5 (BL-103 Butir 1, Sisa) |
 | 2026-09-07 | SCHEMA | Kasir | Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097) |
 | 2026-09-07 | ADDITION | Pendaftaran | "Mode Bazar" Mendarat Sebagai Paket Setelan, Bukan Mode — dan Kuncinya Lepas dari Penetapan Harga (BL-035) |
@@ -242,6 +243,35 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2)
+- **Tanggal:** 2026-09-07
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Dua angka baru, keduanya dari data yang sudah tersimpan — tanpa migrasi, tanpa kolom, tanpa tabel.
+
+  1. **"Omzet dari barang tertekan"** — `SUM(extra_amount)` atas saran `pressed_stock` yang diterima, naik dari satu sel di tabel rekap jadi angka utama di kepala Laporan Saran Jual.
+  2. **"Modal mati di rak"** — varian yang lewat `expiry_date` dengan `stock > 0`, dinilai pada `cost_price`. Angka ini **belum pernah ada di mana pun** di `app/`; Badge "Sudah Expired" selama ini menghitung varian dan tidak pernah menyebut rupiah. Badge itu sekarang ikut menyebutnya.
+
+  Keduanya lahir di `StockRescueService`, dan kueri "barang kedaluwarsa di rak" dipulangkan ke sana supaya daftar di kartu dashboard dan angka rupiah di laporan tidak pernah menghitung barang yang berbeda. `ReportController::upsell()` juga berhenti merakit saringan eventnya sendiri: `$scoped` kini memanggil `StockRescueService::countableEvents()`, jadi angka utama di kepala halaman dan tabel di bawahnya dijamin sehimpunan.
+- **Alasan:**
+  Rantai Penyelamat Stok sudah utuh sejak `[BL-017]` dan `[BL-018]` — sinyal stok melahirkan potongan yang mendalam ke arah hari kedaluwarsa, potongan itu sampai ke mulut kasir, dan nasib tiap saran tercatat. Yang tidak pernah ada adalah hasilnya dalam rupiah, sehingga satu-satunya bagian sistem ini yang tidak dimiliki POS pembanding justru tidak bisa diceritakan. Rincian dan tiga butir sisanya di `[BL-105]`.
+- **Keputusan yang membentuk butir 2, dan ia bukan kompromi diam-diam:**
+  "Terlanjur basi" **tidak bisa dijawab per periode** dengan data hari ini. `stock` adalah nilai sekarang, bukan sejarah: begitu owner membuang barangnya dan menyesuaikan stok jadi nol, kerugian itu lenyap tanpa jejak. `stock_movements` tidak menolong — kelima jenisnya tidak ada yang berarti "dibuang", jadi pembuangan tersamar sebagai `adjustment` bersama koreksi hitung dan barang pecah.
+
+  Karena itu butir 2 mendarat sebagai **potret hari ini**, dan **subtitle kedua kartu memikul beda periode itu secara eksplisit** ("rentang tanggal di atas" vs "posisi hari ini, bukan rentang"). Dua angka berperiode beda yang dipajang berdampingan tanpa label pembeda adalah angka yang berbohong: pembaca akan menghitung selisihnya, dan selisih itu tidak berarti apa-apa. Angka periodenya menuntut pencatat harian yang tidak bisa ditambal mundur; ia tetap terbuka di `[BL-105]`.
+- **Satu perbaikan yang ikut terbawa:** `countableEvents()` menyaring tenant **secara eksplisit**, tidak menumpang `TenantScope`. Scope itu mati begitu tidak ada yang login, jadi pemanggil tanpa sesi — tugas terjadwal, perintah artisan — akan diam-diam menghitung seluruh tenant. Dijaga test tersendiri.
+- **File Terdampak:**
+  - `app/Services/StockRescueService.php` — **baru**; `rescued()`, `spoiled()`, `expiredOnShelf()`, `countableEvents()`
+  - `app/Services/BadgeHelperService.php` — Badge 4 memakai kueri bersama dan membawa `value` + rupiah di pesannya
+  - `app/Http/Controllers/Owner/ReportController.php` — prop `rescue`, dan `$scoped` dipulangkan ke service
+  - `resources/js/Pages/Owner/Reports/Upsell.vue` — bagian "Penyelamat Stok" di paling atas, dua `MetricCard` berlabel periode
+  - `tests/Feature/Upsell/StockRescueTest.php` — **baru**; 7 uji, termasuk yang menjaga transaksi void, tenant lain, dan varian yang stoknya sudah habis
+- **Catatan Migrasi:** Tidak ada. Tidak ada skema yang berubah.
+
+---
 
 ### [HOTFIX] Katalog POS Berhenti Mencari Aturan Diskon Sekali per Varian — 34 Kueri Jadi 5 (BL-103 Butir 1, Sisa)
 - **Tanggal:** 2026-09-07
