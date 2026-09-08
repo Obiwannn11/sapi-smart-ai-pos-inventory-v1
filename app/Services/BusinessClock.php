@@ -78,6 +78,18 @@ class BusinessClock
     }
 
     /**
+     * Tanggal awal bulan berjalan menurut hari toko, `Y-m-d`.
+     *
+     * Dipakai kartu "bulan ini" di dashboard. Batas bulannya harus datang dari
+     * sini karena alasan yang sama seperti `today()`: pada 1 Agustus pukul
+     * 02.00 WITA, awal bulan menurut UTC masih 31 Juli.
+     */
+    public static function startOfMonth(): string
+    {
+        return self::now()->startOfMonth()->toDateString();
+    }
+
+    /**
      * Periode bulan berjalan menurut bulan toko, `Y-m`.
      *
      * Bentuk yang sama dengan kolom `period` di `tenant_monthly_metrics`, yang

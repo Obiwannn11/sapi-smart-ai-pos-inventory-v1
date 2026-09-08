@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Deferred, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
@@ -27,6 +27,26 @@ const props = defineProps({
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
 };
+
+// Rekap metode pembayaran: satu kartu, dua periode.
+const PAYMENT_SCOPES = [
+    { key: 'today', label: 'Hari Ini' },
+    { key: 'month', label: 'Bulan Ini' },
+];
+
+const paymentScope = ref('today');
+
+const paymentRows = computed(() => (paymentScope.value === 'today'
+    ? props.metrics.today_by_payment_method
+    : props.metrics.month_by_payment_method) ?? []);
+
+// Kartunya berdiri selama ada pembayaran di SALAH SATU periode. Menyembunyikan
+// seluruh kartu karena hari ini masih sepi berarti menyembunyikan juga rekap
+// sebulan yang sudah terisi.
+const hasPaymentRecap = computed(() =>
+    (props.metrics.today_by_payment_method?.length ?? 0) > 0
+    || (props.metrics.month_by_payment_method?.length ?? 0) > 0
+);
 
 const formatTime = (datetime) => {
     return new Date(datetime).toLocaleTimeString('id-ID', {
@@ -331,41 +351,84 @@ const invoiceStatusLabels = {
             </div>
         </div>
 
-        <!-- Metric Cards -->
+        <!-- Dua periode yang benar-benar ditanyakan pemilik: hari ini, dan
+             bulan ini sejauh ini. Keempatnya bisa ditekan dan mendarat di
+             laporan yang menerangkannya — angka ringkasan selalu memancing
+             "dari mana?", dan sebelum ini jawabannya cuma ada di sidebar.
+
+             "Rata-rata / Trx" tidak lagi berdiri sebagai kartu sendiri: ia
+             turunan dari dua angka di sebelahnya, dan sebuah kartu penuh untuk
+             angka turunan mendorong angka bulan keluar dari baris. Sekarang ia
+             jadi keterangan di bawah omzetnya, di tempat ia berarti.
+             "Minggu Ini" dilepas seluruhnya — tidak ada laporan mingguan yang
+             bisa dituju, jadi angkanya tidak pernah bisa ditelusuri. -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
-                title="Pendapatan Hari Ini"
+                title="Omzet Hari Ini"
                 :value="formatCurrency(metrics.today_revenue)"
+                :subtitle="`rata-rata ${formatCurrency(metrics.today_average)} per transaksi`"
                 icon="currency"
                 color="success"
+                href="/owner/reports/daily"
             />
             <MetricCard
                 title="Transaksi Hari Ini"
                 :value="metrics.today_count"
-                subtitle="transaksi"
+                subtitle="transaksi selesai"
                 icon="receipt"
                 color="primary"
+                href="/owner/reports/daily"
             />
             <MetricCard
-                title="Rata-rata / Trx"
-                :value="formatCurrency(metrics.today_average)"
-                icon="average"
-                color="muted"
-            />
-            <MetricCard
-                title="Minggu Ini"
-                :value="formatCurrency(metrics.week_revenue)"
+                title="Omzet Bulan Ini"
+                :value="formatCurrency(metrics.month_revenue)"
+                :subtitle="`rata-rata ${formatCurrency(metrics.month_average)} per transaksi`"
                 icon="chart"
+                color="success"
+                href="/owner/reports/monthly"
+            />
+            <MetricCard
+                title="Transaksi Bulan Ini"
+                :value="metrics.month_count"
+                subtitle="transaksi selesai"
+                icon="receipt"
                 color="primary"
+                href="/owner/reports/monthly"
             />
         </div>
 
-        <!-- Rekap per Payment Method -->
-        <div v-if="metrics.today_by_payment_method?.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Rekap per Metode Pembayaran (Hari Ini)</h3>
-            <div class="flex flex-wrap gap-3">
+        <!-- Rekap per metode pembayaran, dua periode dalam satu kartu.
+             Yang dicari pemilik di sini bukan angkanya sendiri melainkan
+             porsinya — dan porsi sehari bisa jauh dari porsi sebulan tanpa
+             berarti apa-apa. Keduanya karena itu berdampingan di bawah satu
+             sakelar, bukan di dua kartu yang harus diingat bergantian. -->
+        <div v-if="hasPaymentRecap" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h3 class="text-sm font-semibold text-gray-700">Rekap per Metode Pembayaran</h3>
+                <div class="inline-flex rounded-lg bg-gray-100 p-0.5">
+                    <button
+                        v-for="scope in PAYMENT_SCOPES"
+                        :key="scope.key"
+                        type="button"
+                        :aria-pressed="paymentScope === scope.key"
+                        :class="[
+                            'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                            paymentScope === scope.key
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700',
+                        ]"
+                        @click="paymentScope = scope.key"
+                    >
+                        {{ scope.label }}
+                    </button>
+                </div>
+            </div>
+            <p v-if="paymentRows.length === 0" class="text-sm text-gray-400">
+                Belum ada pembayaran {{ paymentScope === 'today' ? 'hari ini' : 'bulan ini' }}.
+            </p>
+            <div v-else class="flex flex-wrap gap-3">
                 <div
-                    v-for="pm in metrics.today_by_payment_method"
+                    v-for="pm in paymentRows"
                     :key="pm.name"
                     class="flex items-center gap-2 bg-gray-50 rounded-lg px-4 py-2.5"
                 >
@@ -402,74 +465,61 @@ const invoiceStatusLabels = {
 
             <div
                 v-if="pressedToday && pressedToday.count > 0"
-                class="bg-white rounded-xl shadow-sm border border-warning/30 ring-1 ring-warning/20 p-5 space-y-4"
+                class="bg-white rounded-xl shadow-sm border border-warning/30 p-5"
             >
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <!-- Namanya ikut di sini, bukan cuma di laporannya
-                             ([BL-105] butir 4). Owner bertemu rantai yang sama
-                             di dua layar; tanpa nama yang sama di keduanya, ia
-                             tidak punya cara tahu bahwa keduanya satu hal. -->
-                        <h3 class="text-sm font-semibold text-gray-800">
-                            Penyelamat Stok <span class="font-normal text-gray-400">· perlu keluar hari ini</span>
-                        </h3>
-                        <p class="mt-1 text-2xl font-bold text-gray-900">
-                            {{ pressedToday.count }} barang · {{ formatCurrency(pressedToday.value) }} modal
-                        </p>
-                    </div>
-
-                    <!-- Kalimat yang jadi alasan kartu ini ada. Angka "belum
-                         punya potongan" tidak muncul di layar mana pun sebelum
-                         ini, padahal ia yang menentukan apakah saran kasir
-                         punya peluang atau cuma basa-basi. -->
-                    <div class="text-right">
-                        <p v-if="pressedToday.unarmed > 0" class="text-sm text-warning-foreground">
-                            <span class="font-semibold">{{ pressedToday.unarmed }}</span> belum punya potongan otomatis
-                        </p>
-                        <p v-else class="text-sm text-success">Semuanya sudah punya potongan otomatis</p>
-                        <Link
-                            href="/owner/discount-rules"
-                            class="mt-1 inline-block text-xs font-medium text-primary hover:underline"
-                        >
-                            Atur potongan →
-                        </Link>
-                    </div>
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <!-- Namanya tetap "Penyelamat Stok" ([BL-105] butir 4):
+                         owner bertemu rantai yang sama di dua layar, dan tanpa
+                         nama yang sama di keduanya ia tidak punya cara tahu
+                         bahwa keduanya satu hal. -->
+                    <h3 class="text-sm font-semibold text-gray-800">
+                        Penyelamat Stok <span class="font-normal text-gray-400">· hari ini</span>
+                    </h3>
+                    <p class="text-sm text-gray-500">
+                        <span class="font-semibold text-gray-900">{{ pressedToday.count }} barang</span>
+                        · {{ formatCurrency(pressedToday.value) }}
+                    </p>
                 </div>
 
-                <ul class="divide-y divide-gray-100">
+                <ul class="mt-3 divide-y divide-gray-100">
                     <li
                         v-for="item in pressedToday.items"
                         :key="item.variant_id"
-                        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
+                        class="flex items-center justify-between gap-3 py-2"
                     >
                         <div class="min-w-0">
                             <p class="truncate text-sm font-medium text-gray-900">{{ item.label }}</p>
                             <p class="text-xs text-gray-500">{{ item.note }} · sisa {{ item.stock }}</p>
                         </div>
-                        <div class="flex items-center gap-3">
-                            <span class="text-sm text-gray-700">{{ formatCurrency(item.value) }}</span>
+                        <div class="flex flex-shrink-0 items-center gap-2">
+                            <span class="text-sm text-gray-700 tabular-nums">{{ formatCurrency(item.value) }}</span>
+                            <!-- Yang ditandai hanya PENGECUALIANNYA. Lencana
+                                 "Potongan aktif" di tiap baris menandai keadaan
+                                 normal, dan penanda yang menyala di semua baris
+                                 berhenti dibaca sebagai penanda. -->
                             <span
-                                :class="[
-                                    'rounded px-1.5 py-0.5 text-xs font-medium',
-                                    item.armed
-                                        ? 'bg-success/15 text-success'
-                                        : 'bg-warning/15 text-warning-foreground',
-                                ]"
+                                v-if="!item.armed"
+                                class="rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning-foreground"
                             >
-                                {{ item.armed ? 'Potongan aktif' : 'Belum ada potongan' }}
+                                Belum ada potongan
                             </span>
                         </div>
                     </li>
                 </ul>
 
-                <p class="text-xs text-gray-400">
-                    <template v-if="pressedToday.count > pressedToday.items.length">
-                        Menampilkan {{ pressedToday.items.length }} dari {{ pressedToday.count }} —
-                        <Link href="/owner/stock?status=near_expiry" class="text-primary hover:underline">lihat semua di Stok</Link>
-                        ·
-                    </template>
-                    <Link href="/owner/reports/upsell" class="text-primary hover:underline">Berapa yang berhasil diselamatkan?</Link>
-                </p>
+                <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <Link
+                        v-if="pressedToday.unarmed > 0"
+                        href="/owner/discount-rules"
+                        class="font-medium text-primary hover:underline"
+                    >
+                        Atur potongan untuk {{ pressedToday.unarmed }} barang
+                    </Link>
+                    <span v-else class="text-gray-400">Semuanya sudah punya potongan otomatis</span>
+                    <Link href="/owner/stock?status=near_expiry" class="font-medium text-primary hover:underline">
+                        Lihat di Stok
+                    </Link>
+                </div>
             </div>
         </Deferred>
 

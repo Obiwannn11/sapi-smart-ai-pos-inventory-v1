@@ -142,3 +142,57 @@ test('tanggal penangguhan kosong selama langganan belum lewat', function () {
         ->get('/owner/dashboard')
         ->assertInertia(fn (Assert $page) => $page->where('subscription.suspends_at', null));
 });
+
+// --- Angka utama: hari ini DAN bulan ini ---
+
+test('dashboard membawa angka hari ini dan bulan ini secara terpisah', function () {
+    // Satu penjualan hari ini, satu lagi awal bulan yang sama. Angka bulan
+    // memuat keduanya; angka hari ini hanya yang pertama.
+    App\Models\Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'status' => App\Models\Transaction::STATUS_COMPLETED,
+        'total_amount' => 40000,
+        'occurred_at' => now(),
+    ]);
+
+    App\Models\Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'status' => App\Models\Transaction::STATUS_COMPLETED,
+        'total_amount' => 60000,
+        'occurred_at' => now()->startOfMonth(),
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/dashboard')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.today_revenue', 40000)
+            ->where('metrics.today_count', 1)
+            ->where('metrics.month_revenue', 100000)
+            ->where('metrics.month_count', 2)
+            ->where('metrics.month_average', 50000)
+            // Angka mingguan dilepas: tidak ada laporan mingguan yang bisa
+            // dituju dari kartunya.
+            ->missing('metrics.week_revenue')
+            ->has('metrics.month_by_payment_method')
+        );
+});
+
+test('penjualan bulan lalu tidak ikut ke angka bulan ini', function () {
+    App\Models\Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'status' => App\Models\Transaction::STATUS_COMPLETED,
+        'total_amount' => 999000,
+        'occurred_at' => now()->startOfMonth()->subDay(),
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/dashboard')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.month_revenue', 0)
+            ->where('metrics.month_count', 0)
+            ->where('metrics.month_average', 0)
+        );
+});

@@ -64,6 +64,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
 | 2026-09-08 | ADDITION | UI | Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu |
+| 2026-09-08 | ADDITION | Dashboard | Beranda Menjawab Dua Periode dan Bisa Ditekan Menuju Laporannya |
 | 2026-09-08 | ADDITION | Stok | Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4) |
 | 2026-09-08 | ADDITION | Stok | Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3) |
 | 2026-09-08 | SCHEMA | Stok | Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105) |
@@ -316,6 +317,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/Components/DateRangePicker.vue` — **baru**; dipakai Analisis AI, Riwayat Transaksi, Laporan Saran Jual, Audit Log platform
   - `resources/js/Pages/Owner/Stock/Index.vue` — kartu status jadi `lg:grid-cols-6` dan dirapatkan; DatePicker di modal Restock
   - `resources/js/Pages/Owner/Staff/Index.vue` — kalimat "Aksesnya tidak berasal dari role…" dilepas; lencana "Akses penuh" di atasnya sudah mengatakannya
+- **Catatan Migrasi:** Tidak ada.
+
+---
+
+### [ADDITION] Beranda Menjawab Dua Periode dan Bisa Ditekan Menuju Laporannya
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Kartu metrik beranda menjawab satu periode saja — hari ini — lalu menambahkan "Minggu Ini" yang tidak punya laporan untuk dituju, sehingga angkanya tidak pernah bisa ditelusuri. Sekarang empat kartunya menjawab **dua periode yang benar-benar ditanyakan**: hari ini dan bulan ini, masing-masing omzet dan jumlah transaksi, dan **keempatnya bisa ditekan** menuju laporan yang menerangkannya. Angka ringkasan selalu memancing "dari mana?", dan sebelum ini jawabannya hanya ada di sidebar.
+
+  "Rata-rata / Trx" tidak lagi jadi kartu sendiri — ia turunan dari dua angka di sebelahnya, dan kartu penuh untuknya mendorong angka bulan keluar dari baris. Ia turun jadi keterangan di bawah omzetnya.
+
+  Rekap metode pembayaran mendapat sakelar **Hari Ini / Bulan Ini** dalam satu kartu: yang dicari di sini porsinya, dan porsi sehari bisa jauh dari porsi sebulan tanpa berarti apa-apa.
+
+  Kartu "Penyelamat Stok" dipadatkan. Sebelumnya ia menulis sembilan baris untuk satu barang: judul, dua angka ringkasan, satu kalimat status, satu tautan, baris barangnya sendiri, lencana "Potongan aktif", dan dua tautan penutup. Lencananya kini hanya muncul pada **pengecualiannya** — penanda yang menyala di semua baris berhenti dibaca sebagai penanda — dan penutupnya satu baris berisi dua tindakan.
+- **Alasan:**
+  Hasil uji pakai minggu terakhir.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/DashboardController.php` — `month_revenue`, `month_count`, `month_average`, `month_by_payment_method`; `week_revenue` dilepas
+  - `app/Services/BusinessClock.php` — `startOfMonth()`, dengan alasan yang sama seperti `today()`
+  - `resources/js/Components/MetricCard.vue` — prop `href` opsional
+  - `resources/js/Pages/Owner/Dashboard.vue` — kartu metrik, sakelar rekap pembayaran, kartu Penyelamat Stok
 - **Catatan Migrasi:** Tidak ada.
 
 ---

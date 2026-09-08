@@ -1,10 +1,17 @@
 <script setup>
+import { Link } from '@inertiajs/vue3';
+
 const props = defineProps({
     title: { type: String, required: true },
     value: { type: [String, Number], required: true },
     subtitle: { type: String, default: null },
     icon: { type: String, default: 'chart' },
     color: { type: String, default: 'primary' }, // primary | success | warning | muted
+    // Kartu yang punya laporannya sendiri jadi pintu masuk ke laporan itu.
+    // Angka ringkasan hampir selalu memancing pertanyaan "dari mana?", dan
+    // sebelum ini jawabannya cuma ada di sidebar — dua langkah dari angka yang
+    // memunculkan pertanyaannya.
+    href: { type: String, default: null },
 });
 
 const colorClasses = {
@@ -18,7 +25,12 @@ const c = colorClasses[props.color] || colorClasses.primary;
 </script>
 
 <template>
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 ring-1" :class="c.ring">
+    <component
+        :is="href ? Link : 'div'"
+        :href="href || undefined"
+        class="block bg-white rounded-xl shadow-sm border border-gray-200 p-5 ring-1"
+        :class="[c.ring, href ? 'transition-all hover:shadow-md hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-ring' : '']"
+    >
         <div class="flex items-start justify-between">
             <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-500 truncate">{{ title }}</p>
@@ -44,5 +56,5 @@ const c = colorClasses[props.color] || colorClasses.primary;
                 </svg>
             </div>
         </div>
-    </div>
+    </component>
 </template>

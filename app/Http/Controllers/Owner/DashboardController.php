@@ -9,6 +9,7 @@ use App\Services\BadgeHelperService;
 use App\Services\BusinessClock;
 use App\Services\StockRescueService;
 use App\Services\SubscriptionService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -37,26 +38,30 @@ class DashboardController extends Controller
         $todayCount = (clone $todayTransactions)->count();
         $todayAverage = $todayCount > 0 ? $todayRevenue / $todayCount : 0;
 
-        // Pendapatan per metode pembayaran hari ini
-        $tenantId = auth()->user()->tenant_id;
-        $todayByPaymentMethod = TransactionPayment::query()
-            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', function ($join) use ($tenantId) {
-                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
-                    ->where('payment_methods.tenant_id', $tenantId);
-            })
-            ->whereHas('transaction', function ($q) use ($today) {
-                $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveDate($today);
-            })
-            ->groupBy('payment_methods.name', 'payment_methods.type')
-            ->get();
+        // --- Metrics Bulan Ini ---
+        // Berdampingan dengan angka hari ini, bukan menggantikannya: hari
+        // menjawab "bagaimana hari ini berjalan", bulan menjawab "bagaimana
+        // bulan ini sejauh ini" — dan keduanya pintu masuk ke laporannya
+        // masing-masing. Angka "minggu ini" yang dulu berdiri di sini tidak
+        // punya laporan untuk dituju, dan karena itu tidak bisa ditindaklanjuti.
+        $monthStart = BusinessClock::startOfMonth();
+        $monthTransactions = Transaction::where('status', Transaction::STATUS_COMPLETED)
+            ->whereEffectiveFrom($monthStart);
 
-        // --- Metrics Minggu Ini ---
-        $weekStart = BusinessClock::startOfWeek();
-        $weekRevenue = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereEffectiveFrom($weekStart)
-            ->sum('total_amount');
+        $monthRevenue = (clone $monthTransactions)->sum('total_amount');
+        $monthCount = (clone $monthTransactions)->count();
+        $monthAverage = $monthCount > 0 ? $monthRevenue / $monthCount : 0;
+
+        // Pendapatan per metode pembayaran — hari ini dan bulan ini.
+        $tenantId = auth()->user()->tenant_id;
+        $todayByPaymentMethod = $this->paymentMethodTotals(
+            $tenantId,
+            fn (Builder $q) => $q->whereEffectiveDate($today)
+        );
+        $monthByPaymentMethod = $this->paymentMethodTotals(
+            $tenantId,
+            fn (Builder $q) => $q->whereEffectiveFrom($monthStart)
+        );
 
         // Tren, badge, dan transaksi terakhir sengaja TIDAK dihitung di sini —
         // lihat Inertia::defer() di bawah.
@@ -75,8 +80,11 @@ class DashboardController extends Controller
                 'today_revenue' => $todayRevenue,
                 'today_count' => $todayCount,
                 'today_average' => round($todayAverage),
-                'week_revenue' => $weekRevenue,
+                'month_revenue' => $monthRevenue,
+                'month_count' => $monthCount,
+                'month_average' => round($monthAverage),
                 'today_by_payment_method' => $todayByPaymentMethod,
+                'month_by_payment_method' => $monthByPaymentMethod,
             ],
             // --- Bagian yang ditunda ([BL-037]) ---
             // Tidak satu pun dari ketiganya dibutuhkan untuk cat pertama,
@@ -133,5 +141,26 @@ class DashboardController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Total terkumpul per metode pembayaran dalam satu rentang.
+     *
+     * @param  \Closure(Builder): Builder  $withinPeriod  penyaring rentang pada transaksinya
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function paymentMethodTotals(int $tenantId, \Closure $withinPeriod)
+    {
+        return TransactionPayment::query()
+            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
+            ->join('payment_methods', function ($join) use ($tenantId) {
+                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
+                    ->where('payment_methods.tenant_id', $tenantId);
+            })
+            ->whereHas('transaction', function ($q) use ($withinPeriod) {
+                $withinPeriod($q->where('status', Transaction::STATUS_COMPLETED));
+            })
+            ->groupBy('payment_methods.name', 'payment_methods.type')
+            ->get();
     }
 }
