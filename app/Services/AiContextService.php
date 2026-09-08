@@ -39,13 +39,23 @@ class AiContextService
         $revenue = (float) (clone $completed)->sum('total_amount');
         $count = (clone $completed)->count();
 
+        // Dikelompokkan per produk DAN varian, bukan per `variant_name` saja.
+        // Kolom itu hanya berisi nama variannya ("Hot", "Single", "Plain"),
+        // dan nama yang sama dipakai ulang lintas produk — mengelompokkan
+        // padanya menjumlahkan Cafe Latte "Hot" dengan Kopi Susu "Hot" jadi
+        // satu baris. Model lalu menalar di atas angka gabungan itu dan
+        // menyebut "Hot" sebagai barang terlaris, sesuatu yang tidak ada di
+        // katalog mana pun.
         $topProducts = TransactionItem::query()
+            ->join('product_variants', 'product_variants.id', '=', 'transaction_items.product_variant_id')
+            ->join('products', 'products.id', '=', 'product_variants.product_id')
             ->whereHas('transaction', function ($q) use ($from, $to) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
                     ->whereEffectiveBetween($from, $to);
             })
-            ->selectRaw('variant_name, SUM(qty) as qty, SUM(subtotal) as revenue')
-            ->groupBy('variant_name')
+            ->selectRaw('products.name as product_name, transaction_items.variant_name')
+            ->selectRaw('SUM(transaction_items.qty) as qty, SUM(transaction_items.subtotal) as revenue')
+            ->groupBy('products.name', 'transaction_items.variant_name')
             ->orderByDesc('qty')
             ->take(10)
             ->get();

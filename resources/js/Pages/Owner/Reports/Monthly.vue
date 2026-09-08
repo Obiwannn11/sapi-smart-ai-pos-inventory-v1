@@ -5,6 +5,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import MonthPicker from '@/Components/MonthPicker.vue';
 import TrendChart from '@/Components/TrendChart.vue';
+import TopProductsTable from '@/Components/TopProductsTable.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import { BUSINESS_TZ } from '@/support/date';
@@ -293,29 +294,7 @@ const paymentTypeLabel = (type) => {
                 </SkeletonPanel>
             </template>
 
-        <div v-if="topProducts.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Top 10 Produk Terlaris Bulan Ini</h3>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-gray-100">
-                            <th class="text-left py-2 px-3 text-gray-500 font-medium">#</th>
-                            <th class="text-left py-2 px-3 text-gray-500 font-medium">Varian</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">Qty Terjual</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">Omzet</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="(product, index) in topProducts" :key="product.variant_name" class="border-b border-gray-50 last:border-0">
-                            <td class="py-2.5 px-3 text-gray-400">{{ index + 1 }}</td>
-                            <td class="py-2.5 px-3 font-medium text-gray-800">{{ product.variant_name }}</td>
-                            <td class="py-2.5 px-3 text-right text-gray-700">{{ product.total_qty }}</td>
-                            <td class="py-2.5 px-3 text-right font-semibold text-gray-900">{{ formatCurrency(product.total_revenue) }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <TopProductsTable title="Top 10 Produk Terlaris Bulan Ini" :products="topProducts" />
 
         </Deferred>
 

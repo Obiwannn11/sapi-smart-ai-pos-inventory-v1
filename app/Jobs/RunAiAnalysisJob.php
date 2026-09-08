@@ -92,10 +92,15 @@ class RunAiAnalysisJob implements ShouldQueue
     /**
      * Nama varian yang benar-benar muncul di payload konteks.
      *
-     * Ketiga sumbernya adalah tempat nama varian betul-betul tertulis di
-     * konteks: dua rekap penjualan yang dikelompokkan `variant_name`, dan
+     * Ketiga sumbernya adalah tempat nama barang betul-betul tertulis di
+     * konteks: dua rekap penjualan yang dikelompokkan produk dan varian, dan
      * daftar varian di tiap peringatan stok. Bagian konteks yang lain — omzet,
      * tren harian, proyeksi — tidak menyebut satu pun nama barang.
+     *
+     * Nama produk ikut dipungut bersama nama variannya. Keduanya sama-sama
+     * disodorkan ke model, dan daftar yang hanya memuat separuhnya akan
+     * menandai "Cafe Latte" sebagai karangan padahal ia justru bagian yang
+     * paling jelas ada di data.
      *
      * Sengaja TIDAK menyisir seluruh array mencari kunci `variant_name`:
      * penyisir seperti itu akan diam-diam ikut memungut nama dari bagian
@@ -110,10 +115,12 @@ class RunAiAnalysisJob implements ShouldQueue
         $names = [];
 
         foreach ($data['top_products'] ?? [] as $row) {
+            $names[] = $row['product_name'] ?? null;
             $names[] = $row['variant_name'] ?? null;
         }
 
         foreach ($data['profit_by_item']['items'] ?? [] as $row) {
+            $names[] = $row['product_name'] ?? null;
             $names[] = $row['variant_name'] ?? null;
         }
 
@@ -214,14 +221,15 @@ class RunAiAnalysisJob implements ShouldQueue
         - `sales` — omzet, jumlah transaksi, dan rata-rata nota periode ini.
         - `profit` — `net_revenue` (pendapatan toko), `cogs`, `gross_profit`, `margin_pct`. Pakai apa adanya, jangan dihitung ulang.
         - `projection` — proyeksi periode berikutnya: `avg_daily_profit` x `basis_days`. Pakai apa adanya.
-        - `profit_by_item.items` — margin per varian, urut qty menurun. `profit_by_item.others` adalah RINGKASAN varian yang tidak muat ditampilkan (`variants` = jumlahnya); ia bukan produk bernama "others" dan namanya tidak boleh disebut sebagai nama barang.
-        - `top_products` — 10 varian terlaris menurut qty.
+        - `profit_by_item.items` — margin per produk+varian, urut qty menurun. `profit_by_item.others` adalah RINGKASAN varian yang tidak muat ditampilkan (`variants` = jumlahnya); ia bukan produk bernama "others" dan namanya tidak boleh disebut sebagai nama barang.
+        - `top_products` — 10 produk+varian terlaris menurut qty.
+        - Nama barang selalu dua bagian: `product_name` adalah barangnya ("Cafe Latte"), `variant_name` hanya penanda varian ("Hot", "Single", "Plain") yang dipakai ulang oleh banyak produk. `variant_name` yang berdiri sendiri tidak menunjuk barang mana pun.
         - `daily_trend` — omzet dan jumlah transaksi per tanggal.
         - `inventory` — peringatan stok: `low_stock`, `out_of_stock`, `dead_stock`, `expired`, `near_expiry`, `needs_review`, masing-masing dengan daftar variannya.
 
         ATURAN ISI:
         1. Setiap pernyataan bersandar pada angka yang ADA di DATA, dan angkanya ditulis di dalam kalimatnya (rupiah, qty, persen, atau tanggal). Kalimat tanpa angka pendukung jangan ditulis.
-        2. Sebut nama varian PERSIS seperti di DATA. Jangan menyingkat, menggabungkan dua varian, atau mengarang nama.
+        2. Sebut barang dengan `product_name` beserta variannya — mis. "Cafe Latte (Iced)" — dan tulis keduanya PERSIS seperti di DATA. Jangan menyebut `variant_name` sendirian, jangan menyingkat, menggabungkan dua varian, atau mengarang nama.
         3. DILARANG memberi saran yang bisa ditempel ke toko mana pun tanpa membaca datanya — misalnya "tingkatkan pelayanan", "perbaiki atmosfer", "perbanyak promosi", "diversifikasi menu", "tingkatkan pengalaman pelanggan". Saran seperti ini dianggap jawaban gagal.
         4. Tiap rekomendasi wajib memuat empat hal: (a) objeknya — varian, tanggal, atau varian stok tertentu dari DATA; (b) tindakan yang bisa dikerjakan minggu ini; (c) angka dari DATA yang jadi dasarnya; (d) perkiraan dampaknya dalam rupiah atau persen, beserta cara menghitungnya secara singkat.
         5. Kalau DATA tidak cukup untuk menjawab sesuatu, tulis satu baris "Belum bisa dijawab dari data: ..." dan sebut data apa yang kurang. Jangan menambalnya dengan saran umum.

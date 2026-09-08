@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Stok | Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4) |
 | 2026-09-08 | ADDITION | Stok | Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3) |
 | 2026-09-08 | SCHEMA | Stok | Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105) |
@@ -246,6 +247,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [HOTFIX] Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot"
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Controller | Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Empat kueri "terlaris" di aplikasi ini dikelompokkan pada `transaction_items.variant_name`. Kolom itu **hanya menyimpan nama variannya** — "Single", "Iced", "Hot", "Plain" — dan nama yang sama dipakai ulang oleh produk yang berbeda. Bukti dari basis data pengembangan: varian 3 adalah Cafe Latte "Hot", varian 7 Kopi Susu Signature "Hot", varian 9 Kopi Susu Gula Aren "Hot". Ketiganya selama ini menyatu jadi satu baris bernama "Hot", dan qty serta omzetnya dijumlahkan lintas produk.
+
+  Ini bukan salah label di kepala tabel. **Angkanya salah**, dan salahnya diam: tidak ada baris yang hilang, tidak ada total yang timpang, hanya satu baris teratas yang mengaku sebagai barang padahal ia gabungan tiga barang. Yang paling jauh dampaknya bukan layar laporan melainkan `AiContextService`: setiap analisis AI sejak fitur itu ada menalar di atas angka gabungan tadi dan menyebut "Hot" sebagai produk terlaris — nama yang tidak ada di katalog mana pun.
+
+  Keempatnya kini menjoin `product_variants` → `products` dan dikelompokkan per produk (untuk laporan) atau per produk+varian (untuk konteks AI dan margin per item). Produk yang sudah dihapus sengaja **tidak** disaring: penjualannya tetap terjadi di periode itu, dan membuangnya berarti omzet yang lenyap dari laporan tanpa jejak.
+- **Alasan:**
+  Ditemukan saat uji pakai: laporan bulanan menampilkan "single, iced, plain" di Top 10 dan tidak satu pun nama produk.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/ReportController.php` — `topProducts()` baru dipakai bersama laporan harian dan bulanan; CSV memuat kolom Peringkat/Produk/Varian, satu baris per varian supaya `SUM()` tidak menghitung ganda
+  - `app/Services/AiContextService.php` — `top_products` membawa `product_name` di samping `variant_name`
+  - `app/Services/ProfitService.php` — `profitByProduct()` ikut dikelompokkan per produk; sebelumnya `SUM(qty × cost_price)` mencampur harga pokok produk yang berbeda di bawah satu label
+  - `app/Jobs/RunAiAnalysisJob.php` — nama produk ikut dipungut ke `context_variants`, dan peta data di prompt menyebutkan bahwa `variant_name` tidak menunjuk barang bila berdiri sendiri
+  - `resources/js/Components/TopProductsTable.vue` — **baru**; baris produk yang bisa dibuka untuk melihat pecahan variannya
+- **Catatan Migrasi:** Tidak ada. Kolomnya tidak berubah; yang berubah cara membacanya.
+
+---
 
 ### [ADDITION] Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4)
 - **Tanggal:** 2026-09-08

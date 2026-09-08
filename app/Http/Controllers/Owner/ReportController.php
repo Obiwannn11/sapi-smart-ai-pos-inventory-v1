@@ -112,16 +112,9 @@ class ReportController extends Controller
                 ->get(), 'rekap'),
 
             // Produk terlaris hari itu
-            'topProducts' => Inertia::defer(fn () => TransactionItem::query()
-                ->selectRaw('variant_name, SUM(qty) as total_qty, SUM(subtotal) as total_revenue')
-                ->whereHas('transaction', function ($q) use ($date) {
-                    $q->where('status', Transaction::STATUS_COMPLETED)
-                        ->whereEffectiveDate($date);
-                })
-                ->groupBy('variant_name')
-                ->orderByDesc('total_qty')
-                ->take(10)
-                ->get(), 'rekap'),
+            'topProducts' => Inertia::defer(fn () => $this->topProducts(
+                fn (Builder $q) => $q->whereEffectiveDate($date)
+            ), 'rekap'),
 
             // Potongan harga hari itu ([BL-018]).
             'discountSummary' => Inertia::defer(fn () => $this->discountSummary($date), 'rekap'),
@@ -333,10 +326,23 @@ class ReportController extends Controller
             }
             fputcsv($out, []);
 
+            // Satu baris per VARIAN, dengan peringkat dan nama produknya
+            // diulang di tiap baris. Barisnya sengaja tidak dicampur dengan
+            // baris total per produk: kolom Qty yang memuat total dan
+            // rinciannya sekaligus akan terhitung dua kali begitu seseorang
+            // menyeret SUM() ke bawahnya.
             fputcsv($out, ['PRODUK TERLARIS']);
-            fputcsv($out, ['Varian', 'Qty Terjual', 'Omzet']);
-            foreach ($topProducts as $row) {
-                fputcsv($out, [$row->variant_name, $row->total_qty, $row->total_revenue]);
+            fputcsv($out, ['Peringkat', 'Produk', 'Varian', 'Qty Terjual', 'Omzet']);
+            foreach ($topProducts as $rank => $product) {
+                foreach ($product['variants'] as $variant) {
+                    fputcsv($out, [
+                        $rank + 1,
+                        $product['product_name'],
+                        $variant['variant_name'],
+                        $variant['total_qty'],
+                        $variant['total_revenue'],
+                    ]);
+                }
             }
 
             fclose($out);
@@ -630,22 +636,70 @@ class ReportController extends Controller
     /**
      * Produk terlaris dalam satu bulan.
      *
-     * @return \Illuminate\Support\Collection<int, object>
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
     private function topProductsFor(Carbon $month)
     {
         $endOfMonth = $month->copy()->endOfMonth();
 
+        return $this->topProducts(
+            fn (Builder $q) => $q->whereEffectiveBetween($month, $endOfMonth)
+        );
+    }
+
+    /**
+     * Sepuluh PRODUK terlaris, berikut pecahan variannya.
+     *
+     * Dikelompokkan per produk, bukan per `transaction_items.variant_name`.
+     * Kolom itu hanya menyimpan nama variannya saja — "Hot", "Single",
+     * "Plain" — dan nama yang sama dipakai ulang oleh produk yang berbeda.
+     * Mengelompokkan langsung padanya bukan sekadar salah label di kepala
+     * tabel: qty dan omzet Cafe Latte "Hot", Kopi Susu Signature "Hot", dan
+     * Kopi Susu Gula Aren "Hot" terjumlah jadi SATU baris bernama "Hot", dan
+     * angka yang dibaca pemilik adalah angka tiga produk yang tidak pernah ia
+     * gabungkan. Nama produknya hanya bisa dicapai lewat
+     * `product_variants` → `products`, jadi keduanya ikut di-join.
+     *
+     * Produk yang sudah dihapus (soft delete) sengaja TIDAK disaring:
+     * penjualannya tetap terjadi di periode itu, dan membuangnya berarti omzet
+     * yang lenyap dari laporan tanpa meninggalkan jejak.
+     *
+     * @param  \Closure(Builder): Builder  $withinPeriod  penyaring rentang pada transaksinya
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function topProducts(\Closure $withinPeriod)
+    {
         return TransactionItem::query()
-            ->selectRaw('variant_name, SUM(qty) as total_qty, SUM(subtotal) as total_revenue')
-            ->whereHas('transaction', function ($q) use ($month, $endOfMonth) {
-                $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveBetween($month, $endOfMonth);
+            ->join('product_variants', 'product_variants.id', '=', 'transaction_items.product_variant_id')
+            ->join('products', 'products.id', '=', 'product_variants.product_id')
+            ->whereHas('transaction', function ($q) use ($withinPeriod) {
+                $withinPeriod($q->where('status', Transaction::STATUS_COMPLETED));
             })
-            ->groupBy('variant_name')
-            ->orderByDesc('total_qty')
+            ->selectRaw('products.id as product_id, products.name as product_name, transaction_items.variant_name')
+            ->selectRaw('SUM(transaction_items.qty) as total_qty, SUM(transaction_items.subtotal) as total_revenue')
+            ->groupBy('products.id', 'products.name', 'transaction_items.variant_name')
+            ->get()
+            ->groupBy('product_id')
+            ->map(fn ($rows) => [
+                'product_id' => (int) $rows->first()->product_id,
+                'product_name' => $rows->first()->product_name,
+                'total_qty' => (int) $rows->sum('total_qty'),
+                'total_revenue' => (float) $rows->sum('total_revenue'),
+                // Pecahan variannya ikut: produk menjawab "apa yang laku",
+                // varian menjawab "dalam bentuk apa" — dan yang kedua yang
+                // menentukan apa yang harus disiapkan besok pagi.
+                'variants' => $rows
+                    ->sortByDesc(fn ($row) => (int) $row->total_qty)
+                    ->map(fn ($row) => [
+                        'variant_name' => $row->variant_name,
+                        'total_qty' => (int) $row->total_qty,
+                        'total_revenue' => (float) $row->total_revenue,
+                    ])
+                    ->values(),
+            ])
+            ->sortByDesc('total_qty')
             ->take(10)
-            ->get();
+            ->values();
     }
 
     /**

@@ -53,6 +53,30 @@ function seedSale(int $qty, int $subtotal, ?string $customerName = null, ?string
     return $transaction;
 }
 
+/**
+ * Helper: sama seperti seedSale(), tapi terhadap varian mana pun.
+ */
+function seedSaleFor(\App\Models\ProductVariant $variant, int $qty, int $subtotal): Transaction
+{
+    $transaction = Transaction::factory()->create([
+        'tenant_id' => test()->tenant->id,
+        'user_id' => test()->owner->id,
+        'status' => Transaction::STATUS_COMPLETED,
+        'total_amount' => $subtotal,
+        'code' => 'TRX-'.fake()->unique()->numerify('########'),
+    ]);
+
+    $transaction->items()->create([
+        'product_variant_id' => $variant->id,
+        'variant_name' => $variant->name,
+        'qty' => $qty,
+        'unit_price' => $subtotal / $qty,
+        'subtotal' => $subtotal,
+    ]);
+
+    return $transaction;
+}
+
 test('buildContext returns the full aggregate structure', function () {
     seedSale(qty: 2, subtotal: 50000);
 
@@ -83,7 +107,41 @@ test('buildContext aggregates sales, profit and top products from seeded data', 
 
     $top = $context['top_products']->first();
     expect($top->variant_name)->toBe('Kopi Susu')
+        ->and($top->product_name)->toBe($this->product->name)
         ->and((int) $top->qty)->toBe(3);
+});
+
+test('top_products keeps two products apart when their variants share a name', function () {
+    // Nama varian yang sama pada dua produk berbeda — "Hot" milik Cafe Latte
+    // dan "Hot" milik Kopi Susu Gula Aren adalah kejadian sehari-hari di
+    // katalog F&B mana pun. Sebelum ini keduanya menyatu jadi satu baris
+    // bernama "Hot", dan model menalar di atas qty gabungan itu.
+    $latte = Product::factory()->create(['tenant_id' => $this->tenant->id, 'name' => 'Cafe Latte']);
+    $latteHot = ProductVariant::factory()->create([
+        'product_id' => $latte->id,
+        'name' => 'Hot',
+        'price' => 20000,
+        'cost_price' => 8000,
+    ]);
+
+    $aren = Product::factory()->create(['tenant_id' => $this->tenant->id, 'name' => 'Kopi Susu Gula Aren']);
+    $arenHot = ProductVariant::factory()->create([
+        'product_id' => $aren->id,
+        'name' => 'Hot',
+        'price' => 22000,
+        'cost_price' => 9000,
+    ]);
+
+    seedSaleFor($latteHot, qty: 4, subtotal: 80000);
+    seedSaleFor($arenHot, qty: 6, subtotal: 132000);
+
+    $context = $this->service->buildContext($this->tenant, now()->subDay(), now()->addDay());
+
+    $hotRows = collect($context['top_products'])->where('variant_name', 'Hot');
+
+    expect($hotRows)->toHaveCount(2)
+        ->and($hotRows->firstWhere('product_name', 'Cafe Latte')->qty)->toEqual(4)
+        ->and($hotRows->firstWhere('product_name', 'Kopi Susu Gula Aren')->qty)->toEqual(6);
 });
 
 test('buildContext excludes PII fields from the context', function () {

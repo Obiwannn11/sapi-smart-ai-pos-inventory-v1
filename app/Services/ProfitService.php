@@ -98,8 +98,13 @@ class ProfitService
     /**
      * Profit per varian produk (untuk saran diskon).
      *
-     * Digroup berdasarkan variant_name terdenormalisasi, sama seperti
-     * ReportController::daily().
+     * Dikelompokkan per PRODUK dan varian sekaligus. `variant_name` yang
+     * terdenormalisasi hanya menyimpan nama variannya — "Hot", "Single",
+     * "Plain" — dan nama itu dipakai ulang oleh produk yang berbeda;
+     * mengelompokkan padanya saja melebur margin Cafe Latte "Hot" dengan Kopi
+     * Susu "Hot" ke dalam satu baris yang tidak mewakili barang mana pun.
+     * Nama produknya sudah ada di join yang memang sudah dilakukan untuk
+     * `cost_price`, jadi yang perlu ditambahkan cuma satu tabel lagi.
      *
      * **Pajak per baris tidak disimpan** — hanya per transaksi. Padahal arti
      * `transaction_items.subtotal` berbeda antar mode: di exclusive ia sudah
@@ -117,12 +122,13 @@ class ProfitService
      * Di sini tidak ada yang memegang selisihnya, dan angka yang konsisten
      * satu sama lain lebih berharga daripada rupiah terakhir.
      *
-     * @return Collection<int, array{variant_name: string, qty: int, revenue: float, net_revenue: float, cogs: float, margin: float, margin_pct: float}>
+     * @return Collection<int, array{product_name: string, variant_name: string, qty: int, revenue: float, net_revenue: float, cogs: float, margin: float, margin_pct: float}>
      */
     public function profitByProduct(Carbon $from, Carbon $to): Collection
     {
         return TransactionItem::query()
             ->join('product_variants', 'transaction_items.product_variant_id', '=', 'product_variants.id')
+            ->join('products', 'products.id', '=', 'product_variants.product_id')
             // Join ini hanya membawa konteks pajaknya; penyaring DAN scope
             // tenant tetap datang dari whereHas di bawah.
             ->join('transactions', 'transaction_items.transaction_id', '=', 'transactions.id')
@@ -130,7 +136,7 @@ class ProfitService
                 $q->where('status', Transaction::STATUS_COMPLETED)
                     ->whereEffectiveBetween($from, $to);
             })
-            ->selectRaw('transaction_items.variant_name')
+            ->selectRaw('products.name as product_name, transaction_items.variant_name')
             ->selectRaw('SUM(transaction_items.qty) as qty')
             ->selectRaw('SUM(transaction_items.subtotal) as revenue')
             ->selectRaw(
@@ -139,7 +145,7 @@ class ProfitService
                 [Tenant::TAX_MODE_INCLUSIVE]
             )
             ->selectRaw('SUM(transaction_items.qty * product_variants.cost_price) as cogs')
-            ->groupBy('transaction_items.variant_name')
+            ->groupBy('products.name', 'transaction_items.variant_name')
             ->orderByDesc('qty')
             ->get()
             ->map(function ($row) {
@@ -148,6 +154,7 @@ class ProfitService
                 $margin = $netRevenue - $cogs;
 
                 return [
+                    'product_name' => $row->product_name,
                     'variant_name' => $row->variant_name,
                     'qty' => (int) $row->qty,
                     'revenue' => (float) $row->revenue,

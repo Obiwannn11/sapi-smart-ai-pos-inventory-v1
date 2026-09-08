@@ -390,3 +390,113 @@ test('monthly csv carries the tax collected, and omits the column when there is 
 
     expect($quiet)->not->toContain('Omzet sebelum pajak');
 });
+
+// --- Produk terlaris: PRODUK, bukan penanda variannya ---
+
+/**
+ * Penjualan satu varian pada tanggal tertentu.
+ */
+function sellVariant(App\Models\ProductVariant $variant, int $qty, int $subtotal, string $occurredAt): void
+{
+    $transaction = Transaction::factory()->create([
+        'tenant_id' => test()->tenant->id,
+        'user_id' => test()->owner->id,
+        'status' => Transaction::STATUS_COMPLETED,
+        'total_amount' => $subtotal,
+        'occurred_at' => $occurredAt,
+    ]);
+
+    $transaction->items()->create([
+        'product_variant_id' => $variant->id,
+        'variant_name' => $variant->name,
+        'qty' => $qty,
+        'unit_price' => $subtotal / $qty,
+        'subtotal' => $subtotal,
+    ]);
+}
+
+/**
+ * Dua produk yang sama-sama punya varian "Hot" — persis bentuk katalog yang
+ * membuat pengelompokan lama salah.
+ */
+function twoProductsSharingAVariantName(): array
+{
+    $latte = App\Models\Product::factory()->create([
+        'tenant_id' => test()->tenant->id,
+        'name' => 'Cafe Latte',
+    ]);
+    $aren = App\Models\Product::factory()->create([
+        'tenant_id' => test()->tenant->id,
+        'name' => 'Kopi Susu Gula Aren',
+    ]);
+
+    return [
+        App\Models\ProductVariant::factory()->create(['product_id' => $latte->id, 'name' => 'Hot']),
+        App\Models\ProductVariant::factory()->create(['product_id' => $latte->id, 'name' => 'Iced']),
+        App\Models\ProductVariant::factory()->create(['product_id' => $aren->id, 'name' => 'Hot']),
+    ];
+}
+
+test('monthly top products group by product, not by the variant label they share', function () {
+    [$latteHot, $latteIced, $arenHot] = twoProductsSharingAVariantName();
+
+    sellVariant($latteHot, qty: 4, subtotal: 80000, occurredAt: '2026-05-04 09:00:00');
+    sellVariant($latteIced, qty: 3, subtotal: 66000, occurredAt: '2026-05-05 09:00:00');
+    sellVariant($arenHot, qty: 6, subtotal: 132000, occurredAt: '2026-05-06 09:00:00');
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-05')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Owner/Reports/Monthly')
+            ->missing('topProducts')
+            ->loadDeferredProps(['rekap'], fn (Assert $reload) => $reload
+                // Dua produk, bukan dua baris "Hot" yang menyatu jadi satu.
+                ->has('topProducts', 2)
+                // Kopi Susu Gula Aren (6) di atas Cafe Latte (4 + 3 = 7)?
+                // Tidak — Cafe Latte menang justru karena kedua variannya
+                // dijumlahkan, dan itulah yang membedakan "per produk" dari
+                // "per varian".
+                ->where('topProducts.0.product_name', 'Cafe Latte')
+                ->where('topProducts.0.total_qty', 7)
+                ->where('topProducts.0.total_revenue', 146000)
+                ->has('topProducts.0.variants', 2)
+                ->where('topProducts.0.variants.0.variant_name', 'Hot')
+                ->where('topProducts.0.variants.0.total_qty', 4)
+                ->where('topProducts.1.product_name', 'Kopi Susu Gula Aren')
+                ->where('topProducts.1.total_qty', 6)
+            )
+        );
+});
+
+test('monthly csv lists each variant under the name of its own product', function () {
+    [$latteHot, , $arenHot] = twoProductsSharingAVariantName();
+
+    sellVariant($latteHot, qty: 4, subtotal: 80000, occurredAt: '2026-05-04 09:00:00');
+    sellVariant($arenHot, qty: 6, subtotal: 132000, occurredAt: '2026-05-06 09:00:00');
+
+    $csv = $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly/export?month=2026-05')
+        ->streamedContent();
+
+    expect($csv)->toContain('Peringkat,Produk,Varian,"Qty Terjual",Omzet')
+        ->toContain('1,"Kopi Susu Gula Aren",Hot,6')
+        ->toContain('2,"Cafe Latte",Hot,4');
+});
+
+test('daily top products also group by product', function () {
+    [$latteHot, , $arenHot] = twoProductsSharingAVariantName();
+
+    sellVariant($latteHot, qty: 2, subtotal: 40000, occurredAt: '2026-05-04 09:00:00');
+    sellVariant($arenHot, qty: 5, subtotal: 110000, occurredAt: '2026-05-04 11:00:00');
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/daily?date=2026-05-04')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Owner/Reports/Daily')
+            ->loadDeferredProps(['rekap'], fn (Assert $reload) => $reload
+                ->has('topProducts', 2)
+                ->where('topProducts.0.product_name', 'Kopi Susu Gula Aren')
+                ->where('topProducts.0.total_qty', 5)
+            )
+        );
+});
