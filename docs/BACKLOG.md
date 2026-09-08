@@ -105,6 +105,61 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
+### [BL-108] Barang Kedaluwarsa Terjual Tanpa Satu Pun Peringatan — dan Tiga Komentar Menjanjikan Penjagaan yang Tidak Pernah Ada
+- **Ditemukan:** 2026-09-08, saat uji jalur nyata dari POS (bukan dari membaca kode)
+- **Sumber:** Permintaan pemilik untuk membuat satu transaksi sungguhan dan memeriksa apakah seluruh datanya mendarat benar. Datanya mendarat benar; yang tidak benar adalah bahwa transaksinya boleh terjadi sama sekali.
+- **Status:** Open — **bentuknya sudah diputuskan pemilik**, lihat "Keputusan pemilik" di bawah. Yang tersisa implementasi, plus satu pertanyaan yang sengaja ditinggalkan terbuka.
+- **Prioritas:** High — ia batas keamanan pangan, dan ia merusak salah satu angka yang baru saja dibuat `[BL-105]`.
+- **Area Terdampak:**
+  - `app/Services/TransactionService.php:81` (`checkout()`) dan `:689` (`resolveItemPrice()`) — tempat gerbangnya harus berdiri, karena di sinilah harga sudah dihitung ulang di server
+  - `app/Services/TransactionService.php:852` (`commitOffline()`) — jalur kedua yang tidak boleh terlewat
+  - `app/Http/Controllers/Cashier/POSController.php` — katalog yang mengirim varian kedaluwarsa ke layar tanpa penanda
+  - `app/Services/Upsell/SellableVariantQuery.php:17-19` — komentar yang menjanjikan lebih dari yang ditegakkan
+  - `app/Services/DiscountService.php:31`, `:287` (`isDiscountable()`) — sda
+  - `database/migrations/2026_08_19_112853_create_discount_rules_table.php:44-46` — sda, dan yang paling keliru
+  - `app/Services/StockRescueService.php` (`spoiled()`) — angka yang jadi rusak akibatnya
+
+- **Deskripsi — direproduksi, bukan disimpulkan.**
+  Transaksi **`TRX-20260908-001`** (id 25113) dibuat lewat POS sungguhan sebagai Kasir Demo pada 2026-09-08. Salah satu barisnya: **`Croissant - Plain`, yang kedaluwarsa 2026-07-13 — 57 hari sebelumnya.** Ia muncul di grid katalog tanpa penanda apa pun, masuk keranjang dengan satu klik, dan terjual **pada harga katalog penuh** (Rp 25.000). Tidak ada peringatan, tidak ada konfirmasi, tidak ada jejak bahwa yang barusan dijual sudah basi hampir dua bulan.
+
+  Ironi kecil yang memperjelas keadaannya: ia terjual pada harga penuh **justru karena** `DiscountService::isDiscountable()` menolak mendiskon barang kedaluwarsa. Jadi satu-satunya perlakuan khusus yang barang basi terima hari ini adalah **dilarang murah** — bukan dilarang dijual.
+
+- **Tiga komentar yang menyatakan hal yang tidak pernah ditegakkan.** Ini bukan sekadar dokumentasi usang; ketiganya membuat pembaca berikutnya percaya penjagaannya sudah ada, dan karena itu tidak membangunnya.
+
+  1. `SellableVariantQuery.php:17-19` — *"Barang yang SUDAH kedaluwarsa tidak boleh jadi kandidat dalam bentuk apa pun. Itu bukan barang tertekan yang perlu didorong, itu barang yang **tidak boleh dijual** — batas keamanan pangan, bukan pilihan bisnis."* Kalimat pertamanya benar dan ditegakkan; klausa terakhirnya tidak pernah ditegakkan di mana pun.
+  2. `create_discount_rules_table.php:44-46` — *"Barang yang sudah kedaluwarsa tidak boleh dijual sama sekali — batas keamanan pangan, bukan pilihan bisnis. **Ia dijaga di DiscountService, bukan diserahkan pada kedisiplinan kasir.**"* Kalimat terakhir ini **terbalik dari kenyataannya**: ia justru sepenuhnya diserahkan pada kedisiplinan kasir. `DiscountService` hanya menjaga *harganya*, tidak pernah *penjualannya*.
+  3. `DiscountService.php:31` — kerangka "batas keamanan pangan" yang sama, dengan lingkup yang tidak pernah dinyatakan batasnya.
+
+- **Akibat pada angka `[BL-105]`, dan ini yang membuatnya mendesak.**
+  `StockRescueService::spoiled()` mengukur "modal barang kedaluwarsa yang masih di rak". Menjual barang basi **menurunkan** angka itu — pada uji di atas, Rp 180.000 → Rp 170.000. Artinya **angka yang seharusnya mengukur kerugian justru membaik ketika hal terburuk terjadi**, dan tidak ada apa pun di layar yang menjelaskan kenapa ia turun. Owner yang melihat "modal mati di rak" menyusut akan mengira barangnya dibuang atau terselamatkan; ia tidak akan pernah menduga barangnya dijual ke pelanggan.
+
+  Pencatat harian `expired_stock_records` **tidak menolong di sini** dan penting untuk tahu kenapa: ia menstempel varian saat *melewati* kedaluwarsa, sekali, dan tidak pernah menyentuh barisnya lagi. Barang yang kemudian terjual tetap tercatat sebagai basi dengan jumlah pada hari pengamatan. Jadi angka periodenya tidak ikut rusak — yang rusak hanya potret hari ini.
+
+- **Keputusan pemilik 2026-09-08:** dari tiga pilihan yang diajukan — (a) blokir total di katalog, (b) izinkan dengan konfirmasi eksplisit yang tercatat, (c) biarkan dan turunkan klaim komentarnya — pemilik memilih **(b)**.
+
+  Artinya: penjualannya **tidak dilarang**, tapi ia berhenti bisa terjadi tanpa disadari. Harus ada langkah sadar yang diambil manusia, dan langkah itu meninggalkan jejak yang bisa dibaca kemudian.
+
+- **Yang perlu dikerjakan, dan urutannya menentukan:**
+  1. **Gerbangnya di server, bukan di layar.** Penolakan sisi klien saja tidak berarti apa-apa — pelajaran yang sudah dibayar `[BL-022]`, saat checkout memvalidasi cukup-bayar memakai harga kiriman klien. Tempatnya `TransactionService::checkout()`, di jalur yang sama dengan `resolveItemPrice()` yang sudah menghitung ulang segalanya di server. **`commitOffline()` wajib ikut**, kalau tidak jalur offline jadi pintu belakang yang menganga.
+  2. **Penandanya di katalog POS.** Barang kedaluwarsa harus terlihat kedaluwarsa **sebelum** disentuh, bukan setelah dimasukkan keranjang. Kasir yang baru tahu di langkah terakhir sudah terlanjur mengucapkannya ke pelanggan.
+  3. **Konfirmasinya tercatat sebagai kolom snapshot di `transaction_items`**, mengikuti pola yang sudah ada di baris yang sama: `cost_price_at_sale`, `margin_floor_at_sale`, `below_floor_approved_by`. Minimal: siapa yang mengonfirmasi, dan tanggal kedaluwarsa barangnya **pada saat itu** — karena `product_variants.expiry_date` bisa berubah kemudian dan jejaknya harus bertahan sendiri.
+  4. **Angka `spoiled()` berhenti membaik diam-diam.** Begitu penjualannya tercatat, laporan wajib menyebutkan berapa yang keluar dalam keadaan kedaluwarsa. Bentuk paling murah: satu angka pendamping di bagian Penyelamat Stok. Yang terlarang adalah membiarkan "modal mati di rak" turun tanpa penjelasan.
+  5. **Ketiga komentar diperbaiki DI COMMIT YANG SAMA dengan gerbangnya**, tidak sebelum dan tidak sesudah. Memperbaikinya lebih dulu berarti menulis komentar tentang konfirmasi yang belum ada — menukar satu komentar bohong dengan komentar bohong yang lain.
+
+- **Satu pertanyaan yang sengaja ditinggalkan terbuka: siapa yang boleh mengonfirmasi.**
+  Dua preseden di basis kode ini menunjuk arah berlawanan, dan keduanya masuk akal:
+
+  | Preseden | Bentuknya | Kalau ditiru di sini |
+  |---|---|---|
+  | `[BL-018]` lantai untung | hanya **owner** yang boleh menembus, tercatat di `below_floor_approved_by` | paling aman; tapi kasir di antrean panjang tidak bisa memanggil owner |
+  | `[BL-087]` uang keluar laci | **kasir** boleh, wajib beralasan, owner meninjau sesudahnya | tidak menahan antrean; tapi barangnya sudah terlanjur keluar toko |
+
+  Bedanya nyata: uang yang salah keluar laci bisa dikembalikan, makanan basi yang sudah dimakan tidak bisa. **Rekomendasi saya: ikuti `[BL-018]`, owner-only** — justru karena ini satu-satunya batas di aplikasi ini yang taruhannya bukan uang. Tapi ia keputusan pemilik, bukan keputusan teknis, dan belum ditanyakan.
+
+- **Catatan untuk yang mengerjakan:** transaksi bukti `TRX-20260908-001` sengaja **tidak** di-void, supaya kasusnya masih bisa dilihat apa adanya di basis data pengembangan. Kalau ia mengganggu peragaan, void-nya aman — `[BL-092]` memastikan upsell di dalamnya berhenti terhitung berhasil.
+
+---
+
 ### [BL-107] Foto Struk Belum Bisa Jadi Restock — dan Karena Itu 41 dari 42 Varian Tidak Punya Tanggal Kedaluwarsa
 - **Ditemukan:** 2026-09-08
 - **Sumber:** Pertanyaan pemilik — *"bisa edit dan nambah dengan note otomatis dari ai … jadi foto struk, melalui vn, dll di dashboard owner"*. Angkanya ditemukan saat memeriksa apakah permintaan itu masuk akal, dan ternyata ia menjawab pertanyaan lain yang lebih mendesak.
@@ -302,6 +357,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - `app/Http/Controllers/Owner/Settings/IntegrationController.php` — `generateMcpToken()`/`revokeMcpToken()`, token Sanctum bernama `mcp-client` dengan ability `mcp:use`, plaintext hanya di-flash sekali
   - `resources/js/Pages/Owner/Settings/Integrations.vue` — tempat URL dan prompt bawaan itu akan disalin owner
 - **Deskripsi (apa yang diminta):**
+- **Angka butir 2 bisa membaik karena sebab yang salah — lihat `[BL-108]`.** Uji jalur nyata 2026-09-08 membuktikan POS masih bisa menjual barang yang sudah kedaluwarsa, dan setiap penjualan seperti itu **menurunkan** "modal mati di rak" (terukur: Rp 180.000 → Rp 170.000). Angka yang seharusnya mengukur kerugian jadi membaik tepat ketika hal terburuk terjadi, tanpa apa pun di layar yang menjelaskannya. Potret hari ini yang terdampak; `expired_stock_records` tidak ikut rusak karena ia menstempel sekali saat varian melewati kedaluwarsa dan tidak pernah menyentuh barisnya lagi. Perbaikannya milik `[BL-108]`, bukan entri ini.
+
 - **KOREKSI atas butir 4, ditemukan saat mengerjakannya (2026-09-08). Usulan aslinya salah, dan mengikutinya akan membuat aplikasi berbohong.**
   Butir 4 di atas berbunyi seolah "Saran Jual" dan "Penyelamat Stok" adalah dua nama untuk satu barang yang sama. Mereka bukan. `Saran Jual` memuat **empat** jenis saran, dan **tiga di antaranya tidak menyelamatkan stok apa pun**: `attach` (ko-okurensi add-on), `upsize` (naik ukuran), dan `manual` (aturan tulisan owner). Peragaan Saran Jual di landing bahkan memakai contoh murni upsell — *"Espresso Single — tawarkan Double"* (`resources/views/public/landing.blade.php:1089`). Mengganti nama wadahnya jadi "Penyelamat Stok" akan membuat nama itu berbohong tentang tiga perempat isinya.
 
