@@ -6,6 +6,7 @@ use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\UpsellEvent;
+use App\Services\Upsell\Strategies\PressedStockStrategy;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -30,6 +31,87 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class StockRescueService
 {
+    public function __construct(
+        private PressedStockStrategy $pressedStock,
+        private DiscountService $discounts,
+    ) {}
+
+    /**
+     * Sinyal pagi: apa yang harus keluar hari ini, dan apakah mesinnya siap
+     * membantu mengeluarkannya ([BL-105] butir 3).
+     *
+     * **Kenapa ini bukan lencana ketujuh.** Dashboard sudah punya "Mendekati
+     * Expired" dan "Dead Stock", dan keduanya menjawab *apa keadaannya*. Yang
+     * tidak pernah dijawab siapa pun adalah *apakah ada yang akan
+     * mengeluarkannya*: barang tertekan tanpa aturan diskon tetap disarankan
+     * kasir, tapi pada HARGA KATALOG — saran yang sama, dengan peluang jauh
+     * lebih kecil untuk laku. Kolom `armed` itulah isi sebenarnya kartu ini,
+     * dan tidak ada satu pun layar hari ini yang menyebutnya.
+     *
+     * **Daftarnya diambil dari `PressedStockStrategy`, bukan dikueri ulang.**
+     * Ini syarat, bukan kenyamanan: owner yang memasang potongan untuk barang
+     * yang ternyata tidak pernah muncul di layar kasir akan berhenti
+     * mempercayai kedua layar itu sekaligus. Satu definisi "barang tertekan",
+     * dua pembaca.
+     *
+     * Nilainya modal (`stock * cost_price`), satuan yang sama dengan
+     * {@see self::spoiled()} — supaya "Rp 340.000 sedang tertekan" dan
+     * "Rp 180.000 sudah mati" bisa dibaca berdampingan sebagai satu cerita.
+     *
+     * @param  int  $limit  banyaknya barang yang disebut namanya; ringkasannya tetap menghitung semua
+     * @return array{count: int, value: float, armed: int, unarmed: int, items: list<array<string, mixed>>}
+     */
+    public function pressedToday(Tenant $tenant, int $limit = 6): array
+    {
+        $variants = $this->pressedStock->pressedVariants($tenant);
+
+        if ($variants->isEmpty()) {
+            return ['count' => 0, 'value' => 0.0, 'armed' => 0, 'unarmed' => 0, 'items' => []];
+        }
+
+        $nearExpiryDays = (int) config('upsell.pressed_stock.near_expiry_days', 7);
+        $deadStockDays = (int) config('upsell.pressed_stock.dead_stock_days', 30);
+
+        // Satu kueri untuk seluruh daftar, sama seperti jalur POS.
+        $rules = $this->discounts->rulesFor($tenant, $variants->pluck('id')->all());
+
+        $rows = [];
+        $value = 0.0;
+        $armed = 0;
+
+        foreach ($variants as $variant) {
+            [$reason, $note, $score] = $this->pressedStock->classify($variant, $nearExpiryDays, $deadStockDays);
+
+            $isArmed = $rules->has($variant->id);
+            $modal = $variant->stock * (float) $variant->cost_price;
+
+            $value += $modal;
+            $armed += $isArmed ? 1 : 0;
+
+            $rows[] = [
+                'variant_id' => $variant->id,
+                'label' => $this->pressedStock->displayName($variant),
+                'reason' => $reason,
+                'note' => $note,
+                'stock' => $variant->stock,
+                'value' => $modal,
+                'armed' => $isArmed,
+                'score' => $score,
+            ];
+        }
+
+        // Urutan yang sama dengan strip kasir: yang paling mendesak di atas.
+        usort($rows, fn (array $a, array $b) => $b['score'] <=> $a['score']);
+
+        return [
+            'count' => $variants->count(),
+            'value' => $value,
+            'armed' => $armed,
+            'unarmed' => $variants->count() - $armed,
+            'items' => array_slice($rows, 0, $limit),
+        ];
+    }
+
     /**
      * Saran yang boleh ikut dihitung: yang tidak menempel pada transaksi batal.
      *

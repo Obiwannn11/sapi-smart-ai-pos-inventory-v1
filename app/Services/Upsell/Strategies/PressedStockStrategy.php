@@ -35,15 +35,29 @@ class PressedStockStrategy implements CartLevelStrategy
 {
     public function __construct(private DiscountService $discounts) {}
 
-    public function suggest(Tenant $tenant): array
+    /**
+     * Barang yang sedang tertekan hari ini — mendekati kedaluwarsa ATAU tak
+     * terjual sebulan.
+     *
+     * Publik, dan itu disengaja: sinyal pagi milik owner ([BL-105] butir 3)
+     * memakai daftar YANG SAMA PERSIS dengan yang akan ditawarkan kasir. Dua
+     * daftar yang diturunkan dari dua kueri berbeda akan berselisih, dan owner
+     * yang memasang potongan untuk barang yang ternyata tidak pernah disarankan
+     * akan berhenti mempercayai keduanya.
+     *
+     * TIDAK dibatasi jumlahnya. Batas `pressed_stock_candidates` milik strip
+     * kasir yang hanya punya tiga slot; owner justru ingin melihat semuanya.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, ProductVariant>
+     */
+    public function pressedVariants(Tenant $tenant): \Illuminate\Database\Eloquent\Collection
     {
         $nearExpiryDays = (int) config('upsell.pressed_stock.near_expiry_days', 7);
         $deadStockDays = (int) config('upsell.pressed_stock.dead_stock_days', 30);
-        $limit = (int) config('upsell.pressed_stock_candidates', 4);
 
         $deadStockSince = now()->subDays($deadStockDays);
 
-        $candidates = SellableVariantQuery::for($tenant)
+        return SellableVariantQuery::for($tenant)
             ->where(function (Builder $query) use ($nearExpiryDays, $deadStockSince) {
                 $query
                     ->where(function (Builder $inner) use ($nearExpiryDays) {
@@ -57,6 +71,15 @@ class PressedStockStrategy implements CartLevelStrategy
             })
             ->with('product:id,name')
             ->get();
+    }
+
+    public function suggest(Tenant $tenant): array
+    {
+        $nearExpiryDays = (int) config('upsell.pressed_stock.near_expiry_days', 7);
+        $deadStockDays = (int) config('upsell.pressed_stock.dead_stock_days', 30);
+        $limit = (int) config('upsell.pressed_stock_candidates', 4);
+
+        $candidates = $this->pressedVariants($tenant);
 
         // Satu kueri untuk seluruh kandidat, bukan satu per varian — jalur ini
         // ikut dibangun ulang tiap kali props POS dirakit.
@@ -98,9 +121,12 @@ class PressedStockStrategy implements CartLevelStrategy
      * varian bisa masuk daftar lewat jalur dead stock sambil tanggal
      * kedaluwarsanya masih berbulan-bulan lagi.
      *
+     * Publik untuk alasan yang sama dengan `pressedVariants()`: sinyal pagi
+     * milik owner harus menyebut ALASAN yang sama dengan yang dibaca kasir.
+     *
      * @return array{0: string, 1: string, 2: float}
      */
-    private function classify(ProductVariant $variant, int $nearExpiryDays, int $deadStockDays): array
+    public function classify(ProductVariant $variant, int $nearExpiryDays, int $deadStockDays): array
     {
         $nearExpiry = $variant->expiry_date !== null
             && $variant->expiry_date->startOfDay()->lte(now()->addDays($nearExpiryDays)->startOfDay());
@@ -122,7 +148,7 @@ class PressedStockStrategy implements CartLevelStrategy
         ];
     }
 
-    private function displayName(ProductVariant $variant): string
+    public function displayName(ProductVariant $variant): string
     {
         $productName = $variant->relationLoaded('product') && $variant->product !== null
             ? $variant->product->name

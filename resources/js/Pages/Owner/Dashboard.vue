@@ -18,6 +18,8 @@ const props = defineProps({
     metrics: Object,
     dailyTrend: Array,
     badges: Array,
+    // Sinyal pagi ([BL-105] butir 3) — null selama masih dimuat.
+    pressedToday: { type: Object, default: null },
     recentTransactions: Array,
     subscription: Object,
 });
@@ -382,6 +384,84 @@ const invoiceStatusLabels = {
                 </div>
             </div>
         </div>
+
+        <!-- Sinyal pagi ([BL-105] butir 3). Di ATAS lencana, dan itu urutan yang
+             disengaja: lencana menjawab "apa keadaannya", kartu ini menjawab
+             "apa yang harus saya kerjakan hari ini". Yang kedua lebih dulu.
+
+             Ia sengaja tumpang tindih sebagian dengan lencana "Mendekati
+             Expired" dan "Dead Stock" — bedanya ada di kolom terakhir, dan
+             itulah seluruh gunanya: barang tertekan yang belum punya potongan
+             tetap disarankan kasir, tapi pada harga katalog. Kalau suatu hari
+             pengulangannya terasa berisik, yang dicabut lencananya, bukan kartu
+             ini. -->
+        <Deferred data="badges">
+            <template #fallback>
+                <SkeletonCard icon :lines="2" padding="p-5" />
+            </template>
+
+            <div
+                v-if="pressedToday && pressedToday.count > 0"
+                class="bg-white rounded-xl shadow-sm border border-warning/30 ring-1 ring-warning/20 p-5 space-y-4"
+            >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-800">Perlu keluar hari ini</h3>
+                        <p class="mt-1 text-2xl font-bold text-gray-900">
+                            {{ pressedToday.count }} barang · {{ formatCurrency(pressedToday.value) }} modal
+                        </p>
+                    </div>
+
+                    <!-- Kalimat yang jadi alasan kartu ini ada. Angka "belum
+                         punya potongan" tidak muncul di layar mana pun sebelum
+                         ini, padahal ia yang menentukan apakah saran kasir
+                         punya peluang atau cuma basa-basi. -->
+                    <div class="text-right">
+                        <p v-if="pressedToday.unarmed > 0" class="text-sm text-warning-foreground">
+                            <span class="font-semibold">{{ pressedToday.unarmed }}</span> belum punya potongan otomatis
+                        </p>
+                        <p v-else class="text-sm text-success">Semuanya sudah punya potongan otomatis</p>
+                        <Link
+                            href="/owner/discount-rules"
+                            class="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+                        >
+                            Atur potongan →
+                        </Link>
+                    </div>
+                </div>
+
+                <ul class="divide-y divide-gray-100">
+                    <li
+                        v-for="item in pressedToday.items"
+                        :key="item.variant_id"
+                        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
+                    >
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-medium text-gray-900">{{ item.label }}</p>
+                            <p class="text-xs text-gray-500">{{ item.note }} · sisa {{ item.stock }}</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-700">{{ formatCurrency(item.value) }}</span>
+                            <span
+                                :class="[
+                                    'rounded px-1.5 py-0.5 text-xs font-medium',
+                                    item.armed
+                                        ? 'bg-success/15 text-success'
+                                        : 'bg-warning/15 text-warning-foreground',
+                                ]"
+                            >
+                                {{ item.armed ? 'Potongan aktif' : 'Belum ada potongan' }}
+                            </span>
+                        </div>
+                    </li>
+                </ul>
+
+                <p v-if="pressedToday.count > pressedToday.items.length" class="text-xs text-gray-400">
+                    Menampilkan {{ pressedToday.items.length }} dari {{ pressedToday.count }} —
+                    <Link href="/owner/stock?status=near_expiry" class="text-primary hover:underline">lihat semua di Stok</Link>
+                </p>
+            </div>
+        </Deferred>
 
         <!-- Badges. Ditunda: kartunya lahir dari agregat paling berat di halaman
              ini, dan bukan angka pertama yang dicari owner saat membuka layar. -->

@@ -7,6 +7,7 @@ use App\Models\Transaction;
 use App\Models\TransactionPayment;
 use App\Services\BadgeHelperService;
 use App\Services\BusinessClock;
+use App\Services\StockRescueService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -17,6 +18,7 @@ class DashboardController extends Controller
     public function __construct(
         private BadgeHelperService $badgeHelper,
         private SubscriptionService $subscriptions,
+        private StockRescueService $stockRescue,
     ) {}
 
     public function index(Request $request): Response
@@ -104,6 +106,14 @@ class DashboardController extends Controller
                 ->take(5)
                 ->get(['id', 'code', 'total_amount', 'user_id', 'created_at', 'source'])),
             'badges' => Inertia::defer(fn () => $this->badgeHelper->generate($tenant), 'badges'),
+
+            // Sinyal pagi ([BL-105] butir 3) — apa yang harus keluar hari ini,
+            // dan apakah potongannya sudah terpasang untuk membantunya keluar.
+            //
+            // Ikut grup 'badges' dengan sengaja: keduanya menyisir stok, dan
+            // memisahkannya berarti dua rombongan kueri berat yang tiba
+            // bergiliran di bagian layar yang sama.
+            'pressedToday' => Inertia::defer(fn () => $this->stockRescue->pressedToday($tenant), 'badges'),
             'subscription' => [
                 'status' => $tenant->status,
                 'track' => $subscription->pricing_track,

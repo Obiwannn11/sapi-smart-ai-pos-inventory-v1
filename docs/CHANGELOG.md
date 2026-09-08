@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-08 | ADDITION | Stok | Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3) |
 | 2026-09-08 | SCHEMA | Stok | Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105) |
 | 2026-09-07 | ADDITION | Promosi | Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2) |
 | 2026-09-07 | HOTFIX | Kasir | Katalog POS Berhenti Mencari Aturan Diskon Sekali per Varian — 34 Kueri Jadi 5 (BL-103 Butir 1, Sisa) |
@@ -244,6 +245,34 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3)
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Kartu **"Perlu keluar hari ini"** di dashboard owner, di atas Alert & Notifikasi. Isinya tiga hal: berapa barang yang sedang tertekan, berapa modal yang menggantung di dalamnya, dan **berapa yang belum punya potongan otomatis**.
+
+  Sebelum ini, barang tertekan hanya muncul kalau kasir kebetulan sudah punya keranjang berisi — `PressedStockStrategy` hidup di `cart_level`, jadi ia tidak pernah relevan sebelum ada yang dibeli. Owner yang membuka aplikasinya pagi hari tidak pernah diberi tahu apa pun tentangnya.
+- **Yang membuatnya bukan lencana ketujuh, dan ini satu-satunya alasan kartu ini ada.**
+  Dashboard sudah punya "Mendekati Expired" dan "Dead Stock". Keduanya menjawab **apa keadaannya**. Yang tidak pernah dijawab satu pun layar adalah **apakah ada yang akan mengeluarkannya**: barang tertekan tanpa aturan diskon tetap disarankan kasir, tapi **pada harga katalog** — saran yang sama persis, dengan peluang jauh lebih kecil untuk laku. Kolom `armed` itulah isi sebenarnya kartu ini, dan angkanya tidak muncul di mana pun sebelum ini.
+
+  Pengulangan sebagian dengan kedua lencana itu **diterima sadar dan ditulis di kodenya**: kalau suatu hari terasa berisik, yang dicabut lencananya, bukan kartunya — lencana memuat bagian informasi yang lebih kecil.
+- **Daftarnya diambil dari `PressedStockStrategy`, bukan dikueri ulang — dan itu syarat, bukan kenyamanan.**
+  `pressedVariants()` dan `classify()` dinaikkan jadi publik supaya sinyal pagi memakai **daftar dan alasan yang sama persis** dengan yang akan dibaca kasir. Dua daftar yang diturunkan dari dua kueri berbeda pasti berselisih pada suatu hari, dan owner yang memasang potongan untuk barang yang ternyata tidak pernah muncul di layar kasir akan berhenti mempercayai kedua layar itu sekaligus. Ada uji tersendiri yang membandingkan kedua daftar dan gagal kalau keduanya menyimpang.
+
+  Satu beda yang disengaja: batas `pressed_stock_candidates` **tidak** ikut. Ia milik strip kasir yang cuma punya tiga slot; owner justru ingin melihat semuanya, jadi ringkasannya menghitung semua dan hanya daftar namanya yang dipotong.
+- **Nilainya modal (`stock * cost_price`)**, satuan yang sama dengan `spoiled()` dari butir 2 — supaya "Rp 340.000 sedang tertekan" dan "Rp 180.000 sudah mati" bisa dibaca berdampingan sebagai satu cerita, bukan dua angka yang kebetulan bertetangga.
+- **File Terdampak:**
+  - `app/Services/StockRescueService.php` — `pressedToday()`; kelas ini kini memuat ketiga tahap: tertekan (sekarang), diselamatkan (lampau), mati (hilang)
+  - `app/Services/Upsell/Strategies/PressedStockStrategy.php` — kandidatnya diekstrak jadi `pressedVariants()`; `classify()` dan `displayName()` jadi publik. Perilaku `suggest()` tidak berubah sama sekali
+  - `app/Http/Controllers/Owner/DashboardController.php` — prop `pressedToday`, ditunda di grup `badges`
+  - `resources/js/Pages/Owner/Dashboard.vue` — kartunya, di atas Alert & Notifikasi
+  - `tests/Feature/Upsell/PressedTodaySignalTest.php` — **baru**; 10 uji
+- **Catatan Migrasi:** Tidak ada. Tidak ada skema yang berubah.
+
+---
 
 ### [SCHEMA] Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105)
 - **Tanggal:** 2026-09-08
