@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Deferred, Head, router, Link } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import PlatformLayout from '@/Layouts/PlatformLayout.vue';
 import PageHeader from '@/Components/Platform/PageHeader.vue';
 import DataTable from '@/Components/Platform/DataTable.vue';
@@ -8,6 +8,7 @@ import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import FormField from '@/Components/Platform/FormField.vue';
 import Button from '@/Components/Button.vue';
 import { inputClass } from '@/support/platform';
+import Pagination from '@/Components/Pagination.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 const props = defineProps({
@@ -129,22 +130,7 @@ const severity = (value) =>
             </tr>
         </DataTable>
 
-        <div v-if="logs.links.length > 3" class="mt-4 flex flex-wrap items-center gap-1.5">
-            <component
-                :is="link.url ? Link : 'span'"
-                v-for="(link, index) in logs.links"
-                :key="index"
-                :href="link.url"
-                preserve-scroll
-                class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                :class="link.active
-                    ? 'bg-primary text-primary-foreground'
-                    : link.url
-                        ? 'bg-card border border-border text-muted-foreground hover:bg-accent/40'
-                        : 'bg-card border border-border text-muted-foreground/40'"
-                v-html="link.label"
-            />
-        </div>
+        <Pagination :paginator="logs" tone="platform" unit="catatan" />
         </Deferred>
     </PlatformLayout>
 </template>

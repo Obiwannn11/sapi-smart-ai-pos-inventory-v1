@@ -7,6 +7,7 @@ import DataTable from '@/Components/Platform/DataTable.vue';
 import StatCard from '@/Components/Platform/StatCard.vue';
 import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import Notice from '@/Components/Platform/Notice.vue';
+import Pagination from '@/Components/Pagination.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import {
     formatRupiah,
@@ -180,23 +181,7 @@ const billingOf = (row) => props.billing[row.tenant?.id] ?? null;
             </tr>
         </DataTable>
 
-        <div v-if="subscriptions.meta?.last_page > 1" class="mt-4 flex flex-wrap items-center gap-1.5">
-            <Link
-                v-for="link in subscriptions.meta.links"
-                :key="link.label"
-                :href="link.url ?? '#'"
-                preserve-scroll
-                :class="[
-                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                    link.active
-                        ? 'bg-primary text-primary-foreground'
-                        : link.url
-                            ? 'bg-card border border-border text-muted-foreground hover:bg-accent/40'
-                            : 'bg-card border border-border text-muted-foreground/40 pointer-events-none',
-                ]"
-                v-html="link.label"
-            />
-        </div>
+        <Pagination v-if="subscriptions.meta" :paginator="subscriptions.meta" tone="platform" unit="langganan" />
         </Deferred>
 
         <Notice class="mt-6 max-w-2xl">

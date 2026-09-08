@@ -2,6 +2,7 @@
 import { Deferred, router, Head } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import Pagination from '@/Components/Pagination.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
@@ -257,23 +258,7 @@ const openEdit = (transaction) => {
                 </div>
             </div>
 
-            <!-- Pagination -->
-            <div v-if="transactions.last_page > 1" class="flex justify-center gap-2 mt-6">
-                <template v-for="link in transactions.links" :key="link.label">
-                    <button
-                        v-if="link.url"
-                        @click="router.get(link.url)"
-                        :class="[
-                            'px-3 py-1.5 text-sm rounded-lg transition',
-                            link.active
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
-                        ]"
-                        v-html="link.label"
-                    />
-                    <span v-else class="px-3 py-1.5 text-sm text-gray-300" v-html="link.label" />
-                </template>
-            </div>
+            <Pagination :paginator="transactions" unit="transaksi" />
             </Deferred>
         </main>
 

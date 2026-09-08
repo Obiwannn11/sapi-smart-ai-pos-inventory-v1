@@ -16,6 +16,7 @@
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { Deferred, useForm, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import Pagination from '@/Components/Pagination.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import Skeleton from '@/Components/Skeleton/Skeleton.vue';
@@ -577,23 +578,7 @@ const formatDate = (date) => {
                         </button>
                     </div>
 
-                    <div v-if="variants.last_page > 1" class="flex flex-wrap gap-1">
-                        <Link
-                            v-for="link in variants.links"
-                            :key="link.label"
-                            :href="link.url || '#'"
-                            preserve-scroll
-                            :class="[
-                                'px-3 py-1.5 text-xs rounded-lg transition-colors',
-                                link.active
-                                    ? 'bg-primary text-primary-foreground'
-                                    : link.url
-                                        ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                        : 'bg-gray-50 text-gray-300 cursor-not-allowed',
-                            ]"
-                            v-html="link.label"
-                        />
-                    </div>
+                    <Pagination :paginator="variants" :summary="false" />
                 </div>
             </Deferred>
         </div>

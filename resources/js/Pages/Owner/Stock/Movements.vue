@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import Pagination from '@/Components/Pagination.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import { BUSINESS_TZ } from '@/support/date';
@@ -232,29 +233,7 @@ const qtyClass = (qty) => {
             </div>
         </div>
 
-        <!-- Pagination -->
-        <div v-if="movements.links && movements.last_page > 1" class="mt-4 flex items-center justify-between">
-            <p class="text-sm text-gray-500">
-                Menampilkan {{ movements.from }}–{{ movements.to }} dari {{ movements.total }} data
-            </p>
-            <div class="flex gap-1">
-                <Link
-                    v-for="link in movements.links"
-                    :key="link.label"
-                    :href="link.url || '#'"
-                    :class="[
-                        'px-3 py-1.5 text-sm rounded-lg border transition-colors',
-                        link.active
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : link.url
-                                ? 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    ]"
-                    v-html="link.label"
-                    preserve-scroll
-                />
-            </div>
-        </div>
+        <Pagination :paginator="movements" unit="pergerakan" />
         </Deferred>
     </div>
 </template>

@@ -1,7 +1,8 @@
 <script setup>
-import { Deferred, Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import Pagination from '@/Components/Pagination.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import { BUSINESS_TZ } from '@/support/date';
 
@@ -205,27 +206,8 @@ const formatDateTime = (datetime) => {
                 Belum ada sesi kas
             </div>
 
-            <!-- Pagination -->
-            <div v-if="cashDrawers.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                <p class="text-xs text-gray-500">
-                    Menampilkan {{ cashDrawers.from }}–{{ cashDrawers.to }} dari {{ cashDrawers.total }}
-                </p>
-                <div class="flex gap-1">
-                    <Link
-                        v-for="link in cashDrawers.links"
-                        :key="link.label"
-                        :href="link.url || '#'"
-                        :class="[
-                            'px-3 py-1.5 text-xs rounded-lg transition-colors',
-                            link.active
-                                ? 'bg-primary text-primary-foreground'
-                                : link.url
-                                    ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                        ]"
-                        v-html="link.label"
-                    />
-                </div>
+            <div v-if="cashDrawers.last_page > 1" class="px-4 pb-3 border-t border-gray-100">
+                <Pagination :paginator="cashDrawers" unit="sesi kas" />
             </div>
             </Deferred>
         </div>

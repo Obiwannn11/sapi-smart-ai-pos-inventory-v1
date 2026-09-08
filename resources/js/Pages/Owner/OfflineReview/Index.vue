@@ -3,6 +3,7 @@ import { Deferred, router, Head, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import Pagination from '@/Components/Pagination.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
 import { BUSINESS_TZ } from '@/support/date';
@@ -165,19 +166,7 @@ const resolve = (transaction) => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="transactions.links.length > 3" class="flex flex-wrap gap-1">
-            <Link
-                v-for="link in transactions.links"
-                :key="link.label"
-                :href="link.url ?? ''"
-                :class="[
-                    'rounded-md px-3 py-1.5 text-xs transition',
-                    link.active ? 'bg-primary text-primary-foreground' : 'bg-white border border-border text-muted-foreground hover:border-primary/30',
-                    !link.url ? 'pointer-events-none opacity-40' : '',
-                ]"
-                v-html="link.label"
-            />
-        </div>
+        <Pagination :paginator="transactions" unit="transaksi" />
         </Deferred>
     </div>
 </template>
