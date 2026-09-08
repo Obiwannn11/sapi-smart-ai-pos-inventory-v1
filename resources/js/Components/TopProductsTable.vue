@@ -95,7 +95,7 @@ const variantSummary = (product) => {
 
                         <tr
                             v-for="variant in (isOpen(product) ? product.variants : [])"
-                            :key="`${product.product_id}-${variant.variant_name}`"
+                            :key="variant.variant_id"
                             class="border-b border-gray-50 bg-gray-50/60"
                         >
                             <td />

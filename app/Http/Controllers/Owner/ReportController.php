@@ -664,6 +664,22 @@ class ReportController extends Controller
      * penjualannya tetap terjadi di periode itu, dan membuangnya berarti omzet
      * yang lenyap dari laporan tanpa meninggalkan jejak.
      *
+     * Pecahan variannya dikelompokkan pada `product_variants.id`, dan namanya
+     * diambil dari katalog — bukan dari `variant_name` yang dibekukan di
+     * barisnya. Kolom beku itu tidak konsisten sepanjang riwayat: sebagian
+     * baris lama menyimpan label lengkap ("Espresso - Single") dan sebagian
+     * lagi hanya nama variannya ("Single"), sehingga satu varian yang sama
+     * muncul dua kali di bawah satu produk — persis kebingungan yang tabel ini
+     * dibuat untuk menghilangkan. Yang dijawab baris ini adalah "varian mana",
+     * dan varian mana ditentukan oleh id-nya, bukan oleh string yang kebetulan
+     * diketik saat itu.
+     *
+     * Konsekuensinya disadari: varian yang DIGANTI NAMANYA akan tampil dengan
+     * nama barunya untuk penjualan lama. Itu pertukaran yang diambil dengan
+     * sengaja di layar ini saja — nama bekunya tetap utuh di
+     * `transaction_items`, tetap dipakai struk, dan tetap jadi dasar
+     * pemeriksaan nama karangan model (`[BL-100]`).
+     *
      * @param  \Closure(Builder): Builder  $withinPeriod  penyaring rentang pada transaksinya
      * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
@@ -675,9 +691,10 @@ class ReportController extends Controller
             ->whereHas('transaction', function ($q) use ($withinPeriod) {
                 $withinPeriod($q->where('status', Transaction::STATUS_COMPLETED));
             })
-            ->selectRaw('products.id as product_id, products.name as product_name, transaction_items.variant_name')
+            ->selectRaw('products.id as product_id, products.name as product_name')
+            ->selectRaw('product_variants.id as variant_id, product_variants.name as variant_name')
             ->selectRaw('SUM(transaction_items.qty) as total_qty, SUM(transaction_items.subtotal) as total_revenue')
-            ->groupBy('products.id', 'products.name', 'transaction_items.variant_name')
+            ->groupBy('products.id', 'products.name', 'product_variants.id', 'product_variants.name')
             ->get()
             ->groupBy('product_id')
             ->map(fn ($rows) => [
@@ -691,6 +708,7 @@ class ReportController extends Controller
                 'variants' => $rows
                     ->sortByDesc(fn ($row) => (int) $row->total_qty)
                     ->map(fn ($row) => [
+                        'variant_id' => (int) $row->variant_id,
                         'variant_name' => $row->variant_name,
                         'total_qty' => (int) $row->total_qty,
                         'total_revenue' => (float) $row->total_revenue,

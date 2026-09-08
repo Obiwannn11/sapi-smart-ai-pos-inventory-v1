@@ -500,3 +500,51 @@ test('daily top products also group by product', function () {
             )
         );
 });
+
+test('the variant breakdown merges rows that recorded the same variant under different names', function () {
+    // Riwayat panjang menyimpan `variant_name` dengan dua bentuk: sebagian
+    // baris lama memuat label lengkap ("Espresso - Single"), sebagian hanya
+    // nama variannya ("Single"). Keduanya varian yang sama, dan rinciannya
+    // tidak boleh memecahnya jadi dua baris di bawah satu produk.
+    $espresso = App\Models\Product::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'name' => 'Espresso',
+    ]);
+    $single = App\Models\ProductVariant::factory()->create([
+        'product_id' => $espresso->id,
+        'name' => 'Single',
+    ]);
+
+    sellVariant($single, qty: 5, subtotal: 90000, occurredAt: '2026-05-04 09:00:00');
+
+    // Baris kedua menunjuk varian yang sama, tapi namanya tercatat lengkap.
+    $legacy = Transaction::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'user_id' => $this->owner->id,
+        'status' => Transaction::STATUS_COMPLETED,
+        'total_amount' => 36000,
+        'occurred_at' => '2026-05-05 09:00:00',
+    ]);
+    $legacy->items()->create([
+        'product_variant_id' => $single->id,
+        'variant_name' => 'Espresso - Single',
+        'qty' => 2,
+        'unit_price' => 18000,
+        'subtotal' => 36000,
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-05')
+        ->assertInertia(fn (Assert $page) => $page
+            ->loadDeferredProps(['rekap'], fn (Assert $reload) => $reload
+                ->where('topProducts.0.product_name', 'Espresso')
+                ->where('topProducts.0.total_qty', 7)
+                // Satu baris rincian, bukan dua — dan namanya nama katalognya.
+                ->has('topProducts.0.variants', 1)
+                ->where('topProducts.0.variants.0.variant_name', 'Single')
+                ->where('topProducts.0.variants.0.variant_id', $single->id)
+                ->where('topProducts.0.variants.0.total_qty', 7)
+                ->where('topProducts.0.variants.0.total_revenue', 126000)
+            )
+        );
+});
