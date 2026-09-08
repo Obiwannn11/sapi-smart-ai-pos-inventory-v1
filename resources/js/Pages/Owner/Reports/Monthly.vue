@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
@@ -38,6 +38,14 @@ const formatDayLabel = (date) => new Date(date).toLocaleDateString('id-ID', {
     month: 'short',
 });
 
+const formatFullDayLabel = (date) => new Date(date).toLocaleDateString('id-ID', {
+    timeZone: BUSINESS_TZ,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+});
+
 const changeMonth = (newMonth) => {
     if (newMonth) selectedMonth.value = newMonth;
     router.get('/owner/reports/monthly', { month: selectedMonth.value }, {
@@ -47,14 +55,6 @@ const changeMonth = (newMonth) => {
 };
 
 const exportUrl = computed(() => `/owner/reports/monthly/export?month=${props.month}`);
-
-const rangeLabel = computed(() => {
-    const from = new Date(props.range.from);
-    const to = new Date(props.range.to);
-    return `tanggal ${from.getDate()}–${to.getDate()}`;
-});
-
-const hasData = computed(() => props.summary.total_transactions > 0 || props.summary.voided_count > 0);
 
 // Bulan yang belum ada pembandingnya (delta null) tidak boleh ditulis "+100%".
 const formatDelta = (pct) => {
@@ -81,9 +81,39 @@ const paymentShare = (amount) => {
     return Math.round((Number(amount) / paymentTotal.value) * 100) + '%';
 };
 
-// Hanya hari yang ada kegiatannya yang ditampilkan di tabel rincian; deret
-// lengkapnya (termasuk hari nol) tetap ada di payload untuk grafik dan CSV.
-const activeDays = computed(() => props.dailySeries.filter((d) => d.count > 0 || d.voided > 0));
+// Hanya hari yang ada penjualannya yang masuk daftar rincian; deret lengkapnya
+// (termasuk hari nol) tetap ada di payload untuk grafik dan CSV.
+const activeDays = computed(() => props.dailySeries.filter((d) => d.count > 0));
+
+// Rincian harian dibuka satu hari pada satu waktu. Tabel 31 baris × 5 kolom
+// menuntut pemilik memindai seluruhnya untuk membaca satu hari; di sini
+// tanggalnya dipilih, dan angkanya berdiri sendiri di sebelahnya.
+//
+// Keadaan pertamanya sengaja KOSONG, bukan hari pertama bulan itu. Panel yang
+// sudah terisi saat halaman dibuka terbaca sebagai ringkasan bulan — dan
+// angkanya akan dikira angka sebulan.
+const selectedDate = ref(null);
+
+// Berpindah bulan mengosongkannya kembali: tanggal yang dipilih di bulan lalu
+// tidak ada di bulan ini, dan panel yang menggantung akan menampilkan angka
+// kosong tanpa sebab yang terlihat.
+watch(() => props.month, () => {
+    selectedDate.value = null;
+});
+
+const selectedDay = computed(() =>
+    activeDays.value.find((day) => day.date === selectedDate.value) ?? null
+);
+
+const selectedAverage = computed(() => {
+    const day = selectedDay.value;
+    if (!day || day.count <= 0) return 0;
+    return day.revenue / day.count;
+});
+
+const selectDay = (day) => {
+    selectedDate.value = selectedDate.value === day.date ? null : day.date;
+};
 
 const paymentTypeLabel = (type) => {
     if (type === 'cash') return 'Tunai';
@@ -100,9 +130,7 @@ const paymentTypeLabel = (type) => {
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Laporan Bulanan</h1>
-                <p class="text-sm text-gray-500 mt-1">
-                    Rekap {{ monthLabel }} — bulan kalender, {{ rangeLabel }}
-                </p>
+                <p class="text-sm text-gray-500 mt-1">Rekap {{ monthLabel }}</p>
             </div>
             <div class="flex items-center gap-2">
                 <MonthPicker v-model="selectedMonth" @update:modelValue="changeMonth" />
@@ -119,63 +147,32 @@ const paymentTypeLabel = (type) => {
             </div>
         </div>
 
-        <!-- Kartu ringkasan -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Dua angka, dan hanya dua. Perbandingannya tidak ikut ke sini:
+             pemilik yang membuka layar ini mencari "berapa bulan ini", dan
+             "-24% dari Juli" adalah pertanyaan berikutnya, bukan pertanyaan
+             yang sama. Jawabannya menunggu di kaki halaman. -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <MetricCard
                 title="Omzet Bulan Ini"
                 :value="formatCurrency(summary.total_revenue)"
-                :subtitle="revenueDelta ? `${revenueDelta} dari ${comparison.label}` : `Belum ada omzet di ${comparison.label}`"
                 icon="currency"
                 color="success"
             />
             <MetricCard
                 title="Transaksi Selesai"
                 :value="summary.total_transactions"
-                :subtitle="transactionsDelta ? `${transactionsDelta} dari ${comparison.label}` : `Belum ada transaksi di ${comparison.label}`"
+                subtitle="transaksi"
                 icon="receipt"
                 color="primary"
             />
-            <MetricCard
-                title="Rata-rata per Transaksi"
-                :value="formatCurrency(summary.average_transaction)"
-                subtitle="nilai belanja rata-rata"
-                icon="average"
-                color="primary"
-            />
-            <MetricCard
-                title="Transaksi Void"
-                :value="summary.voided_count"
-                subtitle="dibatalkan"
-                icon="average"
-                color="muted"
-            />
         </div>
 
-        <!-- Ritme bulan -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <h3 class="text-sm font-semibold text-gray-700 mb-4">Ritme Bulan</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                    <p class="text-xs text-gray-500">Hari Berjualan</p>
-                    <p class="mt-1 text-lg font-bold text-gray-900">
-                        {{ summary.active_days }}
-                        <span class="text-sm font-normal text-gray-400">dari {{ summary.days_in_month }} hari</span>
-                    </p>
-                </div>
-                <div>
-                    <p class="text-xs text-gray-500">Rata-rata Omzet per Hari Berjualan</p>
-                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.average_active_day_revenue) }}</p>
-                </div>
-                <div>
-                    <p class="text-xs text-gray-500">Hari Teramai</p>
-                    <p v-if="summary.best_day" class="mt-1 text-lg font-bold text-gray-900">
-                        {{ formatDayLabel(summary.best_day.date) }}
-                        <span class="text-sm font-normal text-gray-400">{{ formatCurrency(summary.best_day.revenue) }}</span>
-                    </p>
-                    <p v-else class="mt-1 text-lg font-bold text-gray-300">—</p>
-                </div>
-            </div>
-        </div>
+        <!-- Bentuk bulannya lebih dulu, sebelum angkanya dibaca satu per satu -->
+        <TrendChart
+            :data="dailySeries"
+            :title="`Tren Omzet Harian — ${monthLabel}`"
+            :empty-label="`Belum ada penjualan di ${monthLabel}`"
+        />
 
         <!-- Pajak terpungut ([BL-065] butir (e)).
              Angka kedua inilah yang dipakai pemilik untuk menyetorkan; tanpa
@@ -203,41 +200,6 @@ const paymentTypeLabel = (type) => {
                 Rinciannya per hari ada di unduhan CSV. Struk kasir bukan faktur pajak — angka ini membantu
                 menyiapkan setoran, bukan menggantikan e-Faktur.
             </p>
-        </div>
-
-        <!-- Perbandingan dengan bulan sebelumnya -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Dibanding {{ comparison.label }}</h3>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-gray-100">
-                            <th class="text-left py-2 px-3 text-gray-500 font-medium">Ukuran</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">{{ comparison.label }}</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">{{ monthLabel }}</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">Selisih</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="border-b border-gray-50">
-                            <td class="py-2.5 px-3 font-medium text-gray-800">Omzet</td>
-                            <td class="py-2.5 px-3 text-right text-gray-600">{{ formatCurrency(comparison.total_revenue) }}</td>
-                            <td class="py-2.5 px-3 text-right font-semibold text-gray-900">{{ formatCurrency(summary.total_revenue) }}</td>
-                            <td class="py-2.5 px-3 text-right font-semibold" :class="deltaTone(comparison.revenue_delta_pct)">
-                                {{ revenueDelta ?? 'Tidak ada pembanding' }}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="py-2.5 px-3 font-medium text-gray-800">Transaksi</td>
-                            <td class="py-2.5 px-3 text-right text-gray-600">{{ comparison.total_transactions }}</td>
-                            <td class="py-2.5 px-3 text-right font-semibold text-gray-900">{{ summary.total_transactions }}</td>
-                            <td class="py-2.5 px-3 text-right font-semibold" :class="deltaTone(comparison.transactions_delta_pct)">
-                                {{ transactionsDelta ?? 'Tidak ada pembanding' }}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
         </div>
 
         <!-- Rekap per metode pembayaran. Ditunda ([BL-037]) bersama produk
@@ -298,57 +260,88 @@ const paymentTypeLabel = (type) => {
 
         </Deferred>
 
-        <!-- Tren harian: bentuk bulannya, sebelum angkanya dibaca satu per satu -->
-        <TrendChart
-            :data="dailySeries"
-            :title="`Tren Omzet Harian — ${monthLabel}`"
-            :empty-label="`Belum ada penjualan di ${monthLabel}`"
-        />
-
-        <!-- Rincian harian -->
+        <!-- Rincian harian: tanggalnya di kiri, angkanya di kanan -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-gray-700">Rincian Harian</h3>
-                <span class="text-xs text-gray-400">{{ activeDays.length }} hari ada kegiatan</span>
+                <span class="text-xs text-gray-400">{{ activeDays.length }} hari ada penjualan</span>
             </div>
 
-            <div v-if="activeDays.length > 0" class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-gray-100 bg-gray-50">
-                            <th class="text-left py-2 px-5 text-gray-500 font-medium">Tanggal</th>
-                            <th class="text-right py-2 px-5 text-gray-500 font-medium">Transaksi</th>
-                            <th class="text-right py-2 px-5 text-gray-500 font-medium">Omzet</th>
-                            <th class="text-right py-2 px-5 text-gray-500 font-medium">Void</th>
-                            <th class="text-right py-2 px-5 text-gray-500 font-medium"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="day in activeDays" :key="day.date" class="border-b border-gray-50 last:border-0">
-                            <td class="py-2.5 px-5 font-medium text-gray-800 capitalize">{{ formatDayLabel(day.date) }}</td>
-                            <td class="py-2.5 px-5 text-right text-gray-700">{{ day.count }}</td>
-                            <td class="py-2.5 px-5 text-right font-semibold text-gray-900">{{ formatCurrency(day.revenue) }}</td>
-                            <td class="py-2.5 px-5 text-right" :class="day.voided > 0 ? 'text-gray-600' : 'text-gray-300'">{{ day.voided }}</td>
-                            <td class="py-2.5 px-5 text-right">
-                                <Link
-                                    :href="`/owner/reports/daily?date=${day.date}`"
-                                    class="text-xs text-primary hover:text-primary/80 font-medium"
+            <div v-if="activeDays.length > 0" class="grid md:grid-cols-2">
+                <!-- Daftar tanggal -->
+                <div class="md:border-r border-gray-100">
+                    <ul class="max-h-96 overflow-y-auto divide-y divide-gray-50">
+                        <li v-for="day in activeDays" :key="day.date">
+                            <button
+                                type="button"
+                                :aria-pressed="selectedDate === day.date"
+                                class="w-full flex items-center justify-between gap-3 px-5 py-2.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                                :class="selectedDate === day.date
+                                    ? 'bg-primary/5 border-l-2 border-primary'
+                                    : 'border-l-2 border-transparent hover:bg-gray-50'"
+                                @click="selectDay(day)"
+                            >
+                                <span
+                                    class="text-sm capitalize"
+                                    :class="selectedDate === day.date ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'"
                                 >
-                                    Lihat harian
-                                </Link>
-                            </td>
-                        </tr>
-                    </tbody>
-                    <tfoot>
-                        <tr class="bg-gray-50 border-t border-gray-200">
-                            <td class="py-2.5 px-5 font-semibold text-gray-700">Total</td>
-                            <td class="py-2.5 px-5 text-right font-semibold text-gray-900">{{ summary.total_transactions }}</td>
-                            <td class="py-2.5 px-5 text-right font-semibold text-gray-900">{{ formatCurrency(summary.total_revenue) }}</td>
-                            <td class="py-2.5 px-5 text-right font-semibold text-gray-700">{{ summary.voided_count }}</td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
+                                    {{ formatDayLabel(day.date) }}
+                                </span>
+                                <span class="text-sm text-gray-500 tabular-nums">{{ formatCurrency(day.revenue) }}</span>
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-t border-gray-100">
+                        <span class="text-sm font-semibold text-gray-700">
+                            Total {{ summary.total_transactions }} transaksi
+                        </span>
+                        <span class="text-sm font-semibold text-gray-900 tabular-nums">
+                            {{ formatCurrency(summary.total_revenue) }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Angka hari yang dipilih -->
+                <div class="p-5 border-t md:border-t-0 border-gray-100">
+                    <div v-if="selectedDay">
+                        <p class="text-xs text-gray-500">{{ formatFullDayLabel(selectedDay.date) }}</p>
+                        <p class="mt-1 text-2xl font-bold text-gray-900 tabular-nums">
+                            {{ formatCurrency(selectedDay.revenue) }}
+                        </p>
+
+                        <div class="mt-5 grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-xs text-gray-500">Transaksi</p>
+                                <p class="mt-1 text-lg font-semibold text-gray-900 tabular-nums">{{ selectedDay.count }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Rata-rata per Transaksi</p>
+                                <p class="mt-1 text-lg font-semibold text-gray-900 tabular-nums">
+                                    {{ formatCurrency(selectedAverage) }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <Link
+                            :href="`/owner/reports/daily?date=${selectedDay.date}`"
+                            class="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80"
+                        >
+                            Buka laporan harian
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </Link>
+                    </div>
+
+                    <div v-else class="h-full flex flex-col items-center justify-center text-center py-8">
+                        <svg class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <p class="mt-3 text-sm text-gray-500">Tekan salah satu tanggal untuk melihat rinciannya.</p>
+                    </div>
+                </div>
             </div>
 
             <div v-else class="px-5 py-10 text-center">
@@ -359,9 +352,41 @@ const paymentTypeLabel = (type) => {
             </div>
         </div>
 
-        <!-- Catatan cakupan: dibaca sekali, mencegah salah paham berulang -->
-        <p v-if="hasData" class="text-xs text-gray-400 px-1">
-            Angka di atas memakai tanggal penjualan sebenarnya, bukan tanggal data masuk ke server — penjualan offline yang baru tersinkron tetap dihitung di bulan saat transaksinya terjadi.
-        </p>
+        <!-- Perbandingan dengan bulan sebelumnya. Paling bawah dengan sengaja:
+             ia menjawab pertanyaan lanjutan, dan pertanyaan lanjutan tidak
+             boleh berdiri di depan pertanyaan pertama. -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Dibanding {{ comparison.label }}</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-gray-100">
+                            <th class="text-left py-2 px-3 text-gray-500 font-medium">Ukuran</th>
+                            <th class="text-right py-2 px-3 text-gray-500 font-medium">{{ comparison.label }}</th>
+                            <th class="text-right py-2 px-3 text-gray-500 font-medium">{{ monthLabel }}</th>
+                            <th class="text-right py-2 px-3 text-gray-500 font-medium">Selisih</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="border-b border-gray-50">
+                            <td class="py-2.5 px-3 font-medium text-gray-800">Omzet</td>
+                            <td class="py-2.5 px-3 text-right text-gray-600">{{ formatCurrency(comparison.total_revenue) }}</td>
+                            <td class="py-2.5 px-3 text-right font-semibold text-gray-900">{{ formatCurrency(summary.total_revenue) }}</td>
+                            <td class="py-2.5 px-3 text-right font-semibold" :class="deltaTone(comparison.revenue_delta_pct)">
+                                {{ revenueDelta ?? 'Tidak ada pembanding' }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="py-2.5 px-3 font-medium text-gray-800">Transaksi</td>
+                            <td class="py-2.5 px-3 text-right text-gray-600">{{ comparison.total_transactions }}</td>
+                            <td class="py-2.5 px-3 text-right font-semibold text-gray-900">{{ summary.total_transactions }}</td>
+                            <td class="py-2.5 px-3 text-right font-semibold" :class="deltaTone(comparison.transactions_delta_pct)">
+                                {{ transactionsDelta ?? 'Tidak ada pembanding' }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </template>

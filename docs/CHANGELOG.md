@@ -62,6 +62,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
+| 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
 | 2026-09-08 | ADDITION | UI | Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu |
 | 2026-09-08 | ADDITION | Stok | Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4) |
 | 2026-09-08 | ADDITION | Stok | Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3) |
@@ -269,6 +270,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `app/Jobs/RunAiAnalysisJob.php` — nama produk ikut dipungut ke `context_variants`, dan peta data di prompt menyebutkan bahwa `variant_name` tidak menunjuk barang bila berdiri sendiri
   - `resources/js/Components/TopProductsTable.vue` — **baru**; baris produk yang bisa dibuka untuk melihat pecahan variannya
 - **Catatan Migrasi:** Tidak ada. Kolomnya tidak berubah; yang berubah cara membacanya.
+
+---
+
+### [ADDITION] Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Layar laporan bulanan menumpuk sembilan blok sebelum pemiliknya sampai ke angka harian. Yang dilepas dan yang dipindah, berikut alasannya masing-masing:
+
+  - **Empat kartu jadi dua** — Omzet dan Transaksi. "Rata-rata per Transaksi" turunan dari keduanya; "Transaksi Void" angka yang jarang bergerak dan tidak menuntut tindakan. Keduanya tetap ada di unduhan CSV.
+  - **Subtitel delta dilepas dari kartu.** "-24% dari Juli 2026" di bawah angka bulan ini menjawab pertanyaan yang berbeda dari yang dijawab kartunya, dan tabel perbandingan di bawah sudah mengatakannya dengan lengkap.
+  - **"Ritme Bulan" dihapus seluruhnya.** Hari berjualan, rata-rata per hari berjualan, dan hari teramai: tiga angka yang tidak pernah mengubah keputusan apa pun.
+  - **Grafik naik ke atas**, tepat di bawah dua kartu — bentuk bulannya dibaca sebelum angkanya satu per satu.
+  - **Tabel perbandingan turun ke paling bawah.** Ia menjawab pertanyaan lanjutan, dan pertanyaan lanjutan tidak berdiri di depan pertanyaan pertama.
+  - **Rincian harian jadi dua panel.** Tanggal di kiri bisa ditekan; angkanya berdiri sendiri di kanan. Keadaan pertamanya sengaja kosong ("Tekan salah satu tanggal…") — panel yang sudah terisi saat halaman dibuka terbaca sebagai ringkasan bulan, dan angkanya akan dikira angka sebulan. Kolom void tidak ikut.
+  - **Catatan kaki tentang tanggal efektif dilepas.** Kalimat sepanjang tiga baris yang dibaca sekali lalu tidak pernah lagi.
+- **Alasan:**
+  Hasil uji pakai minggu terakhir.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` — susunan ulang penuh
+- **Catatan Migrasi:** Tidak ada perubahan muatan server. `serviceCharge` masih dikirim `ReportController::monthly()` dan masih belum dipakai halaman ini — sisa `[BL-097]` yang belum ditutup.
 
 ---
 
