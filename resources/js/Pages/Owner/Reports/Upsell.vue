@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
-import DatePicker from '@/Components/DatePicker.vue';
+import DateRangePicker from '@/Components/DateRangePicker.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
@@ -176,9 +176,7 @@ const showRescue = computed(
                 <h1 class="text-2xl font-bold text-gray-900">Saran Jual (Upsell)</h1>
             </div>
             <div class="flex items-end gap-2">
-                <DatePicker v-model="from" @update:modelValue="applyFilter" />
-                <span class="pb-2 text-sm text-gray-400">—</span>
-                <DatePicker v-model="to" @update:modelValue="applyFilter" />
+                <DateRangePicker v-model:from="from" v-model:to="to" @change="applyFilter" />
             </div>
         </div>
 

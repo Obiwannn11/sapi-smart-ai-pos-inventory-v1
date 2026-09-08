@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import { useForm, router, Link, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
-import DatePicker from '@/Components/DatePicker.vue';
+import DateRangePicker from '@/Components/DateRangePicker.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import Button from '@/Components/Button.vue';
@@ -513,17 +513,17 @@ const selectAnalysis = (analysis) => {
                  atau tidak memang kartunya, dan hanya query kontainer yang bisa
                  melihatnya. -->
             <form @submit.prevent="submit" class="@container space-y-4">
-                <!-- Empat kolom SAMA BESAR, satu baris di layar lebar.
+                <!-- Tiga kolom SAMA BESAR, satu baris di layar lebar.
                      Lebarnya sengaja tidak mengikuti panjang isinya: "Insight
-                     Umum" jauh lebih pendek daripada "Jum, 4 September 2026",
+                     Umum" jauh lebih pendek daripada "1 Sep – 30 Sep 2026",
                      dan kolom yang menyesuaikan diri pada teks menghasilkan
                      baris yang ragged — tiap kontrol berhenti di tempat yang
                      berbeda tanpa alasan yang bisa dilihat pemakainya.
-                     Rentangnya juga dipecah jadi dua field berlabel sendiri:
-                     dengan begitu keduanya jadi kolom penuh yang sederajat,
-                     dan pemisah "–" yang dulu memakan ruang di tengah baris
-                     tidak lagi diperlukan. -->
-                <div class="grid gap-4 @md:grid-cols-2 @4xl:grid-cols-4 @4xl:items-end">
+                     Rentangnya kini satu kontrol, bukan dua field berlabel
+                     sendiri: awal dan akhir dipilih di kalender yang sama, dan
+                     urutannya tidak lagi bisa terbalik sampai server yang
+                     menolaknya. -->
+                <div class="grid gap-4 @md:grid-cols-2 @4xl:grid-cols-3 @4xl:items-end">
                     <!-- Type -->
                     <SelectDropdown
                         v-model="form.type"
@@ -534,15 +534,11 @@ const selectAnalysis = (analysis) => {
 
                     <!-- Period -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Dari Tanggal</label>
-                        <DatePicker v-model="form.from" block />
-                        <p v-if="form.errors.from" class="mt-1 text-xs text-red-600">{{ form.errors.from }}</p>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Sampai Tanggal</label>
-                        <DatePicker v-model="form.to" block />
-                        <p v-if="form.errors.to" class="mt-1 text-xs text-red-600">{{ form.errors.to }}</p>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Periode</label>
+                        <DateRangePicker v-model:from="form.from" v-model:to="form.to" block />
+                        <p v-if="form.errors.from || form.errors.to" class="mt-1 text-xs text-red-600">
+                            {{ form.errors.from || form.errors.to }}
+                        </p>
                     </div>
 
                     <!-- Custom prompt — ikut di dalam kisi yang sama, dan
@@ -565,7 +561,7 @@ const selectAnalysis = (analysis) => {
                          selebar kolomnya. Sebelumnya ia berdiri sendiri di
                          baris kedua bersama meter kuota, padahal seluruh
                          kontrolnya muat dalam satu baris.
-                         `col-start-4` dipatok, bukan dibiarkan mengalir:
+                         `col-start-3` dipatok, bukan dibiarkan mengalir:
                          begitu kolom pertanyaan muncul dan memakan satu baris
                          penuh, tombol yang mengalir akan mendarat di kolom
                          pertama — kiri bawah, tempat yang tidak dicari orang
@@ -575,7 +571,7 @@ const selectAnalysis = (analysis) => {
                         :loading="form.processing"
                         :disabled="quotaBlocked"
                         block
-                        class="@md:col-start-2 @4xl:col-start-4"
+                        class="@md:col-start-2 @4xl:col-start-3"
                     >
                         <template #icon>
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

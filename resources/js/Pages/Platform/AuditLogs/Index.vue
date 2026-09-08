@@ -8,6 +8,7 @@ import StatusBadge from '@/Components/Platform/StatusBadge.vue';
 import FormField from '@/Components/Platform/FormField.vue';
 import Button from '@/Components/Button.vue';
 import { inputClass } from '@/support/platform';
+import DateRangePicker from '@/Components/DateRangePicker.vue';
 import Pagination from '@/Components/Pagination.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
@@ -83,12 +84,8 @@ const severity = (value) =>
                 </select>
             </FormField>
 
-            <FormField label="Dari">
-                <input v-model="form.from" type="date" :class="inputClass" />
-            </FormField>
-
-            <FormField label="Sampai">
-                <input v-model="form.to" type="date" :class="inputClass" />
+            <FormField label="Periode">
+                <DateRangePicker v-model:from="form.from" v-model:to="form.to" block />
             </FormField>
 
             <div class="flex items-end">

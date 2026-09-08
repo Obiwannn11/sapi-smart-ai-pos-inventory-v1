@@ -5,7 +5,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import Pagination from '@/Components/Pagination.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
-import DatePicker from '@/Components/DatePicker.vue';
+import DateRangePicker from '@/Components/DateRangePicker.vue';
 import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
@@ -114,12 +114,8 @@ const statusLabel = (status) => {
                     />
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Dari</label>
-                    <DatePicker v-model="filterFrom" />
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Sampai</label>
-                    <DatePicker v-model="filterTo" />
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Periode</label>
+                    <DateRangePicker v-model:from="filterFrom" v-model:to="filterTo" />
                 </div>
                 <div class="flex gap-2 items-end">
                     <button
