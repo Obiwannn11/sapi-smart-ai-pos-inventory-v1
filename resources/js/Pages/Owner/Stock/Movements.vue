@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 import Pagination from '@/Components/Pagination.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
@@ -145,21 +146,13 @@ const qtyClass = (qty) => {
                 <!-- Date from -->
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Dari Tanggal</label>
-                    <input
-                        v-model="filterDateFrom"
-                        type="date"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    <DatePicker v-model="filterDateFrom" block clearable />
                 </div>
 
                 <!-- Date to -->
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Sampai Tanggal</label>
-                    <input
-                        v-model="filterDateTo"
-                        type="date"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    <DatePicker v-model="filterDateTo" block clearable />
                 </div>
 
                 <!-- Buttons -->

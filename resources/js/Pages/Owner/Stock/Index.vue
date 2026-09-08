@@ -16,6 +16,7 @@
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { Deferred, useForm, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 import Pagination from '@/Components/Pagination.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
@@ -285,7 +286,7 @@ const formatDate = (date) => {
 
         <!-- Kartu status — penyaring, bukan papan angka. Menekannya menyaring
              tabel di bawahnya; menekannya lagi melepas penyaringnya. -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <button
                 v-for="card in STATUS_CARDS"
                 :key="card.key || 'all'"
@@ -293,17 +294,17 @@ const formatDate = (date) => {
                 :aria-pressed="form.status === card.key"
                 :aria-label="`${card.label}: ${cardCount(card.key)} varian`"
                 :class="[
-                    'text-left px-4 py-3 rounded-xl border bg-white shadow-sm transition-all',
+                    'text-left px-3 py-2.5 rounded-xl border bg-white shadow-sm transition-all',
                     'hover:border-gray-300 hover:shadow focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-ring',
                     form.status === card.key ? TONE_ACTIVE[card.tone] : 'border-gray-200',
                 ]"
                 @click="setStatus(card.key)"
             >
                 <p class="text-xs font-medium text-gray-500 truncate">{{ card.label }}</p>
-                <p v-if="summary" class="mt-1 text-2xl font-bold tabular-nums" :class="TONE_VALUE[card.tone]">
+                <p v-if="summary" class="mt-0.5 text-xl font-bold tabular-nums" :class="TONE_VALUE[card.tone]">
                     {{ cardCount(card.key) }}
                 </p>
-                <Skeleton v-else class="mt-2 h-6 w-10" rounded="sm" />
+                <Skeleton v-else class="mt-1.5 h-5 w-8" rounded="sm" />
             </button>
         </div>
 
@@ -622,12 +623,7 @@ const formatDate = (date) => {
                         <!-- Expiry Date -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Kedaluwarsa</label>
-                            <input
-                                v-model="restockForm.expiry_date"
-                                type="date"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
-                                :class="{ 'border-red-300': restockForm.errors.expiry_date }"
-                            />
+                            <DatePicker v-model="restockForm.expiry_date" block clearable />
                             <p v-if="restockForm.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ restockForm.errors.expiry_date }}</p>
                         </div>
 

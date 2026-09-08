@@ -259,9 +259,6 @@ const toggleActive = (member) => {
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
                                     Akses penuh — melewati seluruh pemeriksaan
                                 </span>
-                                <p class="mt-1 text-xs text-gray-500">
-                                    Aksesnya tidak berasal dari role, jadi mengubah role tidak akan membatasinya.
-                                </p>
                             </template>
                             <div v-else class="flex flex-wrap gap-1">
                                 <span

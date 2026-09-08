@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 import Button from '@/Components/Button.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -116,7 +117,7 @@ const inputClass =
             </div>
             <div>
                 <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Expired</label>
-                <input v-model="form.expiry_date" type="date" :class="inputClass" />
+                <DatePicker v-model="form.expiry_date" block clearable />
                 <p v-if="form.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ form.errors.expiry_date }}</p>
             </div>
         </form>

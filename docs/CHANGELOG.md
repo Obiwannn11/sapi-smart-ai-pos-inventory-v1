@@ -62,6 +62,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
+| 2026-09-08 | ADDITION | UI | Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu |
 | 2026-09-08 | ADDITION | Stok | Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4) |
 | 2026-09-08 | ADDITION | Stok | Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3) |
 | 2026-09-08 | SCHEMA | Stok | Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105) |
@@ -268,6 +269,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `app/Jobs/RunAiAnalysisJob.php` — nama produk ikut dipungut ke `context_variants`, dan peta data di prompt menyebutkan bahwa `variant_name` tidak menunjuk barang bila berdiri sendiri
   - `resources/js/Components/TopProductsTable.vue` — **baru**; baris produk yang bisa dibuka untuk melihat pecahan variannya
 - **Catatan Migrasi:** Tidak ada. Kolomnya tidak berubah; yang berubah cara membacanya.
+
+---
+
+### [ADDITION] Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  **Paginasi.** Sembilan halaman menuliskan markup paginasinya masing-masing dalam empat gaya yang berbeda, semuanya menggambar seluruh isi `links` bawaan Laravel. Pada varian stok yang ramai — 1.647 pergerakan, 33 halaman — Laravel mengirim ~15 pil, dan label Indonesianya panjang ("« Sebelumnya", "Berikutnya »"). Di dalam `max-w-5xl` yang sudah dipotong sidebar, barisnya tidak muat: pilnya menyusut dan teks di dalam tiap pil pecah jadi dua baris. `Pagination.vue` mematok jendelanya sendiri — halaman pertama, terakhir, dan tetangga terdekat halaman aktif — jadi berapa pun jumlah halamannya yang tampil paling banyak tujuh pil. Di layar sempit deretan nomornya diganti "Hal. 3 / 33". URL-nya tetap diambil dari `links` bawaan, satu-satunya tempat filter yang sedang aktif ikut terbawa.
+
+  **Rentang tanggal.** Dua `DatePicker` berdampingan memaksa pemakainya membuka dua kalender dan mengingat tanggal pertama sambil memilih yang kedua; rentang terbalik baru ketahuan setelah server menolaknya. `DateRangePicker.vue` memilih keduanya di kalender yang sama, membetulkan urutannya sendiri, dan tetap mengeluarkan dua tanggal terpisah (`from`, `to`) sehingga muatan yang dikirim ke server tidak berubah sama sekali.
+
+  **Pemilih tanggal bawaan peramban** di area stok diganti `DatePicker` — modal Restock, filter Semua Riwayat, modal varian, dan formulir produk adalah empat tempat terakhir yang masih memakai `<input type="date">` di layar owner.
+
+  **Enam kartu status stok** kini muat satu baris sejak `lg` (1024px), bukan `xl` (1280px): dengan sidebar owner ~224px, `xl` tidak pernah menyala di laptop 1366 maupun 1440, jadi enam kartu selalu jatuh jadi dua baris justru di lebar yang paling lazim dipakai.
+- **Alasan:**
+  Hasil uji pakai minggu terakhir.
+- **File Terdampak:**
+  - `resources/js/Components/Pagination.vue` — **baru**; dipakai 9 halaman (owner, kasir, konsol platform)
+  - `resources/js/Components/DateRangePicker.vue` — **baru**; dipakai Analisis AI, Riwayat Transaksi, Laporan Saran Jual, Audit Log platform
+  - `resources/js/Pages/Owner/Stock/Index.vue` — kartu status jadi `lg:grid-cols-6` dan dirapatkan; DatePicker di modal Restock
+  - `resources/js/Pages/Owner/Staff/Index.vue` — kalimat "Aksesnya tidak berasal dari role…" dilepas; lencana "Akses penuh" di atasnya sudah mengatakannya
+- **Catatan Migrasi:** Tidak ada.
 
 ---
 

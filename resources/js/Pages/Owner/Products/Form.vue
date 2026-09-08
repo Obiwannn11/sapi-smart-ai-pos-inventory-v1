@@ -6,6 +6,7 @@ import ImageUpload from '@/Components/ImageUpload.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import Button from '@/Components/Button.vue';
 import Checkbox from '@/Components/Checkbox.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 import VariantFormModal from '@/Components/VariantFormModal.vue';
 
 defineOptions({ layout: OwnerLayout });
@@ -321,8 +322,7 @@ const deleteVariant = (variantId) => {
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Expired</label>
-                                <input v-model="variant.expiry_date" type="date"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                                <DatePicker v-model="variant.expiry_date" block clearable />
                             </div>
                         </div>
                     </div>
