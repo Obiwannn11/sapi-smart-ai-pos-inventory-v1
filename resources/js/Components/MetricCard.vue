@@ -34,7 +34,7 @@ const c = colorClasses[props.color] || colorClasses.primary;
         <div class="flex items-start justify-between">
             <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-500 truncate">{{ title }}</p>
-                <p class="mt-2 text-2xl font-bold text-gray-900 truncate">{{ value }}</p>
+                <p class="mt-2 text-xl font-bold text-gray-900 truncate tabular-nums">{{ value }}</p>
                 <p v-if="subtitle" class="mt-1 text-xs text-gray-400">{{ subtitle }}</p>
             </div>
             <div class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" :class="c.bg">

@@ -362,7 +362,7 @@ const invoiceStatusLabels = {
              jadi keterangan di bawah omzetnya, di tempat ia berarti.
              "Minggu Ini" dilepas seluruhnya — tidak ada laporan mingguan yang
              bisa dituju, jadi angkanya tidak pernah bisa ditelusuri. -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <MetricCard
                 title="Omzet Hari Ini"
                 :value="formatCurrency(metrics.today_revenue)"
