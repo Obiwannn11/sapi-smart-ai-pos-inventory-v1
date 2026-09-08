@@ -189,8 +189,15 @@ const showRescue = computed(
         <section v-if="showRescue" class="space-y-3">
             <div>
                 <h2 class="text-sm font-semibold text-gray-800">Penyelamat Stok</h2>
+                <!-- Menyebut ketiga tahapnya, bukan cuma tahap terakhir
+                     ([BL-105] butir 4). Owner memasang potongan di satu layar
+                     dan membaca hasilnya di layar lain; kalimat ini
+                     satu-satunya tempat yang menyebutkan bahwa keduanya ujung
+                     dari rantai yang sama. -->
                 <p class="mt-0.5 text-xs text-gray-500">
-                    Barang yang mendekati kedaluwarsa atau tak terjual sebulan didorong lewat saran di layar kasir.
+                    Barang yang mendekati kedaluwarsa atau tak terjual sebulan diberi
+                    <Link href="/owner/discount-rules" class="text-primary hover:underline">potongan</Link>,
+                    didorong lewat saran di layar kasir, lalu hasilnya dihitung di sini.
                 </p>
             </div>
 

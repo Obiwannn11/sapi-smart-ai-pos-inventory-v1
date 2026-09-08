@@ -406,7 +406,13 @@ const invoiceStatusLabels = {
             >
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <h3 class="text-sm font-semibold text-gray-800">Perlu keluar hari ini</h3>
+                        <!-- Namanya ikut di sini, bukan cuma di laporannya
+                             ([BL-105] butir 4). Owner bertemu rantai yang sama
+                             di dua layar; tanpa nama yang sama di keduanya, ia
+                             tidak punya cara tahu bahwa keduanya satu hal. -->
+                        <h3 class="text-sm font-semibold text-gray-800">
+                            Penyelamat Stok <span class="font-normal text-gray-400">· perlu keluar hari ini</span>
+                        </h3>
                         <p class="mt-1 text-2xl font-bold text-gray-900">
                             {{ pressedToday.count }} barang · {{ formatCurrency(pressedToday.value) }} modal
                         </p>
@@ -456,9 +462,13 @@ const invoiceStatusLabels = {
                     </li>
                 </ul>
 
-                <p v-if="pressedToday.count > pressedToday.items.length" class="text-xs text-gray-400">
-                    Menampilkan {{ pressedToday.items.length }} dari {{ pressedToday.count }} —
-                    <Link href="/owner/stock?status=near_expiry" class="text-primary hover:underline">lihat semua di Stok</Link>
+                <p class="text-xs text-gray-400">
+                    <template v-if="pressedToday.count > pressedToday.items.length">
+                        Menampilkan {{ pressedToday.items.length }} dari {{ pressedToday.count }} —
+                        <Link href="/owner/stock?status=near_expiry" class="text-primary hover:underline">lihat semua di Stok</Link>
+                        ·
+                    </template>
+                    <Link href="/owner/reports/upsell" class="text-primary hover:underline">Berapa yang berhasil diselamatkan?</Link>
                 </p>
             </div>
         </Deferred>

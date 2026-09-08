@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-08 | ADDITION | Stok | Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4) |
 | 2026-09-08 | ADDITION | Stok | Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3) |
 | 2026-09-08 | SCHEMA | Stok | Barang Basi Punya Pencatatnya Sebelum Punya Pembacanya — dan yang Terlanjur Basi Ditahan, Bukan Ditebak (BL-105) |
 | 2026-09-07 | ADDITION | Promosi | Barang Tertekan Akhirnya Menyebut Rupiahnya — dan Modal yang Mati di Rak Diberi Angka Pertamanya (BL-105 Butir 1 & 2) |
@@ -245,6 +246,35 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar — dan Nama Wadahnya Justru Tidak Diganti (BL-105 Butir 4)
+- **Tanggal:** 2026-09-08
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  "Penyelamat Stok" kini dipakai konsisten di **tiga layar tempat owner menemui rantai yang sama**, yang sebelumnya tidak punya satu pun tanda bahwa ketiganya satu hal:
+
+  1. **Kartu dashboard** — dari "Perlu keluar hari ini" jadi "Penyelamat Stok · perlu keluar hari ini", plus tautan ke hasilnya.
+  2. **Laporan Saran Jual** — keterangan bagiannya berhenti menyebut satu tahap dan menyebut ketiganya: *diberi potongan → didorong lewat saran di layar kasir → hasilnya dihitung di sini*, dengan kata "potongan" jadi tautan ke tempat memasangnya.
+  3. **Aturan Diskon** — satu baris baru yang mengaku sebagai tahap **memasang** pada rantai itu. Owner yang mengklik "4 belum punya potongan otomatis" dari dashboard selama ini mendarat di layar yang tidak pernah mengaku sebagai lanjutan dari apa pun.
+- **Alasan:** Rantainya sudah utuh sejak `[BL-017]`/`[BL-018]` dan angkanya sudah muncul sejak `[BL-105]` butir 1–3, tapi ia tidak pernah punya nama. Owner memasang potongan di satu layar, melihat peringatan di layar kedua, dan membaca hasilnya di layar ketiga — tanpa apa pun yang menyatakan bahwa ketiganya ujung dari satu mesin.
+
+- **Koreksi terhadap `[BL-105]` butir 4 sendiri, ditemukan saat mengerjakannya — dan usulan aslinya tidak diikuti.**
+  Butir itu berbunyi seolah "Saran Jual" tinggal diganti namanya jadi "Penyelamat Stok". Ternyata keliru: `Saran Jual` memuat **empat** jenis saran, dan **tiga di antaranya tidak menyelamatkan stok apa pun** — `attach`, `upsize`, dan `manual`. Peragaan di landing bahkan memakai contoh murni upsell (*"Espresso Single — tawarkan Double"*, `landing.blade.php:1089`).
+
+  Mengganti nama wadahnya akan membuat nama itu **berbohong tentang tiga perempat isinya**. Yang dikerjakan karena itu bukan penggantian nama melainkan **pemberian nama**: rantai barang tertekan mendapat namanya sendiri *di dalam* Saran Jual. Nama wadahnya tetap "Saran Jual", dan itu benar.
+
+- **Dua hal yang sengaja TIDAK disentuh:**
+  1. **Label kasir.** `UpsellStrip.vue` menyebut jenis ini "Dorong" — kata kerja untuk orang yang sedang diburu waktu. Nama fitur tidak menolong kasir sama sekali.
+  2. **Kalimat pembeda di landing** (*"POS lain memberi tahu stok Anda mau basi. SAPI menjualnya."*). Benar sebagai deskripsi mesin, tapi sebagai janji publik ia mendahului kenyataan: 1 dari 42 varian punya `expiry_date`, jadi separuh mesinnya gelap untuk hampir setiap tenant. Memasangnya sekarang mengulang persis yang sudah dicabut `[BL-083]` dan `[BL-032]` dari halaman yang sama. Penahannya `[BL-107]`; ia dipasang setelah angka itu bergerak.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/Dashboard.vue` — nama di judul kartu, tautan ke laporannya
+  - `resources/js/Pages/Owner/Reports/Upsell.vue` — keterangan bagian menyebut ketiga tahap
+  - `resources/js/Pages/Owner/DiscountRules/Index.vue` — baris yang mengaku sebagai tahap memasang
+- **Catatan Migrasi:** Tidak ada. Tidak ada rute, prop, atau skema yang berubah — seluruhnya teks dan tautan.
+
+---
 
 ### [ADDITION] Owner Diberi Tahu Apa yang Harus Keluar Hari Ini — dan, untuk Pertama Kalinya, Apakah Mesinnya Siap Membantu (BL-105 Butir 3)
 - **Tanggal:** 2026-09-08

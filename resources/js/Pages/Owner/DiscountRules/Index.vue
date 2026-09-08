@@ -15,7 +15,7 @@
  * status, dan penanda "Tertahan lantai" pada harga yang benar-benar terjepit.
  */
 import { ref, computed } from 'vue';
-import { Deferred, useForm, Head } from '@inertiajs/vue3';
+import { Deferred, useForm, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
@@ -256,6 +256,18 @@ const doDelete = () => {
                     {{ ruleCounts.live }} berlaku di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} diam</template>
                 </p>
                 <p v-else class="text-sm text-gray-500 mt-1">Memuat aturan…</p>
+                <!-- Halaman ini adalah tahap MEMASANG pada rantai Penyelamat
+                     Stok, dan tidak satu pun kalimat di sini pernah
+                     menyebutkannya ([BL-105] butir 4). Owner yang datang dari
+                     kartu dashboard karena "4 belum punya potongan otomatis"
+                     mendarat di layar yang tidak mengaku sebagai lanjutannya.
+                     Disebutkan hanya untuk `near_expiry`: pemicu `manual` dan
+                     `dead_stock` punya kegunaannya sendiri di luar rantai ini. -->
+                <p class="text-xs text-gray-400 mt-1">
+                    Aturan bertipe <span class="font-medium">mendekati kedaluwarsa</span> juga yang mempersenjatai
+                    <Link href="/owner/reports/upsell" class="text-primary hover:underline">Penyelamat Stok</Link> —
+                    tanpa aturannya, barang tertekan tetap disarankan kasir, tapi pada harga katalog.
+                </p>
             </div>
             <button
                 @click="openCreate"
