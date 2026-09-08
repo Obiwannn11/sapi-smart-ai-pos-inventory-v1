@@ -290,6 +290,16 @@ const quickCash = (idx, denomination) => {
     setAmount(idx, amountAt(idx) + denomination);
 };
 
+/**
+ * Warna tombol cepat meniru warna uang kertas rupiah — hijau 20rb, biru 50rb,
+ * merah 100rb — supaya kasir mengenalinya sekilas dan barisnya terlihat rapi.
+ */
+const denominationButtonClass = (denomination) => ({
+    20000: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100',
+    50000: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
+    100000: 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100',
+}[denomination] ?? 'bg-success/10 text-success border-success/20 hover:bg-success/20');
+
 const addPaymentRow = () => {
     rows.value.push(blankRow());
 };
@@ -412,7 +422,8 @@ const close = () => {
                                             v-for="denomination in [20000, 50000, 100000]"
                                             :key="denomination"
                                             @click="quickCash(idx, denomination)"
-                                            class="px-3 py-1.5 text-xs font-medium bg-success/10 text-success rounded-lg hover:bg-success/20 transition border border-success/20"
+                                            class="px-3 py-1.5 text-xs font-medium rounded-lg transition border"
+                                            :class="denominationButtonClass(denomination)"
                                         >
                                             +{{ denomination / 1000 }}rb
                                         </button>
