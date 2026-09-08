@@ -105,6 +105,115 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
+### [BL-107] Foto Struk Belum Bisa Jadi Restock — dan Karena Itu 41 dari 42 Varian Tidak Punya Tanggal Kedaluwarsa
+- **Ditemukan:** 2026-09-08
+- **Sumber:** Pertanyaan pemilik — *"bisa edit dan nambah dengan note otomatis dari ai … jadi foto struk, melalui vn, dll di dashboard owner"*. Angkanya ditemukan saat memeriksa apakah permintaan itu masuk akal, dan ternyata ia menjawab pertanyaan lain yang lebih mendesak.
+- **Status:** Open — **diblokir tiga hal**, urut dari yang paling murah: (1) jalur non-AI di blok "Alternatif murah" di bawah, yang harus dicoba dan diukur lebih dulu; (2) `[BL-106]` sebagai fondasi; (3) satu keputusan harga yang belum diambil.
+- **Prioritas:** High
+- **Area Terdampak:**
+  - `app/Services/StockService.php:60` — `restock(..., ?string $expiryDate = null)`. **Jalur tulisnya sudah lengkap**, dari formulir sampai kolom. Yang kurang bukan mekanismenya — lihat temuan di bawah.
+  - `resources/js/Pages/Owner/Stock/Index.vue:173`, `app/Http/Controllers/Owner/StockController.php:86` — kolom kedaluwarsa yang sudah ada di formulir restock dan hampir tidak pernah diisi
+  - `app/Services/Upsell/Strategies/PressedStockStrategy.php` — konsumen terbesar `expiry_date`
+  - `app/Services/ProofFileService.php:56`, `app/Services/ImageService.php` — penyimpanan + pengecilan gambar di perangkat, sudah ada sejak `[BL-077]`
+  - `app/Services/Ai/AiQuota.php:138` — satuan kuota hari ini
+
+- **Temuan yang membalik urutan prioritas, dan ia diukur bukan diduga.**
+  Basis data pengembangan, 2026-09-08:
+
+  | | |
+  |---|---|
+  | Varian aktif | **42** |
+  | Punya `expiry_date` | **1** |
+  | Restock yang pernah terjadi | **324** |
+  | Restock yang mencatat kedaluwarsa | **0** (selain yang satu itu) |
+  | Aturan diskon | **0** |
+
+  Artinya jalur `near_expiry` pada Penyelamat Stok — separuh mesinnya, yang punya potongan mendalam (`[BL-018]`) dan skor tertinggi (`PressedStockStrategy::classify()` memberi 100 dikurangi 5 per hari sisa, melawan 40 rata untuk dead stock) — **praktis gelap**. Yang benar-benar menyala cuma jalur dead stock, yang skornya terendah.
+
+  **Penyebabnya BUKAN fitur yang belum ada, dan ini sudah diperiksa ke kode — jangan membangun ulang apa pun di jalur ini.** Rantainya utuh dari ujung ke ujung: formulir restock sudah punya kolomnya (`resources/js/Pages/Owner/Stock/Index.vue:173`), `RestockRequest` sudah memvalidasinya, `StockController::restock():86` sudah meneruskannya, dan `StockService::restock()` sudah menyimpannya. Kolomnya **opsional**, dan manusia yang sedang sibuk tidak mengisi kolom yang boleh dikosongkan. 324 kali berturut-turut.
+
+  Jadi yang gagal adalah *permintaannya*, bukan mekanismenya — dan itu membuka satu jalur yang jauh lebih murah daripada seluruh entri ini, yang **wajib dicoba lebih dulu** sebelum AI dilibatkan:
+
+- **Alternatif murah yang harus dicoba lebih dulu: buat kolomnya sulit dilewatkan, bukan mustahil.**
+  Mewajibkan `expiry_date` untuk semua barang salah — kopi bubuk kiloan dan gelas plastik tidak punya kedaluwarsa, dan memaksa mengisinya akan melahirkan tanggal karangan yang lebih buruk daripada kolom kosong. Tapi ada beberapa bentuk yang lebih lunak dan belum dicoba satu pun: mengingat tanggal dari restock sebelumnya pada varian yang sama sebagai nilai awal, menandai varian yang PERNAH punya kedaluwarsa lalu menuntutnya lagi, atau sekadar menyebutkan akibatnya di layar (*"tanpa tanggal ini, barangnya tidak akan pernah masuk saran Penyelamat Stok"*) — hari ini kolom itu tidak menjelaskan apa pun tentang untuk apa ia ada.
+
+  **Kalau jalur murah ini menaikkan angka 1/42 secara berarti, entri ini turun prioritasnya drastis** — foto struk tetap berguna untuk `cost_price` dan untuk kecepatan, tapi ia berhenti jadi satu-satunya jalan keluar. Mengukur dulu, membangun sesudah.
+
+- **Deskripsi:**
+  Owner memotret struk belanja dari supplier. AI membaca barisnya — nama barang, jumlah, harga modal, tanggal kedaluwarsa bila tercetak — dan mengembalikannya sebagai **usulan restock bertipe**, bukan sebagai tulisan. Owner meninjau, mencocokkan tiap baris ke varian yang benar, menyunting yang salah baca, lalu menyetujuinya. Yang menulis tetap `StockService::restock()`, dengan `StockMovement` seperti biasa.
+
+- **Kenapa usulan, bukan langsung tulis — dan ini bukan kehati-hatian umum.**
+  `cost_price` adalah masukan `ProfitService`. Struk yang salah baca dan langsung mendarat **meracuni margin diam-diam**, lalu margin yang salah ikut menggerakkan bracket Harga Adaptif lewat `TenantMonthlyMetric`. Kesalahannya tidak akan terlihat sebagai kesalahan; ia akan terlihat sebagai angka. Gerbang tinjauan di sini bukan birokrasi — ia satu-satunya yang menahan OCR buruk keluar dari pembukuan. Alasan lengkapnya di `[BL-106]`.
+
+- **Pemblokir yang harus diputuskan SEBELUM kodenya ditulis: satuan kuota.**
+  `AiQuota` hari ini menghitung **analisis per hari**, bawaan 5 (`Plan::LIMIT_AI_DAILY`, atau `AiQuotaPolicy` baseline). Foto struk adalah unit dengan frekuensi jauh lebih tinggi **dan** token gambar berkali lipat teks. Kalau satu scan memakan satu jatah analisis, gratisannya habis di restock kedua — dan fitur yang paling sering dipakai akan jadi yang paling cepat mentok.
+
+  Ini keputusan harga, bukan keputusan teknis, dan `[BL-069]` sudah menetapkan preseden bahwa kuota AI dijual sebagai blok bulanan. Yang perlu dijawab: apakah scan struk punya anggaran sendiri, ikut anggaran analisis, atau justru tidak dibatasi sama sekali karena ia mengisi data yang menguntungkan aplikasi itu sendiri. **Memutuskannya setelah ada yang memakai berarti mengubah harga pada pengguna yang sudah terbiasa.**
+
+- **Yang TIDAK termasuk entri ini:** mencocokkan baris struk ke varian secara otomatis. Nama di struk supplier hampir tidak pernah sama dengan nama di katalog, dan menebaknya berarti mengarang. Pencocokan tetap kerja manusia di layar tinjauan; AI boleh menyarankan kandidat, tidak boleh memutuskan.
+
+- **Sesudah ini terbuka:** `[BL-105]` butir 4 jadi jujur — "Penyelamat Stok" baru pantas jadi nama unggulan setelah bahan bakarnya benar-benar terisi.
+
+---
+
+### [BL-106] Harness AI Hanya Bisa Bicara — Belum Bisa Melihat Lampiran, dan Belum Punya Tempat Menaruh Usulan
+- **Ditemukan:** 2026-09-08
+- **Sumber:** Pertanyaan pemilik — *"bagaimana saya tingkatkan kemampuan agent harness nya? jadi bukan sekedar saran, tapi bisa edit dan nambah dengan note otomatis dari ai dengan memberikan chat logs untuk tracebility"*
+- **Status:** Open — fondasi bagi `[BL-107]`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Services/Ai/AiProvider.php:11` — `generate(string $systemPrompt, array $context, string $userPrompt): AiResult`
+  - `app/Services/Ai/AiResult.php` — hanya `text` dan `tokensUsed`
+  - `app/Services/Ai/AnthropicProvider.php:17-28` — satu pesan user, teks saja, tanpa blok gambar
+  - `app/Services/Ai/AiProviderFactory.php:23-28` — empat provider di balik satu `match`
+  - `database/migrations/*_create_ai_analyses_table.php:21-22` — satu `prompt`, satu `result`
+  - `app/Mcp/Tools/BusinessDataTool.php` — seluruh tool MCP `#[IsReadOnly]`, owner-only
+
+- **Deskripsi — jarak sebenarnya, diverifikasi ke kode:**
+
+  | Yang diminta | Yang ada hari ini |
+  |---|---|
+  | AI membaca foto | `generate()` hanya menerima tiga string; tak satu pun provider mengirim blok gambar |
+  | AI membaca suara | tidak ada jalur audio di mana pun |
+  | AI mengusulkan perubahan | balasannya `string $text`; tidak ada bentuk terstruktur |
+  | Chat log untuk telusur | `ai_analyses` = satu prompt, satu hasil. Bukan percakapan |
+  | Catatan otomatis pada data | tidak ada satu pun kolom di aplikasi ini yang menyebut asal-usul AI |
+
+  Tool MCP memang ada, tapi ia bukan jalannya: seluruhnya read-only dan dipanggil **client milik owner** (Claude Desktop), bukan oleh aplikasi.
+
+- **Keputusan bentuk, dan ia dipaksa oleh keputusan-keputusan yang sudah diambil aplikasi ini sendiri.**
+  Empat preseden yang semuanya mengatakan hal yang sama:
+
+  1. `DiscountRule` — *"Aturan ini ADALAH persetujuannya. Sistem tidak pernah menurunkan harga sendiri."*
+  2. `[BL-035]` — *"Yang tetap terlarang adalah setelan yang mendarat tanpa pernah muncul di layar."*
+  3. `[BL-087]` — uang keluar laci di atas ambang tercatat dan terlihat, tapi belum mengurangi apa pun sampai owner menyetujui.
+  4. `[BL-018]` — lantai untung hanya manusia yang boleh menembus.
+
+  AI yang menulis langsung ke basis data membatalkan keempatnya sekaligus. Bentuk yang sah di aplikasi ini: **AI mengusulkan perubahan bertipe, manusia yang menjadikannya nyata**, dan yang menulis tetap service yang sudah ada beserta jejaknya (`StockMovement`, `transaction_edits`, dst).
+
+  Bonusnya bukan sekadar keamanan. Kalau nasib tiap usulan ikut dicatat — diterima, disunting, ditolak — aplikasi ini bisa menjawab **"seberapa sering AI-nya benar"**, persis seperti `upsell_events` menjawabnya untuk saran jual. Itu pertanyaan yang hampir tidak ada produk lain bisa jawab tentang fitur AI-nya sendiri.
+
+- **Yang perlu dikerjakan:**
+  1. **`AiProvider` tumbuh dua hal:** menerima lampiran (gambar, kelak audio) dan mengembalikan **JSON bertipe sesuai skema**, bukan prosa. `AiResult` ikut tumbuh.
+  2. **Tabel percakapan + usulan + provenance.** Percakapan (pesan, peran, lampiran), usulan (perubahan bertipe, status `pending|applied|edited|rejected`, siapa yang menerapkan, kapan), dan tautan dari baris yang akhirnya tertulis kembali ke pesan yang melahirkannya — supaya owner bisa mengklik dari sebuah mutasi stok ke foto struk asalnya. **Itulah arti "traceability" pada permintaan aslinya**, dan ia hanya berguna kalau tautannya dua arah.
+  3. Tabelnya **lahir sebelum permukaannya**, alasan yang sama dengan `upsell_events` (`[BL-017]` usulan 5) dan `expired_stock_records` (`[BL-105]`).
+
+- **JANGAN bangun agent loop lebih dulu.** Istilah "agent harness" pada permintaan aslinya menyiratkan percakapan multi-giliran dengan tool calling. Untuk struk→restock dan VN→catatan, **structured output sudah cukup**: satu panggilan, satu balasan JSON. Deterministik, gampang diuji, biayanya terduga. Loop multi-giliran baru perlu untuk "lakukan apa saja yang saya minta" — dan di situ biaya, latensi, serta cara gagalnya meledak bersamaan. Kalau ternyata benar-benar dibutuhkan, ia dibangun di atas fondasi ini, bukan menggantikannya.
+
+- **Percabangan yang harus diputuskan untuk voice note, dan ia mahal kalau salah pilih.**
+  Chat API tidak setara soal audio: Gemini menerimanya langsung, OpenAI menuntut endpoint transkripsi terpisah, Anthropic tidak menerima audio sama sekali. Dukungan SumoPod — provider bawaan — **belum diperiksa dan jangan ditebak**. Artinya `AiProviderFactory` yang hari ini rapi justru karena keempat provider setara akan berhenti setara.
+
+  **Alternatif yang layak dipertimbangkan lebih dulu: Web Speech API di peramban.** Transkripsi terjadi di HP, gratis, tanpa provider, tanpa kuota, dan AI tidak pernah menerima audio sama sekali — seluruh percabangan di atas lenyap. Bahasa Indonesia didukung. Ongkosnya: butuh online, dan dukungan iOS/Safari buruk. Untuk basis pengguna Android-first, ini kemungkinan pilihan yang lebih baik, tapi **harus diuji di perangkat nyata sebelum diputuskan**, bukan dipilih dari dokumentasi.
+
+- **VN di kasir: ditolak sebagai perintah, diterima sebagai alasan.**
+  Sebagai perintah ia menabrak `PRODUCT.md` (*"Speed is the product. Hesitation anywhere breaks trust."*) dan menabrak mode offline: rekam → unggah → transkripsi → konfirmasi, di lingkungan paling berisik di toko, pada satu-satunya alur yang tidak boleh ragu.
+
+  Tapi ada satu tempat di kasir yang justru cocok: **VN sebagai alasan yang sudah wajib ditulis** — `cash_drawer_movements` menuntut alasan (`[BL-087]`), begitu juga void. Mengetik alasan di HP saat antrean panjang persis situasi di mana VN menang, dan latensinya tidak menahan apa pun karena penjualannya sudah selesai. Ini sempit dan aman, dan hanya layak dikerjakan **setelah** VN owner terbukti dipakai.
+
+- **Satuan kuotanya diputuskan di `[BL-107]`, bukan di sini** — karena di sanalah pemakaian frekuensi tingginya mendarat.
+
+---
+
 ### [BL-105] Penyelamat Stok Tidak Pernah Menyebut Angkanya — Rantainya Sudah Utuh, Hasilnya Berhenti Jadi Satu Baris Tabel
 - **Ditemukan:** 2026-09-07
 - **Sumber:** Pertanyaan pemilik — *"fitur apa yang bisa saya maksimalkan dan menjadi keunikan dari semua POS yang ada? saya mau unggulkan 1 fitur"* — dijawab dengan penyisiran seluruh sistem, bukan dengan usulan fitur baru.
