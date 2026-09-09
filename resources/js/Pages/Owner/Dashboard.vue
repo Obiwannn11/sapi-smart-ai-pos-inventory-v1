@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { Deferred, Head, Link } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import Button from '@/Components/Button.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import BadgeCard from '@/Components/BadgeCard.vue';
 import DailyChart from '@/Components/DailyChart.vue';
@@ -239,115 +240,120 @@ const invoiceStatusLabels = {
     <Head title="Dashboard" />
 
     <div class="max-w-6xl mx-auto space-y-6">
-        <!-- Page Header -->
-        <div>
-            <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p class="text-sm text-gray-500 mt-1">Ringkasan bisnis Anda hari ini</p>
-        </div>
+        <!-- Judul halaman dan ringkasan langganan berbagi satu baris.
+             Status langganan adalah keterangan tentang akun, bukan angka
+             bisnis — sebelumnya ia duduk persis di antara judul dan kartu
+             metrik, memisahkan pertanyaan pemilik dari jawabannya. -->
+        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+                <p class="text-sm text-gray-500 mt-1">Ringkasan bisnis Anda hari ini</p>
+            </div>
 
-        <!-- Ringkasan Langganan -->
-        <div
-            v-if="subscription"
-            :class="['rounded-xl shadow-sm border p-5', billingTone.card]"
-        >
-            <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-                <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <p class="text-sm font-semibold" :class="billingTone.label">{{ billingState.label }}</p>
+            <!-- Ringkasan Langganan -->
+            <div
+                v-if="subscription"
+                :class="['w-full lg:w-1/2 lg:shrink-0 rounded-xl shadow-sm border p-5', billingTone.card]"
+            >
+                <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <p class="text-sm font-semibold" :class="billingTone.label">{{ billingState.label }}</p>
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="billingTone.chip">
+                                {{ subscription.track === 'subsidized' ? 'Harga Adaptif' : 'Harga Tetap' }}
+                            </span>
+                            <span
+                                v-if="trialDaysLeft !== null"
+                                class="text-xs px-2 py-0.5 rounded-full font-medium tabular-nums"
+                                :class="billingTone.chip"
+                            >
+                                Sisa {{ trialDaysLeft }} hari
+                            </span>
+                        </div>
+                        <p class="mt-1 text-sm" :class="billingTone.body">{{ billingState.body }}</p>
+                    </div>
+                    <Button href="/langganan" variant="secondary" size="sm" class="shrink-0 whitespace-nowrap">
+                        Kelola Langganan
+                    </Button>
+                </div>
+
+                <!-- Momen pilihan jalur di akhir masa coba (BL-044(c)). Kedua jalur
+                     berdampingan berikut angkanya: peringatan yang hanya berkata
+                     "masa coba Anda akan habis" memberi tahu tanpa memberi jalan. -->
+                <div
+                    v-if="trialChoice"
+                    class="mt-4 pt-4 border-t"
+                    :class="billingTone.divider"
+                >
+                    <p class="text-sm font-semibold text-gray-900">Pilih jalur harga Anda</p>
+                    <p class="mt-1 text-xs" :class="billingTone.body">{{ trialChoiceNote }}</p>
+
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <!-- Jalur yang berlaku sendiri bila tenant tidak memilih apa
+                             pun. Disebut lebih dulu justru karena itu: pilihan diam
+                             tetap sebuah pilihan, dan tenant berhak tahu isinya. -->
+                        <div class="rounded-lg border border-gray-200 bg-white p-3">
+                            <p class="text-xs font-semibold text-gray-700">Harga Tetap</p>
+                            <p class="mt-0.5 text-sm font-semibold text-gray-900 tabular-nums">
+                                {{ formatCurrency(trialChoice.fixed.base_price) }}<span class="text-xs font-normal text-gray-500">/bulan</span>
+                            </p>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Paket {{ trialChoice.fixed.name }}. Berlaku sendiri bila Anda tidak memilih apa pun, dan data penjualan Anda tetap tertutup.
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="trialChoice.adaptive.eligible"
+                            class="rounded-lg border border-emerald-200 bg-emerald-50 p-3"
+                        >
+                            <p class="text-xs font-semibold text-emerald-800">Harga Adaptif</p>
+                            <p class="mt-0.5 text-sm font-semibold text-emerald-900 tabular-nums">
+                                <template v-if="adaptivePrice !== null">
+                                    {{ formatCurrency(adaptivePrice) }}<span class="text-xs font-normal text-emerald-700">/bulan</span>
+                                </template>
+                                <template v-else>Belum bisa diperkirakan</template>
+                            </p>
+                            <p class="mt-1 text-xs text-emerald-700">{{ adaptiveNote }}</p>
+                            <Link
+                                href="/langganan/harga-adaptif"
+                                class="mt-2 inline-block text-xs font-medium text-emerald-800 hover:text-emerald-900"
+                            >
+                                Lihat &amp; ajukan Harga Adaptif →
+                            </Link>
+                        </div>
+
+                        <!-- Jalur tertutup tetap ditampilkan, berikut sebabnya.
+                             Menghilangkannya membuat tenant mengira ia tidak pernah
+                             ditawari, lalu menanyakannya lewat dukungan. -->
+                        <div v-else class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                            <p class="text-xs font-semibold text-gray-700">Harga Adaptif tidak tersedia</p>
+                            <p class="mt-1 text-xs text-gray-500">{{ adaptiveBlocked }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tagihan berjalan. Absen berarti tidak ada yang perlu dibayar —
+                     dan dalam hal itu diam lebih jujur daripada menampilkan "Rp 0". -->
+                <div
+                    v-if="subscription.outstanding"
+                    class="mt-4 pt-4 border-t flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
+                    :class="billingTone.divider"
+                >
+                    <div class="flex flex-wrap items-baseline gap-2">
+                        <span class="text-sm font-semibold text-gray-900 tabular-nums">
+                            {{ formatCurrency(subscription.outstanding.amount) }}
+                        </span>
                         <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="billingTone.chip">
-                            {{ subscription.track === 'subsidized' ? 'Harga Adaptif' : 'Harga Tetap' }}
+                            {{ invoiceStatusLabels[subscription.outstanding.status] }}
                         </span>
-                        <span
-                            v-if="trialDaysLeft !== null"
-                            class="text-xs px-2 py-0.5 rounded-full font-medium tabular-nums"
-                            :class="billingTone.chip"
-                        >
-                            Sisa {{ trialDaysLeft }} hari
+                        <span v-if="subscription.outstanding.kind === 'upgrade'" class="text-xs text-gray-500">
+                            penambahan pengguna
                         </span>
                     </div>
-                    <p class="mt-1 text-sm" :class="billingTone.body">{{ billingState.body }}</p>
-                </div>
-                <Link href="/langganan" class="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap">
-                    Kelola Langganan →
-                </Link>
-            </div>
-
-            <!-- Momen pilihan jalur di akhir masa coba (BL-044(c)). Kedua jalur
-                 berdampingan berikut angkanya: peringatan yang hanya berkata
-                 "masa coba Anda akan habis" memberi tahu tanpa memberi jalan. -->
-            <div
-                v-if="trialChoice"
-                class="mt-4 pt-4 border-t"
-                :class="billingTone.divider"
-            >
-                <p class="text-sm font-semibold text-gray-900">Pilih jalur harga Anda</p>
-                <p class="mt-1 text-xs" :class="billingTone.body">{{ trialChoiceNote }}</p>
-
-                <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                    <!-- Jalur yang berlaku sendiri bila tenant tidak memilih apa
-                         pun. Disebut lebih dulu justru karena itu: pilihan diam
-                         tetap sebuah pilihan, dan tenant berhak tahu isinya. -->
-                    <div class="rounded-lg border border-gray-200 bg-white p-3">
-                        <p class="text-xs font-semibold text-gray-700">Harga Tetap</p>
-                        <p class="mt-0.5 text-sm font-semibold text-gray-900 tabular-nums">
-                            {{ formatCurrency(trialChoice.fixed.base_price) }}<span class="text-xs font-normal text-gray-500">/bulan</span>
-                        </p>
-                        <p class="mt-1 text-xs text-gray-500">
-                            Paket {{ trialChoice.fixed.name }}. Berlaku sendiri bila Anda tidak memilih apa pun, dan data penjualan Anda tetap tertutup.
-                        </p>
-                    </div>
-
-                    <div
-                        v-if="trialChoice.adaptive.eligible"
-                        class="rounded-lg border border-emerald-200 bg-emerald-50 p-3"
-                    >
-                        <p class="text-xs font-semibold text-emerald-800">Harga Adaptif</p>
-                        <p class="mt-0.5 text-sm font-semibold text-emerald-900 tabular-nums">
-                            <template v-if="adaptivePrice !== null">
-                                {{ formatCurrency(adaptivePrice) }}<span class="text-xs font-normal text-emerald-700">/bulan</span>
-                            </template>
-                            <template v-else>Belum bisa diperkirakan</template>
-                        </p>
-                        <p class="mt-1 text-xs text-emerald-700">{{ adaptiveNote }}</p>
-                        <Link
-                            href="/langganan/harga-adaptif"
-                            class="mt-2 inline-block text-xs font-medium text-emerald-800 hover:text-emerald-900"
-                        >
-                            Lihat &amp; ajukan Harga Adaptif →
-                        </Link>
-                    </div>
-
-                    <!-- Jalur tertutup tetap ditampilkan, berikut sebabnya.
-                         Menghilangkannya membuat tenant mengira ia tidak pernah
-                         ditawari, lalu menanyakannya lewat dukungan. -->
-                    <div v-else class="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <p class="text-xs font-semibold text-gray-700">Harga Adaptif tidak tersedia</p>
-                        <p class="mt-1 text-xs text-gray-500">{{ adaptiveBlocked }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tagihan berjalan. Absen berarti tidak ada yang perlu dibayar —
-                 dan dalam hal itu diam lebih jujur daripada menampilkan "Rp 0". -->
-            <div
-                v-if="subscription.outstanding"
-                class="mt-4 pt-4 border-t flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
-                :class="billingTone.divider"
-            >
-                <div class="flex flex-wrap items-baseline gap-2">
-                    <span class="text-sm font-semibold text-gray-900 tabular-nums">
-                        {{ formatCurrency(subscription.outstanding.amount) }}
-                    </span>
-                    <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="billingTone.chip">
-                        {{ invoiceStatusLabels[subscription.outstanding.status] }}
-                    </span>
-                    <span v-if="subscription.outstanding.kind === 'upgrade'" class="text-xs text-gray-500">
-                        penambahan pengguna
+                    <span v-if="subscription.outstanding.due_date" class="text-xs" :class="billingTone.body">
+                        Jatuh tempo {{ formatCalendarDate(subscription.outstanding.due_date) }}
                     </span>
                 </div>
-                <span v-if="subscription.outstanding.due_date" class="text-xs" :class="billingTone.body">
-                    Jatuh tempo {{ formatCalendarDate(subscription.outstanding.due_date) }}
-                </span>
             </div>
         </div>
 
