@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
 | 2026-09-08 | ADDITION | UI | Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu |
@@ -250,6 +251,33 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  `UpsellStrip` menumpang di footer keranjang yang `shrink-0`, jadi footer mengambil setinggi apa pun yang ia butuhkan dan daftar keranjang di atasnya yang mengalah. Tiga saran sekaligus — batas `upsell.max_per_transaction` — menyisakan **satu baris keranjang**: kasir kehilangan pandangan atas pesanan justru pada saat ia harus menawar ke pelanggan yang sedang berdiri di depannya.
+
+  Keduanya sekarang panel terpisah dengan **pembatas yang bisa digeser** (`role="separator"`, `cursor-row-resize`), memakai ulang pola yang sudah ada untuk pembatas menu ↔ keranjang di layar yang sama: sasaran sentuh diperlebar, mendukung tetikus dan sentuh, tingginya disimpan di `localStorage`.
+
+  Dua keputusan yang membedakannya dari sekadar menyalin pola itu:
+
+  - **Tinggi awalnya mengikuti isi, bukan satu angka tetap.** Angka tetap berarti saran ketiga terpotong sejak awal — mengulang persoalan yang sama dalam bentuk lebih kecil, dan memaksa kasir membereskan tampilan dulu sebelum bisa menawar. Selama kasir belum pernah menggeser sendiri, panelnya menyusut mengikuti saran yang sudah dijawab dan ruangnya kembali ke keranjang.
+  - **Begitu digeser, pilihan kasir yang menang selamanya.** Jumlah saran berubah tiap keranjang disentuh; panel yang mengatur diri sendiri setelah kasir menentukan ukurannya adalah panel yang melawan penggunanya. Klik dua kali mengembalikannya ke "ikut isi".
+
+  Batas atasnya diukur dari panel yang sebenarnya, bukan konstanta: tinggi footer berubah saat baris pajak atau peringatan bayar-terkunci muncul, dan tinggi simpanan dari layar besar diperas ulang saat jendela mengecil — kalau tidak, nilai dari layar kasir 1366px menelan seluruh daftar keranjang di tablet. Keranjang selalu menyisakan ~130px, jadi ia tidak pernah habis tergusur. Pembatasnya sendiri hanya ada saat memang ada yang dibagi ruangnya.
+- **Alasan:**
+  Permintaan pemilik 2026-09-09, dengan alasan yang diucapkan sendiri: saran jual jangan sampai membuat kasir kehilangan pelanggan. Layar yang menyembunyikan pesanan demi menampilkan tawaran menukar penjualan yang sudah pasti dengan penjualan yang belum tentu.
+- **File Terdampak:**
+  - `resources/js/Pages/Cashier/POS.vue` — `UpsellStrip` keluar dari footer ke panelnya sendiri; pembatas, penjepitan dinamis, penyimpanan tinggi, dan `min-h-0` pada daftar keranjang (tanpa itu flex item menolak menyusut dan pembatasnya tidak bisa digeser turun)
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema maupun dependensi. Kunci `localStorage` baru: `cashier.upsellHeight` — kasir lama yang belum pernah menggesernya langsung mendapat perilaku "ikut isi".
+
+  **Belum dikerjakan:** pembatasnya belum bisa digerakkan lewat papan tik (tidak `tabindex`, tidak menanggapi panah). Pembatas menu ↔ keranjang yang sudah ada pun begitu; menambahkannya sebaiknya untuk keduanya sekaligus, bukan satu saja.
+
+---
 
 ### [HOTFIX] Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot"
 - **Tanggal:** 2026-09-08
