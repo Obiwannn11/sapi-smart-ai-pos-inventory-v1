@@ -114,7 +114,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - `app/Http/Controllers/Owner/DashboardController.php` (`paymentMethodTotals()`) — rekap Hari Ini dan Bulan Ini di beranda
   - `app/Http/Controllers/Owner/ReportController.php` — `paymentSummaryFor()` (bulanan) dan rekap harian di `daily()`
   - `app/Http/Controllers/Owner/ReportController.php` (`monthlyExport()`) — blok METODE PEMBAYARAN di CSV
-  - `app/Http/Controllers/Api/V1/Mobile/MobileCashDrawerController.php:121-128` — **belum diperiksa** apakah aplikasi mobile memasangkannya dengan kembalian seperti rekonsiliasi web
+  - `app/Http/Controllers/Api/V1/Mobile/MobileCashDrawerController.php:122` (`summary()`) — sudah diperiksa 2026-09-09: **ikut keliru**, ia mengembalikan `payment_summary` mentah. Tapi `close()` di berkas yang sama (baris 86-88) justru **sudah benar** — ia mengurangkan `SUM(change_amount)` persis seperti rekonsiliasi web. Jadi berkas ini disentuh dua kali dengan sikap berbeda: `summary()` dibetulkan, `close()` jangan diapa-apakan.
 
 - **Yang TIDAK salah, dan ini yang menentukan bentuk perbaikannya.**
   `transaction_payments.amount` menyimpan uang yang **diserahkan pelanggan**, dan itu memang disengaja. Pasangannya ada: `transactions.change_amount`. `CashDrawerReconciliation::for()` memakai keduanya dengan benar —
@@ -128,12 +128,12 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
   | | |
   |---|---|
-  | `SUM(transactions.total_amount)` | Rp 525.599.000 |
+  | `SUM(transactions.total_amount)` | Rp 525.441.000 |
   | `SUM(transaction_payments.amount)` | Rp 527.865.000 |
-  | Selisih yang dilaporkan berlebih | **Rp 2.266.000** (0,43%) |
+  | Selisih yang dilaporkan berlebih | **Rp 2.424.000** (0,46%) |
   | `SUM(transactions.change_amount)` | Rp 2.424.000 |
 
-  Kembalian menjelaskan seluruh kelebihannya — dan **melampauinya**: setelah dikurangi, pembayaran justru kurang Rp 158.000 dari total penjualan. Sisa itu belum ditelusuri dan tidak boleh dianggap pembulatan; kandidatnya open bill yang belum lunas, transaksi yang pernah disunting, atau baris pembayaran yang hilang. **Perbaikan apa pun harus menjawab sisa ini juga**, bukan cuma mengurangkan kembalian lalu menyatakan angkanya cocok.
+  Kembalian menjelaskan **seluruh** kelebihannya, sampai rupiah terakhir: dibayar − kembalian = Rp 525.441.000, sama persis dengan total penjualan. Bukan cuma cocok di agregat — diperiksa baris per baris, **nol dari 4.020** transaksi selesai yang `dibayar − kembalian ≠ total`. Jadi tidak ada kebocoran kedua di balik yang ini: perbaikannya cukup mengurangkan kembalian, dan angkanya akan benar-benar cocok.
 
 - **Kenapa ia tidak pernah terlihat sampai sekarang.**
   Rekapnya berdiri sendiri di layar, tanpa angka lain yang sebanding di dekatnya. Begitu kartu "Omzet Hari Ini" berdiri tepat di atasnya (2026-09-08), selisih Rp 39.000 vs Rp 89.000 jadi terbaca dalam satu pandangan. Sakelar Bulan Ini kemudian memperbesar taruhannya: yang tadinya keliru sebesar kembalian sehari kini keliru sebesar kembalian sebulan.
@@ -142,7 +142,11 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   Kembalian hanya lahir dari porsi TUNAI — `PaymentModal.vue:130` menghitungnya begitu, dan QRIS maupun transfer tidak mengenal kembalian. Jadi koreksinya tidak boleh disebar rata ke semua metode: ia dikurangkan dari baris bertipe `cash` saja, persis seperti `sumOfType($paymentSummary, cash: true)` di rekonsiliasi.
   Karena rumus yang sama akan ditulis di empat tempat, sebaiknya ia lahir sebagai **satu pembaca bersama** sejak awal — bukan empat salinan yang suatu hari akan berbeda di salah satunya.
 
-- **Catatan penomoran:** `[BL-109]` diambil pada 2026-09-08 saat sesi lain sedang menyunting berkas ini. Kalau ternyata bentrok, entri inilah yang dipindah.
+- **Verifikasi ulang 2026-09-09 (permintaan pemilik).** Seluruh entri diperiksa lagi terhadap kode dan basis data; masalah intinya utuh dan belum satu baris pun disentuh. Dua hal berubah dari tulisan aslinya:
+  1. **Satu angka salah catat, dan ia sempat mengarang pekerjaan yang tidak ada.** `SUM(total_amount)` ditulis Rp 525.599.000; yang benar Rp 525.441.000. Dari situ lahir kesimpulan "sisa Rp 158.000 belum ditelusuri" beserta perintah bahwa perbaikan harus menjawabnya — padahal Rp 158.000 itu persis sebesar kesalahan catatnya sendiri, bukan kebocoran di data. Tabel dan paragrafnya sudah diganti di atas. Dicatat di sini, bukan dihapus diam-diam, karena angka lama itu sempat berdiri sehari dan siapa pun yang terlanjur membacanya perlu tahu ia batal.
+  2. **Pertanyaan mobile terjawab** — lihat Area Terdampak. Jumlah pembaca yang keliru tetap empat; yang berubah, kekeliruan mobile sekarang fakta, bukan dugaan.
+
+- **Catatan penomoran:** `[BL-109]` diambil pada 2026-09-08 saat sesi lain sedang menyunting berkas ini. Kalau ternyata bentrok, entri inilah yang dipindah. Diperiksa 2026-09-09: tidak bentrok, nomornya aman.
 
 ### [BL-108] Barang Kedaluwarsa Terjual Tanpa Satu Pun Peringatan — dan Tiga Komentar Menjanjikan Penjagaan yang Tidak Pernah Ada
 - **Ditemukan:** 2026-09-08, saat uji jalur nyata dari POS (bukan dari membaca kode)
