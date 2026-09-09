@@ -1,6 +1,6 @@
 <script setup>
 import { router, Head, usePage } from '@inertiajs/vue3';
-import { ref, computed, watch, onUnmounted, onMounted } from 'vue';
+import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import { useFlash } from '@/composables/useFlash';
 import ProductCard from '@/Components/ProductCard.vue';
@@ -1002,7 +1002,158 @@ const resetCartWidth = () => {
     localStorage.setItem(CART_WIDTH_KEY, String(CART_DEFAULT_WIDTH));
 };
 
-onUnmounted(stopResizeCart);
+// --- Pembagian ruang: keranjang vs saran jual ---
+//
+// Saran jual dulu menumpang di footer yang `shrink-0`, jadi footer mengambil
+// setinggi apa pun yang ia butuhkan dan daftar keranjang di atasnya yang
+// mengalah. Tiga saran sekaligus menyisakan satu baris keranjang — kasir jadi
+// kehilangan pandangan atas pesanan justru pada saat ia harus menawar ke
+// pelanggan yang sedang berdiri di depannya.
+//
+// Sekarang keduanya panel terpisah dengan pembatas yang bisa digeser: saran
+// dibuka lebar saat menawarkan, dikecilkan saat yang penting isi keranjangnya.
+// Kasir yang menentukan, bukan jumlah saran yang kebetulan muncul.
+const UPSELL_HEIGHT_KEY = 'cashier.upsellHeight';
+const UPSELL_MIN_HEIGHT = 76; // satu baris saran masih terbaca utuh
+const UPSELL_DEFAULT_HEIGHT = 168;
+const CART_ITEMS_MIN_HEIGHT = 132; // keranjang tidak boleh habis tergusur
+
+const cartPanel = ref(null);
+const cartHeader = ref(null);
+const cartFooter = ref(null);
+const upsellPanel = ref(null);
+const upsellHeight = ref(UPSELL_DEFAULT_HEIGHT);
+const isResizingUpsell = ref(false);
+// Kasir yang pernah menggeser sendiri pembatasnya tidak boleh diatur ulang
+// diam-diam oleh jumlah saran yang kebetulan muncul berikutnya.
+const upsellHeightIsChosen = ref(false);
+
+const hasUpsellContent = computed(() => {
+    return upsellSuggestions.value.length > 0 || upsellAccepted.value.length > 0;
+});
+
+/**
+ * Batas atasnya diukur dari panel yang sebenarnya, bukan angka mati: tinggi
+ * footer ikut berubah saat baris pajak atau peringatan muncul, dan layar kasir
+ * 768px punya sisa ruang yang jauh berbeda dari tablet.
+ */
+const maxUpsellHeight = () => {
+    const panel = cartPanel.value?.clientHeight ?? 0;
+    if (!panel) {
+        return UPSELL_DEFAULT_HEIGHT;
+    }
+
+    const reserved = (cartHeader.value?.offsetHeight ?? 0)
+        + (cartFooter.value?.offsetHeight ?? 0)
+        + CART_ITEMS_MIN_HEIGHT;
+
+    return Math.max(UPSELL_MIN_HEIGHT, panel - reserved);
+};
+
+const clampUpsellHeight = (value) => {
+    return Math.min(maxUpsellHeight(), Math.max(UPSELL_MIN_HEIGHT, value));
+};
+
+const pointerY = (event) => {
+    return event.touches ? event.touches[0].clientY : event.clientY;
+};
+
+let upsellDragStartY = 0;
+let upsellDragStartHeight = 0;
+
+const onResizeUpsellMove = (event) => {
+    if (!isResizingUpsell.value) return;
+    // Pembatas berada DI ATAS blok saran, jadi menggeser ke atas melebarkannya.
+    upsellHeight.value = clampUpsellHeight(upsellDragStartHeight - (pointerY(event) - upsellDragStartY));
+    event.preventDefault();
+};
+
+const stopResizeUpsell = () => {
+    if (!isResizingUpsell.value) return;
+    isResizingUpsell.value = false;
+    upsellHeightIsChosen.value = true;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    localStorage.setItem(UPSELL_HEIGHT_KEY, String(Math.round(upsellHeight.value)));
+
+    window.removeEventListener('mousemove', onResizeUpsellMove);
+    window.removeEventListener('mouseup', stopResizeUpsell);
+    window.removeEventListener('touchmove', onResizeUpsellMove);
+    window.removeEventListener('touchend', stopResizeUpsell);
+};
+
+const startResizeUpsell = (event) => {
+    isResizingUpsell.value = true;
+    upsellDragStartY = pointerY(event);
+    upsellDragStartHeight = upsellHeight.value;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+
+    window.addEventListener('mousemove', onResizeUpsellMove);
+    window.addEventListener('mouseup', stopResizeUpsell);
+    window.addEventListener('touchmove', onResizeUpsellMove, { passive: false });
+    window.addEventListener('touchend', stopResizeUpsell);
+    event.preventDefault();
+};
+
+/**
+ * Tinggi bawaan mengikuti isinya, bukan satu angka tetap. Saran ketiga yang
+ * terpotong sejak awal mengulang persoalan yang sama: kasir harus membereskan
+ * tampilan dulu sebelum bisa menawar. Begitu ia menggeser sendiri, pilihannya
+ * yang dipakai.
+ */
+const UPSELL_PANEL_PADDING = 24; // py-3 atas + bawah
+
+const fitUpsellHeightToContent = () => {
+    // Yang diukur isinya, bukan panelnya: `scrollHeight` panel tidak pernah
+    // lebih kecil dari tinggi yang sedang dipasang, jadi ia tidak bisa menyusut.
+    const content = upsellPanel.value?.firstElementChild?.offsetHeight;
+    upsellHeight.value = clampUpsellHeight(
+        content ? content + UPSELL_PANEL_PADDING : UPSELL_DEFAULT_HEIGHT
+    );
+};
+
+const resetUpsellHeight = () => {
+    upsellHeightIsChosen.value = false;
+    localStorage.removeItem(UPSELL_HEIGHT_KEY);
+    fitUpsellHeightToContent();
+};
+
+const reclampUpsellHeight = () => {
+    upsellHeight.value = clampUpsellHeight(upsellHeight.value);
+};
+
+onMounted(async () => {
+    const stored = Number(localStorage.getItem(UPSELL_HEIGHT_KEY));
+    await nextTick();
+    if (stored) {
+        upsellHeightIsChosen.value = true;
+        // Nilai simpanan dari layar besar tetap harus diperas ke layar kecil,
+        // kalau tidak ia menelan seluruh daftar keranjang saat dibuka di tablet.
+        upsellHeight.value = clampUpsellHeight(stored);
+    } else {
+        fitUpsellHeightToContent();
+    }
+    window.addEventListener('resize', reclampUpsellHeight);
+});
+
+// Footer tumbuh dan menyusut sendiri (baris pajak, peringatan bayar terkunci)
+// dan jumlah sarannya berubah tiap keranjang disentuh, jadi ukurannya dihitung
+// ulang tiap isi bloknya berganti.
+watch([hasUpsellContent, upsellSuggestions, upsellAccepted], async () => {
+    await nextTick();
+    if (upsellHeightIsChosen.value) {
+        reclampUpsellHeight();
+    } else {
+        fitUpsellHeightToContent();
+    }
+}, { deep: true });
+
+onUnmounted(() => {
+    stopResizeCart();
+    stopResizeUpsell();
+    window.removeEventListener('resize', reclampUpsellHeight);
+});
 
 </script>
 
@@ -1167,10 +1318,11 @@ onUnmounted(stopResizeCart);
 
             <!-- RIGHT: Cart Panel -->
             <div
+                ref="cartPanel"
                 :style="{ width: cartWidth + 'px' }"
                 class="bg-card border-l border-border flex flex-col shrink-0">
                 <!-- Cart Header -->
-                <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div ref="cartHeader" class="px-4 py-3 border-b border-border flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <h2 class="text-sm font-semibold text-gray-800">Keranjang</h2>
                         <span v-if="cartItemCount > 0" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
@@ -1203,8 +1355,10 @@ onUnmounted(stopResizeCart);
                     </Transition>
                 </div>
 
-                <!-- Cart Items -->
-                <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                <!-- Cart Items. `min-h-0` wajib: tanpa itu flex item menolak
+                     menyusut di bawah tinggi isinya, dan pembatas di bawahnya
+                     tidak bisa digeser turun. -->
+                <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     <template v-if="cart.length > 0">
                         <div v-for="(item, idx) in cart" :key="`${item.variant_id}-${idx}`">
                             <CartItem
@@ -1247,9 +1401,41 @@ onUnmounted(stopResizeCart);
                     </div>
                 </div>
 
-                <!-- Cart Footer -->
-                <div class="border-t border-border p-4 space-y-3 flex-shrink-0">
-                    <!-- Saran jual: strip tipis, bukan pop-up (lihat UpsellStrip.vue) -->
+                <!-- Pembatas keranjang ↔ saran: geser untuk membuka saran lebar-lebar
+                     saat menawar, atau mengecilkannya saat isi keranjang yang penting.
+                     Hanya ada saat memang ada yang dibagi ruangnya. -->
+                <div
+                    v-if="hasUpsellContent"
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Atur tinggi saran untuk pelanggan"
+                    @mousedown="startResizeUpsell"
+                    @touchstart="startResizeUpsell"
+                    @dblclick="resetUpsellHeight"
+                    :class="[
+                        'group relative h-1.5 shrink-0 cursor-row-resize select-none touch-none flex items-center justify-center transition-colors',
+                        isResizingUpsell ? 'bg-primary/60' : 'bg-border hover:bg-primary/40'
+                    ]"
+                    title="Geser untuk atur tinggi saran · klik dua kali untuk kembali mengikuti isi"
+                >
+                    <!-- Sasaran sentuh diperlebar; batangnya sendiri tetap tipis -->
+                    <span class="absolute inset-x-0 -top-1.5 -bottom-1.5"></span>
+                    <span class="relative flex gap-1 pointer-events-none">
+                        <span :class="['w-0.5 h-0.5 rounded-full', isResizingUpsell ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
+                        <span :class="['w-0.5 h-0.5 rounded-full', isResizingUpsell ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
+                        <span :class="['w-0.5 h-0.5 rounded-full', isResizingUpsell ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
+                    </span>
+                </div>
+
+                <!-- Saran jual: strip tipis, bukan pop-up (lihat UpsellStrip.vue).
+                     Panelnya sendiri, dengan tinggi yang diatur kasir — bukan
+                     menumpang di footer dan menggusur keranjang. -->
+                <div
+                    v-if="hasUpsellContent"
+                    ref="upsellPanel"
+                    :style="{ height: upsellHeight + 'px' }"
+                    class="shrink-0 overflow-y-auto px-4 py-3"
+                >
                     <UpsellStrip
                         :suggestions="upsellSuggestions"
                         :accepted="upsellAccepted"
@@ -1259,7 +1445,10 @@ onUnmounted(stopResizeCart);
                         @reject="rejectUpsell"
                         @retract="undoUpsell"
                     />
+                </div>
 
+                <!-- Cart Footer -->
+                <div ref="cartFooter" class="border-t border-border p-4 space-y-3 flex-shrink-0">
                     <!-- Sebab tombol bayar mati, bukan sekadar tombol kelabu -->
                     <div
                         v-if="checkoutBlockedReason && cart.length > 0"
