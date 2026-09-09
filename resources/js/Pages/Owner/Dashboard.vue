@@ -429,7 +429,7 @@ const invoiceStatusLabels = {
             <div v-else class="flex flex-wrap gap-3">
                 <div
                     v-for="pm in paymentRows"
-                    :key="pm.name"
+                    :key="pm.id"
                     class="flex items-center gap-2 bg-gray-50 rounded-lg px-4 py-2.5"
                 >
                     <span

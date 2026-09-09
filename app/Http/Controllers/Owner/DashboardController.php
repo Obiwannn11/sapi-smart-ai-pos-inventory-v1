@@ -4,12 +4,11 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
-use App\Models\TransactionPayment;
 use App\Services\BadgeHelperService;
 use App\Services\BusinessClock;
+use App\Services\PaymentMethodRecap;
 use App\Services\StockRescueService;
 use App\Services\SubscriptionService;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -20,6 +19,7 @@ class DashboardController extends Controller
         private BadgeHelperService $badgeHelper,
         private SubscriptionService $subscriptions,
         private StockRescueService $stockRescue,
+        private PaymentMethodRecap $paymentRecap,
     ) {}
 
     public function index(Request $request): Response
@@ -53,15 +53,14 @@ class DashboardController extends Controller
         $monthAverage = $monthCount > 0 ? $monthRevenue / $monthCount : 0;
 
         // Pendapatan per metode pembayaran — hari ini dan bulan ini.
+        //
+        // Kueri transaksi yang sama dengan yang melahirkan omzet di atasnya
+        // diteruskan apa adanya ([BL-109]). Dulu rekap ini membangun penyaring
+        // periodenya sendiri, dan karena itu bisa menjawab rentang yang berbeda
+        // dari kartu omzet yang berdiri tepat di atasnya.
         $tenantId = auth()->user()->tenant_id;
-        $todayByPaymentMethod = $this->paymentMethodTotals(
-            $tenantId,
-            fn (Builder $q) => $q->whereEffectiveDate($today)
-        );
-        $monthByPaymentMethod = $this->paymentMethodTotals(
-            $tenantId,
-            fn (Builder $q) => $q->whereEffectiveFrom($monthStart)
-        );
+        $todayByPaymentMethod = $this->paymentRecap->for(clone $todayTransactions, $tenantId);
+        $monthByPaymentMethod = $this->paymentRecap->for(clone $monthTransactions, $tenantId);
 
         // Tren, badge, dan transaksi terakhir sengaja TIDAK dihitung di sini —
         // lihat Inertia::defer() di bawah.
@@ -141,26 +140,5 @@ class DashboardController extends Controller
                 ],
             ],
         ]);
-    }
-
-    /**
-     * Total terkumpul per metode pembayaran dalam satu rentang.
-     *
-     * @param  \Closure(Builder): Builder  $withinPeriod  penyaring rentang pada transaksinya
-     * @return \Illuminate\Support\Collection<int, object>
-     */
-    private function paymentMethodTotals(int $tenantId, \Closure $withinPeriod)
-    {
-        return TransactionPayment::query()
-            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', function ($join) use ($tenantId) {
-                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
-                    ->where('payment_methods.tenant_id', $tenantId);
-            })
-            ->whereHas('transaction', function ($q) use ($withinPeriod) {
-                $withinPeriod($q->where('status', Transaction::STATUS_COMPLETED));
-            })
-            ->groupBy('payment_methods.name', 'payment_methods.type')
-            ->get();
     }
 }

@@ -224,7 +224,7 @@ const paymentTypeLabel = (type) => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="pm in paymentSummary" :key="pm.name" class="border-b border-gray-50 last:border-0">
+                        <tr v-for="pm in paymentSummary" :key="pm.id" class="border-b border-gray-50 last:border-0">
                             <td class="py-2.5 px-3 font-medium text-gray-800">{{ pm.name }}</td>
                             <td class="py-2.5 px-3">
                                 <span

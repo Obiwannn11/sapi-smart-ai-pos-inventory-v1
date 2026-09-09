@@ -10,9 +10,9 @@ use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
-use App\Models\TransactionPayment;
 use App\Models\UpsellEvent;
 use App\Services\BusinessClock;
+use App\Services\PaymentMethodRecap;
 use App\Services\StockRescueService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -23,7 +23,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
-    public function __construct(private StockRescueService $stockRescue) {}
+    public function __construct(
+        private StockRescueService $stockRescue,
+        private PaymentMethodRecap $paymentRecap,
+    ) {}
 
     /**
      * Laporan penjualan harian.
@@ -97,19 +100,14 @@ class ReportController extends Controller
                 ->latest()
                 ->get()),
 
-            // Rekap per metode pembayaran
-            'paymentSummary' => Inertia::defer(fn () => TransactionPayment::query()
-                ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-                ->join('payment_methods', function ($join) use ($tenantId) {
-                    $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
-                        ->where('payment_methods.tenant_id', $tenantId);
-                })
-                ->whereHas('transaction', function ($q) use ($date) {
-                    $q->where('status', Transaction::STATUS_COMPLETED)
-                        ->whereEffectiveDate($date);
-                })
-                ->groupBy('payment_methods.name', 'payment_methods.type')
-                ->get(), 'rekap'),
+            // Rekap per metode pembayaran — lewat pembaca bersama, yang
+            // mengurangkan kembalian dari baris tunai ([BL-109]). Kueri yang
+            // dioper `$completed` yang sama dengan sumber angka omzet di atas,
+            // jadi keduanya tidak mungkin menjawab hari yang berbeda.
+            'paymentSummary' => Inertia::defer(
+                fn () => $this->paymentRecap->for(clone $completed, $tenantId),
+                'rekap'
+            ),
 
             // Produk terlaris hari itu
             'topProducts' => Inertia::defer(fn () => $this->topProducts(
@@ -322,7 +320,7 @@ class ReportController extends Controller
             fputcsv($out, ['METODE PEMBAYARAN']);
             fputcsv($out, ['Metode', 'Tipe', 'Total']);
             foreach ($paymentSummary as $row) {
-                fputcsv($out, [$row->name, $row->type, $row->total]);
+                fputcsv($out, [$row['name'], $row['type'], $row['total']]);
             }
             fputcsv($out, []);
 
@@ -609,28 +607,17 @@ class ReportController extends Controller
      * Rekap per metode pembayaran dalam satu bulan.
      *
      * Bentuknya sengaja sama dengan daily() supaya tabelnya bisa dibaca
-     * dengan kebiasaan yang sama.
+     * dengan kebiasaan yang sama — sekarang secara harfiah sama, karena
+     * keduanya memanggil pembaca yang sama ([BL-109]).
      *
-     * @return \Illuminate\Support\Collection<int, object>
+     * @return array<int, array{id: int, name: string, type: string, total: float}>
      */
-    private function paymentSummaryFor(Carbon $month)
+    private function paymentSummaryFor(Carbon $month): array
     {
-        $tenantId = auth()->user()->tenant_id;
-        $endOfMonth = $month->copy()->endOfMonth();
-
-        return TransactionPayment::query()
-            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', function ($join) use ($tenantId) {
-                $join->on('transaction_payments.payment_method_id', '=', 'payment_methods.id')
-                    ->where('payment_methods.tenant_id', $tenantId);
-            })
-            ->whereHas('transaction', function ($q) use ($month, $endOfMonth) {
-                $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveBetween($month, $endOfMonth);
-            })
-            ->groupBy('payment_methods.name', 'payment_methods.type')
-            ->orderByDesc('total')
-            ->get();
+        return $this->paymentRecap->for(
+            $this->completedIn($month),
+            auth()->user()->tenant_id
+        );
     }
 
     /**
