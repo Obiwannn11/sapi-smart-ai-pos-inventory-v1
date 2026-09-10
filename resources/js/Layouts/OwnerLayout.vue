@@ -3,7 +3,7 @@ import { usePage, router, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
-import { ref, computed, h, defineComponent } from 'vue';
+import { ref, computed, h, onMounted, onBeforeUnmount, defineComponent } from 'vue';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
 import { BUSINESS_TZ } from '@/support/date';
 
@@ -66,6 +66,8 @@ const iconPaths = {
         'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
     ],
     key: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z',
+    cart: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z',
+    logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
 };
 
 const NavIcon = defineComponent({
@@ -264,6 +266,31 @@ const roleLabel = computed(() => {
     return map[auth.user?.role] ?? auth.user?.role ?? '';
 });
 
+// ── Menu akun di topbar ────────────────────────────────────────────────────
+// Nama pengguna, tautan ke kasir, dan tombol keluar tinggal di SATU tempat di
+// sini, bukan tersebar antara kaki sidebar dan topbar. Pola dan markupnya
+// sengaja kembar dengan dropdown di `CashierTopbar.vue`: kedua cangkang
+// menjawab pertanyaan yang sama ("saya login sebagai siapa, dan ke mana lagi
+// saya bisa pergi"), jadi jawabannya tidak boleh berbeda bentuk. Sebagai bonus,
+// mode rel (sidebar tertutup) tidak lagi menyembunyikan tombol keluar.
+const userName = computed(() => auth.user?.name ?? '');
+const userEmail = computed(() => auth.user?.email ?? '');
+
+const dropdownOpen = ref(false);
+const dropdownRef = ref(null);
+
+const toggleDropdown = () => { dropdownOpen.value = !dropdownOpen.value; };
+
+const handleClickOutside = (e) => {
+    if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
+        dropdownOpen.value = false;
+    }
+};
+
+onMounted(() => document.addEventListener('mousedown', handleClickOutside));
+onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside));
+
+// Kas dipakai bergantian: buang cache POS + katalog sebelum keluar.
 const logout = async () => {
     await clearPrivateOfflineData();
     router.post('/logout');
@@ -397,42 +424,6 @@ const logout = async () => {
                     </div>
                 </template>
             </nav>
-
-            <!-- User footer -->
-            <div class="flex-shrink-0 border-t border-border p-3">
-                <div
-                    class="flex items-center min-w-0"
-                    :class="sidebarOpen ? 'gap-2.5 px-1' : 'justify-center px-0'"
-                >
-                    <!-- Avatar (always visible) -->
-                    <div
-                        class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"
-                        :title="!sidebarOpen ? auth.user.name : undefined"
-                        aria-hidden="true"
-                    >
-                        <span class="text-primary text-sm font-semibold leading-none select-none">{{ userInitial }}</span>
-                    </div>
-
-                    <!-- Name + role — hidden in icon-only rail mode -->
-                    <div v-show="sidebarOpen" class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-foreground truncate leading-snug">{{ auth.user.name }}</p>
-                        <p class="text-[11px] text-muted-foreground leading-snug">{{ roleLabel }}</p>
-                    </div>
-
-                    <!-- Logout — hidden in icon-only rail mode -->
-                    <button
-                        v-show="sidebarOpen"
-                        @click="logout"
-                        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
-                        title="Keluar"
-                        aria-label="Keluar dari akun"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
         </aside>
 
         <!-- ── Main area ─────────────────────────────────────────────────── -->
@@ -464,19 +455,83 @@ const logout = async () => {
                         </nav>
                     </div>
 
-                    <!-- Right: date + Kasir shortcut -->
+                    <!-- Right: date + menu akun -->
                     <div class="flex items-center gap-3 flex-shrink-0">
                         <span class="hidden md:block text-xs text-muted-foreground">{{ todayLabel }}</span>
-                        <Link
-                            v-if="!isSuspended"
-                            href="/cashier/pos"
-                            class="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md border border-border text-foreground/60 hover:bg-muted hover:text-foreground transition-colors duration-150"
-                        >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                            Kasir
-                        </Link>
+
+                        <!-- Menu akun — kembar dengan dropdown di CashierTopbar -->
+                        <div ref="dropdownRef" class="relative">
+                            <button
+                                @click="toggleDropdown"
+                                :class="[
+                                    'inline-flex items-center gap-1.5 px-2 sm:px-3 h-8 text-xs font-medium rounded-md border transition-colors duration-150',
+                                    dropdownOpen ? 'bg-muted border-border text-foreground' : 'border-border text-foreground/60 hover:bg-muted hover:text-foreground',
+                                ]"
+                                :aria-expanded="dropdownOpen"
+                                aria-haspopup="true"
+                                aria-label="Menu akun"
+                            >
+                                <span class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                                    <span class="text-primary text-xs font-semibold leading-none select-none">{{ userInitial }}</span>
+                                </span>
+                                <span class="hidden sm:inline max-w-[120px] truncate">{{ userName }}</span>
+                                <svg
+                                    class="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform duration-150"
+                                    :class="{ 'rotate-180': dropdownOpen }"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+                                >
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+
+                            <Transition
+                                enter-active-class="transition duration-100 ease-out"
+                                enter-from-class="opacity-0 scale-95"
+                                enter-to-class="opacity-100 scale-100"
+                                leave-active-class="transition duration-75 ease-in"
+                                leave-from-class="opacity-100 scale-100"
+                                leave-to-class="opacity-0 scale-95"
+                            >
+                                <div
+                                    v-if="dropdownOpen"
+                                    class="absolute right-0 top-full mt-1.5 w-56 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden origin-top-right"
+                                    role="menu"
+                                >
+                                    <!-- Akun yang sedang login -->
+                                    <div class="px-3 py-2.5 border-b border-border">
+                                        <p class="text-sm font-medium text-foreground truncate">{{ userName }}</p>
+                                        <p v-if="userEmail" class="text-xs text-muted-foreground truncate mt-0.5">{{ userEmail }}</p>
+                                        <p class="text-[11px] text-muted-foreground mt-0.5">{{ roleLabel }}</p>
+                                    </div>
+
+                                    <!--
+                                        Selama ditangguhkan setiap rute selain
+                                        langganan memantul balik, jadi pintunya
+                                        disembunyikan — tapi tombol keluar di
+                                        bawah tetap ada.
+                                    -->
+                                    <Link
+                                        v-if="!isSuspended"
+                                        href="/cashier/pos"
+                                        class="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-muted flex items-center gap-2 transition-colors duration-150"
+                                        role="menuitem"
+                                        @click="dropdownOpen = false"
+                                    >
+                                        <NavIcon name="cart" />
+                                        Buka Kasir
+                                    </Link>
+
+                                    <button
+                                        @click="logout"
+                                        class="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2 transition-colors duration-150"
+                                        role="menuitem"
+                                    >
+                                        <NavIcon name="logout" />
+                                        Keluar
+                                    </button>
+                                </div>
+                            </Transition>
+                        </div>
                     </div>
                 </div>
             </header>
