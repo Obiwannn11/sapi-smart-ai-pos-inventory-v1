@@ -1,10 +1,11 @@
 <script setup>
-import { usePage, router, Link } from '@inertiajs/vue3';
+import { usePage, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
+import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
 import { ref, computed, h, onMounted, onBeforeUnmount, defineComponent } from 'vue';
-import { clearPrivateOfflineData } from '@/services/offlineSession';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
 import { BUSINESS_TZ } from '@/support/date';
 
 const page = usePage();
@@ -290,11 +291,15 @@ const handleClickOutside = (e) => {
 onMounted(() => document.addEventListener('mousedown', handleClickOutside));
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside));
 
-// Kas dipakai bergantian: buang cache POS + katalog sebelum keluar.
-const logout = async () => {
-    await clearPrivateOfflineData();
-    router.post('/logout');
-};
+// Ditanya dulu, sama seperti di cangkang kasir. Owner memakai perangkat yang
+// sama dengan kasirnya, jadi cache miliknya juga ikut dibersihkan — itu
+// terjadi di dalam aksi yang sudah dijawab.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    title: 'Keluar dari akun?',
+    message: 'Sesi Anda di perangkat ini ditutup dan data offline yang tersimpan (halaman, katalog, harga) dibersihkan — mesin kasir dipakai bergantian. Penjualan offline yang belum terkirim tetap tersimpan dan baru dikirim setelah Anda masuk lagi.',
+});
 </script>
 
 <template>
@@ -545,6 +550,7 @@ const logout = async () => {
             <GraceModal />
 
             <FlashMessage />
+            <LogoutConfirmDialog />
 
             <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7 scrollbar-main">
                 <slot />

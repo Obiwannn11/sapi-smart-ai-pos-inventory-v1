@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
+import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
 
 defineProps({
     email: { type: String, required: true },
@@ -10,10 +12,17 @@ const page = usePage();
 const flash = computed(() => page.props.flash?.success);
 
 const resendForm = useForm({});
-const logoutForm = useForm({});
 
 const resend = () => resendForm.post('/verifikasi-email/kirim-ulang', { preserveScroll: true });
-const logout = () => logoutForm.post('/logout');
+// Belum ada sesi kasir di sini — akunnya bahkan belum terverifikasi — jadi
+// tidak ada cache offline yang perlu dibersihkan.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    clearOfflineData: false,
+    title: 'Keluar dari akun?',
+    message: 'Anda akan keluar dan kembali ke halaman masuk. Verifikasi email bisa dilanjutkan setelah masuk lagi.',
+});
 </script>
 
 <template>
@@ -60,6 +69,8 @@ const logout = () => logoutForm.post('/logout');
             <button class="mt-4 text-sm font-medium text-primary hover:text-primary/80 transition-colors" @click="logout">
                 Keluar
             </button>
+
+            <LogoutConfirmDialog />
         </div>
     </div>
 </template>

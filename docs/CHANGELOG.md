@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
 | 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
 | 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
@@ -256,6 +257,37 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Keluar Selalu Ditanya Dulu, di Semua Jenis Akun
+- **Tanggal:** 2026-09-11
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Lima tombol keluar di aplikasi ini, dan sampai sekarang kelimanya langsung menutup sesi pada ketukan pertama: topbar kasir, topbar owner, sidebar konsol platform, halaman Rekap Kas, dan halaman verifikasi email. Keluar tidak bisa diurungkan — sesinya hilang, cache halaman dibersihkan, dan orangnya harus mengetik ulang sandi, sering di depan antrean.
+
+  Dua di antaranya bahkan bertetangga dengan tombol yang ditekan puluhan kali sehari. Di Rekap Kas, "Logout" duduk tepat di bawah "Buka Sesi Baru" dan seukuran dengannya; di topbar kasir ia satu pita dengan tombol Riwayat dan Kas. Sekarang kelimanya bertanya dulu lewat `ConfirmDialog` yang sudah dipakai di tempat lain.
+
+  **Satu keadaan, bukan lima.** `useLogoutConfirm` menyimpan permintaannya di lingkup modul — singleton seperti `useFullscreen` dan `useFlash` — jadi tombol dan dialognya tidak harus tinggal di komponen yang sama. Tombol mana pun memanggil `requestLogout()`; `LogoutConfirmDialog` dipasang sekali per cangkang. Rekap Kas sengaja TIDAK memasangnya sendiri: halaman itu sudah merender `CashierTopbar`, yang membawanya, dan dialog kedua hanya akan menumpuk di atas yang pertama.
+
+  **Kalimatnya berbeda karena taruhannya berbeda.** Di cangkang penyewa, keluar juga membersihkan cache halaman dan katalog — mesin kasir dipakai bergantian — dan penjualan offline yang belum terkirim tinggal di perangkat sampai pemiliknya masuk lagi. Itu disebutkan apa adanya. Konsol platform tidak menyimpan cache penyewa dan halaman verifikasi email belum punya sesi kasir sama sekali, jadi keduanya memakai `clearOfflineData: false` dan kalimat yang lebih pendek.
+
+  **Pembersihan cache pindah ke dalam aksi yang sudah dijawab.** Sebelumnya `clearPrivateOfflineData()` dipanggil di tiga berkas terpisah tepat sebelum `router.post('/logout')`; kini ia hidup di satu tempat dan hanya berjalan setelah dialognya dijawab "Keluar". Batal tidak menyentuh apa pun. Backdrop dan tombol Batal juga tidak berfungsi selama permintaannya sedang jalan — sesinya sudah dalam perjalanan untuk ditutup.
+- **Alasan:**
+  Permintaan pemilik 2026-09-11: konfirmasi keluar untuk semua jenis akun. Alasan yang sama seperti dialog hapus keranjang — di layar sentuh, aksi tak-terurungkan yang bersebelahan dengan aksi rutin akan tertekan tanpa sengaja.
+- **File Terdampak:**
+  - `resources/js/composables/useLogoutConfirm.js` — baru; singleton, memegang permintaan + status kirim, memanggil `clearPrivateOfflineData()` hanya setelah dijawab, `onError` mengembalikan keadaan supaya tombolnya tidak mati selamanya
+  - `resources/js/Components/LogoutConfirmDialog.vue` — baru; membungkus `ConfirmDialog` (varian `warning`), judul dan kalimat datang dari pemanggil
+  - `resources/js/Components/CashierTopbar.vue` — tombol keluar lewat `requestLogout()`; dialognya dipasang di sini untuk seluruh cangkang kasir
+  - `resources/js/Layouts/OwnerLayout.vue` — sama, dari dropdown akun di topbar
+  - `resources/js/Layouts/PlatformLayout.vue` — sama, dengan `endpoint: '/platform/logout'` dan tanpa pembersihan cache
+  - `resources/js/Pages/Cashier/CashDrawerSummary.vue` — tombolnya saja; dialognya diwarisi dari topbar
+  - `resources/js/Pages/Auth/VerifyEmail.vue` — `logoutForm` dilepas, diganti `requestLogout()`
+  - `tests/Feature/Auth/LogoutConfirmationTest.php` — baru; menjaga tidak ada berkas yang memanggil rute logout langsung, dialognya dipasang sekali per cangkang (nol di Rekap Kas), dan pembersihan cache hanya di cangkang penyewa
+- **Catatan Migrasi:**
+  Rutenya tidak berubah: `POST /logout` dan `POST /platform/logout` tetap seperti semula, dan tes HTTP-nya (`AuthTest`, `PlatformTwoFactorTest`) tidak disentuh. Yang berubah hanya siapa yang memanggilnya.
+
+---
 
 ### [ADDITION] Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya
 - **Tanggal:** 2026-09-10

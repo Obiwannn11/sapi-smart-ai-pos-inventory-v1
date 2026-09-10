@@ -34,8 +34,12 @@ test('nama dan email akun ikut props tiap halaman owner', function () {
 test('kaki sidebar owner tidak lagi memuat identitas atau tombol keluar', function () {
     $layout = file_get_contents(resource_path('js/Layouts/OwnerLayout.vue'));
 
+    // Yang dijaga adalah tombol keluar LAMA di kaki sidebar, dikenali dari
+    // aria-label persisnya — bukan sekadar kalimat "Keluar dari akun",
+    // yang kini juga jadi judul dialog konfirmasi keluar, dan bukan pula
+    // `roleLabel`, yang sekarang dibaca oleh dropdown.
     expect($layout)->not->toContain('User footer')
-        ->and($layout)->not->toContain('Keluar dari akun');
+        ->and($layout)->not->toContain('aria-label="Keluar dari akun"');
 });
 
 test('topbar owner membuka menu akun berisi tautan kasir dan tombol keluar', function () {

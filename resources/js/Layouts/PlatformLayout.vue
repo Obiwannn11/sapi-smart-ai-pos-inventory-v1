@@ -1,6 +1,8 @@
 <script setup>
-import { usePage, router, Link } from '@inertiajs/vue3';
+import { usePage, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
+import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
 import { computed, ref, h, defineComponent, onMounted, onBeforeUnmount } from 'vue';
 
 const page = usePage();
@@ -177,7 +179,16 @@ const breadcrumb = computed(() => {
 
 const userInitial = computed(() => platformUser.value?.name?.charAt(0)?.toUpperCase() ?? 'P');
 
-const logout = () => router.post('/platform/logout');
+// Konsol platform tidak menyimpan cache offline milik penyewa, jadi yang
+// hilang di sini hanya sesinya — kalimatnya ikut lebih pendek.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    endpoint: '/platform/logout',
+    clearOfflineData: false,
+    title: 'Keluar dari konsol platform?',
+    message: 'Sesi admin platform Anda ditutup dan Anda harus masuk lagi untuk melanjutkan.',
+});
 
 // Sesi akun dipindah dari footer sidebar ke topbar, meniru trigger avatar +
 // dropdown di CashierTopbar — satu pola yang sama untuk menu akun di seluruh
@@ -399,6 +410,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutsi
             </header>
 
             <FlashMessage />
+            <LogoutConfirmDialog />
 
             <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7 scrollbar-main">
                 <slot />

@@ -2,7 +2,7 @@
 import { router, Head } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
-import { clearPrivateOfflineData } from '@/services/offlineSession';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
 import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
@@ -33,10 +33,15 @@ const goToCashDrawer = () => {
     router.get('/cashier/cash-drawer');
 };
 
-const logout = async () => {
-    await clearPrivateOfflineData();
-    router.post('/logout');
-};
+// Tombol ini duduk tepat di bawah "Buka Sesi Baru" dan seukuran dengannya.
+// Salah tekan di akhir sif berarti kasir berikutnya harus mencari sandinya.
+// Dialognya sudah dipasang oleh <CashierTopbar> di atas.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    title: 'Keluar dari kasir?',
+    message: 'Sesi Anda di perangkat ini ditutup dan data offline yang tersimpan (halaman, katalog, harga) dibersihkan — mesin kasir dipakai bergantian. Penjualan offline yang belum terkirim tetap tersimpan dan baru dikirim setelah Anda masuk lagi.',
+});
 </script>
 
 <template>

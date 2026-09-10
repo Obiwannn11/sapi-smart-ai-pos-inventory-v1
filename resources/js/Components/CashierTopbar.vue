@@ -8,11 +8,12 @@ import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
 import TapTooltip from '@/Components/TapTooltip.vue';
+import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
 import { useFullscreen } from '@/composables/useFullscreen';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useFlash } from '@/composables/useFlash';
-import { clearPrivateOfflineData } from '@/services/offlineSession';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
 import { BUSINESS_TZ } from '@/support/date';
 
 defineProps({
@@ -228,11 +229,15 @@ const handleClickOutside = (e) => {
 onMounted(() => document.addEventListener('mousedown', handleClickOutside));
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside));
 
-// Drop cached POS page + catalog before leaving: the till is shared hardware.
-const logout = async () => {
-    await clearPrivateOfflineData();
-    router.post('/logout');
-};
+// The till is shared hardware, and this button sits on the same strip as
+// buttons pressed dozens of times a shift — so it asks first. Clearing the
+// cached POS page + catalog now happens inside the confirmed action.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    title: 'Keluar dari kasir?',
+    message: 'Sesi Anda di perangkat ini ditutup dan data offline yang tersimpan (halaman, katalog, harga) dibersihkan — mesin kasir dipakai bergantian. Penjualan offline yang belum terkirim tetap tersimpan dan baru dikirim setelah Anda masuk lagi.',
+});
 </script>
 
 <template>
@@ -485,6 +490,10 @@ const logout = async () => {
         </div>
 
         <PrinterSetupModal :show="showPrinterSetup" @close="showPrinterSetup = false" />
+
+        <!-- Satu dialog untuk seluruh cangkang kasir: halaman yang
+             memakai topbar ini tidak perlu memasangnya sendiri. -->
+        <LogoutConfirmDialog />
 
         <!-- Pelunasan tagihan terbuka. Ikut topbar supaya jalannya sama dari
              halaman kasir mana pun, bukan hanya dari POS. -->
