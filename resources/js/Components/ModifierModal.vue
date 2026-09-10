@@ -4,6 +4,13 @@ import { ref, computed, watch } from 'vue';
 const props = defineProps({
     show: { type: Boolean, default: false },
     product: Object,
+    /**
+     * Baris keranjang yang sedang diubah, bila modal dibuka lewat tombol "Ubah"
+     * dan bukan lewat kartu produk. Bentuknya `{ variant_id, modifiers, qty }`:
+     * pilihan yang sudah ada dicentang lebih dulu, jadi kasir hanya menyentuh
+     * yang berubah — bukan menyusun ulang pesanan dari nol.
+     */
+    initial: { type: Object, default: null },
 });
 
 const emit = defineEmits(['close', 'confirm']);
@@ -11,20 +18,56 @@ const emit = defineEmits(['close', 'confirm']);
 const selectedVariantId = ref(null);
 const selectedModifiers = ref({}); // key: group_id → value: modifier_id (single) or [ids] (multiple)
 
+const isEditing = computed(() => props.initial !== null);
+
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
 };
 
-// Reset state when product changes
-watch(() => props.product, (p) => {
-    if (p) {
-        // Auto-select first variant if only one
-        if (p.variants && p.variants.length === 1) {
-            selectedVariantId.value = p.variants[0].id;
-        } else {
-            selectedVariantId.value = null;
+/**
+ * Kebalikan dari `flatModifiers`: daftar rata milik sebuah baris keranjang
+ * dikembalikan ke bentuk "satu jawaban per grup" yang dipakai kontrolnya.
+ */
+const groupSelectionsFrom = (modifiers) => {
+    const chosen = new Set((modifiers || []).map((m) => m.id));
+    const result = {};
+
+    for (const group of props.product?.modifier_groups || []) {
+        const ids = (group.modifiers || []).filter((m) => chosen.has(m.id)).map((m) => m.id);
+        if (ids.length === 0) {
+            continue;
         }
-        selectedModifiers.value = {};
+        result[group.id] = group.is_multiple ? ids : ids[0];
+    }
+
+    return result;
+};
+
+const seedSelection = () => {
+    if (!props.product) {
+        return;
+    }
+
+    if (props.initial) {
+        selectedVariantId.value = props.initial.variant_id ?? null;
+        selectedModifiers.value = groupSelectionsFrom(props.initial.modifiers);
+
+        return;
+    }
+
+    // Auto-select first variant if only one
+    selectedVariantId.value = props.product.variants?.length === 1
+        ? props.product.variants[0].id
+        : null;
+    selectedModifiers.value = {};
+};
+
+// Disemai saat modal DIBUKA, bukan hanya saat produknya berganti: mengubah dua
+// baris produk yang sama berturut-turut tidak mengganti `product`, dan modal
+// yang tidak menyemai ulang akan menampilkan centang milik baris sebelumnya.
+watch([() => props.show, () => props.product], ([show]) => {
+    if (show) {
+        seedSelection();
     }
 }, { immediate: true });
 
@@ -112,7 +155,10 @@ const confirm = () => {
         variant_id: selectedVariant.value.id,
         variant_name: `${props.product.name} - ${selectedVariant.value.name}`,
         unit_price: effectivePrice(selectedVariant.value),
-        qty: 1,
+        // Mengubah pesanan tidak mengubah jumlahnya: kasir menaikkan qty di
+        // keranjang, dan menyetelnya balik ke 1 di sini akan menghapus
+        // pekerjaan itu diam-diam.
+        qty: props.initial?.qty ?? 1,
         modifiers: flatModifiers.value,
     });
 
@@ -142,7 +188,10 @@ const close = () => {
                 <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
                     <!-- Header -->
                     <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-gray-800">{{ product.name }}</h3>
+                        <div>
+                            <p v-if="isEditing" class="text-xs font-medium text-primary">Ubah pesanan</p>
+                            <h3 class="text-lg font-semibold text-gray-800">{{ product.name }}</h3>
+                        </div>
                         <button @click="close" class="text-gray-400 hover:text-gray-600">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -279,7 +328,7 @@ const close = () => {
                                 :disabled="!isValid"
                                 class="flex-1 py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                Tambah ke Cart
+                                {{ isEditing ? 'Simpan Perubahan' : 'Tambah ke Cart' }}
                             </button>
                         </div>
                     </div>

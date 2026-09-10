@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
 | 2026-09-09 | ADDITION | Stok | "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir) |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
@@ -253,6 +254,39 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Empat keluhan pemilik tentang satu panel yang sama, dan tiga di antaranya berpangkal pada ikon yang tidak mengaku apa tugasnya.
+
+  - **Catatan memakai ikon pensil; hapus memakai tanda silang.** Pensil adalah lambang "ubah" di mana pun, jadi tombol catatan terbaca sebagai tombol ubah — untuk fitur yang saat itu belum ada. Tanda silang terbaca sebagai "tutup", bukan "hapus". Sekarang tiga bentuk untuk tiga tugas: kertas bercatat, pensil, tong sampah. Ketiganya jadi sasaran sentuh 32px dengan `aria-label` dan label yang **juga muncul di sentuhan** lewat `TapTooltip` — komponen yang sudah dipakai topbar kasir, bukan `title` yang di tablet tidak pernah tampil.
+  - **Baris yang sudah masuk keranjang tidak bisa diubah sama sekali.** Salah pilih ukuran, atau pelanggan berubah pikiran soal es, berarti hapus lalu susun ulang pesanan dari nol — di depan orangnya. Tombol Ubah membuka `ModifierModal` yang sama persis seperti saat memesan, hanya saja varian dan modifier baris itu **sudah tercentang duluan**; kasir tinggal menyentuh yang berubah.
+  - **Hapus item terjadi seketika**, padahal tombolnya duduk beberapa piksel dari tombol +/− dan keranjang tidak punya urungkan. Sekarang lewat `ConfirmDialog` yang menyebut nama barangnya.
+  - **"Kosongkan" hanya tulisan kecil**, dan konfirmasinya inline serta pudar sendiri setelah 2,5 detik. Di layar sentuh itu dua kali salah: tulisan polos tidak memberi tanda bahwa ia bisa ditekan, dan jawaban yang menghilang sendiri menghukum kasir yang menoleh sebentar ke pelanggan. Jadi tombol betulan — berbingkai, dengan ikon tong sampah — dan dialog yang menunggu dijawab.
+
+  Lima keputusan yang membentuk jalur "Ubah", karena mengganti isi baris tidak sesederhana menambah baris:
+
+  - **Produk tanpa pilihan tidak diberi tombol Ubah.** Satu varian, tanpa grup modifier: modal yang terbuka hanya untuk memperlihatkan satu-satunya pilihan adalah jalan buntu, bukan fitur.
+  - **Jumlahnya tidak direset ke 1.** Modal selalu mengembalikan `qty: 1` saat memesan; menyetel balik jumlah yang sudah dinaikkan kasir berarti menghapus pekerjaannya diam-diam.
+  - **Harga khusus dilepas kalau variannya berganti** (`[BL-018]`). Harga yang disepakati melekat pada barang yang disepakati; begitu barangnya berubah, kesepakatan itu tidak lagi punya subjek. Selama variannya tetap, harga dan alasannya ikut utuh.
+  - **Hasil ubahan yang jadi kembar persis dengan baris lain digabung** — varian, modifier, catatan, dan harga khusus semuanya sama. Dua baris identik yang harus dijumlahkan sendiri oleh kasir bukan hasil yang benar. Harga khusus ikut dibandingkan: baris berharga khusus bukan baris yang sama dengan baris berharga normal.
+  - **Stok diperiksa ulang, dan baris yang sedang diubah tidak menghitung dirinya sendiri.** Isinya akan diganti, bukan ditambahkan; kalau ia ikut dihitung, mengubah catatan pada baris yang memakai seluruh sisa stok akan ditolak karena stok yang ia pegang sendiri.
+- **Alasan:**
+  Permintaan pemilik 2026-09-09, disertai tangkapan layar keranjangnya. Alasan yang sama menopang keempatnya: perangkatnya tablet dan layar sentuh, dan di sana ikon yang salah baca atau tombol yang tidak terlihat seperti tombol tidak berhenti pada kebingungan — ia berhenti pada pesanan yang hilang di depan pelanggan.
+- **File Terdampak:**
+  - `resources/js/Components/CartItem.vue` — tiga ikon berbeda dengan `TapTooltip` dan `aria-label`; prop `canEdit`, emit `edit`; tombol catatan punya keadaan aktif, dan labelnya mengaku "Hapus catatan" saat menutupnya memang menghapus isinya
+  - `resources/js/Components/ModifierModal.vue` — prop `initial` (opsional) menyemai varian + modifier baris yang diubah; penyemaian pindah ke saat modal **dibuka**, bukan saat produknya berganti; judul dan tombolnya berganti kata di mode ubah
+  - `resources/js/Pages/Cashier/POS.vue` — `requestEditCartItem` / `applyCartEdit`, konfirmasi hapus baris, "Kosongkan" jadi tombol berdialog; konfirmasi inline berikut timernya dibuang
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema maupun dependensi. `initial` opsional, jadi `TransactionEditModal` yang memakai ulang `ModifierModal` tidak berubah perilakunya — kecuali satu perbaikan ikutan yang datang dari pindahnya penyemaian: memilih produk yang **sama** dua kali berturut-turut kini mengosongkan centangnya kembali, dulu ia menyisakan pilihan dari sesi sebelumnya.
+
+  **Belum diuji otomatis.** Repo ini belum punya perkakas uji untuk lapisan Vue (tidak ada Vitest maupun Testing Library), dan menambahkannya berarti menambah dependensi — di luar wewenang perubahan ini. Yang dijalankan: `npm run build` bersih, lalu ketiga komponen dipasang di harness sementara dan ditelusuri langsung di peramban — penyemaian centang, muatan yang diemit saat menyimpan (varian pindah, modifier dilepas, `qty` utuh), dan dialog konfirmasi yang menyebut nama barangnya.
+
+---
 
 ### [DECISION] Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu
 - **Tanggal:** 2026-09-10

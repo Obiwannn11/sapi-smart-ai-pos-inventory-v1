@@ -6,6 +6,7 @@ import { useFlash } from '@/composables/useFlash';
 import ProductCard from '@/Components/ProductCard.vue';
 import CartItem from '@/Components/CartItem.vue';
 import ModifierModal from '@/Components/ModifierModal.vue';
+import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
@@ -416,11 +417,15 @@ const getCartQtyForVariant = (variantId) => {
         .reduce((sum, c) => sum + c.qty, 0);
 };
 
+/** Tanda tangan pilihan modifier sebuah baris, untuk membandingkan dua baris. */
+const modifierSignature = (line) =>
+    JSON.stringify((line.modifiers || []).map(m => m.id).sort());
+
 const addToCart = (item) => {
     // item dengan catatan berbeda = baris terpisah
     const existingIdx = cart.value.findIndex(c =>
         c.variant_id === item.variant_id &&
-        JSON.stringify(c.modifiers.map(m => m.id).sort()) === JSON.stringify((item.modifiers || []).map(m => m.id).sort()) &&
+        modifierSignature(c) === modifierSignature(item) &&
         (c.notes || '') === (item.notes || '')
     );
 
@@ -456,6 +461,161 @@ const updateCartNotes = (index, notes) => {
 
 const removeCartItem = (index) => {
     cart.value.splice(index, 1);
+};
+
+// --- Hapus satu baris ---
+// Selalu lewat konfirmasi. Tombolnya duduk beberapa piksel dari tombol +/-,
+// dan salah tekan di depan pelanggan berarti pesanan yang sudah disusun hilang
+// tanpa jejak — tidak ada urungkan di keranjang.
+const pendingRemoveIndex = ref(null);
+
+const pendingRemoveItem = computed(() => (
+    pendingRemoveIndex.value === null ? null : (cart.value[pendingRemoveIndex.value] ?? null)
+));
+
+const requestRemoveCartItem = (index) => {
+    pendingRemoveIndex.value = index;
+};
+
+const cancelRemoveCartItem = () => {
+    pendingRemoveIndex.value = null;
+};
+
+const confirmRemoveCartItem = () => {
+    if (pendingRemoveIndex.value === null) {
+        return;
+    }
+
+    removeCartItem(pendingRemoveIndex.value);
+    pendingRemoveIndex.value = null;
+};
+
+// --- Ubah baris yang sudah di keranjang ---
+
+const findProductForVariant = (variantId) => (
+    catalogProducts.value.find(
+        (product) => (product.variants || []).some((v) => v.id === variantId)
+    ) ?? null
+);
+
+/**
+ * Sebuah baris layak diberi tombol Ubah hanya kalau memang ada yang bisa
+ * dipilih lain: varian kedua, atau grup modifier.
+ */
+const canEditCartLine = (item) => {
+    const product = findProductForVariant(item.variant_id);
+    if (!product) {
+        return false;
+    }
+
+    return (product.variants || []).length > 1 || (product.modifier_groups || []).length > 0;
+};
+
+const editingCartIndex = ref(null);
+
+/** Pilihan baris yang sedang diubah, untuk dicentangkan lebih dulu di modal. */
+const editingSelection = computed(() => {
+    if (editingCartIndex.value === null) {
+        return null;
+    }
+
+    const line = cart.value[editingCartIndex.value];
+    if (!line) {
+        return null;
+    }
+
+    return {
+        variant_id: line.variant_id,
+        modifiers: line.modifiers || [],
+        qty: line.qty,
+    };
+});
+
+const requestEditCartItem = (index) => {
+    const line = cart.value[index];
+    const product = findProductForVariant(line.variant_id);
+
+    if (!product) {
+        showFlash('Produk ini sudah tidak ada di katalog, pilihannya tidak bisa diubah.', 'error');
+
+        return;
+    }
+
+    editingCartIndex.value = index;
+    selectedProduct.value = product;
+    showModifierModal.value = true;
+};
+
+const closeModifierModal = () => {
+    showModifierModal.value = false;
+    editingCartIndex.value = null;
+};
+
+/** Satu pintu keluar modal: menambah baris baru, atau menimpa baris yang diubah. */
+const submitModifierModal = (item) => {
+    if (editingCartIndex.value === null) {
+        addToCart(item);
+
+        return;
+    }
+
+    applyCartEdit(editingCartIndex.value, item);
+};
+
+const applyCartEdit = (index, item) => {
+    const current = cart.value[index];
+    if (!current) {
+        return;
+    }
+
+    const qty = item.qty ?? current.qty;
+    const stock = getVariantStock(item.variant_id);
+    // Baris yang sedang diubah tidak menghitung stoknya sendiri: isinya akan
+    // diganti, bukan ditambahkan.
+    const otherQty = cart.value.reduce(
+        (sum, line, i) => (i === index || line.variant_id !== item.variant_id ? sum : sum + line.qty),
+        0,
+    );
+
+    if (otherQty + qty > stock) {
+        showFlash(`Stok tidak cukup. Tersedia: ${stock}, di keranjang: ${otherQty}`, 'error');
+
+        return;
+    }
+
+    const variantChanged = current.variant_id !== item.variant_id;
+
+    const updated = {
+        ...current,
+        ...item,
+        qty,
+        notes: current.notes || '',
+        // Harga khusus melekat pada barang yang harganya disepakati ([BL-018]).
+        // Begitu variannya berganti, kesepakatan itu tidak lagi punya subjek.
+        override_unit_price: variantChanged ? null : (current.override_unit_price ?? null),
+        discount_reason: variantChanged ? null : (current.discount_reason ?? null),
+    };
+
+    // Hasil ubahan bisa jadi kembar persis dengan baris lain. Menyatukannya
+    // lebih jujur daripada dua baris identik yang harus dijumlahkan sendiri
+    // oleh kasir — dan harga khusus ikut dibandingkan, karena baris berharga
+    // khusus bukan baris yang sama dengan baris berharga normal.
+    const twinIdx = cart.value.findIndex((line, i) => (
+        i !== index
+        && line.variant_id === updated.variant_id
+        && modifierSignature(line) === modifierSignature(updated)
+        && (line.notes || '') === (updated.notes || '')
+        && (line.override_unit_price ?? null) === (updated.override_unit_price ?? null)
+    ));
+
+    if (twinIdx >= 0) {
+        cart.value[twinIdx].qty += qty;
+        cart.value.splice(index, 1);
+
+        return;
+    }
+
+    cart.value[index] = updated;
 };
 
 // --- Upsell ---
@@ -630,29 +790,25 @@ const undoUpsell = (suggestion) => {
     retractUpsell(suggestion);
 };
 
-// --- Inline "Kosongkan" confirmation ---
+// --- "Kosongkan" ---
+// Dulu konfirmasinya inline dan pudar sendiri setelah 2,5 detik. Di layar
+// sentuh itu dua kali salah: pemicunya cuma teks kecil yang tidak terbaca
+// sebagai tombol, dan jawabannya bisa hilang sebelum kasir sempat membacanya.
 const confirmingClear = ref(false);
-let _clearTimer = null;
 
 const requestClearCart = () => {
     confirmingClear.value = true;
-    clearTimeout(_clearTimer);
-    _clearTimer = setTimeout(() => { confirmingClear.value = false; }, 2500);
 };
 
 const cancelClearCart = () => {
     confirmingClear.value = false;
-    clearTimeout(_clearTimer);
 };
 
 const clearCart = () => {
     cart.value = [];
     resetUpsell();
     confirmingClear.value = false;
-    clearTimeout(_clearTimer);
 };
-
-onUnmounted(() => clearTimeout(_clearTimer));
 
 // --- Checkout ---
 
@@ -1329,30 +1485,21 @@ onUnmounted(() => {
                             {{ cartItemCount }}
                         </span>
                     </div>
-                    <Transition
-                        enter-active-class="transition-all duration-150 ease-out"
-                        enter-from-class="opacity-0 scale-95"
-                        enter-to-class="opacity-100 scale-100"
-                        leave-active-class="transition-all duration-100 ease-in"
-                        leave-from-class="opacity-100 scale-100"
-                        leave-to-class="opacity-0 scale-95"
-                        mode="out-in"
+                    <!-- Tombol betulan, bukan teks: di layar sentuh yang tidak
+                         punya hover, tulisan polos tidak memberi tanda apa pun
+                         bahwa ia bisa ditekan. -->
+                    <button
+                        v-if="cart.length > 0"
+                        type="button"
+                        @click="requestClearCart"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 active:scale-95 transition"
                     >
-                        <div v-if="confirmingClear" key="confirm" class="flex items-center gap-1.5">
-                            <span class="text-xs text-muted-foreground">Hapus semua?</span>
-                            <button @click="clearCart" class="text-xs font-semibold text-destructive hover:text-destructive/70 transition">Ya</button>
-                            <span class="text-muted-foreground/40 text-[10px] select-none">·</span>
-                            <button @click="cancelClearCart" class="text-xs text-muted-foreground hover:text-foreground transition">Batal</button>
-                        </div>
-                        <button
-                            v-else-if="cart.length > 0"
-                            key="trigger"
-                            @click="requestClearCart"
-                            class="text-xs text-muted-foreground hover:text-destructive transition"
-                        >
-                            Kosongkan
-                        </button>
-                    </Transition>
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Kosongkan
+                    </button>
                 </div>
 
                 <!-- Cart Items. `min-h-0` wajib: tanpa itu flex item menolak
@@ -1360,37 +1507,20 @@ onUnmounted(() => {
                      tidak bisa digeser turun. -->
                 <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     <template v-if="cart.length > 0">
-                        <div v-for="(item, idx) in cart" :key="`${item.variant_id}-${idx}`">
-                            <CartItem
-                                :item="item"
-                                :index="idx"
-                                @update-qty="updateCartQty"
-                                @update-notes="updateCartNotes"
-                                @remove="removeCartItem"
-                            />
-
-                            <!-- Harga khusus ([BL-018]). Hanya owner yang punya
-                                 jalan ke bawah lantai untung, dan alasannya
-                                 wajib. -->
-                            <div v-if="isOwner" class="px-3 pb-2 -mt-1">
-                                <button
-                                    v-if="!item.override_unit_price"
-                                    type="button"
-                                    class="text-[11px] font-medium text-primary hover:text-primary/80"
-                                    @click="openOverride(idx)"
-                                >
-                                    Harga khusus
-                                </button>
-                                <div v-else class="flex items-center gap-2 text-[11px]">
-                                    <span class="text-amber-700">
-                                        Harga khusus — “{{ item.discount_reason }}”
-                                    </span>
-                                    <button type="button" class="text-gray-400 hover:text-gray-600" @click="clearOverride(idx)">
-                                        batalkan
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        <CartItem
+                            v-for="(item, idx) in cart"
+                            :key="`${item.variant_id}-${idx}`"
+                            :item="item"
+                            :index="idx"
+                            :can-edit="canEditCartLine(item)"
+                            :can-set-special-price="isOwner"
+                            @update-qty="updateCartQty"
+                            @update-notes="updateCartNotes"
+                            @edit="requestEditCartItem"
+                            @remove="requestRemoveCartItem"
+                            @special-price="openOverride"
+                            @clear-special-price="clearOverride"
+                        />
                     </template>
                     <div v-else class="flex flex-col items-center justify-center h-full text-gray-300">
                         <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1521,8 +1651,29 @@ onUnmounted(() => {
         <ModifierModal
             :show="showModifierModal"
             :product="selectedProduct"
-            @close="showModifierModal = false"
-            @confirm="addToCart"
+            :initial="editingSelection"
+            @close="closeModifierModal"
+            @confirm="submitModifierModal"
+        />
+
+        <ConfirmDialog
+            :show="pendingRemoveIndex !== null"
+            title="Hapus item ini?"
+            :message="`“${pendingRemoveItem?.variant_name ?? 'Item ini'}” akan dikeluarkan dari keranjang.`"
+            confirm-text="Hapus"
+            cancel-text="Batal"
+            @confirm="confirmRemoveCartItem"
+            @cancel="cancelRemoveCartItem"
+        />
+
+        <ConfirmDialog
+            :show="confirmingClear"
+            title="Kosongkan keranjang?"
+            :message="`${cartItemCount} item akan dihapus dan pesanan harus disusun ulang dari awal.`"
+            confirm-text="Kosongkan"
+            cancel-text="Batal"
+            @confirm="clearCart"
+            @cancel="cancelClearCart"
         />
 
         <!-- Harga khusus ([BL-018]) -->
