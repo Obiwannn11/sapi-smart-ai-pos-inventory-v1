@@ -6,9 +6,9 @@ import { computed, ref, watch } from 'vue';
  *
  * Ikon "gunung" abu-abu yang dulu dipakai membuat semua produk tak bergambar
  * terlihat identik — di kisi POS itu berarti sederet kotak kembar yang harus
- * dibaca teksnya satu per satu. Huruf pertama plus warna yang diturunkan dari
- * nama memberi tiap produk bentuk yang bisa dikenali sekilas, dan warnanya
- * tetap sama di setiap halaman karena berasal dari nama, bukan dari acak.
+ * dibaca teksnya satu per satu. Huruf pertama tiap kata memberi produk bentuk
+ * yang bisa dikenali sekilas, di atas satu nada hijau merek yang sama untuk
+ * semua kartu.
  *
  * Komponen ini mengisi penuh kotak induknya; induklah yang menentukan ukuran
  * dan sudutnya.
@@ -47,27 +47,11 @@ const initials = computed(() => {
 // tidak melimpah keluar.
 const fontScale = computed(() => [42, 30, 22][initials.value.length - 1] ?? 22);
 
-// Nada pastel: cukup kontras untuk hurufnya, cukup lembut untuk berjejer
-// puluhan di satu layar tanpa berisik.
-const tones = [
-    'bg-amber-100 text-amber-700',
-    'bg-sky-100 text-sky-700',
-    'bg-emerald-100 text-emerald-700',
-    'bg-rose-100 text-rose-700',
-    'bg-violet-100 text-violet-700',
-    'bg-teal-100 text-teal-700',
-];
-
-const tone = computed(() => {
-    const name = props.name || '';
-    let hash = 0;
-
-    for (let i = 0; i < name.length; i++) {
-        hash = (hash * 31 + name.charCodeAt(i)) % 100000;
-    }
-
-    return tones[hash % tones.length];
-});
+// Satu nada hijau merek untuk semua produk. Warna acak per nama dulu dipakai
+// agar kartu mudah dibedakan, tapi di kisi POS hasilnya jadi tambal sulam
+// enam warna yang bertabrakan dengan identitas aplikasi; inisiallah yang
+// membedakan produk, bukan warnanya.
+const tone = 'bg-primary/10 text-primary';
 </script>
 
 <template>

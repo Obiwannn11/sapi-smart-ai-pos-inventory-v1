@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
 | 2026-09-09 | ADDITION | Stok | "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir) |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
@@ -252,6 +253,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu
+- **Tanggal:** 2026-09-10
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  `ProductImage` memilih warna penampungnya dengan menghash nama produk ke salah satu dari enam nada pastel — amber, sky, emerald, rose, violet, teal. Sekarang keenamnya diganti satu konstanta: `bg-primary/10 text-primary`, warna yang sama dengan badge "x varian" dan harga di kartu yang memuatnya.
+
+  Yang tidak berubah: inisial tiap kata (`Cafe Latte` → `CL`), penskalaan `cqw`, dan cadangan saat `src` gagal dimuat. Pembedaan antar produk tetap ada — ia memang datang dari hurufnya, bukan dari warnanya.
+
+  Berlaku di dua tempat sekaligus: kisi POS (`ProductCard`) dan daftar produk owner (`Owner/Products/Index.vue`).
+- **Alasan:**
+  Permintaan pemilik 2026-09-10. Alasan warna-per-nama dulu (lihat entri 2026-06-27, "Gambar Produk Pindah ke Rute Ber-Auth…") adalah agar kartu tak bergambar tidak tampil kembar. Yang tidak diperhitungkan: di kisi POS puluhan kartu tampil sekaligus, dan enam nada acak di satu layar terbaca sebagai tambal sulam yang bertabrakan dengan identitas hijau aplikasi — bukan sebagai penanda. Inisial sudah cukup membedakan; warnanya tidak perlu ikut bekerja.
+- **File Terdampak:**
+  - `resources/js/Components/ProductImage.vue` — larik `tones` dan hash nama dihapus, diganti konstanta `tone`; komentar kepala disesuaikan
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema, rute, maupun dependensi. Proyek tidak punya test runner JS, jadi perubahan diperiksa langsung di panel pratinjau pada `/cashier/pos` (tenant Kopi Nusantara, empat produk tanpa gambar) — keempat penampung tampil hijau.
+
+---
 
 ### [ADDITION] "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir)
 - **Tanggal:** 2026-09-09
