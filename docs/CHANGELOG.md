@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
 | 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
 | 2026-09-09 | ADDITION | Kasir | Topbar Kasir Dapat Tombol Layar Penuh, dan Ikon-Ikonnya Berhenti Menyembunyikan Nama dari Layar Sentuh |
@@ -255,6 +256,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya
+- **Tanggal:** 2026-09-10
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Cangkang owner dan cangkang kasir menjawab pertanyaan yang sama — "saya login sebagai siapa, dan ke mana lagi saya bisa pergi" — tapi menjawabnya dengan dua bentuk yang berbeda. Di kasir jawabannya satu dropdown avatar di kanan topbar; di owner ia terpecah tiga: tombol "Kasir" telanjang di topbar, nama + peran di kaki sidebar, dan tombol keluar berupa ikon tanpa teks di sebelahnya.
+
+  Sekarang keduanya memakai bentuk yang sama. Di `OwnerLayout` tombol "Kasir" diganti dropdown avatar + nama, isinya: nama, email, dan peran akun yang sedang login; tautan **Buka Kasir**; lalu **Keluar**. Kaki sidebar dihapus seluruhnya.
+
+  **Yang ikut terbetulkan: keluar tidak lagi hilang di mode rel.** Tombol keluar lama memakai `v-show="sidebarOpen"`, jadi begitu sidebar diciutkan jadi rel ikon selebar 14 (`lg:w-14`), satu-satunya pintu keluar aplikasi lenyap dari layar. Di topbar ia tidak pernah bergantung pada keadaan sidebar.
+
+  **Tautan kasir tetap disembunyikan saat langganan ditangguhkan, tombol keluar tidak.** `EnsureSubscriptionActive` hanya meloloskan `billing.*` dan `logout`; tautan ke POS akan memantul balik ke halaman langganan, jadi `v-if="!isSuspended"` yang dulu menempel di tombol topbar ikut pindah ke item dropdown-nya. Tombol keluar sengaja berada di luar penjagaan itu — pengguna pada tenant yang ditangguhkan justru paling butuh bisa keluar.
+- **Alasan:**
+  Permintaan pemilik 2026-09-10. Dua permukaan yang menjawab pertanyaan sama tidak boleh menjawabnya dengan dua bentuk berbeda; menyatukannya juga membebaskan kaki sidebar dan menyelamatkan tombol keluar dari mode rel.
+- **File Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue` — dropdown akun di topbar (markup dan pola kembar dengan `CashierTopbar.vue`, termasuk penutupan lewat `mousedown` di luar); ikon `cart` + `logout` ditambahkan ke `iconPaths`; blok "User footer" di sidebar dihapus
+  - `tests/Feature/Owner/SidebarAccountMenuTest.php` — baru; memastikan `auth.user.name`/`auth.user.email` sampai ke props, kaki sidebar bersih, dan tautan `/cashier/pos` hanya hidup satu kali di dalam dropdown
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema, rute, maupun dependensi. `roleLabel` dan `userInitial` yang dulu dipakai kaki sidebar tetap ada — keduanya kini dibaca oleh dropdown.
+
+---
 
 ### [ADDITION] Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu
 - **Tanggal:** 2026-09-09
