@@ -7,7 +7,9 @@ import ReceiptModal from '@/Components/ReceiptModal.vue';
 import TransactionSuccessModal from '@/Components/TransactionSuccessModal.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
+import TapTooltip from '@/Components/TapTooltip.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
+import { useFullscreen } from '@/composables/useFullscreen';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
 import { useFlash } from '@/composables/useFlash';
 import { clearPrivateOfflineData } from '@/services/offlineSession';
@@ -21,6 +23,12 @@ const page = usePage();
 
 const showPrinterSetup = ref(false);
 const { canInstall, promptInstall } = useInstallPrompt();
+
+// Layar penuh untuk seluruh cangkang kasir. Ia tinggal di topbar, bukan di POS
+// saja: karena Inertia berpindah halaman tanpa memuat ulang, sekali masuk layar
+// penuh statusnya ikut ke Riwayat, Kas, dan Antrian. `canFullscreen` bernilai
+// false di Safari iPhone — tombolnya disembunyikan, bukan dibiarkan mati.
+const { isFullscreen, canFullscreen, toggleFullscreen } = useFullscreen();
 
 const user = computed(() => page.props.auth?.user ?? null);
 const userName = computed(() => user.value?.name ?? '');
@@ -75,6 +83,8 @@ const iconPaths = {
     back: 'M10 19l-7-7m0 0l7-7m-7 7h18',
     printer: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z',
     install: 'M12 4v12m0 0l-4-4m4 4l4-4M4 20h16',
+    expand: 'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4',
+    compress: 'M4 4l5 5m0-4v4h-4M20 4l-5 5m0-4v4h4M4 20l5-5m0 4v-4h-4M20 20l-5-5m0 4v-4h4',
     queue: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
     bill: 'M9 14h6m-6-4h6m2 9H7a2 2 0 01-2-2V5a2 2 0 012-2h6.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
 };
@@ -241,32 +251,58 @@ const logout = async () => {
     <header class="bg-card border-b border-border shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] px-4 py-2.5 flex items-center justify-between shrink-0 z-10">
         <!-- Left: back-to-POS + brand -->
         <div class="flex items-center gap-2 min-w-0">
-            <Link
-                v-if="!isActive('/cashier/pos')"
-                href="/cashier/pos"
-                :class="[btnBase, btnInactive, 'px-2']"
-                title="Kembali ke Kasir"
-                aria-label="Kembali ke Kasir"
-            >
-                <NavIcon name="back" />
-                <span class="hidden sm:inline">Kasir</span>
-            </Link>
-            <h1 class="text-lg font-bold text-primary truncate">{{ title }}</h1>
+            <TapTooltip v-if="!isActive('/cashier/pos')" label="Kembali ke Kasir">
+                <Link
+                    href="/cashier/pos"
+                    :class="[btnBase, btnInactive, 'px-2']"
+                    aria-label="Kembali ke Kasir"
+                >
+                    <NavIcon name="back" />
+                    <span class="hidden sm:inline">Kasir</span>
+                </Link>
+            </TapTooltip>
+            <!--
+                Di bawah 640px judul menyerah pada tombol-tombol di kanan — pada
+                375px "Riwayat" tinggal "R...", yang tak memberi tahu apa pun.
+                Halaman selain POS sudah punya dua penanda tempat yang lebih
+                jelas: panah kembali di kiri dan tombol nav yang menyala di
+                kanan. Jadi judulnya yang mengalah, bukan judulnya yang dipotong.
+            -->
+            <h1
+                class="text-lg font-bold text-primary truncate"
+                :class="isActive('/cashier/pos') ? '' : 'hidden sm:block'"
+            >{{ title }}</h1>
         </div>
 
         <!-- Right: nav buttons + user avatar dropdown -->
         <div class="flex items-center gap-2">
             <!-- Install PWA (shown only when the browser offers it) -->
-            <button
-                v-if="canInstall"
-                @click="promptInstall"
-                :class="[btnBase, btnInactive]"
-                title="Install aplikasi"
-                aria-label="Install aplikasi"
+            <TapTooltip v-if="canInstall" label="Pasang aplikasi di perangkat ini">
+                <button
+                    @click="promptInstall"
+                    :class="[btnBase, btnInactive]"
+                    aria-label="Install aplikasi"
+                >
+                    <NavIcon name="install" />
+                    <span class="hidden sm:inline">Install</span>
+                </button>
+            </TapTooltip>
+
+            <!-- Layar penuh: ikon saja, labelnya dibawa tooltip supaya topbar
+                 tetap muat di lebar tablet. -->
+            <TapTooltip
+                v-if="canFullscreen"
+                :label="isFullscreen ? 'Keluar dari layar penuh' : 'Layar penuh'"
             >
-                <NavIcon name="install" />
-                <span class="hidden sm:inline">Install</span>
-            </button>
+                <button
+                    @click="toggleFullscreen"
+                    :class="[btnBase, isFullscreen ? btnActive : btnInactive]"
+                    :aria-pressed="isFullscreen"
+                    :aria-label="isFullscreen ? 'Keluar dari layar penuh' : 'Layar penuh'"
+                >
+                    <NavIcon :name="isFullscreen ? 'compress' : 'expand'" />
+                </button>
+            </TapTooltip>
 
             <!-- Tagihan terbuka: tempatnya di sini, bukan di dalam keranjang -->
             <div v-if="openBills.length > 0" ref="openBillsRef" class="relative">
@@ -340,26 +376,30 @@ const logout = async () => {
             </div>
 
             <!-- Printer settings -->
-            <button
-                @click="showPrinterSetup = true"
-                :class="[btnBase, btnInactive]"
-                title="Pengaturan printer"
-                aria-label="Pengaturan printer"
-            >
-                <NavIcon name="printer" />
-            </button>
-
-            <nav class="flex items-center gap-2" aria-label="Navigasi kasir">
-                <Link
-                    v-for="item in navItems"
-                    :key="item.href"
-                    :href="item.href"
-                    :class="[btnBase, isActive(item.href) ? btnActive : btnInactive]"
-                    :aria-current="isActive(item.href) ? 'page' : undefined"
+            <TapTooltip label="Pengaturan printer" align="right">
+                <button
+                    @click="showPrinterSetup = true"
+                    :class="[btnBase, btnInactive]"
+                    aria-label="Pengaturan printer"
                 >
-                    <NavIcon :name="item.icon" />
-                    <span class="hidden sm:inline">{{ item.name }}</span>
-                </Link>
+                    <NavIcon name="printer" />
+                </button>
+            </TapTooltip>
+
+            <!-- Di bawah 640px tautan ini menyusut jadi ikon telanjang, jadi
+                 tooltipnya bukan hiasan — di situlah satu-satunya namanya. -->
+            <nav class="flex items-center gap-2" aria-label="Navigasi kasir">
+                <TapTooltip v-for="item in navItems" :key="item.href" :label="item.name">
+                    <Link
+                        :href="item.href"
+                        :class="[btnBase, isActive(item.href) ? btnActive : btnInactive]"
+                        :aria-current="isActive(item.href) ? 'page' : undefined"
+                        :aria-label="item.name"
+                    >
+                        <NavIcon :name="item.icon" />
+                        <span class="hidden sm:inline">{{ item.name }}</span>
+                    </Link>
+                </TapTooltip>
             </nav>
 
             <!-- User avatar + dropdown -->

@@ -63,6 +63,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 |---|---|---|---|
 | 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
+| 2026-09-09 | ADDITION | Kasir | Topbar Kasir Dapat Tombol Layar Penuh, dan Ikon-Ikonnya Berhenti Menyembunyikan Nama dari Layar Sentuh |
 | 2026-09-09 | ADDITION | Stok | "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir) |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
@@ -305,6 +306,38 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/Components/ProductImage.vue` — larik `tones` dan hash nama dihapus, diganti konstanta `tone`; komentar kepala disesuaikan
 - **Catatan Migrasi:**
   Tidak ada perubahan skema, rute, maupun dependensi. Proyek tidak punya test runner JS, jadi perubahan diperiksa langsung di panel pratinjau pada `/cashier/pos` (tenant Kopi Nusantara, empat produk tanpa gambar) — keempat penampung tampil hijau.
+
+---
+
+### [ADDITION] Topbar Kasir Dapat Tombol Layar Penuh, dan Ikon-Ikonnya Berhenti Menyembunyikan Nama dari Layar Sentuh
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Dua permintaan pemilik 2026-09-09 tentang satu pita yang sama, dan keduanya bermuara pada topbar — bukan pada halaman POS.
+
+  **1. Tombol layar penuh, tinggal di `CashierTopbar`.** Tempatnya di situ bukan karena rapi, melainkan karena Inertia berpindah halaman tanpa memuat ulang dokumen: sekali masuk layar penuh dari POS, keadaannya ikut ke Riwayat, Kas, Antrian, dan Tutup Kas tanpa disentuh lagi. Menaruhnya di POS saja berarti kasir kehilangan layar penuh setiap kali menengok riwayat.
+
+  Logikanya di `useFullscreen`, singleton seperti `useInstallPrompt` dan `useOnlineStatus` di sebelahnya. Tiga hal yang diputuskan di sana:
+
+  - **`document.fullscreenchange` adalah satu-satunya sumber kebenaran.** Ikon dan labelnya tidak pernah disetel oleh penekanan tombol. Kasir yang keluar lewat ESC tidak menekan apa pun, dan permintaan yang ditolak peramban juga tidak; keduanya akan membuat ikon berbohong kalau keadaannya ditulis di tempat penekanan.
+  - **Tombolnya disembunyikan, bukan dibiarkan mati, saat API-nya tidak ada.** Safari di iPhone tidak punya Fullscreen API sama sekali (iPadOS punya), dan `document.fullscreenEnabled` bernilai `false` di dalam iframe tanpa izin. Tombol yang ditekan lalu tidak melakukan apa-apa lebih buruk daripada tombol yang tidak ada.
+  - **F11 tidak bisa dikenali dan itu diterima apa adanya.** F11 adalah layar penuh milik *peramban*; `document.fullscreenElement` tetap `null` sesudahnya, jadi ikonnya akan mengaku "berjendela" padahal layarnya tidak. Tidak ada yang bisa diperbuat dari sisi halaman, dan menekan tombolnya tetap bekerja.
+
+  **2. `TapTooltip`: label yang bisa dibaca kasir di tablet.** Atribut `title` hanya muncul saat kursor melayang — di tablet dan HP, tempat mesin kasir ini sebenarnya dipakai, ia markup mati. Tombol Install, printer, dan panah kembali memakainya; tautan Antrian/Riwayat/Kas bahkan tidak punya nama sama sekali di bawah 640px, karena teksnya `hidden sm:inline` dan `aria-label`-nya tidak ada. Ketiganya sekarang lewat `TapTooltip` + `aria-label` yang sungguhan.
+
+  **Tekan-dan-tahan, bukan ketuk.** Pemicunya adalah tombol yang sudah punya tugas. Ketukan biasa hanya punya dua pilihan, dan keduanya buruk: menjalankan aksinya — sehingga labelnya berkedip *setelah* faktanya, terlambat untuk jadi petunjuk — atau menelan ketukan pertama setiap tombol di topbar, yang pada mesin kasir lebih buruk daripada tidak ada tooltip. Menahan adalah yang dilakukan toolbar Android sendiri, dan ketukan cepat tetap secepat sekarang: tahanan baru diakui pada 450 ms, dan hanya sesudah itu klik yang menyusul ditelan lewat penangan fase *capture*.
+
+  **Judul halaman yang mengalah, bukan judul yang dipotong.** Tombol baru mengambil 42px dari pita yang sudah penuh, dan pada 375px "Riwayat" tersisa jadi "R..." — tiga huruf yang tidak memberi tahu apa pun. Di bawah 640px judulnya karena itu disembunyikan pada halaman selain POS, yang sudah punya dua penanda tempat lebih jelas: panah kembali di kiri dan tombol nav yang menyala di kanan. POS tetap memajang nama tokonya, karena di sana tidak ada panah kembali dan tidak ada tombol nav yang menyala.
+- **Alasan:**
+  Permintaan pemilik 2026-09-09. Alasan yang sama menopang keduanya: perangkatnya tablet dan layar sentuh. Di sana layar penuh benar-benar menambah ruang dagang, dan `title` yang hanya hidup saat hover bukan sekadar kurang berguna — ia tidak pernah tampil sama sekali.
+- **File Terdampak:**
+  - `resources/js/composables/useFullscreen.js` — baru; singleton, `canFullscreen` dihitung sekali di lingkup modul, keadaan hanya ditulis oleh `fullscreenchange`
+  - `resources/js/Components/TapTooltip.vue` — baru; pembungkus pemicu, muncul saat hover / fokus / tekan-dan-tahan, `aria-hidden` karena pemicunya sudah bernama. Berkasnya mendarat lebih dulu lewat `1da2a25` karena keranjang mulai memakainya di jam yang sama; rancangannya dijelaskan di sini
+  - `resources/js/Components/CashierTopbar.vue` — tombol layar penuh; ikon `expand`/`compress`; Install, printer, panah kembali, dan tautan nav dibungkus `TapTooltip`; `aria-label` untuk tautan nav yang sebelumnya tanpa nama di bawah 640px; judul disembunyikan di bawah 640px pada halaman selain POS
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema maupun dependensi. Ketujuh halaman yang memakai `CashierTopbar` (POS, Riwayat, Kas, Tutup Kas, Rekap Kas, Antrian, Billing/Locked) mendapat keduanya sekaligus — tidak ada yang perlu dipasang per halaman.
 
 ---
 
