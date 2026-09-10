@@ -21,6 +21,8 @@ const props = defineProps({
     badges: Array,
     // Sinyal pagi ([BL-105] butir 3) — null selama masih dimuat.
     pressedToday: { type: Object, default: null },
+    // Sisi "Bulan Ini" dari kartu yang sama — null selama masih dimuat.
+    rescueMonth: { type: Object, default: null },
     recentTransactions: Array,
     subscription: Object,
 });
@@ -48,6 +50,76 @@ const hasPaymentRecap = computed(() =>
     (props.metrics.today_by_payment_method?.length ?? 0) > 0
     || (props.metrics.month_by_payment_method?.length ?? 0) > 0
 );
+
+/**
+ * Penyelamat Stok: satu kartu, dua periode — bentuk yang sama dengan rekap
+ * metode pembayaran di atasnya, dan disengaja sama.
+ *
+ * Yang dijawab tiap tab BERBEDA, bukan angka yang sama dengan rentang berbeda:
+ * "Hari Ini" menjawab *apa yang harus keluar sekarang* (daftar barang, potret),
+ * "Bulan Ini" menjawab *apa hasilnya sejauh ini* (dua angka rupiah, periode).
+ * Karena itu isinya tidak seragam, dan tidak boleh dipaksa seragam — memajang
+ * daftar barang tertekan hari ini di bawah label "Bulan Ini" adalah persis
+ * angka yang [BL-105] ditulis untuk dicegah.
+ */
+const RESCUE_SCOPES = [
+    { key: 'today', label: 'Hari Ini' },
+    { key: 'month', label: 'Bulan Ini' },
+];
+
+const rescueScope = ref('today');
+
+// Bulan toko, bukan bulan perangkat ([BL-082]) — kasir yang jamnya melewati
+// tengah malam lebih dulu tidak boleh membaca nama bulan yang berbeda.
+const monthLabel = computed(() => parseDateOnly(businessToday()).toLocaleDateString('id-ID', {
+    month: 'long',
+    year: 'numeric',
+}));
+
+// Kartunya berdiri selama ada isi di SALAH SATU periode. Tenant yang hari ini
+// kebetulan bersih tetap berhak melihat hasil sebulannya, dan sebaliknya.
+const hasRescue = computed(() =>
+    (props.pressedToday?.count ?? 0) > 0
+    || (props.rescueMonth?.rescued?.shown ?? 0) > 0
+    || (props.rescueMonth?.spoiled?.variants ?? 0) > 0
+);
+
+/**
+ * Dua angka bulan berjalan, masing-masing dengan kalimat yang menerangkan
+ * dari mana ia datang.
+ *
+ * Subtitle "modal basi" memikul beban yang tidak terlihat: Rp 0 karena tidak
+ * ada yang basi dan Rp 0 karena pencatatnya baru berjalan tiga hari terlihat
+ * sama persis di layar, dan yang kedua bukan kabar baik.
+ */
+const rescueMonthCards = computed(() => {
+    const rescued = props.rescueMonth?.rescued ?? { amount: 0, accepted: 0, shown: 0 };
+    const spoiled = props.rescueMonth?.spoiled ?? { amount: 0, variants: 0, units: 0 };
+    const startedOn = props.rescueMonth?.recording_started_on ?? null;
+
+    return [
+        {
+            key: 'rescued',
+            title: 'Omzet dari barang tertekan',
+            value: formatCurrency(rescued.amount),
+            tone: 'text-success',
+            note: rescued.shown > 0
+                ? `${rescued.accepted} dari ${rescued.shown} saran diambil kasir`
+                : 'Belum ada saran barang tertekan bulan ini',
+        },
+        {
+            key: 'spoiled',
+            title: 'Modal basi bulan ini',
+            value: formatCurrency(spoiled.amount),
+            tone: 'text-warning-foreground',
+            note: spoiled.variants > 0
+                ? `${spoiled.variants} varian, ${spoiled.units} pcs tercatat basi`
+                : startedOn === null
+                    ? 'Belum ada barang berkedaluwarsa yang tercatat'
+                    : `Tidak ada yang basi sejak pencatatan mulai ${formatCalendarDate(startedOn)}`,
+        },
+    ];
+});
 
 const formatTime = (datetime) => {
     return new Date(datetime).toLocaleTimeString('id-ID', {
@@ -470,62 +542,118 @@ const invoiceStatusLabels = {
             </template>
 
             <div
-                v-if="pressedToday && pressedToday.count > 0"
+                v-if="hasRescue"
                 class="bg-white rounded-xl shadow-sm border border-warning/30 p-5"
             >
-                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
                     <!-- Namanya tetap "Penyelamat Stok" ([BL-105] butir 4):
                          owner bertemu rantai yang sama di dua layar, dan tanpa
                          nama yang sama di keduanya ia tidak punya cara tahu
                          bahwa keduanya satu hal. -->
-                    <h3 class="text-sm font-semibold text-gray-800">
-                        Penyelamat Stok <span class="font-normal text-gray-400">· hari ini</span>
-                    </h3>
-                    <p class="text-sm text-gray-500">
-                        <span class="font-semibold text-gray-900">{{ pressedToday.count }} barang</span>
-                        · {{ formatCurrency(pressedToday.value) }}
+                    <h3 class="text-sm font-semibold text-gray-800">Penyelamat Stok</h3>
+                    <div class="inline-flex rounded-lg bg-gray-100 p-0.5">
+                        <button
+                            v-for="scope in RESCUE_SCOPES"
+                            :key="scope.key"
+                            type="button"
+                            :aria-pressed="rescueScope === scope.key"
+                            :class="[
+                                'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                                rescueScope === scope.key
+                                    ? 'bg-white text-gray-900 shadow-sm'
+                                    : 'text-gray-500 hover:text-gray-700',
+                            ]"
+                            @click="rescueScope = scope.key"
+                        >
+                            {{ scope.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- HARI INI — daftar barang yang harus keluar hari ini, bukan
+                     angka periode. -->
+                <template v-if="rescueScope === 'today'">
+                    <p v-if="!pressedToday || pressedToday.count === 0" class="mt-3 text-sm text-gray-400">
+                        Tidak ada barang tertekan hari ini.
                     </p>
-                </div>
 
-                <ul class="mt-3 divide-y divide-gray-100">
-                    <li
-                        v-for="item in pressedToday.items"
-                        :key="item.variant_id"
-                        class="flex items-center justify-between gap-3 py-2"
-                    >
-                        <div class="min-w-0">
-                            <p class="truncate text-sm font-medium text-gray-900">{{ item.label }}</p>
-                            <p class="text-xs text-gray-500">{{ item.note }} · sisa {{ item.stock }}</p>
-                        </div>
-                        <div class="flex flex-shrink-0 items-center gap-2">
-                            <span class="text-sm text-gray-700 tabular-nums">{{ formatCurrency(item.value) }}</span>
-                            <!-- Yang ditandai hanya PENGECUALIANNYA. Lencana
-                                 "Potongan aktif" di tiap baris menandai keadaan
-                                 normal, dan penanda yang menyala di semua baris
-                                 berhenti dibaca sebagai penanda. -->
-                            <span
-                                v-if="!item.armed"
-                                class="rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning-foreground"
+                    <template v-else>
+                        <p class="mt-2 text-sm text-gray-500">
+                            <span class="font-semibold text-gray-900">{{ pressedToday.count }} barang</span>
+                            · {{ formatCurrency(pressedToday.value) }} modal sedang tertekan
+                        </p>
+
+                        <ul class="mt-3 divide-y divide-gray-100">
+                            <li
+                                v-for="item in pressedToday.items"
+                                :key="item.variant_id"
+                                class="flex items-center justify-between gap-3 py-2"
                             >
-                                Belum ada potongan
-                            </span>
-                        </div>
-                    </li>
-                </ul>
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-medium text-gray-900">{{ item.label }}</p>
+                                    <p class="text-xs text-gray-500">{{ item.note }} · sisa {{ item.stock }}</p>
+                                </div>
+                                <div class="flex flex-shrink-0 items-center gap-2">
+                                    <span class="text-sm text-gray-700 tabular-nums">{{ formatCurrency(item.value) }}</span>
+                                    <!-- Yang ditandai hanya PENGECUALIANNYA. Lencana
+                                         "Potongan aktif" di tiap baris menandai keadaan
+                                         normal, dan penanda yang menyala di semua baris
+                                         berhenti dibaca sebagai penanda. -->
+                                    <span
+                                        v-if="!item.armed"
+                                        class="rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning-foreground"
+                                    >
+                                        Belum ada potongan
+                                    </span>
+                                </div>
+                            </li>
+                        </ul>
 
-                <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <Link
-                        v-if="pressedToday.unarmed > 0"
-                        href="/owner/discount-rules"
-                        class="font-medium text-primary hover:underline"
-                    >
-                        Atur potongan untuk {{ pressedToday.unarmed }} barang
-                    </Link>
-                    <span v-else class="text-gray-400">Semuanya sudah punya potongan otomatis</span>
-                    <Link href="/owner/stock?status=near_expiry" class="font-medium text-primary hover:underline">
-                        Lihat di Stok
-                    </Link>
-                </div>
+                        <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <Link
+                                v-if="pressedToday.unarmed > 0"
+                                href="/owner/discount-rules"
+                                class="font-medium text-primary hover:underline"
+                            >
+                                Atur potongan untuk {{ pressedToday.unarmed }} barang
+                            </Link>
+                            <span v-else class="text-gray-400">Semuanya sudah punya potongan otomatis</span>
+                            <!-- `status=pressed`, bukan `near_expiry`: embernya di
+                                 halaman Stok memakai daftar yang sama persis dengan
+                                 kartu ini. Tautan yang mendarat pada himpunan lain
+                                 membuat pemilik mengira salah satu dari dua layar
+                                 itu berbohong. -->
+                            <Link href="/owner/stock?status=pressed" class="font-medium text-primary hover:underline">
+                                Lihat di Stok
+                            </Link>
+                        </div>
+                    </template>
+                </template>
+
+                <!-- BULAN INI — dua angka berperiode sama: yang keluar lewat
+                     saran, dan yang telanjur mati di rak. -->
+                <template v-else>
+                    <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div
+                            v-for="card in rescueMonthCards"
+                            :key="card.key"
+                            class="rounded-lg bg-gray-50 px-4 py-3"
+                        >
+                            <p class="text-xs text-gray-500">{{ card.title }}</p>
+                            <p class="mt-0.5 text-lg font-bold tabular-nums" :class="card.tone">
+                                {{ card.value }}
+                            </p>
+                            <p class="mt-0.5 text-xs text-gray-500">{{ card.note }}</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span class="text-gray-400">Dihitung sejak 1 {{ monthLabel }}</span>
+                        <Link href="/owner/reports/upsell" class="font-medium text-primary hover:underline">
+                            Rincian di Laporan Saran Jual
+                        </Link>
+                    </div>
+                </template>
             </div>
         </Deferred>
 

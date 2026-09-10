@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ExpiredStockRecord;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
@@ -188,4 +189,102 @@ it('names the money in the expired badge, not just the count', function () {
     // modal yang mati di dalamnya membuatnya bertindak.
     expect($expired['value'])->toBe(45000.0)
         ->and($expired['message'])->toContain('Rp 45.000');
+});
+
+/**
+ * Angka periode "modal basi" — pembaca pertama `expired_stock_records`.
+ *
+ * Bedanya dengan potret `spoiled()` bukan cuma rentang tanggal: yang ini
+ * membaca catatan pengamatan yang tidak pernah diubah, jadi barang yang sudah
+ * dibuang pemilik TETAP terhitung. Itu seluruh alasan pencatatnya ada.
+ */
+it('sums only measured expired records inside the period', function () {
+    $record = fn (array $attributes) => ExpiredStockRecord::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_variant_id' => ProductVariant::factory()->create(['product_id' => $this->product->id])->id,
+        ...$attributes,
+    ]);
+
+    $record(['recorded_on' => BusinessClock::today(), 'qty' => 4, 'cost_price' => 5000, 'value' => 20000]);
+    $record(['recorded_on' => BusinessClock::daysAgo(3), 'qty' => 2, 'cost_price' => 5000, 'value' => 10000]);
+
+    // Di luar rentang.
+    $record(['recorded_on' => BusinessClock::daysAgo(40), 'qty' => 9, 'cost_price' => 5000, 'value' => 45000]);
+
+    // Sudah basi sebelum pencatatnya lahir: jumlahnya tidak diketahui, jadi ia
+    // menahan pencatat, bukan dihitung. Kalau ia ikut, "3 varian basi bulan
+    // ini" akan diam-diam memuat barang basi tahun lalu.
+    ExpiredStockRecord::factory()->preExisting()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_variant_id' => ProductVariant::factory()->create(['product_id' => $this->product->id])->id,
+        'recorded_on' => BusinessClock::today(),
+    ]);
+
+    // Tenant lain.
+    ExpiredStockRecord::factory()->create([
+        'recorded_on' => BusinessClock::today(),
+        'value' => 999000,
+    ]);
+
+    expect($this->service->spoiledInPeriod($this->tenant, $this->from, $this->to))
+        ->toMatchArray([
+            'amount' => 30000.0,
+            'variants' => 2,
+            'units' => 6,
+        ]);
+});
+
+it('tells the surface when the recorder started, so zero can be explained', function () {
+    expect($this->service->recordingStartedOn($this->tenant))->toBeNull();
+
+    // Baris `pre_existing` IKUT di sini, berbeda dengan angka rupiahnya: yang
+    // ditanyakan bukan berapa yang basi melainkan sejak kapan ada yang
+    // mengamati, dan sapuan pertama itulah jawabannya.
+    ExpiredStockRecord::factory()->preExisting()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_variant_id' => ProductVariant::factory()->create(['product_id' => $this->product->id])->id,
+        'recorded_on' => BusinessClock::daysAgo(6),
+    ]);
+    ExpiredStockRecord::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_variant_id' => ProductVariant::factory()->create(['product_id' => $this->product->id])->id,
+        'recorded_on' => BusinessClock::today(),
+    ]);
+
+    expect($this->service->recordingStartedOn($this->tenant))
+        ->toStartWith(BusinessClock::daysAgo(6));
+});
+
+it('hands the dashboard a month that is a month all the way through', function () {
+    UpsellEvent::factory()->ofType(UpsellEvent::TYPE_PRESSED_STOCK)->accepted(9000)
+        ->create(['tenant_id' => $this->tenant->id]);
+
+    ExpiredStockRecord::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'product_variant_id' => ProductVariant::factory()->create(['product_id' => $this->product->id])->id,
+        'recorded_on' => BusinessClock::today(),
+        'qty' => 3,
+        'cost_price' => 4000,
+        'value' => 12000,
+    ]);
+
+    // Potret hari ini yang TIDAK boleh ikut ke tab "Bulan Ini": barang basi di
+    // rak yang tidak pernah tercatat pencatat. Ia milik `spoiled()`, dan
+    // memasukkannya ke angka bulanan berarti satu angka yang separuhnya
+    // periode dan separuhnya potret.
+    ProductVariant::factory()->withExpiry(BusinessClock::daysAgo(2))->create([
+        'product_id' => $this->product->id,
+        'cost_price' => 50000,
+        'stock' => 8,
+    ]);
+
+    actingAs($this->owner)
+        ->get('/owner/dashboard')
+        ->assertInertia(fn ($page) => $page->loadDeferredProps('badges', fn ($reload) => $reload
+            ->where('rescueMonth.rescued.amount', 9000)
+            ->where('rescueMonth.spoiled.amount', 12000)
+            ->where('rescueMonth.spoiled.variants', 1)
+            ->where('rescueMonth.spoiled.units', 3)
+            ->has('rescueMonth.recording_started_on')
+        ));
 });

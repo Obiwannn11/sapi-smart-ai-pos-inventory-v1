@@ -141,6 +141,11 @@ const resetFilters = () => {
 
 const STATUS_CARDS = [
     { key: '', label: 'Semua Varian', tone: 'neutral' },
+    // Ember yang dituju tautan "Lihat di Stok" di beranda. Ia sengaja memakai
+    // nama fitur yang sama dengan kartu di sana ([BL-105] butir 4): pemilik
+    // bertemu daftar yang sama di dua layar, dan tanpa nama yang sama di
+    // keduanya ia tidak punya cara tahu bahwa keduanya satu hal.
+    { key: 'pressed', label: 'Penyelamat Stok', tone: 'warning' },
     { key: 'out', label: 'Stok Habis', tone: 'danger' },
     { key: 'low', label: 'Stok Kritis', tone: 'warning' },
     { key: 'near_expiry', label: 'Dekat Expired', tone: 'warning' },
@@ -286,7 +291,7 @@ const formatDate = (date) => {
 
         <!-- Kartu status — penyaring, bukan papan angka. Menekannya menyaring
              tabel di bawahnya; menekannya lagi melepas penyaringnya. -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 sm:gap-3">
             <button
                 v-for="card in STATUS_CARDS"
                 :key="card.key || 'all'"

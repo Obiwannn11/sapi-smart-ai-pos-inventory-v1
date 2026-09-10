@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-09 | ADDITION | Stok | "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir) |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
@@ -251,6 +252,45 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir)
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Backend, Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Dua perubahan pada kartu yang sama, keduanya dari laporan pemilik 2026-09-09.
+
+  **1. Tautan "Lihat di Stok" mengirim ke himpunan yang berbeda dari yang barusan dibaca.**
+  Kartu Penyelamat Stok mendaftar barang tertekan — *mendekati kedaluwarsa* **ATAU** *tak terjual sebulan*, dan keduanya harus masih layak dijual (`SellableVariantQuery`: stok > 0, belum lewat tanggal, produk aktif). Tautannya mendarat di `/owner/stock?status=near_expiry`, penyaring yang menjawab pertanyaan lain: ia **menjatuhkan seluruh barang dead stock** (yang tidak punya `expiry_date` sama sekali) dan **memungut varian yang tidak pernah disebut kartunya** (stok nol, produk nonaktif). Pemilik yang menghitung barisnya akan menemukan dua angka berbeda untuk satu daftar, tanpa apa pun di layar yang menerangkan bedanya.
+
+  Halaman Stok karena itu dapat ember ketujuh, `pressed`, berlabel **"Penyelamat Stok"** — nama yang sama dengan kartunya, sesuai keputusan penamaan `[BL-105]` butir 4. Embernya **meminjam** `PressedStockStrategy::pressedVariants()`, kelas yang sama yang menyusun strip saran di layar kasir dan kartu di beranda; ia tidak menulis ulang syaratnya. Menyalin syarat itu ke `StockController` berarti dua definisi yang akan berselisih diam-diam begitu salah satunya diubah, dan justru selisih itulah yang sedang diperbaiki di sini.
+
+  **2. Kartunya dapat sakelar dua periode, bentuk yang sama dengan Rekap per Metode Pembayaran di atasnya.**
+  Ini butir yang tersisa dari `[BL-105]`: **pembaca pertama tabel `expired_stock_records`**. Tabelnya sengaja lahir sebelum permukaannya pada 2026-09-08, dan sejak itu tidak ada satu pun layar yang membacanya.
+
+  - **Hari Ini** — daftar barang yang harus keluar sekarang, beserta kolom `armed` yang jadi isi sebenarnya kartu ini. Tidak berubah, selain kalimat ringkasannya yang kini menyebut *"modal sedang tertekan"* dan keadaan kosong yang dulu tidak pernah bisa muncul.
+  - **Bulan Ini** — dua angka rupiah: **omzet dari barang tertekan** (`SUM(extra_amount)` atas saran `pressed_stock` yang diterima) dan **modal basi bulan ini** (`SUM(value)` atas `expired_stock_records` yang `measured`).
+
+  **Yang dijawab kedua tab BERBEDA, dan itu disengaja.** "Hari Ini" adalah potret — daftar barang; "Bulan Ini" adalah periode — dua angka. Isinya karena itu tidak seragam, dan tidak boleh dipaksa seragam. Aturan yang dijaga di sini adalah aturan yang sama yang ditulis `[BL-105]`: potret `StockRescueService::spoiled()` — barang basi yang masih di rak **sekarang** — **tidak ikut** ke tab bulanan meski ia angka "modal basi" juga, karena sakelar di kepala kartu menjanjikan "bulan ini" dan angka yang separuh potret separuh periode adalah angka yang berbohong. Potret itu tetap tinggal di Laporan Saran Jual, di mana subtitle-nya menyebutkan bedanya.
+
+  **Rp 0 yang berarti "belum ada yang mengamati" dibedakan dari Rp 0 yang berarti "tidak ada yang basi".** Pencatatnya baru berjalan sejak 2026-09-08, jadi untuk hampir setiap tenant angka bulan ini masih muda. `recordingStartedOn()` mengembalikan sapuan pertama tenant itu, dan kalimat di bawah angkanya berbunyi *"Tidak ada yang basi sejak pencatatan mulai 8 September 2026"* — bukan Rp 0 polos yang akan dipercaya sebagai kabar baik.
+- **Alasan:**
+  Laporan pemilik 2026-09-09: tombol "Lihat di Stok" tidak mengantar ke tempat yang benar, dan permintaan agar Penyelamat Stok punya tab bulanan seperti rekap pembayaran.
+
+  Sisi bulanannya dikerjakan **lebih awal daripada yang direncanakan `[BL-105]`**, yang menahannya sampai ada beberapa minggu data justru supaya layarnya tidak memajang Rp 0 untuk periode yang datanya belum sempat terkumpul. Keberatan itu tidak dibuang, ia dipindahkan ke tempat yang seharusnya: kalimat "sejak pencatatan mulai …" di bawah angkanya. Yang berbahaya bukan angkanya muda, melainkan angka muda yang tidak mengaku bahwa ia muda.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/StockController.php` — ember `pressed` pada `STATUSES` dan `applyStatus()`; `PressedStockStrategy` disuntikkan; id-nya diingat sepanjang satu permintaan supaya `summarize()` tidak menjalankan kuerinya dua kali
+  - `app/Services/StockRescueService.php` — `spoiledInPeriod()` (pembaca pertama `expired_stock_records`, hanya baris `measured`) dan `recordingStartedOn()`
+  - `app/Http/Controllers/Owner/DashboardController.php` — prop tertunda `rescueMonth` di grup `badges`, sekelompok dengan `pressedToday` karena keduanya menyisir stok
+  - `resources/js/Pages/Owner/Dashboard.vue` — sakelar dua periode pada kartu Penyelamat Stok; tautannya jadi `?status=pressed`
+  - `resources/js/Pages/Owner/Stock/Index.vue` — kartu status "Penyelamat Stok", grid jadi tujuh kolom
+  - `tests/Feature/Owner/StockTest.php` — ember `pressed` memuat dead stock, menolak yang sudah basi dan yang stoknya nol; angka ringkasannya sendiri
+  - `tests/Feature/Upsell/StockRescueTest.php` — `spoiledInPeriod()` menolak baris `pre_existing`, tenant lain, dan tanggal di luar rentang; potret hari ini tidak bocor ke angka bulanan
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema maupun dependensi. Tautan lama `/owner/stock?status=near_expiry` tetap sah — ember `near_expiry` tidak disentuh, hanya tidak lagi jadi tujuan tautan kartunya.
+
+---
 
 ### [ADDITION] Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser
 - **Tanggal:** 2026-09-09

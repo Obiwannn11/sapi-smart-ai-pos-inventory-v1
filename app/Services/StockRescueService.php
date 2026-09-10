@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ExpiredStockRecord;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\Transaction;
@@ -191,10 +192,11 @@ class StockRescueService
      * ada yang berarti "dibuang", jadi pembuangan tersamar sebagai `adjustment`
      * bersama koreksi hitung dan barang pecah.
      *
-     * Angka periodenya menuntut pencatat harian yang menstempel satu baris saat
-     * sebuah varian melewati `expiry_date` dengan sisa stok — dan pencatat itu
-     * tidak bisa ditambal mundur, persis alasan `upsell_events` dulu lahir
-     * sebelum permukaannya. Tempatnya `[BL-105]`, bukan di sini.
+     * Angka periodenya ada di {@see self::spoiledInPeriod()}, dan ia dibaca dari
+     * tabel lain: `expired_stock_records`, yang distempel pencatat harian
+     * `ExpiredStockRecorder`. Keduanya menjawab pertanyaan berbeda dan tidak
+     * boleh saling menggantikan — yang satu "apa yang ada di rak sekarang",
+     * yang satu "berapa yang basi sepanjang bulan ini".
      *
      * @return array{amount: float, variants: int, units: int}
      */
@@ -211,6 +213,66 @@ class StockRescueService
             'variants' => (int) ($row->variants ?? 0),
             'units' => (int) ($row->units ?? 0),
         ];
+    }
+
+    /**
+     * Modal yang mati SEPANJANG SEBUAH PERIODE — pembaca pertama tabel
+     * `expired_stock_records` ([BL-105], butir yang tersisa).
+     *
+     * Bedanya dengan {@see self::spoiled()} bukan soal rentang tanggal saja.
+     * `spoiled()` membaca rak: barang basi yang sudah dibuang pemilik lenyap
+     * dari angkanya. Yang di sini membaca catatan pengamatan yang tidak pernah
+     * diubah sesudah ditulis, jadi ia TETAP menghitung barang yang sudah dibuang
+     * — dan justru itu yang membuatnya bisa dibandingkan antarbulan.
+     *
+     * Hanya baris `measured` yang ikut. Baris `pre_existing` adalah barang yang
+     * sudah basi sebelum pencatatnya lahir: `qty`-nya tidak diketahui, dan
+     * memasukkannya berarti "12 varian basi bulan ini" yang diam-diam memuat
+     * barang basi tahun lalu.
+     *
+     * @param  string  $from  tanggal mulai (inklusif), format Y-m-d
+     * @param  string  $to  tanggal akhir (inklusif), format Y-m-d
+     * @return array{amount: float, variants: int, units: int}
+     */
+    public function spoiledInPeriod(Tenant $tenant, string $from, string $to): array
+    {
+        $row = ExpiredStockRecord::query()
+            ->where('tenant_id', $tenant->id)
+            ->measured()
+            ->whereDate('recorded_on', '>=', $from)
+            ->whereDate('recorded_on', '<=', $to)
+            ->selectRaw('COUNT(*) as variants')
+            ->selectRaw('COALESCE(SUM(qty), 0) as units')
+            ->selectRaw('COALESCE(SUM(value), 0) as amount')
+            ->first();
+
+        return [
+            'amount' => (float) ($row->amount ?? 0),
+            'variants' => (int) ($row->variants ?? 0),
+            'units' => (int) ($row->units ?? 0),
+        ];
+    }
+
+    /**
+     * Hari pertama tabel `expired_stock_records` punya baris untuk tenant ini.
+     *
+     * Dipakai permukaannya untuk membedakan dua keadaan yang terlihat sama
+     * persis di layar — "bulan ini tidak ada yang basi" dan "pencatatnya belum
+     * cukup lama berjalan untuk tahu". Rp 0 tanpa pembeda itu adalah angka yang
+     * akan dipercaya pemilik padahal ia hanya berarti tabelnya masih kosong.
+     *
+     * Baris `pre_existing` ikut dihitung di sini, berbeda dengan
+     * {@see self::spoiledInPeriod()}: yang ditanyakan bukan berapa yang basi
+     * melainkan sejak kapan ada yang mengamati, dan sapuan pertama itulah
+     * jawabannya.
+     */
+    public function recordingStartedOn(Tenant $tenant): ?string
+    {
+        $first = ExpiredStockRecord::query()
+            ->where('tenant_id', $tenant->id)
+            ->min('recorded_on');
+
+        return $first === null ? null : (string) $first;
     }
 
     /**

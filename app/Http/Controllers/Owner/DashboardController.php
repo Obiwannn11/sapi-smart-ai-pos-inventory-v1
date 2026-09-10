@@ -121,6 +121,22 @@ class DashboardController extends Controller
             // memisahkannya berarti dua rombongan kueri berat yang tiba
             // bergiliran di bagian layar yang sama.
             'pressedToday' => Inertia::defer(fn () => $this->stockRescue->pressedToday($tenant), 'badges'),
+
+            // Sisi "Bulan Ini" dari kartu yang sama — pembaca pertama tabel
+            // `expired_stock_records` ([BL-105], butir yang tersisa).
+            //
+            // Ketiga isinya BERPERIODE SAMA, dan itu syarat, bukan kebetulan:
+            // sakelar di kartunya menjanjikan "bulan ini", jadi potret hari ini
+            // milik `spoiled()` TIDAK boleh ikut ke sini. Yang berperiode beda
+            // tinggal di tab sebelahnya, di bawah label "Hari Ini".
+            'rescueMonth' => Inertia::defer(fn () => [
+                'rescued' => $this->stockRescue->rescued($tenant, $monthStart, $today),
+                'spoiled' => $this->stockRescue->spoiledInPeriod($tenant, $monthStart, $today),
+                // Pembeda antara "bulan ini tidak ada yang basi" dan
+                // "pencatatnya baru berjalan sejak kemarin". Tanpa ini kedua
+                // keadaan itu tampil sebagai Rp 0 yang sama persis.
+                'recording_started_on' => $this->stockRescue->recordingStartedOn($tenant),
+            ], 'badges'),
             'subscription' => [
                 'status' => $tenant->status,
                 'track' => $subscription->pricing_track,

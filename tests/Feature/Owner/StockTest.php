@@ -323,3 +323,61 @@ test('stock list puts what needs attention first', function () {
             ->where('variants.data.2.sku', 'Z-OK')
         ));
 });
+
+/**
+ * Ember `pressed` — tujuan tautan "Lihat di Stok" pada kartu Penyelamat Stok.
+ *
+ * Yang diuji bukan penyaringnya sendiri melainkan JANJINYA: baris yang muncul
+ * di sini harus himpunan yang sama dengan yang barusan dibaca pemilik di
+ * beranda. Sebelum ember ini ada, tautan itu mendarat di `near_expiry` — yang
+ * menjatuhkan seluruh barang dead stock dan memungut varian yang tidak pernah
+ * disebut kartunya.
+ */
+test('the pressed bucket matches what the dashboard card lists', function () {
+    stockVariant($this->tenant, 'Susu Dekat', [
+        'sku' => 'PS-NEAR',
+        'stock' => 4,
+        'expiry_date' => today()->addDays(2)->toDateString(),
+    ]);
+    // Tak punya kedaluwarsa dan belum pernah terjual — masuk lewat jalur dead
+    // stock, dan justru inilah yang dijatuhkan `near_expiry`.
+    stockVariant($this->tenant, 'Susu Diam', ['sku' => 'PS-DEAD', 'stock' => 4]);
+    // Sudah lewat tanggalnya: kasir tidak boleh menawarkannya, jadi ia bukan
+    // barang yang "harus keluar hari ini" — tempatnya ember `expired`.
+    stockVariant($this->tenant, 'Susu Basi', [
+        'sku' => 'PS-GONE',
+        'stock' => 4,
+        'expiry_date' => today()->subDay()->toDateString(),
+    ]);
+    // Stoknya nol: tidak ada yang bisa diselamatkan.
+    stockVariant($this->tenant, 'Susu Habis', [
+        'sku' => 'PS-EMPTY',
+        'stock' => 0,
+        'expiry_date' => today()->addDay()->toDateString(),
+    ]);
+
+    $skus = stockRowSkus($this->actingAs($this->owner), 'q=Susu&status=pressed');
+    sort($skus);
+
+    expect($skus)->toBe(['PS-DEAD', 'PS-NEAR']);
+});
+
+test('the pressed bucket has its own summary count', function () {
+    stockVariant($this->tenant, 'Keju Dekat', [
+        'sku' => 'KJ-NEAR',
+        'stock' => 4,
+        'expiry_date' => today()->addDays(2)->toDateString(),
+    ]);
+    stockVariant($this->tenant, 'Keju Basi', [
+        'sku' => 'KJ-GONE',
+        'stock' => 4,
+        'expiry_date' => today()->subDay()->toDateString(),
+    ]);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/stock?q=Keju')
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps('stock', fn (Assert $reload) => $reload
+            ->where('summary.pressed', 1)
+            ->where('summary.expired', 1)
+        ));
+});

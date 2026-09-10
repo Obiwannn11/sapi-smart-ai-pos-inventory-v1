@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use App\Services\StockService;
+use App\Services\Upsell\Strategies\PressedStockStrategy;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -30,8 +31,19 @@ class StockController extends Controller
     /** Rentang "mendekati kedaluwarsa", dalam hari. */
     private const NEAR_EXPIRY_DAYS = 7;
 
-    /** @var list<string> */
-    private const STATUSES = ['out', 'low', 'near_expiry', 'expired', 'ok'];
+    /**
+     * @var list<string>
+     *
+     * `pressed` bukan ember stok seperti lima yang lain — ia bukan turunan
+     * kolom `stock` atau `expiry_date` melainkan daftar yang sama persis
+     * dengan yang dipakai kartu "Penyelamat Stok" di beranda dan strip saran
+     * di layar kasir. Ia ada di sini karena tautan "Lihat di Stok" harus
+     * mendarat pada BARIS YANG SAMA dengan yang barusan dibaca pemilik;
+     * sebelum ini tautan itu mengirim ke `near_expiry`, penyaring yang
+     * menjatuhkan seluruh barang dead stock dan menambahkan varian habis
+     * maupun produk nonaktif yang tidak pernah disebut kartunya.
+     */
+    private const STATUSES = ['out', 'low', 'near_expiry', 'expired', 'ok', 'pressed'];
 
     /** @var list<string> */
     private const SORTS = ['urgency', 'product', 'variant', 'stock', 'expiry'];
@@ -42,8 +54,20 @@ class StockController extends Controller
     /** Jumlah baris bawaan; harus salah satu dari PER_PAGE_OPTIONS. */
     private const DEFAULT_PER_PAGE = 25;
 
+    /**
+     * Id varian tertekan, dihitung sekali per permintaan.
+     *
+     * `summarize()` memanggil `applyStatus()` untuk setiap ember, jadi tanpa
+     * ingatan ini satu kali muat halaman menjalankan kueri barang tertekan
+     * dua kali — sekali untuk angka kartunya, sekali untuk barisnya.
+     *
+     * @var list<int>|null
+     */
+    private ?array $pressedIds = null;
+
     public function __construct(
-        private StockService $stockService
+        private StockService $stockService,
+        private PressedStockStrategy $pressedStock,
     ) {}
 
     /**
@@ -256,8 +280,26 @@ class StockController extends Controller
             'ok' => $query->where('stock', '>', self::LOW_STOCK_THRESHOLD)
                 ->where(fn (Builder $q) => $q->whereNull('expiry_date')
                     ->orWhereDate('expiry_date', '>', $nearLimit)),
+            // Daftarnya DIPINJAM, bukan ditulis ulang di sini. Menyalin
+            // syaratnya ("mendekati kedaluwarsa ATAU tak terjual sebulan,
+            // dan masih layak dijual") berarti dua definisi yang akan
+            // berselisih diam-diam begitu salah satunya diubah — dan
+            // seluruh gunanya ember ini justru supaya pemilik menemukan
+            // baris yang sama dengan yang barusan dibacanya di beranda.
+            'pressed' => $query->whereIn('product_variants.id', $this->pressedVariantIds()),
             default => $query,
         };
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function pressedVariantIds(): array
+    {
+        return $this->pressedIds ??= $this->pressedStock
+            ->pressedVariants(auth()->user()->tenant)
+            ->pluck('id')
+            ->all();
     }
 
     /**
