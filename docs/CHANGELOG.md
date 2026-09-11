@@ -62,11 +62,12 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
-| 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
-| 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
+| 2026-09-10 | DECISION | Kasir | Aksi Baris Keranjang Berhenti Bergantung pada Hover — dan "Harga Khusus" Pindah ke Baris Ikon |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
+| 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
 | 2026-09-09 | ADDITION | Kasir | Topbar Kasir Dapat Tombol Layar Penuh, dan Ikon-Ikonnya Berhenti Menyembunyikan Nama dari Layar Sentuh |
 | 2026-09-09 | ADDITION | Stok | "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir) |
+| 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
@@ -289,59 +290,31 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 ---
 
-### [ADDITION] Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya
+### [DECISION] Aksi Baris Keranjang Berhenti Bergantung pada Hover — dan "Harga Khusus" Pindah ke Baris Ikon
 - **Tanggal:** 2026-09-10
 - **Fase Terkait:** Di Luar Fase
 - **Dampak:** Frontend
 - **Breaking Change:** Tidak
 - **Deskripsi:**
-  Cangkang owner dan cangkang kasir menjawab pertanyaan yang sama — "saya login sebagai siapa, dan ke mana lagi saya bisa pergi" — tapi menjawabnya dengan dua bentuk yang berbeda. Di kasir jawabannya satu dropdown avatar di kanan topbar; di owner ia terpecah tiga: tombol "Kasir" telanjang di topbar, nama + peran di kaki sidebar, dan tombol keluar berupa ikon tanpa teks di sebelahnya.
+  Tiga ikon aksi di kartu keranjang — catatan, ubah, hapus — dulu ikon telanjang: bentuk tombolnya baru lahir saat kursor melayang di atasnya (`hover:bg-gray-100`). Sekarang ketiganya punya kotak, garis tepi, dan latar **sejak diam** (`border-gray-200 bg-gray-50`); hover dan `active:scale-90` tinggal jadi umpan balik, bukan perkenalan.
 
-  Sekarang keduanya memakai bentuk yang sama. Di `OwnerLayout` tombol "Kasir" diganti dropdown avatar + nama, isinya: nama, email, dan peran akun yang sedang login; tautan **Buka Kasir**; lalu **Keluar**. Kaki sidebar dihapus seluruhnya.
+  Sasaran sentuhnya naik dari 32px ke **36px dengan kursor dan 44px dengan jari**, lewat varian `pointer-coarse:` bawaan Tailwind v4 — jadi tampilan desktop tidak ikut menggemuk. Tombol +/− ikut naik (32px → 40px di sentuhan): ia berdiri sebaris dengan aksi di atasnya, dan justru dialah yang paling sering ditekan.
 
-  **Yang ikut terbetulkan: keluar tidak lagi hilang di mode rel.** Tombol keluar lama memakai `v-show="sidebarOpen"`, jadi begitu sidebar diciutkan jadi rel ikon selebar 14 (`lg:w-14`), satu-satunya pintu keluar aplikasi lenyap dari layar. Di topbar ia tidak pernah bergantung pada keadaan sidebar.
+  "Harga khusus" (`[BL-018]`) berhenti jadi tulisan biru polos di kaki kartu. Dua kali salah di layar sentuh: tulisan polos tidak memberi tanda apa pun bahwa ia bisa ditekan, dan barisnya sendiri memungut **satu baris dari setiap item keranjang** demi tombol yang jarang dipakai. Sekarang ia ikon berbentuk label harga, sebaris dengan catatan/ubah/hapus, dan menyala amber saat harganya sedang berlaku. Alasannya muncul sebagai strip amber berikut tombol "Batalkan" — strip yang **hanya dibayar oleh baris yang memang punya harga khusus**.
 
-  **Tautan kasir tetap disembunyikan saat langganan ditangguhkan, tombol keluar tidak.** `EnsureSubscriptionActive` hanya meloloskan `billing.*` dan `logout`; tautan ke POS akan memantul balik ke halaman langganan, jadi `v-if="!isSuspended"` yang dulu menempel di tombol topbar ikut pindah ke item dropdown-nya. Tombol keluar sengaja berada di luar penjagaan itu — pengguna pada tenant yang ditangguhkan justru paling butuh bisa keluar.
+  Kepemilikannya ikut pindah: tombol dan strip itu kini milik `CartItem` (prop `canSetSpecialPrice`, emit `specialPrice` / `clearSpecialPrice`), bukan markup yang ditempel `POS.vue` di bawah kartu. `v-for`-nya sekaligus melepas `<div>` pembungkus yang tidak lagi membungkus apa pun.
 - **Alasan:**
-  Permintaan pemilik 2026-09-10. Dua permukaan yang menjawab pertanyaan sama tidak boleh menjawabnya dengan dua bentuk berbeda; menyatukannya juga membebaskan kaki sidebar dan menyelamatkan tombol keluar dari mode rel.
+  Permintaan pemilik 2026-09-10: "kasir ketika di tablet ato mobile itu menekan atau touch screen, sulit hover seperti dalam laptop kursor". Di sana hover bukan sekadar kurang nyaman — ia tidak ada. Setiap petunjuk yang hanya hidup di dalam `hover:` sama saja dengan tidak pernah ditulis.
+
+  Permintaan kedua menyusul setelah versi pertama dilihat: harga khusus sempat mendarat sebagai tombol berbingkai di kaki kartu, dan pemilik menolaknya karena "dia makan space 1 baris untuk button". Keranjang kasir dinilai dari berapa banyak baris yang muat di satu layar; ongkos itu ditagihkan ke semua item, sementara yang memakainya segelintir. Baris ikon yang sudah ada menampungnya tanpa biaya tinggi kartu sama sekali.
 - **File Terdampak:**
-  - `resources/js/Layouts/OwnerLayout.vue` — dropdown akun di topbar (markup dan pola kembar dengan `CashierTopbar.vue`, termasuk penutupan lewat `mousedown` di luar); ikon `cart` + `logout` ditambahkan ke `iconPaths`; blok "User footer" di sidebar dihapus
-  - `tests/Feature/Owner/SidebarAccountMenuTest.php` — baru; memastikan `auth.user.name`/`auth.user.email` sampai ke props, kaki sidebar bersih, dan tautan `/cashier/pos` hanya hidup satu kali di dalam dropdown
+  - `resources/js/Components/CartItem.vue` — konstanta `ACTION_BUTTON` / `ACTION_IDLE` / `ACTION_ICON` dan `QTY_BUTTON` / `QTY_ICON`; tombol harga khusus dengan keadaan aktif; strip alasan + "Batalkan" yang hanya muncul saat `item.override_unit_price` ada; prop `canSetSpecialPrice`, emit `specialPrice` dan `clearSpecialPrice`
+  - `resources/js/Pages/Cashier/POS.vue` — blok harga khusus di kaki kartu dibuang, diganti `:can-set-special-price="isOwner"` plus `@special-price` / `@clear-special-price`; `<div>` pembungkus `v-for` ikut hilang
+  - `tests/Feature/Cashier/CartLineActionAffordanceTest.php` — baru
 - **Catatan Migrasi:**
-  Tidak ada perubahan skema, rute, maupun dependensi. `roleLabel` dan `userInitial` yang dulu dipakai kaki sidebar tetap ada — keduanya kini dibaca oleh dropdown.
+  Tidak ada perubahan skema maupun dependensi; `pointer-coarse:` sudah ada di Tailwind v4.2 yang terpasang, dan CSS-nya terbukti ikut terbit di `npm run build`. Batas owner tidak bergeser sedikit pun: `canSetSpecialPrice` default `false`, satu-satunya yang menyalakannya tetap `isOwner`, dan server tetap memeriksa ulang wewenang beserta alasannya.
 
----
-
-### [ADDITION] Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu
-- **Tanggal:** 2026-09-09
-- **Fase Terkait:** Di Luar Fase
-- **Dampak:** Frontend
-- **Breaking Change:** Tidak
-- **Deskripsi:**
-  Empat keluhan pemilik tentang satu panel yang sama, dan tiga di antaranya berpangkal pada ikon yang tidak mengaku apa tugasnya.
-
-  - **Catatan memakai ikon pensil; hapus memakai tanda silang.** Pensil adalah lambang "ubah" di mana pun, jadi tombol catatan terbaca sebagai tombol ubah — untuk fitur yang saat itu belum ada. Tanda silang terbaca sebagai "tutup", bukan "hapus". Sekarang tiga bentuk untuk tiga tugas: kertas bercatat, pensil, tong sampah. Ketiganya jadi sasaran sentuh 32px dengan `aria-label` dan label yang **juga muncul di sentuhan** lewat `TapTooltip` — komponen yang sudah dipakai topbar kasir, bukan `title` yang di tablet tidak pernah tampil.
-  - **Baris yang sudah masuk keranjang tidak bisa diubah sama sekali.** Salah pilih ukuran, atau pelanggan berubah pikiran soal es, berarti hapus lalu susun ulang pesanan dari nol — di depan orangnya. Tombol Ubah membuka `ModifierModal` yang sama persis seperti saat memesan, hanya saja varian dan modifier baris itu **sudah tercentang duluan**; kasir tinggal menyentuh yang berubah.
-  - **Hapus item terjadi seketika**, padahal tombolnya duduk beberapa piksel dari tombol +/− dan keranjang tidak punya urungkan. Sekarang lewat `ConfirmDialog` yang menyebut nama barangnya.
-  - **"Kosongkan" hanya tulisan kecil**, dan konfirmasinya inline serta pudar sendiri setelah 2,5 detik. Di layar sentuh itu dua kali salah: tulisan polos tidak memberi tanda bahwa ia bisa ditekan, dan jawaban yang menghilang sendiri menghukum kasir yang menoleh sebentar ke pelanggan. Jadi tombol betulan — berbingkai, dengan ikon tong sampah — dan dialog yang menunggu dijawab.
-
-  Lima keputusan yang membentuk jalur "Ubah", karena mengganti isi baris tidak sesederhana menambah baris:
-
-  - **Produk tanpa pilihan tidak diberi tombol Ubah.** Satu varian, tanpa grup modifier: modal yang terbuka hanya untuk memperlihatkan satu-satunya pilihan adalah jalan buntu, bukan fitur.
-  - **Jumlahnya tidak direset ke 1.** Modal selalu mengembalikan `qty: 1` saat memesan; menyetel balik jumlah yang sudah dinaikkan kasir berarti menghapus pekerjaannya diam-diam.
-  - **Harga khusus dilepas kalau variannya berganti** (`[BL-018]`). Harga yang disepakati melekat pada barang yang disepakati; begitu barangnya berubah, kesepakatan itu tidak lagi punya subjek. Selama variannya tetap, harga dan alasannya ikut utuh.
-  - **Hasil ubahan yang jadi kembar persis dengan baris lain digabung** — varian, modifier, catatan, dan harga khusus semuanya sama. Dua baris identik yang harus dijumlahkan sendiri oleh kasir bukan hasil yang benar. Harga khusus ikut dibandingkan: baris berharga khusus bukan baris yang sama dengan baris berharga normal.
-  - **Stok diperiksa ulang, dan baris yang sedang diubah tidak menghitung dirinya sendiri.** Isinya akan diganti, bukan ditambahkan; kalau ia ikut dihitung, mengubah catatan pada baris yang memakai seluruh sisa stok akan ditolak karena stok yang ia pegang sendiri.
-- **Alasan:**
-  Permintaan pemilik 2026-09-09, disertai tangkapan layar keranjangnya. Alasan yang sama menopang keempatnya: perangkatnya tablet dan layar sentuh, dan di sana ikon yang salah baca atau tombol yang tidak terlihat seperti tombol tidak berhenti pada kebingungan — ia berhenti pada pesanan yang hilang di depan pelanggan.
-- **File Terdampak:**
-  - `resources/js/Components/CartItem.vue` — tiga ikon berbeda dengan `TapTooltip` dan `aria-label`; prop `canEdit`, emit `edit`; tombol catatan punya keadaan aktif, dan labelnya mengaku "Hapus catatan" saat menutupnya memang menghapus isinya
-  - `resources/js/Components/ModifierModal.vue` — prop `initial` (opsional) menyemai varian + modifier baris yang diubah; penyemaian pindah ke saat modal **dibuka**, bukan saat produknya berganti; judul dan tombolnya berganti kata di mode ubah
-  - `resources/js/Pages/Cashier/POS.vue` — `requestEditCartItem` / `applyCartEdit`, konfirmasi hapus baris, "Kosongkan" jadi tombol berdialog; konfirmasi inline berikut timernya dibuang
-- **Catatan Migrasi:**
-  Tidak ada perubahan skema maupun dependensi. `initial` opsional, jadi `TransactionEditModal` yang memakai ulang `ModifierModal` tidak berubah perilakunya — kecuali satu perbaikan ikutan yang datang dari pindahnya penyemaian: memilih produk yang **sama** dua kali berturut-turut kini mengosongkan centangnya kembali, dulu ia menyisakan pilihan dari sesi sebelumnya.
-
-  **Belum diuji otomatis.** Repo ini belum punya perkakas uji untuk lapisan Vue (tidak ada Vitest maupun Testing Library), dan menambahkannya berarti menambah dependensi — di luar wewenang perubahan ini. Yang dijalankan: `npm run build` bersih, lalu ketiga komponen dipasang di harness sementara dan ditelusuri langsung di peramban — penyemaian centang, muatan yang diemit saat menyimpan (varian pindah, modifier dilepas, `qty` utuh), dan dialog konfirmasi yang menyebut nama barangnya.
+  Diuji: `tests/Feature/Cashier/CartLineActionAffordanceTest.php` (5 tes yang menjaga bentuk sumbernya, karena repo ini belum punya perkakas uji Vue), seluruh `tests/Feature/Cashier` (122 lulus), dan penelusuran langsung di peramban — 36px terhitung pada `pointer: fine`, 44px pada `pointer: coarse`, modal harga khusus terbuka dari ikonnya, dan "Batalkan" mengembalikan harga katalog.
 
 ---
 
@@ -362,6 +335,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/Components/ProductImage.vue` — larik `tones` dan hash nama dihapus, diganti konstanta `tone`; komentar kepala disesuaikan
 - **Catatan Migrasi:**
   Tidak ada perubahan skema, rute, maupun dependensi. Proyek tidak punya test runner JS, jadi perubahan diperiksa langsung di panel pratinjau pada `/cashier/pos` (tenant Kopi Nusantara, empat produk tanpa gambar) — keempat penampung tampil hijau.
+
+---
+
+### [ADDITION] Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya
+- **Tanggal:** 2026-09-10
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Cangkang owner dan cangkang kasir menjawab pertanyaan yang sama — "saya login sebagai siapa, dan ke mana lagi saya bisa pergi" — tapi menjawabnya dengan dua bentuk yang berbeda. Di kasir jawabannya satu dropdown avatar di kanan topbar; di owner ia terpecah tiga: tombol "Kasir" telanjang di topbar, nama + peran di kaki sidebar, dan tombol keluar berupa ikon tanpa teks di sebelahnya.
+
+  Sekarang keduanya memakai bentuk yang sama. Di `OwnerLayout` tombol "Kasir" diganti dropdown avatar + nama, isinya: nama, email, dan peran akun yang sedang login; tautan **Buka Kasir**; lalu **Keluar**. Kaki sidebar dihapus seluruhnya.
+
+  **Yang ikut terbetulkan: keluar tidak lagi hilang di mode rel.** Tombol keluar lama memakai `v-show="sidebarOpen"`, jadi begitu sidebar diciutkan jadi rel ikon selebar 14 (`lg:w-14`), satu-satunya pintu keluar aplikasi lenyap dari layar. Di topbar ia tidak pernah bergantung pada keadaan sidebar.
+
+  **Tautan kasir tetap disembunyikan saat langganan ditangguhkan, tombol keluar tidak.** `EnsureSubscriptionActive` hanya meloloskan `billing.*` dan `logout`; tautan ke POS akan memantul balik ke halaman langganan, jadi `v-if="!isSuspended"` yang dulu menempel di tombol topbar ikut pindah ke item dropdown-nya. Tombol keluar sengaja berada di luar penjagaan itu — pengguna pada tenant yang ditangguhkan justru paling butuh bisa keluar.
+- **Alasan:**
+  Permintaan pemilik 2026-09-10. Dua permukaan yang menjawab pertanyaan sama tidak boleh menjawabnya dengan dua bentuk berbeda; menyatukannya juga membebaskan kaki sidebar dan menyelamatkan tombol keluar dari mode rel.
+- **File Terdampak:**
+  - `resources/js/Layouts/OwnerLayout.vue` — dropdown akun di topbar (markup dan pola kembar dengan `CashierTopbar.vue`, termasuk penutupan lewat `mousedown` di luar); ikon `cart` + `logout` ditambahkan ke `iconPaths`; blok "User footer" di sidebar dihapus
+  - `tests/Feature/Owner/SidebarAccountMenuTest.php` — baru; memastikan `auth.user.name`/`auth.user.email` sampai ke props, kaki sidebar bersih, dan tautan `/cashier/pos` hanya hidup satu kali di dalam dropdown
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema, rute, maupun dependensi. `roleLabel` dan `userInitial` yang dulu dipakai kaki sidebar tetap ada — keduanya kini dibaca oleh dropdown.
 
 ---
 
@@ -390,7 +386,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   Permintaan pemilik 2026-09-09. Alasan yang sama menopang keduanya: perangkatnya tablet dan layar sentuh. Di sana layar penuh benar-benar menambah ruang dagang, dan `title` yang hanya hidup saat hover bukan sekadar kurang berguna — ia tidak pernah tampil sama sekali.
 - **File Terdampak:**
   - `resources/js/composables/useFullscreen.js` — baru; singleton, `canFullscreen` dihitung sekali di lingkup modul, keadaan hanya ditulis oleh `fullscreenchange`
-  - `resources/js/Components/TapTooltip.vue` — baru; pembungkus pemicu, muncul saat hover / fokus / tekan-dan-tahan, `aria-hidden` karena pemicunya sudah bernama. Berkasnya mendarat lebih dulu lewat `1da2a25` karena keranjang mulai memakainya di jam yang sama; rancangannya dijelaskan di sini
+  - `resources/js/Components/TapTooltip.vue` — baru; pembungkus pemicu, muncul saat hover / fokus / tekan-dan-tahan, `aria-hidden` karena pemicunya sudah bernama
   - `resources/js/Components/CashierTopbar.vue` — tombol layar penuh; ikon `expand`/`compress`; Install, printer, panah kembali, dan tautan nav dibungkus `TapTooltip`; `aria-label` untuk tautan nav yang sebelumnya tanpa nama di bawah 640px; judul disembunyikan di bawah 640px pada halaman selain POS
 - **Catatan Migrasi:**
   Tidak ada perubahan skema maupun dependensi. Ketujuh halaman yang memakai `CashierTopbar` (POS, Riwayat, Kas, Tutup Kas, Rekap Kas, Antrian, Billing/Locked) mendapat keduanya sekaligus — tidak ada yang perlu dipasang per halaman.
@@ -433,6 +429,39 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `tests/Feature/Upsell/StockRescueTest.php` — `spoiledInPeriod()` menolak baris `pre_existing`, tenant lain, dan tanggal di luar rentang; potret hari ini tidak bocor ke angka bulanan
 - **Catatan Migrasi:**
   Tidak ada perubahan skema maupun dependensi. Tautan lama `/owner/stock?status=near_expiry` tetap sah — ember `near_expiry` tidak disentuh, hanya tidak lagi jadi tujuan tautan kartunya.
+
+---
+
+### [ADDITION] Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Empat keluhan pemilik tentang satu panel yang sama, dan tiga di antaranya berpangkal pada ikon yang tidak mengaku apa tugasnya.
+
+  - **Catatan memakai ikon pensil; hapus memakai tanda silang.** Pensil adalah lambang "ubah" di mana pun, jadi tombol catatan terbaca sebagai tombol ubah — untuk fitur yang saat itu belum ada. Tanda silang terbaca sebagai "tutup", bukan "hapus". Sekarang tiga bentuk untuk tiga tugas: kertas bercatat, pensil, tong sampah. Ketiganya jadi sasaran sentuh 32px dengan `aria-label` dan label yang **juga muncul di sentuhan** lewat `TapTooltip` — komponen yang sudah dipakai topbar kasir, bukan `title` yang di tablet tidak pernah tampil.
+  - **Baris yang sudah masuk keranjang tidak bisa diubah sama sekali.** Salah pilih ukuran, atau pelanggan berubah pikiran soal es, berarti hapus lalu susun ulang pesanan dari nol — di depan orangnya. Tombol Ubah membuka `ModifierModal` yang sama persis seperti saat memesan, hanya saja varian dan modifier baris itu **sudah tercentang duluan**; kasir tinggal menyentuh yang berubah.
+  - **Hapus item terjadi seketika**, padahal tombolnya duduk beberapa piksel dari tombol +/− dan keranjang tidak punya urungkan. Sekarang lewat `ConfirmDialog` yang menyebut nama barangnya.
+  - **"Kosongkan" hanya tulisan kecil**, dan konfirmasinya inline serta pudar sendiri setelah 2,5 detik. Di layar sentuh itu dua kali salah: tulisan polos tidak memberi tanda bahwa ia bisa ditekan, dan jawaban yang menghilang sendiri menghukum kasir yang menoleh sebentar ke pelanggan. Jadi tombol betulan — berbingkai, dengan ikon tong sampah — dan dialog yang menunggu dijawab.
+
+  Lima keputusan yang membentuk jalur "Ubah", karena mengganti isi baris tidak sesederhana menambah baris:
+
+  - **Produk tanpa pilihan tidak diberi tombol Ubah.** Satu varian, tanpa grup modifier: modal yang terbuka hanya untuk memperlihatkan satu-satunya pilihan adalah jalan buntu, bukan fitur.
+  - **Jumlahnya tidak direset ke 1.** Modal selalu mengembalikan `qty: 1` saat memesan; menyetel balik jumlah yang sudah dinaikkan kasir berarti menghapus pekerjaannya diam-diam.
+  - **Harga khusus dilepas kalau variannya berganti** (`[BL-018]`). Harga yang disepakati melekat pada barang yang disepakati; begitu barangnya berubah, kesepakatan itu tidak lagi punya subjek. Selama variannya tetap, harga dan alasannya ikut utuh.
+  - **Hasil ubahan yang jadi kembar persis dengan baris lain digabung** — varian, modifier, catatan, dan harga khusus semuanya sama. Dua baris identik yang harus dijumlahkan sendiri oleh kasir bukan hasil yang benar. Harga khusus ikut dibandingkan: baris berharga khusus bukan baris yang sama dengan baris berharga normal.
+  - **Stok diperiksa ulang, dan baris yang sedang diubah tidak menghitung dirinya sendiri.** Isinya akan diganti, bukan ditambahkan; kalau ia ikut dihitung, mengubah catatan pada baris yang memakai seluruh sisa stok akan ditolak karena stok yang ia pegang sendiri.
+- **Alasan:**
+  Permintaan pemilik 2026-09-09, disertai tangkapan layar keranjangnya. Alasan yang sama menopang keempatnya: perangkatnya tablet dan layar sentuh, dan di sana ikon yang salah baca atau tombol yang tidak terlihat seperti tombol tidak berhenti pada kebingungan — ia berhenti pada pesanan yang hilang di depan pelanggan.
+- **File Terdampak:**
+  - `resources/js/Components/CartItem.vue` — tiga ikon berbeda dengan `TapTooltip` dan `aria-label`; prop `canEdit`, emit `edit`; tombol catatan punya keadaan aktif, dan labelnya mengaku "Hapus catatan" saat menutupnya memang menghapus isinya
+  - `resources/js/Components/ModifierModal.vue` — prop `initial` (opsional) menyemai varian + modifier baris yang diubah; penyemaian pindah ke saat modal **dibuka**, bukan saat produknya berganti; judul dan tombolnya berganti kata di mode ubah
+  - `resources/js/Pages/Cashier/POS.vue` — `requestEditCartItem` / `applyCartEdit`, konfirmasi hapus baris, "Kosongkan" jadi tombol berdialog; konfirmasi inline berikut timernya dibuang
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema maupun dependensi. `initial` opsional, jadi `TransactionEditModal` yang memakai ulang `ModifierModal` tidak berubah perilakunya — kecuali satu perbaikan ikutan yang datang dari pindahnya penyemaian: memilih produk yang **sama** dua kali berturut-turut kini mengosongkan centangnya kembali, dulu ia menyisakan pilihan dari sesi sebelumnya.
+
+  **Belum diuji otomatis.** Repo ini belum punya perkakas uji untuk lapisan Vue (tidak ada Vitest maupun Testing Library), dan menambahkannya berarti menambah dependensi — di luar wewenang perubahan ini. Yang dijalankan: `npm run build` bersih, lalu ketiga komponen dipasang di harness sementara dan ditelusuri langsung di peramban — penyemaian centang, muatan yang diemit saat menyimpan (varian pindah, modifier dilepas, `qty` utuh), dan dialog konfirmasi yang menyebut nama barangnya.
 
 ---
 
