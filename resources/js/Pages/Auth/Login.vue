@@ -23,13 +23,13 @@ const submit = () => {
 
         <!-- Mobile brand strip -->
         <div class="md:hidden flex-shrink-0 h-12 bg-primary flex items-center px-6 gap-2">
-            <Link
+            <a
                 href="/"
                 class="flex items-center gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/50"
             >
                 <span class="text-primary-foreground font-bold text-lg tracking-tight leading-none">SAPI</span>
                 <span class="text-primary-foreground/40 text-[0.65rem] font-semibold uppercase tracking-widest mt-px">POS</span>
-            </Link>
+            </a>
         </div>
 
         <!-- Brand panel — desktop only -->
@@ -45,7 +45,7 @@ const submit = () => {
 
             <!-- Identity block -->
             <div class="relative z-10">
-                <Link
+                <a
                     href="/"
                     class="flex items-baseline gap-2 w-fit rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/50"
                 >
@@ -55,7 +55,7 @@ const submit = () => {
                     <span class="text-[0.65rem] font-semibold text-primary-foreground/40 uppercase tracking-widest">
                         POS
                     </span>
-                </Link>
+                </a>
                 <p class="mt-4 text-[0.9375rem] text-primary-foreground/70 leading-relaxed max-w-[200px]">
                     Kelola kasir, stok, dan laporan dari satu tempat.
                 </p>
