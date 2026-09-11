@@ -315,18 +315,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   - `app/Http/Controllers/Owner/Settings/IntegrationController.php` — `generateMcpToken()`/`revokeMcpToken()`, token Sanctum bernama `mcp-client` dengan ability `mcp:use`, plaintext hanya di-flash sekali
   - `resources/js/Pages/Owner/Settings/Integrations.vue` — tempat URL dan prompt bawaan itu akan disalin owner
 - **Deskripsi (apa yang diminta):**
-- **Angka butir 2 bisa membaik karena sebab yang salah — lihat `[BL-108]`.** Uji jalur nyata 2026-09-08 membuktikan POS masih bisa menjual barang yang sudah kedaluwarsa, dan setiap penjualan seperti itu **menurunkan** "modal mati di rak" (terukur: Rp 180.000 → Rp 170.000). Angka yang seharusnya mengukur kerugian jadi membaik tepat ketika hal terburuk terjadi, tanpa apa pun di layar yang menjelaskannya. Potret hari ini yang terdampak; `expired_stock_records` tidak ikut rusak karena ia menstempel sekali saat varian melewati kedaluwarsa dan tidak pernah menyentuh barisnya lagi. Perbaikannya milik `[BL-108]`, bukan entri ini.
-
-- **KOREKSI atas butir 4, ditemukan saat mengerjakannya (2026-09-08). Usulan aslinya salah, dan mengikutinya akan membuat aplikasi berbohong.**
-  Butir 4 di atas berbunyi seolah "Saran Jual" dan "Penyelamat Stok" adalah dua nama untuk satu barang yang sama. Mereka bukan. `Saran Jual` memuat **empat** jenis saran, dan **tiga di antaranya tidak menyelamatkan stok apa pun**: `attach` (ko-okurensi add-on), `upsize` (naik ukuran), dan `manual` (aturan tulisan owner). Peragaan Saran Jual di landing bahkan memakai contoh murni upsell — *"Espresso Single — tawarkan Double"* (`resources/views/public/landing.blade.php:1089`). Mengganti nama wadahnya jadi "Penyelamat Stok" akan membuat nama itu berbohong tentang tiga perempat isinya.
-
-  Yang dikerjakan karena itu **bukan penggantian nama, melainkan pemberian nama**: rantai barang tertekan mendapat namanya sendiri **di dalam** Saran Jual, dan nama itu dipakai konsisten di tiga layar tempat owner menemuinya — kartu dashboard, bagian di Laporan Saran Jual, dan halaman Aturan Diskon yang selama ini tidak pernah mengaku sebagai tahap *memasang* pada rantai yang sama. "Saran Jual" tetap jadi nama wadahnya, dan itu benar.
-
-  **Label kasir sengaja tidak disentuh.** `UpsellStrip.vue` menyebut jenis ini "Dorong" — kata kerja untuk orang yang sedang diburu waktu. Nama fitur tidak menolongnya sama sekali.
-
-- **Kalimat pembeda di landing DITAHAN, dan penahannya `[BL-107]`.**
-  *"POS lain memberi tahu stok Anda mau basi. SAPI menjualnya."* benar sebagai deskripsi mesin, tapi sebagai janji publik ia mendahului kenyataan: 1 dari 42 varian punya `expiry_date`, jadi separuh mesinnya gelap untuk hampir setiap tenant. Memasangnya sekarang mengulang persis apa yang `[BL-083]` dan `[BL-032]` sudah cabut dari halaman yang sama — janji yang aplikasinya belum tepati. Ia dipasang **setelah** angka itu bergerak, bukan sebelum.
-
   MCP hari ini mensyaratkan pengguna memasang server MCP di klien AI-nya — langkah yang wajar bagi orang teknis dan tembok bagi pemilik warung. Usulan pemilik: sediakan jalur kedua yang tidak butuh pemasangan apa pun. Owner menyalin **satu URL** (kredensialnya ikut di dalam URL sebagai query param) dan **satu prompt bawaan**, menempelkannya ke AI apa pun yang sudah bisa mengambil halaman web, lalu AI itu mengambil sendiri datanya dan menjawab pertanyaan bisnis. Nol konfigurasi, nol istilah teknis.
 - **Kenapa ini memang menarik, supaya tidak ditolak karena alasan yang salah:** jalurnya bukan mengendurkan keamanan demi kemalasan — ia menjangkau kelompok pengguna yang MCP tidak akan pernah jangkau. Datanya pun sudah agregat tanpa data pelanggan (lihat `#[Instructions]` di `SapiBusinessServer`), jadi yang bocor kalau bocor adalah angka penjualan dan margin, bukan identitas orang.
 - **Kenapa pemilik sendiri menyebutnya "cukup bahaya" — dan ini bagian yang harus utuh sebelum ada kode:**
@@ -443,7 +431,11 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Usulan Perbaikan (pilih satu, jangan gabungkan):**
   **(a)** `ActiveSeatsResolver` berhenti memakai puncak dan membaca pemakaian aktif apa adanya. Paling sederhana, dan konsisten dengan `[BL-053]` yang sudah mencabut peran puncak dari penagihan. Konsekuensinya harga bisa turun-naik tiap bulan mengikuti jumlah staf — yang memang maksudnya, tapi harus disengaja.
   **(b)** Puncaknya dipertahankan tapi diberi umur: diturunkan ke pemakaian aktif saat pemeriksaan omzet bulanan berjalan (`subscriptions:compute-revenue`), sehingga ia mengukur puncak SATU BULAN, bukan sepanjang masa. Menjaga penutup akal-akalannya sambil tetap memberi jalan turun.
+  **Ganjalan pada (b), ditemukan 2026-09-07 — baca sebelum memilihnya.** Tempat yang disebut (b) tidak menyapu semua tenant. `subscriptions:compute-revenue` hanya menjalankan `ComputeTenantMonthlyRevenue`, dan job itu menyaring `where('pricing_track', TenantConsent::TYPE_SUBSIDIZED)` ditambah cek consent yang masih hidup (`app/Jobs/ComputeTenantMonthlyRevenue.php:38`). Sementara `active_seats` sengaja berlaku untuk **kedua** jalur harga — itu bunyi komentarnya sendiri di `config/pricing-dimensions.php:71` ("hanya `count()` di tabel `users`", tanpa syarat consent). Dipasang persis seperti tertulis, (b) hanya menurunkan puncak milik tenant jalur subsidi; tenant jalur normal puncaknya tetap tidak pernah turun, dan bug entri ini cuma berpindah, bukan hilang. Bila (b) yang dipilih, penurunnya harus menyapu **semua tenant berlangganan**, bukan menumpang penyaringan job omzet apa adanya — dan begitu ia berdiri sendiri seperti itu, pertanyaan berikutnya adalah apakah ia masih pantas menumpang jadwal `compute-revenue` sama sekali.
   **Jangan** menambah reset kedua di tempat lain tanpa menghapus yang lama — dua penurun puncak yang berjalan di jadwal berbeda akan membuat harga tenant bergantung pada peristiwa mana yang kebetulan terjadi lebih dulu.
+- **Diperiksa ulang 2026-09-07 — seluruh isi entri ini masih berlaku apa adanya, tidak ada satu baris pun yang perlu diubah:**
+  `ActiveSeatsResolver:27` masih `max($subscription->seat_high_water, $this->activeNow($subscription))`; `Subscription::recordSeatUsage()` masih hanya menaikkan; `InvoiceSettlement:144` masih satu-satunya yang menurunkannya, dan masih hanya saat tagihan langganan dilunasi. Enam aturan yang ada di `pricing_rules` semuanya bersyarat `monthly_revenue` — **nol yang memakai `active_seats`**, jadi prioritasnya tetap Low dan dampaknya tetap nol.
+  **Satu hal yang belum pernah tercatat dan memperkuat kalimat "tanpa satu pun tanda" di atas:** `active_seats` sudah bisa dipilih hari ini di panel aturan harga — `PricingRuleController:74` mengirim seluruh katalog dimensi lewat `DimensionRegistry::forPanel()`, dan validasinya di baris 324 menerima nama apa pun yang terdaftar. Jadi "hari pertama ada aturan yang memakainya" tidak menunggu rilis kode: satu klik pemilik SaaS di panel sudah cukup, dan tidak ada apa pun yang akan memberi tahu bahwa dimensinya bermakna ganda. Bila keputusannya belum diambil saat itu tiba, yang paling murah adalah menahannya di sisi panel, bukan menambal resolver-nya diam-diam.
 
 ---
 
@@ -475,6 +467,8 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   **(c)** Callback sandbox butuh URL publik HTTPS; siapkan tunnel untuk pengujian lokal, dan tanyakan apakah ada allowlist IP di sisi mereka.
   **(d)** Halaman platform untuk melihat `payment_attempts` per tenant — tanpa itu, kegagalan pembayaran hanya terlihat sebagai tagihan yang tidak kunjung lunas.
   **(e)** Peralihan produksi dilakukan per-flag config, dan **jalur bukti transfer manual tetap dipertahankan** sebagai cadangan.
+
+---
 
 ### [BL-068] Multi-Cabang Belum Punya Wujud Apa Pun — Satu Tenant = Satu Outlet di Seluruh Basis Kode
 - **Ditemukan:** 2026-08-08
