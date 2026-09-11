@@ -70,6 +70,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
 | 2026-09-09 | ADDITION | Kasir | Layar Edit Transaksi Akhirnya Punya Kamera — dan Kewajibannya Berhenti pada Metode yang Sudah Ada (BL-075 Sisa) |
+| 2026-09-09 | HOTFIX | Laporan | Kembalian Berhenti Terhitung Sebagai Omzet Tunai — Empat Rekap Metode Pembayaran Jadi Satu Pembaca (BL-109) |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
 | 2026-09-08 | ADDITION | UI | Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu |
@@ -527,6 +528,39 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   Tidak ada perubahan skema. Toko yang saklarnya mati tidak melihat perubahan apa pun.
 
   **Pratinjaunya tidak punya penjaga di sisi peramban** — proyek ini tidak memakai penguji JavaScript. Yang bisa dijaga secara program adalah **payload**-nya, dan itu yang ditulis: `transaction.payments.*.id` dan `.proof_path` harus tetap sampai ke layar edit. Menyembunyikan salah satunya (lewat `$hidden`, atau lewat perpindahan ke API Resource) akan menghilangkan pratinjaunya tanpa satu pun galat. Tampilannya sendiri belum pernah dilihat di peramban sungguhan.
+
+---
+
+### [HOTFIX] Kembalian Berhenti Terhitung Sebagai Omzet Tunai — Empat Rekap Metode Pembayaran Jadi Satu Pembaca (BL-109)
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Controller | Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  `transaction_payments.amount` menyimpan uang yang **diserahkan** pelanggan, bukan yang dibayarkan — dan itu memang disengaja, karena pasangannya `transactions.change_amount` sudah ada sejak awal. Yang keliru empat pembaca yang menjumlahkan suku pertama tanpa pernah mengurangkan suku kedua: rekap di beranda (Hari Ini dan Bulan Ini), rekap laporan harian, rekap laporan bulanan berikut blok METODE PEMBAYARAN di CSV-nya, dan `payment_summary` di rekap sesi kas aplikasi mobile. Selembar Rp 100.000 untuk belanja Rp 39.000 tercatat Rp 100.000; Rp 61.000 di antaranya sudah kembali ke tangan pelanggan.
+
+  Salahnya **selalu ke atas**, dan diam: tidak ada baris yang hilang dan tidak ada total yang timpang, hanya omzet tunai yang lebih besar dari yang benar-benar masuk. Sepanjang riwayat tenant pengembangan, rekapnya melaporkan Rp 2.424.000 lebih banyak dari total penjualan — persis sebesar seluruh kembalian yang pernah diberikan. Sesudah perbaikan, ketiga barisnya berjumlah Rp 525.472.000, sama persis dengan `SUM(total_amount)`.
+
+  Keempatnya kini memanggil satu pembaca bersama, `PaymentMethodRecap`. Tiga hal yang menentukan bentuknya:
+
+  - **Kembalian dikurangkan dari baris TUNAI saja.** QRIS dan transfer tidak pernah mengembalikan uang; menyebarnya rata akan mengecilkan keduanya. Bila tenant punya lebih dari satu metode tunai, kembalian dibagi menurut porsi masing-masing.
+  - **Periodenya milik pemanggil.** Yang dioper ke pembaca ini kueri transaksi yang sudah tersaring — dan itu kueri yang SAMA dengan yang melahirkan angka omzet di layar yang sama. Sebelumnya rekap dan omzet membangun penyaringnya sendiri-sendiri, jadi keduanya bisa menjawab periode yang berbeda tanpa ada yang tahu.
+  - **Dikelompokkan per `payment_methods.id`,** bukan per nama yang dibekukan di baris — pelajaran yang sama dengan rincian varian sehari sebelumnya. Urutannya ditentukan sesudah kembalian dikurangkan, karena metode yang tampak terbesar sebelum dikurangkan belum tentu yang terbesar sesudahnya.
+
+  `CashDrawerReconciliation` sengaja **tidak** ikut: ia menyaring per kasir di dalam jendela sesi, bukan per tenant di dalam periode, dan `expected_amount` miliknya sudah mengurangkan kembalian dengan benar sejak awal. Hal yang sama berlaku untuk `close()` di controller mobile — hanya `summary()` di berkas itu yang keliru.
+- **Alasan:**
+  Ditemukan 2026-09-08 saat verifikasi visual beranda: kartu omzet menulis Rp 39.000 sementara rekap tunai tepat di bawahnya menulis Rp 89.000. Perilakunya sudah ada jauh sebelum itu; yang baru hanyalah kedua angka akhirnya berdiri berdampingan.
+- **File Terdampak:**
+  - `app/Services/PaymentMethodRecap.php` — **baru**; satu-satunya sumber rekap per metode pembayaran
+  - `app/Http/Controllers/Owner/DashboardController.php` — `paymentMethodTotals()` dilepas; kedua rekap kini meneruskan kueri transaksi yang sama dengan sumber angka omzetnya
+  - `app/Http/Controllers/Owner/ReportController.php` — rekap harian dan `paymentSummaryFor()`; blok CSV membaca larik, bukan objek
+  - `app/Http/Controllers/Api/V1/Mobile/MobileCashDrawerController.php` — `summary()`; satu kueri sesi kini melahirkan rekap dan jumlah transaksinya sekaligus. `close()` tidak disentuh
+  - `resources/js/Pages/Owner/Dashboard.vue`, `resources/js/Pages/Owner/Reports/Daily.vue`, `resources/js/Pages/Owner/Reports/Monthly.vue` — baris rekap dikunci `pm.id`, bukan `pm.name`
+  - `tests/Feature/PaymentMethodRecapTest.php` — **baru**; enam pengujian, memakai bentuk transaksi yang sama dengan yang melahirkan temuannya
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema. Angka historis di layar akan **turun** sebesar kembalian periode itu — itu koreksi, bukan kehilangan data.
+
+  **Satu permukaan dengan cacat yang sama sengaja ditinggalkan:** "Pendapatan per Metode Pembayaran" di layar tutup kas kasir (`resources/js/Pages/Cashier/CashDrawerSummary.vue`) membaca `payment_summary` milik `CashDrawerReconciliation`, yang masih bruto. Ia tidak ikut diperbaiki karena membetulkannya berarti memutuskan apakah baris itu boleh berbeda dari `cash_in` di layar yang sama — pertanyaan tampilan, bukan pertanyaan angka, dan `expected_amount` di sebelahnya tetap benar apa pun jawabannya.
 
 ---
 

@@ -105,49 +105,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
-### [BL-109] Rekap Metode Pembayaran Menjumlahkan Uang yang DISERAHKAN, Bukan yang Dibayarkan — Kembalian Ikut Terhitung Jadi Omzet Tunai
-- **Ditemukan:** 2026-09-08, saat verifikasi visual beranda sesudah rekap pembayaran mendapat sakelar Hari Ini / Bulan Ini
-- **Sumber:** Bukan dari membaca kode. Angka di layar yang tidak masuk akal: beranda menulis omzet hari ini Rp 39.000 sementara rekap tunai di kartu tepat di bawahnya menulis Rp 89.000.
-- **Status:** Open — belum disentuh sama sekali. Perilakunya sudah ada jauh sebelum sakelar bulanan; yang baru hanyalah bahwa sekarang ia terbaca sebulan penuh, bukan sehari.
-- **Prioritas:** Medium-High — ia angka uang di layar pemilik, dan salahnya selalu ke atas.
-- **Area Terdampak:**
-  - `app/Http/Controllers/Owner/DashboardController.php` (`paymentMethodTotals()`) — rekap Hari Ini dan Bulan Ini di beranda
-  - `app/Http/Controllers/Owner/ReportController.php` — `paymentSummaryFor()` (bulanan) dan rekap harian di `daily()`
-  - `app/Http/Controllers/Owner/ReportController.php` (`monthlyExport()`) — blok METODE PEMBAYARAN di CSV
-  - `app/Http/Controllers/Api/V1/Mobile/MobileCashDrawerController.php:122` (`summary()`) — sudah diperiksa 2026-09-09: **ikut keliru**, ia mengembalikan `payment_summary` mentah. Tapi `close()` di berkas yang sama (baris 86-88) justru **sudah benar** — ia mengurangkan `SUM(change_amount)` persis seperti rekonsiliasi web. Jadi berkas ini disentuh dua kali dengan sikap berbeda: `summary()` dibetulkan, `close()` jangan diapa-apakan.
-
-- **Yang TIDAK salah, dan ini yang menentukan bentuk perbaikannya.**
-  `transaction_payments.amount` menyimpan uang yang **diserahkan pelanggan**, dan itu memang disengaja. Pasangannya ada: `transactions.change_amount`. `CashDrawerReconciliation::for()` memakai keduanya dengan benar —
-  `expected_amount = opening + cash_in - change_out + movement_net` (`app/Services/CashDrawerReconciliation.php:99`).
-  Jadi modelnya utuh dan rekonsiliasi kas **tidak** terpengaruh. Yang keliru adalah empat pembaca lain yang menjumlahkan suku pertama tanpa pernah mengurangkan suku kedua.
-
-- **Bukti.**
-  `TRX-20260908-001` (id 25113): `total_amount` Rp 39.000, satu baris pembayaran tunai Rp 89.000, `change_amount` Rp 50.000. Ketiganya konsisten; rekap di beranda hanya membaca yang tengah.
-
-  Sepanjang riwayat tenant 1 (4.020 transaksi selesai):
-
-  | | |
-  |---|---|
-  | `SUM(transactions.total_amount)` | Rp 525.441.000 |
-  | `SUM(transaction_payments.amount)` | Rp 527.865.000 |
-  | Selisih yang dilaporkan berlebih | **Rp 2.424.000** (0,46%) |
-  | `SUM(transactions.change_amount)` | Rp 2.424.000 |
-
-  Kembalian menjelaskan **seluruh** kelebihannya, sampai rupiah terakhir: dibayar − kembalian = Rp 525.441.000, sama persis dengan total penjualan. Bukan cuma cocok di agregat — diperiksa baris per baris, **nol dari 4.020** transaksi selesai yang `dibayar − kembalian ≠ total`. Jadi tidak ada kebocoran kedua di balik yang ini: perbaikannya cukup mengurangkan kembalian, dan angkanya akan benar-benar cocok.
-
-- **Kenapa ia tidak pernah terlihat sampai sekarang.**
-  Rekapnya berdiri sendiri di layar, tanpa angka lain yang sebanding di dekatnya. Begitu kartu "Omzet Hari Ini" berdiri tepat di atasnya (2026-09-08), selisih Rp 39.000 vs Rp 89.000 jadi terbaca dalam satu pandangan. Sakelar Bulan Ini kemudian memperbesar taruhannya: yang tadinya keliru sebesar kembalian sehari kini keliru sebesar kembalian sebulan.
-
-- **Bentuk perbaikan yang disarankan (belum diputuskan pemilik).**
-  Kembalian hanya lahir dari porsi TUNAI — `PaymentModal.vue:130` menghitungnya begitu, dan QRIS maupun transfer tidak mengenal kembalian. Jadi koreksinya tidak boleh disebar rata ke semua metode: ia dikurangkan dari baris bertipe `cash` saja, persis seperti `sumOfType($paymentSummary, cash: true)` di rekonsiliasi.
-  Karena rumus yang sama akan ditulis di empat tempat, sebaiknya ia lahir sebagai **satu pembaca bersama** sejak awal — bukan empat salinan yang suatu hari akan berbeda di salah satunya.
-
-- **Verifikasi ulang 2026-09-09 (permintaan pemilik).** Seluruh entri diperiksa lagi terhadap kode dan basis data; masalah intinya utuh dan belum satu baris pun disentuh. Dua hal berubah dari tulisan aslinya:
-  1. **Satu angka salah catat, dan ia sempat mengarang pekerjaan yang tidak ada.** `SUM(total_amount)` ditulis Rp 525.599.000; yang benar Rp 525.441.000. Dari situ lahir kesimpulan "sisa Rp 158.000 belum ditelusuri" beserta perintah bahwa perbaikan harus menjawabnya — padahal Rp 158.000 itu persis sebesar kesalahan catatnya sendiri, bukan kebocoran di data. Tabel dan paragrafnya sudah diganti di atas. Dicatat di sini, bukan dihapus diam-diam, karena angka lama itu sempat berdiri sehari dan siapa pun yang terlanjur membacanya perlu tahu ia batal.
-  2. **Pertanyaan mobile terjawab** — lihat Area Terdampak. Jumlah pembaca yang keliru tetap empat; yang berubah, kekeliruan mobile sekarang fakta, bukan dugaan.
-
-- **Catatan penomoran:** `[BL-109]` diambil pada 2026-09-08 saat sesi lain sedang menyunting berkas ini. Kalau ternyata bentrok, entri inilah yang dipindah. Diperiksa 2026-09-09: tidak bentrok, nomornya aman.
-
 ### [BL-108] Barang Kedaluwarsa Terjual Tanpa Satu Pun Peringatan — dan Tiga Komentar Menjanjikan Penjagaan yang Tidak Pernah Ada
 - **Ditemukan:** 2026-09-08, saat uji jalur nyata dari POS (bukan dari membaca kode)
 - **Sumber:** Permintaan pemilik untuk membuat satu transaksi sungguhan dan memeriksa apakah seluruh datanya mendarat benar. Datanya mendarat benar; yang tidak benar adalah bahwa transaksinya boleh terjadi sama sekali.
@@ -781,6 +738,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
 | `BL-105` | Penyelamat Stok tidak pernah menyebut angkanya — rantainya sudah utuh, hasilnya berhenti jadi satu baris tabel | 2026-09-09 (keempat butirnya plus pencatat harian yang tidak bisa ditambal mundur. Pembaca angka periodenya dikerjakan lebih awal daripada yang ditahan entri ini, atas permintaan pemilik — keberatan "Rp 0 untuk data yang belum terkumpul" dijawab dengan kalimat "sejak pencatatan mulai …", bukan dengan menunda. Kalimat pembeda di landing tetap ditahan `[BL-107]`) | `[ADDITION] Barang Tertekan Akhirnya Menyebut Rupiahnya…(BL-105 Butir 1 & 2)` + `[ADDITION] Rantai Barang Tertekan Dapat Namanya Sendiri di Tiga Layar…(BL-105 Butir 4)` + `[ADDITION] "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir)` |
+| `BL-109` | Rekap metode pembayaran menjumlahkan uang yang diserahkan, bukan yang dibayarkan — kembalian ikut terhitung jadi omzet tunai | 2026-09-09 (satu pembaca bersama `PaymentMethodRecap` untuk keempat pembaca; kembalian hanya dikurangkan dari baris tunai. Permukaan kelima — rekap di layar tutup kas kasir — sengaja ditinggalkan, lihat penutup entrinya) | `[HOTFIX] Kembalian Berhenti Terhitung Sebagai Omzet Tunai — Empat Rekap Metode Pembayaran Jadi Satu Pembaca (BL-109)` |
 | `BL-097` | Service charge — ditunda sejak awal, dan belum ada yang memintanya | 2026-09-07 (pemilik mengesampingkan syarat masuknya sendiri dan meminta dikerjakan. Keempat usulan bawaan dipakai: **A/A/B/A**. Pertanyaan 1 tidak lagi usulan — DPP PBJT adalah "jumlah pembayaran yang diterima penyedia" (UU HKPD Pasal 51, PP 35/2023 Pasal 19), jadi pajak dipungut atas subtotal + biaya layanan. Seluruh mesin penguncian sengaja tidak dibangun) | `[SCHEMA] Biaya Layanan Mendapat Angkanya Sendiri — dan Pajak Dipungut di Atasnya (BL-097)` |
 | `BL-035` | "Mode bazar" belum ada wujudnya di kode — perlu definisi lebih dulu | 2026-09-07 (pemilik membalik bentuknya: paket setelan, bukan mode. Tidak ada flag dan tidak ada perilaku baru — kuncinya `tenants.selling_style`, sengaja terpisah dari `business_type` yang milik penetapan harga. Aturan kerja boleh ikut paket, membalik aturan yang tertulis di config, dengan syarat yang tak ditanyakan wajib diringkas di layar. Tagihan terbuka dipecah keluar jadi `[BL-104]`) | `[ADDITION] "Mode Bazar" Mendarat Sebagai Paket Setelan, Bukan Mode — dan Kuncinya Lepas dari Penetapan Harga (BL-035)` |
 | `BL-070` | Membeli seat di tengah periode gratis sampai periode habis — prorata ditunda, bukan ditolak | 2026-09-07 (bentuk **(a)** dipilih pemilik: prorata per hari, jadi komponen tersendiri di tagihan berikutnya, rinciannya dibekukan di `pricing_context.billing_breakdown`. Yang ditagih adalah hari yang belum tertutup tagihan penuh mana pun — BUKAN sisa periode berjalan — karena seat yang dibeli di jendela `invoice_lead_days` melewatkan satu tagihan utuh dan baru tertagih dua periode kemudian; celah yang entri ini sendiri tidak catat) | `[ADDITION] Seat yang Dibeli di Tengah Periode Ditagih per Hari — dan Celah Jendela Tagihan Ikut Tertutup (BL-070)` |

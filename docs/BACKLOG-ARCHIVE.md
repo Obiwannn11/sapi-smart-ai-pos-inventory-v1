@@ -64,6 +64,52 @@
 
 - **Yang sengaja TIDAK masuk entri ini:** ramalan permintaan berbasis ML. `about.md` masih menjanjikannya sebagai diferensiator Fase 2, dan `[BL-083]` sudah mencabut janji itu dari hero landing pada 2026-08-20. Perbedaannya bukan selera: "menyelamatkan barang yang mau basi" adalah janji yang datanya sudah ada hari ini; "meramal permintaan 30 hari" menuntut tiga bulan data nyata yang belum terkumpul. Menghidupkannya lagi berarti mengulang persis yang sudah dicabut `[BL-083]`.
 
+### [BL-109] Rekap Metode Pembayaran Menjumlahkan Uang yang DISERAHKAN, Bukan yang Dibayarkan — Kembalian Ikut Terhitung Jadi Omzet Tunai
+- **Ditemukan:** 2026-09-08, saat verifikasi visual beranda sesudah rekap pembayaran mendapat sakelar Hari Ini / Bulan Ini
+- **Sumber:** Bukan dari membaca kode. Angka di layar yang tidak masuk akal: beranda menulis omzet hari ini Rp 39.000 sementara rekap tunai di kartu tepat di bawahnya menulis Rp 89.000.
+- **Status:** **Selesai 2026-09-09** — dikerjakan sebagai satu pembaca bersama (`app/Services/PaymentMethodRecap.php`), persis bentuk yang disarankan di bawah. Perilaku kelirunya sudah ada jauh sebelum sakelar bulanan; yang baru hanyalah bahwa ia sempat terbaca sebulan penuh, bukan sehari.
+- **Prioritas:** Medium-High — ia angka uang di layar pemilik, dan salahnya selalu ke atas.
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/DashboardController.php` (`paymentMethodTotals()`) — rekap Hari Ini dan Bulan Ini di beranda
+  - `app/Http/Controllers/Owner/ReportController.php` — `paymentSummaryFor()` (bulanan) dan rekap harian di `daily()`
+  - `app/Http/Controllers/Owner/ReportController.php` (`monthlyExport()`) — blok METODE PEMBAYARAN di CSV
+  - `app/Http/Controllers/Api/V1/Mobile/MobileCashDrawerController.php:122` (`summary()`) — sudah diperiksa 2026-09-09: **ikut keliru**, ia mengembalikan `payment_summary` mentah. Tapi `close()` di berkas yang sama (baris 86-88) justru **sudah benar** — ia mengurangkan `SUM(change_amount)` persis seperti rekonsiliasi web. Jadi berkas ini disentuh dua kali dengan sikap berbeda: `summary()` dibetulkan, `close()` jangan diapa-apakan.
+
+- **Yang TIDAK salah, dan ini yang menentukan bentuk perbaikannya.**
+  `transaction_payments.amount` menyimpan uang yang **diserahkan pelanggan**, dan itu memang disengaja. Pasangannya ada: `transactions.change_amount`. `CashDrawerReconciliation::for()` memakai keduanya dengan benar —
+  `expected_amount = opening + cash_in - change_out + movement_net` (`app/Services/CashDrawerReconciliation.php:99`).
+  Jadi modelnya utuh dan rekonsiliasi kas **tidak** terpengaruh. Yang keliru adalah empat pembaca lain yang menjumlahkan suku pertama tanpa pernah mengurangkan suku kedua.
+
+- **Bukti.**
+  `TRX-20260908-001` (id 25113): `total_amount` Rp 39.000, satu baris pembayaran tunai Rp 89.000, `change_amount` Rp 50.000. Ketiganya konsisten; rekap di beranda hanya membaca yang tengah.
+
+  Sepanjang riwayat tenant 1 (4.020 transaksi selesai):
+
+  | | |
+  |---|---|
+  | `SUM(transactions.total_amount)` | Rp 525.441.000 |
+  | `SUM(transaction_payments.amount)` | Rp 527.865.000 |
+  | Selisih yang dilaporkan berlebih | **Rp 2.424.000** (0,46%) |
+  | `SUM(transactions.change_amount)` | Rp 2.424.000 |
+
+  Kembalian menjelaskan **seluruh** kelebihannya, sampai rupiah terakhir: dibayar − kembalian = Rp 525.441.000, sama persis dengan total penjualan. Bukan cuma cocok di agregat — diperiksa baris per baris, **nol dari 4.020** transaksi selesai yang `dibayar − kembalian ≠ total`. Jadi tidak ada kebocoran kedua di balik yang ini: perbaikannya cukup mengurangkan kembalian, dan angkanya akan benar-benar cocok.
+
+- **Kenapa ia tidak pernah terlihat sampai sekarang.**
+  Rekapnya berdiri sendiri di layar, tanpa angka lain yang sebanding di dekatnya. Begitu kartu "Omzet Hari Ini" berdiri tepat di atasnya (2026-09-08), selisih Rp 39.000 vs Rp 89.000 jadi terbaca dalam satu pandangan. Sakelar Bulan Ini kemudian memperbesar taruhannya: yang tadinya keliru sebesar kembalian sehari kini keliru sebesar kembalian sebulan.
+
+- **Bentuk perbaikan yang disarankan (belum diputuskan pemilik).**
+  Kembalian hanya lahir dari porsi TUNAI — `PaymentModal.vue:130` menghitungnya begitu, dan QRIS maupun transfer tidak mengenal kembalian. Jadi koreksinya tidak boleh disebar rata ke semua metode: ia dikurangkan dari baris bertipe `cash` saja, persis seperti `sumOfType($paymentSummary, cash: true)` di rekonsiliasi.
+  Karena rumus yang sama akan ditulis di empat tempat, sebaiknya ia lahir sebagai **satu pembaca bersama** sejak awal — bukan empat salinan yang suatu hari akan berbeda di salah satunya.
+
+- **Verifikasi ulang 2026-09-09 (permintaan pemilik).** Seluruh entri diperiksa lagi terhadap kode dan basis data; masalah intinya utuh dan belum satu baris pun disentuh. Dua hal berubah dari tulisan aslinya:
+  1. **Satu angka salah catat, dan ia sempat mengarang pekerjaan yang tidak ada.** `SUM(total_amount)` ditulis Rp 525.599.000; yang benar Rp 525.441.000. Dari situ lahir kesimpulan "sisa Rp 158.000 belum ditelusuri" beserta perintah bahwa perbaikan harus menjawabnya — padahal Rp 158.000 itu persis sebesar kesalahan catatnya sendiri, bukan kebocoran di data. Tabel dan paragrafnya sudah diganti di atas. Dicatat di sini, bukan dihapus diam-diam, karena angka lama itu sempat berdiri sehari dan siapa pun yang terlanjur membacanya perlu tahu ia batal.
+  2. **Pertanyaan mobile terjawab** — lihat Area Terdampak. Jumlah pembaca yang keliru tetap empat; yang berubah, kekeliruan mobile sekarang fakta, bukan dugaan.
+
+- **Catatan penomoran:** `[BL-109]` diambil pada 2026-09-08 saat sesi lain sedang menyunting berkas ini. Kalau ternyata bentrok, entri inilah yang dipindah. Diperiksa 2026-09-09: tidak bentrok, nomornya aman.
+- **Penutup 2026-09-09.** Keempat pembaca memanggil `PaymentMethodRecap` — kembalian dikurangkan dari baris tunai saja, periodenya diturunkan dari kueri transaksi yang dioper pemanggil (kueri yang sama dengan sumber angka omzet di layar yang sama), dan barisnya dikelompokkan per `payment_methods.id`. Diverifikasi terhadap data tenant 1: ketiga barisnya berjumlah Rp 525.472.000, sama persis dengan `SUM(total_amount)`. Enam pengujian di `tests/Feature/PaymentMethodRecapTest.php`. Entri penutup di CHANGELOG: `[HOTFIX] Kembalian Berhenti Terhitung Sebagai Omzet Tunai — Empat Rekap Metode Pembayaran Jadi Satu Pembaca (BL-109)`.
+
+  **Yang sengaja ditinggalkan, dan bukan karena terlewat:** layar tutup kas kasir (`resources/js/Pages/Cashier/CashDrawerSummary.vue`) menampilkan "Pendapatan per Metode Pembayaran" dari `payment_summary` milik `CashDrawerReconciliation`, yang masih bruto — cacat yang sama, permukaan kelima yang tidak tercatat di entri ini saat ditulis. Ia tidak ikut diperbaiki karena membetulkannya berarti memutuskan apakah baris itu boleh berbeda dari `cash_in` di layar yang sama, dan itu keputusan tampilan milik pemilik. `expected_amount` di sebelahnya tetap benar apa pun jawabannya.
+
 ### [BL-093] Pencatatan Uang Keluar Laci Belum Bisa Dilampiri Foto Struk
 - **Ditemukan:** 2026-08-21 (dipecah dari `[BL-087]` saat fiturnya mendarat)
 - **Sumber:** Saran di dalam pembahasan `[BL-087]` — foto struk sebagai pelengkap alasan tertulis, disetujui pemilik bersama bentuk fiturnya
