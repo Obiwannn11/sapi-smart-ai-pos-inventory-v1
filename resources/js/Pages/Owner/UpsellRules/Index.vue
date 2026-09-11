@@ -30,7 +30,7 @@ import SelectDropdown from '@/Components/SelectDropdown.vue';
 import DatePicker from '@/Components/DatePicker.vue';
 import Checkbox from '@/Components/Checkbox.vue';
 import TabNav from '@/Components/TabNav.vue';
-import { businessToday, parseDateOnly } from '@/support/date';
+import { parseDateOnly } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -40,6 +40,9 @@ const props = defineProps({
     variants: { type: Array, default: null },
     // Pratinjau slot kasir ([BL-092]) — kelompok tunda tersendiri.
     preview: { type: Object, default: null },
+    // Status hidup per aturan, sekelompok dengan `preview` karena keduanya
+    // dihitung dari indeks saran yang sama.
+    outcomes: { type: Array, default: null },
 });
 
 /**
@@ -118,14 +121,11 @@ const variantLabel = (variant) => {
 };
 
 /**
- * Dua nada untuk aturan yang sedang diam, memakai token sistem desain.
+ * Tiga nada status, memakai token sistem desain.
  *
- * Sebelumnya SELURUH sebab memakai satu abu-abu yang sama, jadi "owner sendiri
- * yang mematikannya" terlihat persis seperti "stoknya habis" — padahal yang
- * pertama tidak menunggu apa-apa dan yang kedua menunggu owner bertindak.
- *
- * Hanya dua, bukan satu warna per sebab: yang dijawab warnanya cuma "perlu saya
- * apa-apakan atau tidak". Pertanyaan "kenapa" sudah dijawab tulisannya.
+ * Hanya tiga, bukan satu warna per sebab: yang dijawab warnanya cuma "perlu
+ * saya apa-apakan atau tidak". Pertanyaan "kenapa" dijawab tulisannya, dan
+ * kalimat panjangnya ada di `detail`.
  *
  * `text-warning-foreground`, bukan `text-warning`: token `--warning` adalah
  * kuning terang (L 0.78) dan di atas tint 15% ia nyaris tak terbaca.
@@ -135,51 +135,60 @@ const STATUS_TONES = {
     quiet: 'bg-muted text-muted-foreground',
     /** Ada yang menghalangi, dan owner bisa membereskannya. */
     blocked: 'bg-warning/15 text-warning-foreground',
-    /** Berjalan. */
+    /** Berjalan, dan nomor slotnya disebut. */
     live: 'bg-success/10 text-success',
 };
 
 /**
- * Kenapa sebuah aturan tidak muncul di kasir hari ini, atau null bila muncul.
+ * Status tiap aturan DIHITUNG SERVER, tidak lagi ditebak di sini.
  *
- * @return {{label: string, tone: 'quiet'|'blocked'}|null}
+ * Versi sebelumnya memeriksa empat hal di klien — saklar owner, jendela
+ * tanggal, dan stok — lalu menyimpulkan "Tampil di kasir" untuk sisanya. Empat
+ * keadaan lolos dari kesimpulan itu, dan yang pertama adalah kebalikan dari
+ * kenyataan:
+ *
+ *   - KALAH SLOT terbaca "Tampil di kasir". Jawabannya menuntut skor seluruh
+ *     pesaing di dalam indeks, jadi klien memang tidak punya bahannya.
+ *   - Varian KEDALUWARSA, produk NONAKTIF, dan jenis saran yang DIMATIKAN
+ *     ketiganya tidak diperiksa sama sekali; untuk yang kedua klien bahkan
+ *     tidak memuat `is_active` produknya.
+ *
+ * Lihat `RuleOutcomeResolver` — dan yang penting, ia memakai indeks yang sama
+ * dengan tab pratinjau, jadi kedua layar tidak bisa berselisih.
  */
-const dormantReason = (rule) => {
-    if (!rule.is_active) return { label: 'Dimatikan', tone: 'quiet' };
+const outcomeByRule = computed(() => {
+    const map = new Map();
 
-    // Hari toko ([BL-082]): `toISOString()` memberi tanggal UTC, sehingga
-    // sepanjang pukul 00.00–08.00 WITA aturan yang mulai hari ini masih
-    // dilaporkan "Belum mulai".
-    const today = businessToday();
+    for (const outcome of props.outcomes ?? []) map.set(outcome.rule_id, outcome);
 
-    if (rule.starts_on && rule.starts_on.slice(0, 10) > today) {
-        return { label: 'Belum mulai', tone: 'quiet' };
-    }
-    if (rule.ends_on && rule.ends_on.slice(0, 10) < today) {
-        return { label: 'Sudah berakhir', tone: 'quiet' };
-    }
-    // Penjaga kandidat berlaku tanpa pengecualian, termasuk untuk aturan yang
-    // owner tulis sendiri. Menampilkannya di sini mencegah kesimpulan "fiturnya
-    // rusak" saat yang sebenarnya terjadi adalah stoknya nol.
-    if (rule.suggested_variant && rule.suggested_variant.stock <= 0) {
-        return { label: 'Stok barangnya habis', tone: 'blocked' };
-    }
+    return map;
+});
 
-    return null;
-};
+const outcomeFor = (rule) => outcomeByRule.value.get(rule.id) ?? null;
 
-const statusLabel = (rule) => dormantReason(rule)?.label ?? 'Tampil di kasir';
-
-const statusClass = (rule) => STATUS_TONES[dormantReason(rule)?.tone ?? 'live'];
+const statusClass = (rule) => STATUS_TONES[outcomeFor(rule)?.tone ?? 'quiet'];
 
 /** Ringkasan yang menggantikan paragraf pengantar: angka, bukan penjelasan. */
 const ruleCounts = computed(() => {
-    if (!props.rules) return null;
+    if (!props.outcomes) return null;
 
-    const live = props.rules.filter((rule) => dormantReason(rule) === null).length;
+    const live = props.outcomes.filter((outcome) => outcome.appears).length;
 
-    return { live, dormant: props.rules.length - live };
+    return { live, dormant: props.outcomes.length - live };
 });
+
+/**
+ * Aturan yang tidak muncul di kasir DAN owner perlu diberi tahu kenapa.
+ *
+ * Dua keadaan sengaja tidak masuk, dan keduanya diputuskan di server: aturan
+ * yang owner matikan sendiri (ia tidak sedang bertanya), dan aturan yang kalah
+ * slot (ia sudah terlihat di daftar slot, bertanda "Tergeser"). Daftar yang
+ * memuat segalanya berhenti menjadi daftar.
+ */
+const blockedOutcomes = computed(() => (props.outcomes ?? []).filter((outcome) => outcome.needs_attention));
+
+/** Untuk menautkan baris daftar di atas kembali ke formulir aturannya. */
+const ruleById = computed(() => new Map((props.rules ?? []).map((rule) => [rule.id, rule])));
 
 // --- Tab ---
 const activeTab = ref('rules');
@@ -300,7 +309,7 @@ const doDelete = () => {
                 <p v-if="ruleCounts" class="text-sm text-gray-500 mt-1">
                     {{ ruleCounts.live }} tampil di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} diam</template>
                 </p>
-                <p v-else class="text-sm text-gray-500 mt-1">Memuat aturan…</p>
+                <p v-else class="text-sm text-gray-500 mt-1">Memeriksa apa yang muncul di kasir…</p>
             </div>
             <button
                 @click="openCreate"
@@ -450,7 +459,11 @@ const doDelete = () => {
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Pemicu</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Disarankan</th>
                                 <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Berlaku</th>
-                                <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                <!-- "Di kasir hari ini", bukan "Status": kolom ini
+                                     tidak lagi menyatakan NIAT owner (aktif /
+                                     nonaktif) melainkan KEADAAN di kasir, lengkap
+                                     dengan nomor slotnya. -->
+                                <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Di kasir hari ini</th>
                                 <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Aksi</th>
                             </tr>
                         </thead>
@@ -526,9 +539,23 @@ const doDelete = () => {
                                     </template>
                                     <span v-else class="font-medium text-gray-900">Selamanya</span>
                                 </td>
+                                <!-- Statusnya tiba belakangan: ia ikut grup tunda
+                                     "pratinjau", karena menjawabnya menuntut indeks
+                                     saran penuh. Kerangka berdenyut, bukan tulisan
+                                     "Tampil" yang menebak lalu berubah sendiri —
+                                     status yang salah sekejap lebih buruk daripada
+                                     status yang jujur belum tahu. -->
                                 <td class="px-5 py-4 text-center">
-                                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', statusClass(rule)]">
-                                        {{ statusLabel(rule) }}
+                                    <span
+                                        v-if="outcomeFor(rule)"
+                                        :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', statusClass(rule)]"
+                                        :title="outcomeFor(rule).detail"
+                                    >
+                                        {{ outcomeFor(rule).status }}
+                                    </span>
+                                    <span v-else class="inline-flex items-center">
+                                        <span class="h-5 w-24 animate-pulse rounded-full bg-gray-200" aria-hidden="true"></span>
+                                        <span class="sr-only">Memeriksa status di kasir…</span>
                                     </span>
                                 </td>
                                 <td class="px-5 py-4 text-right">
@@ -581,6 +608,74 @@ const doDelete = () => {
                 </template>
 
                 <div class="space-y-4">
+                    <!-- Aturan yang tidak muncul sama sekali, PALING ATAS.
+                         Urutan ini disengaja: panel ini adalah satu-satunya yang
+                         hilang sepenuhnya sebelum ini ada, dan ia menjawab
+                         pertanyaan pertama owner tiap kali ia membuka tab ini.
+                         Menaruhnya di dasar halaman — di bawah tabel pemicu yang
+                         bisa sepanjang 25 baris — mengulangi persis penguburan
+                         yang `[BL-092]` baru saja dibereskan.
+
+                         Ia hilang sendiri saat tidak ada yang terhalang, jadi
+                         tempat teratas ini tidak dibayar apa pun pada hari-hari
+                         ketika semuanya berjalan. -->
+                    <div v-if="blockedOutcomes.length > 0" class="bg-white rounded-lg shadow-sm border border-warning/30 overflow-hidden">
+                        <div class="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
+                            <h3 class="text-sm font-semibold text-gray-800">Tidak muncul sama sekali, dan kenapa</h3>
+                            <span class="shrink-0 text-xs text-gray-500">{{ blockedOutcomes.length }} aturan</span>
+                        </div>
+
+                        <ul class="divide-y divide-gray-100">
+                            <!-- `flex-wrap` + lebar minimum pada blok teks, bukan
+                                 sekadar `min-w-0`: tombolnya `shrink-0`, jadi pada
+                                 layar sempit ia memeras blok teks sampai lebih
+                                 sempit daripada satu kata. Kata yang tidak muat
+                                 tidak bisa dipenggal, jadi ia meluber keluar
+                                 kotaknya dan tergambar DI BAWAH tombol — terbaca
+                                 seperti dua elemen yang bertabrakan. Dengan lebar
+                                 minimum, tombolnya yang turun ke baris sendiri. -->
+                            <li
+                                v-for="outcome in blockedOutcomes"
+                                :key="outcome.rule_id"
+                                class="flex flex-wrap items-start gap-x-3 gap-y-2 px-5 py-3"
+                            >
+                                <span
+                                    :class="[
+                                        'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                                        outcome.tone === 'blocked' ? 'bg-warning/15 text-warning-foreground' : 'bg-muted text-muted-foreground',
+                                    ]"
+                                    aria-hidden="true"
+                                >!</span>
+
+                                <div class="min-w-[9rem] flex-1 basis-0">
+                                    <p class="break-words text-sm font-medium text-gray-900">{{ outcome.label }}</p>
+                                    <p class="mt-0.5 break-words text-xs text-gray-500">{{ outcome.detail }}</p>
+                                </div>
+
+                                <!-- Tautan bila ada layar yang bisa dibuka, tombol
+                                     bila yang dibutuhkan formulir aturan ini sendiri,
+                                     dan TIDAK ADA APA-APA bila owner memang tidak
+                                     punya jalan ke sana ([BL-099]) — menawarkan jalan
+                                     yang tidak bisa ditempuh terbaca seperti izin. -->
+                                <Link
+                                    v-if="outcome.fix?.href"
+                                    :href="outcome.fix.href"
+                                    class="shrink-0 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                                >
+                                    {{ outcome.fix.label }}
+                                </Link>
+                                <button
+                                    v-else-if="outcome.fix && ruleById.get(outcome.rule_id)"
+                                    type="button"
+                                    class="shrink-0 rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                                    @click="openEdit(ruleById.get(outcome.rule_id))"
+                                >
+                                    {{ outcome.fix.label }}
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+
                     <!-- Tanpa pemicu: inilah yang dilihat kasir pada penjualan apa pun. -->
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                         <div class="px-5 py-3 border-b border-gray-100">
@@ -612,6 +707,16 @@ const doDelete = () => {
                                         </span>
                                     </div>
                                     <p class="mt-0.5 text-xs text-gray-500">{{ slot.note }}</p>
+
+                                    <!-- Lencana "Tergeser" saja menyisakan pertanyaan
+                                         berikutnya tanpa jawaban: tergeser oleh apa.
+                                         Ajakan menaikkan urutan hanya muncul pada
+                                         aturan manual — saran temuan mesin tidak punya
+                                         urutan yang bisa digeser owner. -->
+                                    <p v-if="!slot.wins_slot && slot.lost_to" class="mt-0.5 text-xs text-gray-400">
+                                        Kalah dari <span class="font-medium text-gray-600">{{ slot.lost_to }}</span
+                                        ><template v-if="slot.is_manual"> — naikkan urutannya untuk menukar posisi</template>.
+                                    </p>
                                 </div>
 
                                 <span

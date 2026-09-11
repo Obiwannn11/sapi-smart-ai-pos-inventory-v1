@@ -9,6 +9,7 @@ use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\UpsellEvent;
 use App\Models\UpsellRule;
+use App\Services\Upsell\RuleOutcomeResolver;
 use App\Services\Upsell\UpsellIndexBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,7 +32,21 @@ use Inertia\Response;
  */
 class UpsellRuleController extends Controller
 {
-    public function __construct(private UpsellIndexBuilder $upsellIndexBuilder) {}
+    /**
+     * Indeks saran untuk permintaan INI, dirakit paling banyak sekali.
+     *
+     * Dua prop tunda berbeda memerlukannya — pratinjau slot dan status per
+     * aturan — dan keduanya berada dalam satu grup tunda, jadi keduanya
+     * diselesaikan dalam permintaan yang sama. Tanpa memo ini, permintaan itu
+     * menelusuri seluruh katalog, stok, dan riwayat penjualan dua kali untuk
+     * jawaban yang identik.
+     */
+    private ?array $suggestionIndex = null;
+
+    public function __construct(
+        private UpsellIndexBuilder $upsellIndexBuilder,
+        private RuleOutcomeResolver $ruleOutcomeResolver,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -68,7 +83,35 @@ class UpsellRuleController extends Controller
             // penjualan — menyatukannya dengan tabel aturan berarti tabelnya
             // ikut menunggu pekerjaan yang tidak ada hubungannya dengannya.
             'preview' => Inertia::defer(fn () => $this->slotPreview($request->user()->tenant), 'pratinjau'),
+
+            // Status hidup per aturan, di grup tunda yang SAMA dengan pratinjau
+            // — bukan menumpang `rules`.
+            //
+            // Kenapa bukan di `rules`: menjawabnya menuntut indeks penuh, dan
+            // tabel aturan adalah satu-satunya hal di halaman ini yang bisa
+            // tampil tanpa menunggunya. Menggabungkan keduanya akan mengulangi
+            // persis keputusan yang sudah dibayar di atas.
+            //
+            // Kenapa bukan di klien: nomor slot dan "kalah dari siapa" hanya ada
+            // di dalam indeks, lengkap dengan skor seluruh pesaingnya. Klien
+            // tidak memegangnya, dan perhitungan tiruan akan berselisih dengan
+            // pratinjau pada hari pertama stok berubah.
+            'outcomes' => Inertia::defer(
+                fn () => $this->ruleOutcomeResolver->resolve(
+                    $request->user()->tenant,
+                    $this->suggestionIndex($request->user()->tenant),
+                ),
+                'pratinjau',
+            ),
         ]);
+    }
+
+    /**
+     * @return array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, mandatory: bool, generated_at: string}
+     */
+    private function suggestionIndex(Tenant $tenant): array
+    {
+        return $this->suggestionIndex ??= $this->upsellIndexBuilder->build($tenant);
     }
 
     /**
@@ -87,7 +130,7 @@ class UpsellRuleController extends Controller
      */
     private function slotPreview(Tenant $tenant): array
     {
-        $index = $this->upsellIndexBuilder->build($tenant);
+        $index = $this->suggestionIndex($tenant);
         $max = (int) $index['max_per_transaction'];
 
         // Keranjang tanpa satu pun barang pemicu: hanya kandidat tanpa-pemicu
@@ -140,6 +183,13 @@ class UpsellRuleController extends Controller
      */
     private function asSlots(array $ranked, int $max): array
     {
+        $ranked = array_values($ranked);
+
+        // Penghuni slot TERAKHIR yang masih tampil — lawan yang harus dilewati
+        // sebuah saran untuk ikut masuk. Bukan yang di puncak, yang bagi saran
+        // di urutan kelima bukan lawan yang bisa dikejar.
+        $lastWinner = $ranked[$max - 1]['label'] ?? null;
+
         return array_values(array_map(fn (array $suggestion, int $position) => [
             'key' => $suggestion['key'],
             'type' => $suggestion['type'],
@@ -149,6 +199,10 @@ class UpsellRuleController extends Controller
             'extra_amount' => $suggestion['extra_amount'],
             'is_manual' => $suggestion['type'] === UpsellEvent::TYPE_MANUAL,
             'wins_slot' => $position < $max,
+            // "Tergeser" saja menyisakan pertanyaan berikutnya tanpa jawaban;
+            // nama lawannya sekaligus memberi tahu urutan mana yang harus
+            // digeser untuk menukar posisinya.
+            'lost_to' => $position < $max ? null : $lastWinner,
         ], $ranked, array_keys($ranked)));
     }
 

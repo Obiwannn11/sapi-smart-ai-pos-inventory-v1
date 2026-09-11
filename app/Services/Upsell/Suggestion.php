@@ -35,10 +35,36 @@ final class Suggestion implements Arrayable
      */
     public function key(): string
     {
-        return implode(':', [
+        return self::keyFor(
             $this->type,
-            $this->triggerVariantId ?? 'cart',
-            $this->suggestedModifierId !== null ? 'm'.$this->suggestedModifierId : 'v'.$this->suggestedVariantId,
+            $this->triggerVariantId,
+            $this->suggestedVariantId,
+            $this->suggestedModifierId,
+        );
+    }
+
+    /**
+     * Kunci yang SAMA, dihitung tanpa perlu merakit sarannya lebih dulu.
+     *
+     * Ada karena `RuleOutcomeResolver` harus mencari tahu saran mana di dalam
+     * indeks yang berasal dari sebuah `UpsellRule` — dan ia memegang aturannya,
+     * bukan sarannya. Sebelum ini ada, satu-satunya jalan adalah menyalin
+     * susunan kunci di atas ke tempat kedua, lalu berharap keduanya ikut
+     * berubah bersamaan saat susunannya diubah. Kunci yang menyimpang di satu
+     * tempat tidak melempar error apa pun: ia hanya berhenti menemukan
+     * pasangannya, dan seluruh aturan owner mendadak berstatus "tidak ikut
+     * perebutan slot" tanpa sebab yang terlihat.
+     */
+    public static function keyFor(
+        string $type,
+        ?int $triggerVariantId,
+        ?int $suggestedVariantId,
+        ?int $suggestedModifierId = null,
+    ): string {
+        return implode(':', [
+            $type,
+            $triggerVariantId ?? 'cart',
+            $suggestedModifierId !== null ? 'm'.$suggestedModifierId : 'v'.$suggestedVariantId,
         ]);
     }
 
