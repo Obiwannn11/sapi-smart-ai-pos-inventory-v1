@@ -10,10 +10,30 @@ const props = defineProps({
      * tidak berarti menyunting berkas ini.
      */
     featureCatalog: { type: Array, default: () => [] },
-    /** Peta `jenis usaha → daftar nama fitur`. */
+    /** Peta `cara berjualan → { features, settings }`. */
     featurePresets: { type: Object, default: () => ({}) },
-    /** Centang awal, sebelum jenis usaha apa pun dipilih. */
+    /**
+     * Cara berjualan yang bisa dipilih: `{ name, label, description }`.
+     * Pertanyaan KEDUA, terpisah dari jenis usaha — jenis usaha milik
+     * penetapan harga, yang ini cuma memilih setelan awal (`[BL-035]`).
+     */
+    sellingStyles: { type: Array, default: () => [] },
+    /** Peta `jenis usaha → tebakan cara berjualan`. Tebakan, bukan kunci. */
+    businessTypeStyles: { type: Object, default: () => ({}) },
+    defaultStyle: { type: String, default: '' },
+    /** Pilihan untuk setelan bertipe pilihan, mis. `order_identity_mode`. */
+    choiceOptions: { type: Object, default: () => ({}) },
+    /**
+     * Setelan yang paket atur TANPA menanyakannya, per cara berjualan.
+     * Menampilkannya bukan hiasan: inilah syarat yang membuat aturan kerja
+     * boleh ikut paket sama sekali. Kalau blok ini dihapus dari template,
+     * syaratnya batal — bukan cuma layarnya jadi sepi.
+     */
+    hiddenSummaries: { type: Object, default: () => ({}) },
+    /** Centang awal, sebelum pilihan apa pun disentuh. */
     defaultFeatures: { type: Array, default: () => [] },
+    /** Setelan non-boolean awal, sumber yang sama. */
+    defaultSettings: { type: Object, default: () => ({}) },
     /**
      * Masa gratis apa adanya dari server: lama, jarak terbit tagihan pertama,
      * dan paket tujuan sesudahnya (`null` bila memang tak ada perpindahan).
@@ -65,10 +85,17 @@ const trialNotice = computed(() => {
 const form = useForm({
     business_name: '',
     business_type: '',
+    // Cara berjualan IKUT dikirim, tidak seperti `features` di bawah: server
+    // menyimpannya di `tenants.selling_style` supaya halaman Pengaturan bisa
+    // menyorot paket mana yang jadi titik berangkat tenant ini. Ia tidak
+    // menentukan apa pun selain itu — setelan yang berlaku tetap yang di
+    // kolomnya masing-masing.
+    selling_style: props.defaultStyle,
     // Yang dikirim adalah HASIL AKHIR centangnya, bukan nama presetnya. Preset
     // hanya mengisi daftar ini; apa pun yang tersisa saat tombol ditekan itulah
     // yang didapat tenant.
     features: [...props.defaultFeatures],
+    order_identity_mode: props.defaultSettings.order_identity_mode ?? 'none',
     name: '',
     email: '',
     password: '',
@@ -76,19 +103,40 @@ const form = useForm({
 });
 
 /**
- * Ganti jenis usaha, ganti isi centangnya — termasuk menimpa centang yang sudah
- * disentuh sendiri.
+ * Jenis usaha cuma MENEBAK cara berjualan; cara berjualan yang mengisi
+ * setelannya.
  *
- * Alternatifnya, "berhenti menerapkan preset begitu pengguna menyentuh daftar",
- * mengejutkan ke arah yang lebih buruk: orang yang salah pilih "Retail" lalu
- * membetulkannya jadi "Kuliner" akan mendapat daftar retail yang tidak pernah
- * ia minta, tanpa petunjuk apa pun bahwa pilihan barunya diabaikan. Menimpa itu
- * terlihat: daftarnya berubah di depan mata, dan masih bisa disunting lagi.
- * Tidak ada yang tersimpan sampai formulirnya dikirim.
+ * Dua lompatan, bukan satu, dan pemisahan itu yang membuat `[BL-035]` berlaku
+ * di layar: jenis usaha tidak pernah menyentuh setelan secara langsung, jadi
+ * orang yang membetulkan jenis usahanya demi tarif tetap melihat cara
+ * berjualannya sendiri — dan bisa mengembalikannya sebelum lanjut.
  */
 watch(() => form.business_type, (businessType) => {
-    form.features = [...(props.featurePresets[businessType] ?? props.defaultFeatures)];
+    form.selling_style = props.businessTypeStyles[businessType] ?? props.defaultStyle;
 });
+
+/**
+ * Ganti cara berjualan, ganti isi centangnya — termasuk menimpa centang yang
+ * sudah disentuh sendiri.
+ *
+ * Alternatifnya, "berhenti menerapkan preset begitu pengguna menyentuh daftar",
+ * mengejutkan ke arah yang lebih buruk: orang yang salah pilih "Toko retail"
+ * lalu membetulkannya jadi "Gerai acara" akan mendapat daftar retail yang tidak
+ * pernah ia minta, tanpa petunjuk apa pun bahwa pilihan barunya diabaikan.
+ * Menimpa itu terlihat: daftarnya berubah di depan mata, dan masih bisa
+ * disunting lagi. Tidak ada yang tersimpan sampai formulirnya dikirim.
+ */
+watch(() => form.selling_style, (style) => {
+    const preset = props.featurePresets[style];
+
+    form.features = [...(preset?.features ?? props.defaultFeatures)];
+    form.order_identity_mode = preset?.settings?.order_identity_mode
+        ?? props.defaultSettings.order_identity_mode
+        ?? 'none';
+});
+
+/** Setelan yang paket ini atur tanpa menanyakannya. */
+const hiddenSummary = computed(() => props.hiddenSummaries[form.selling_style] ?? []);
 
 const toggleFeature = (name) => {
     form.features = form.features.includes(name)
@@ -254,13 +302,58 @@ const submit = () => {
                         </p>
                     </div>
 
-                    <!-- Fitur awal — diisi preset jenis usaha, tetap bisa diubah -->
+                    <!-- Cara berjualan — pertanyaan KEDUA, dan ini yang memilih setelan -->
+                    <div v-if="sellingStyles.length" class="mt-5">
+                        <label
+                            for="register-selling-style"
+                            class="block text-sm font-medium text-foreground mb-1.5"
+                        >
+                            Cara Anda Berjualan
+                        </label>
+                        <p class="text-xs text-muted-foreground mb-1.5">
+                            Dipakai menyiapkan setelan awal saja &mdash; tidak memengaruhi tarif
+                            langganan Anda. Semua setelannya tetap bisa diubah kapan saja.
+                        </p>
+                        <select
+                            id="register-selling-style"
+                            v-model="form.selling_style"
+                            :aria-invalid="!!form.errors.selling_style"
+                            :class="[
+                                'w-full px-3 py-2.5 bg-card text-sm text-foreground',
+                                'border rounded-lg transition-colors duration-150',
+                                'focus:outline-none focus:ring-2 focus:ring-offset-1',
+                                form.errors.selling_style
+                                    ? 'border-destructive focus:ring-destructive/50'
+                                    : 'border-border hover:border-muted-foreground/35 focus:ring-ring'
+                            ]"
+                        >
+                            <option v-for="style in sellingStyles" :key="style.name" :value="style.name">
+                                {{ style.label }}
+                            </option>
+                        </select>
+                        <p
+                            v-for="style in sellingStyles.filter((s) => s.name === form.selling_style)"
+                            :key="style.name"
+                            class="mt-1.5 text-xs text-muted-foreground leading-relaxed"
+                        >
+                            {{ style.description }}
+                        </p>
+                        <p
+                            v-if="form.errors.selling_style"
+                            role="alert"
+                            class="mt-1.5 text-xs text-destructive"
+                        >
+                            {{ form.errors.selling_style }}
+                        </p>
+                    </div>
+
+                    <!-- Fitur awal — diisi paket cara berjualan, tetap bisa diubah -->
                     <fieldset v-if="featureCatalog.length" class="mt-5">
                         <legend class="block text-sm font-medium text-foreground mb-1.5">
                             Fitur yang Menyala
                         </legend>
                         <p class="text-xs text-muted-foreground leading-relaxed mb-2.5">
-                            Disesuaikan dengan jenis usaha Anda. Ubah sesuka Anda sekarang, atau
+                            Disesuaikan dengan cara Anda berjualan. Ubah sesuka Anda sekarang, atau
                             nanti lewat Pengaturan &rarr; Cara Kerja Sistem.
                         </p>
 
@@ -300,6 +393,73 @@ const submit = () => {
                         >
                             {{ form.errors.features }}
                         </p>
+
+                        <!--
+                            Identitas pesanan. Bukan saklar, jadi ia tidak bisa
+                            jadi centang — dan ia tampil justru karena inilah
+                            yang paling terasa bedanya antara warung menetap
+                            (dipanggil dengan nama) dan gerai acara (nomor
+                            antrean).
+                        -->
+                        <div v-if="choiceOptions.order_identity_mode" class="mt-4">
+                            <label
+                                for="register-order-identity"
+                                class="block text-sm text-foreground mb-1"
+                            >
+                                Identitas pesanan
+                            </label>
+                            <select
+                                id="register-order-identity"
+                                v-model="form.order_identity_mode"
+                                class="w-full px-3 py-2.5 bg-card text-sm text-foreground
+                                       border border-border rounded-lg transition-colors duration-150
+                                       hover:border-muted-foreground/35
+                                       focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+                            >
+                                <option
+                                    v-for="(label, value) in choiceOptions.order_identity_mode"
+                                    :key="value"
+                                    :value="value"
+                                >
+                                    {{ label }}
+                                </option>
+                            </select>
+                            <p
+                                v-if="form.errors.order_identity_mode"
+                                role="alert"
+                                class="mt-1.5 text-xs text-destructive"
+                            >
+                                {{ form.errors.order_identity_mode }}
+                            </p>
+                        </div>
+
+                        <!--
+                            Setelan yang paket ini atur tanpa menanyakannya.
+                            WAJIB tampil: menampilkannya adalah syarat yang
+                            membuat aturan kerja boleh ikut paket sama sekali
+                            (`[BL-035]`). Menghapus blok ini membatalkan
+                            syaratnya, bukan cuma merapikan layar.
+                        -->
+                        <div v-if="hiddenSummary.length" class="mt-4 rounded-lg bg-muted/40 p-3">
+                            <p class="text-xs font-medium text-foreground">
+                                Disetel otomatis untuk Anda
+                            </p>
+                            <p class="text-xs text-muted-foreground leading-relaxed mt-0.5">
+                                Bisa diubah nanti lewat Pengaturan &rarr; Cara Kerja Sistem.
+                            </p>
+                            <dl class="mt-2 space-y-1">
+                                <div
+                                    v-for="item in hiddenSummary"
+                                    :key="item.name"
+                                    class="flex items-baseline justify-between gap-3 text-xs"
+                                >
+                                    <dt class="text-muted-foreground">{{ item.label }}</dt>
+                                    <dd class="text-foreground font-medium whitespace-nowrap">
+                                        {{ item.value }}
+                                    </dd>
+                                </div>
+                            </dl>
+                        </div>
                     </fieldset>
 
                     <!-- Owner Name -->

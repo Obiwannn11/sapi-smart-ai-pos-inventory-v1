@@ -326,6 +326,14 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
         Route::patch('settings/operations', [\App\Http\Controllers\Owner\Settings\SystemBehaviorController::class, 'update'])
             ->name('settings.operations.update');
 
+        // Penerapan ulang paket setelan awal ([BL-035]). Rute tersendiri, dan
+        // POST bukan PATCH: ia bukan penyuntingan satu field melainkan tindakan
+        // yang menimpa beberapa setelan sekaligus, dan pemisahannya yang
+        // membuat "apa yang bisa menyalakan fitur tanpa saya minta" tetap punya
+        // satu jawaban.
+        Route::post('settings/operations/preset', [\App\Http\Controllers\Owner\Settings\SystemBehaviorController::class, 'applyPreset'])
+            ->name('settings.operations.preset.apply');
+
         // Pajak menumpang halaman yang sama tapi TIDAK endpoint yang sama
         // ([BL-065]). Dua field di baliknya terkunci setelah penjualan
         // berpajak pertama, dan penguncian yang berbagi request dengan

@@ -31,31 +31,41 @@ function registerBusiness(array $overrides = []): TestResponse
 
 // --- Peta presetnya sendiri ---
 
-test('setiap jenis usaha punya preset, dan setiap fitur preset dikenali Tenant', function () {
+test('setiap cara berjualan punya preset, dan setiap fitur preset dikenali Tenant', function () {
     $presets = config('business-presets.presets');
-    $features = config('business-presets.features');
+    $settings = config('business-presets.settings');
 
-    // Jenis usaha tanpa baris preset akan mendarat tanpa satu pun kapabilitas —
-    // lebih buruk daripada keadaan sebelum preset ada.
+    // Cara berjualan tanpa baris preset akan mendarat tanpa satu pun setelan —
+    // lebih buruk daripada keadaan sebelum paket ada.
+    foreach (array_keys(config('business-presets.styles')) as $style) {
+        expect($presets)->toHaveKey($style);
+    }
+
+    // Setiap jenis usaha tetap harus punya jembatan ke satu cara berjualan,
+    // supaya klien yang hanya mengirim `business_type` tidak mendarat tanpa
+    // setelan ([BL-035]).
     foreach (array_keys(config('pricing-dimensions.business_type.options')) as $businessType) {
-        expect($presets)->toHaveKey($businessType);
+        expect(config('business-presets.business_type_styles'))->toHaveKey($businessType);
     }
 
     $tenant = new Tenant;
 
-    foreach ($features as $name => $definition) {
-        // Nama fitur yang salah ketik akan dijawab `false` oleh hasFeature()
-        // tanpa keluhan apa pun, jadi centangnya menyala di layar lalu tidak
-        // menggerbangi apa-apa. Ini satu-satunya tempat kekeliruan itu terlihat.
-        $tenant->forceFill([$definition['column'] => true]);
-        expect($tenant->hasFeature($name))->toBeTrue();
-
+    foreach ($settings as $name => $definition) {
         expect(Tenant::make()->getFillable())->toContain($definition['column']);
+
+        // Hanya kapabilitas modul yang dikenali hasFeature(). Aturan kerja
+        // seperti `upsell_mandatory` sengaja TIDAK, karena ia tidak
+        // menggerbangi rute apa pun ([BL-025]) — dan pemisahan itu cuma nyata
+        // kalau ada yang memeriksanya.
+        $tenant->forceFill([$definition['column'] => true]);
+
+        expect($tenant->hasFeature($name))->toBe($definition['capability']);
     }
 
-    // Nama fitur di preset harus ada di katalog, bukan sekadar mirip.
-    foreach ($presets as $businessType => $names) {
-        expect(array_diff($names, array_keys($features)))->toBeEmpty();
+    // Nama setelan di preset harus ada di katalog, bukan sekadar mirip.
+    foreach ($presets as $style => $preset) {
+        expect(array_diff($preset['features'], array_keys($settings)))->toBeEmpty();
+        expect(array_diff(array_keys($preset['settings']), array_keys($settings)))->toBeEmpty();
     }
 });
 
@@ -170,13 +180,15 @@ test('mengubah jenis usaha dari Pengaturan tidak menerapkan ulang presetnya', fu
 // --- Layarnya ---
 
 test('halaman daftar mengirim katalog dan peta presetnya', function () {
+    $presets = app(BusinessPresetService::class);
+
     get('/register')->assertInertia(fn ($page) => $page
         ->component('Auth/Register')
-        ->has('featureCatalog', count(config('business-presets.features')))
+        ->has('featureCatalog', count($presets->catalog()))
         ->has('featureCatalog.0.name')
         ->has('featureCatalog.0.label')
         ->has('featureCatalog.0.description')
-        ->where('featurePresets.kuliner', config('business-presets.presets.kuliner'))
-        ->where('defaultFeatures', app(BusinessPresetService::class)->featuresFor(null))
+        ->where('featurePresets.warung_menetap', $presets->presetFor('warung_menetap'))
+        ->where('defaultFeatures', $presets->featuresFor(null))
     );
 });

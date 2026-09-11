@@ -37,16 +37,32 @@ class AuthController extends Controller
             // bisa diubah tanpa deploy, jadi menyalinnya ke Vue berarti halaman
             // ini akan berbohong pada hari salah satunya digeser.
             'trial' => $pricing->trialNotice(),
-            // Kapabilitas awal yang ditentukan jenis usaha (`[BL-034]`).
-            // Katalog dan PETA UTUHNYA dikirim, bukan preset untuk satu jenis
-            // usaha saja: daftar centangnya harus ikut berubah begitu pilihan
-            // jenis usaha diganti, dan menunggu jawaban server untuk itu berarti
-            // formulir yang berkedip di tengah pengisian.
+            // Setelan awal yang ditentukan CARA BERJUALAN, bukan jenis usaha
+            // (`[BL-034]`, dikunci ulang oleh `[BL-035]`). Katalog dan PETA
+            // UTUHNYA dikirim, bukan preset untuk satu cara berjualan saja:
+            // daftar centangnya harus ikut berubah begitu pilihannya diganti,
+            // dan menunggu jawaban server untuk itu berarti formulir yang
+            // berkedip di tengah pengisian.
             'featureCatalog' => $presets->catalog(),
             'featurePresets' => $presets->presets(),
-            // Keadaan awal daftar centang, untuk pendaftar yang belum menyentuh
-            // pilihan jenis usaha sama sekali.
+            // Pertanyaan kedua: cara berjualan. Terpisah dari jenis usaha
+            // karena jenis usaha milik penetapan harga dan membeku per tagihan,
+            // sedangkan yang ini cuma memilih setelan awal (`[BL-035]`).
+            'sellingStyles' => $presets->styles(),
+            // Jembatan antara keduanya, supaya pertanyaan kedua tidak pernah
+            // tampil kosong begitu jenis usaha dipilih.
+            'businessTypeStyles' => $presets->businessTypeStyles(),
+            'defaultStyle' => $presets->defaultStyle(),
+            // Pilihan untuk setelan bertipe `choice` yang tampil di formulir.
+            'choiceOptions' => $presets->choiceOptions(),
+            // Setelan yang paket atur tanpa menanyakannya. Dikirim supaya layar
+            // bisa MENYEBUTKANNYA — itu syarat yang membuat aturan kerja boleh
+            // ikut paket sama sekali (`[BL-035]`). Kalau daftar ini berhenti
+            // ditampilkan, syaratnya batal, bukan cuma layarnya jadi sepi.
+            'hiddenSummaries' => $presets->hiddenSummaries(),
+            // Keadaan awal, untuk pendaftar yang belum menyentuh pilihan apa pun.
             'defaultFeatures' => $presets->featuresFor(null),
+            'defaultSettings' => $presets->settingsFor(null),
         ]);
     }
 
@@ -83,6 +99,15 @@ class AuthController extends Controller
             // tanpa satu pun kapabilitas.
             'features' => 'sometimes|array',
             'features.*' => Rule::in($presets->featureNames()),
+            // Cara berjualan — kunci paket setelan (`[BL-035]`). `nullable`
+            // dengan alasan yang sama seperti `business_type`: pertanyaan yang
+            // jawabannya bisa "belum jelas" tidak boleh menjegal pendaftaran.
+            // Yang kosong jatuh ke tebakan dari jenis usaha, bukan ke tenant
+            // tanpa setelan.
+            'selling_style' => ['nullable', Rule::in($presets->styleNames())],
+            // Setelan bertipe pilihan yang ikut tampil di formulir. `sometimes`
+            // supaya klien yang tak mengirimnya jatuh ke paket, bukan ke null.
+            'order_identity_mode' => ['sometimes', 'required', Rule::in(array_keys(Tenant::orderIdentityModes()))],
         ]);
 
         $user = DB::transaction(function () use ($validated, $subscriptions, $presets) {
@@ -100,6 +125,14 @@ class AuthController extends Controller
             // hasil validasi.
             $businessType = ($validated['business_type'] ?? null) ?: Tenant::BUSINESS_TYPE_DEFAULT;
 
+            // Cara berjualan yang tidak dijawab jatuh ke tebakan dari jenis
+            // usaha (`[BL-035]`). Tebakan itu ada supaya klien yang cuma
+            // mengirim `business_type` tetap mendarat dengan setelan yang masuk
+            // akal — bukan supaya jenis usaha diam-diam kembali menentukan
+            // setelan.
+            $sellingStyle = ($validated['selling_style'] ?? null)
+                ?: $presets->styleForBusinessType($businessType);
+
             // Daftar KOSONG tetap dihormati — pendaftar yang melepas semua
             // centang memang meminta aplikasi paling polos, dan itu pilihan yang
             // sah. Karena itu pemeriksaannya `array_key_exists`, bukan `?:`
@@ -107,20 +140,35 @@ class AuthController extends Controller
             // mengembalikan preset yang baru saja ia tolak.
             $features = array_key_exists('features', $validated)
                 ? $validated['features']
-                : $presets->featuresFor($businessType);
+                : $presets->featuresFor($sellingStyle);
+
+            // Setelan bertipe pilihan yang ikut tampil di formulir.
+            $chosenSettings = array_key_exists('order_identity_mode', $validated)
+                ? ['order_identity_mode' => $validated['order_identity_mode']]
+                : [];
 
             $tenant = Tenant::create([
                 'name' => $validated['business_name'],
                 'business_type' => $businessType,
+                'selling_style' => $sellingStyle,
                 'slug' => $slug,
                 'status' => Tenant::STATUS_TRIAL,
-                // Inilah satu-satunya tempat preset diterapkan. Ia nilai AWAL,
-                // bukan ikatan: jenis usaha bisa diubah kapan saja dari
-                // Pengaturan, dan mengubahnya sengaja TIDAK menerapkan ulang
-                // preset ini — pemilik yang sudah mematikan antrian dapur tidak
-                // boleh mendapatkannya kembali hanya karena ia membetulkan jenis
-                // usahanya (`[BL-034]`).
+                // Inilah satu-satunya tempat paket diterapkan tanpa diminta. Ia
+                // nilai AWAL, bukan ikatan: jenis usaha bisa diubah kapan saja
+                // dari Pengaturan, dan mengubahnya sengaja TIDAK menerapkan
+                // ulang paket ini — pemilik yang sudah mematikan antrian dapur
+                // tidak boleh mendapatkannya kembali hanya karena ia
+                // membetulkan jenis usahanya (`[BL-034]`). Penerapan ulang
+                // hanya ada lewat tombol yang diminta sendiri di Pengaturan
+                // (`[BL-035]`).
+                //
+                // Urutannya yang menegakkan batas #3: paket lebih dulu sebagai
+                // DASAR — termasuk setelan yang tidak ditanyakan — lalu jawaban
+                // formulir menimpanya. Terbalik, melepas centang akan kalah dari
+                // paket dan pendaftar mendapat sesuatu yang baru saja ia tolak.
+                ...$presets->presetColumnsFor($sellingStyle),
                 ...$presets->columnsFor($features),
+                ...$presets->settingColumnsFor($chosenSettings),
             ]);
 
             // Masa coba dibuka di transaksi yang sama dengan pendaftarannya.

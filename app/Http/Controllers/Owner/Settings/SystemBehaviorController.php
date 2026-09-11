@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiAnalysis;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Services\BusinessPresetService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -25,7 +26,7 @@ use Inertia\Response;
  */
 class SystemBehaviorController extends Controller
 {
-    public function index(): Response
+    public function index(BusinessPresetService $presets): Response
     {
         $tenant = auth()->user()->tenant;
 
@@ -107,6 +108,18 @@ class SystemBehaviorController extends Controller
             )),
             'taxModes' => Tenant::taxModes(),
             'orderIdentityModes' => Tenant::orderIdentityModes(),
+            // Paket setelan awal ([BL-035]). Dikirim UTUH beserta isinya supaya
+            // layarnya bisa menghitung sendiri apa yang akan berubah dan
+            // memperlihatkannya SEBELUM tombolnya ditekan. Itu syarat yang
+            // membedakan tombol ini dari penerapan ulang diam-diam yang
+            // `[BL-034]` larang.
+            'sellingStyles' => $presets->styles(),
+            'stylePresets' => $presets->presets(),
+            'currentStyle' => $tenant->selling_style,
+            // Peta nama setelan → kolomnya, supaya layar bisa membandingkan isi
+            // paket dengan keadaan tenant sekarang tanpa menyalin peta itu ke
+            // Vue — daftar yang disalin akan bercabang pada setelan berikutnya.
+            'settingCatalog' => config('business-presets.settings'),
             // Dipakai memperingatkan owner sebelum ia mematikan fitur yang
             // masih ada pekerjaan berjalan di baliknya.
             'featureWarnings' => [
@@ -169,5 +182,42 @@ class SystemBehaviorController extends Controller
         auth()->user()->tenant->update($validated);
 
         return back()->with('success', 'Cara kerja sistem berhasil disimpan.');
+    }
+
+    /**
+     * Terapkan ulang sebuah paket setelan awal, atas permintaan pemilik
+     * ([BL-035]).
+     *
+     * Endpoint TERSENDIRI, bukan cabang di `update()`, dan itu bukan kerapian.
+     * `[BL-034]` melarang preset diterapkan ulang diam-diam — pemilik yang
+     * sudah mematikan antrian dapur tidak boleh mendapatkannya kembali sebagai
+     * efek samping menyimpan sesuatu yang lain. Selama penerapan ulang hanya
+     * bisa terjadi lewat rute ini, "apa yang bisa menyalakan fitur tanpa saya
+     * minta" punya satu jawaban yang bisa dicari, dan `BusinessProfileController`
+     * tetap tidak menyentuh kolom setelan mana pun saat jenis usaha diubah.
+     *
+     * Yang TIDAK dilakukan di sini: menyentuh pajak, margin minimum, dan ambang
+     * pengeluaran kas. Ketiganya tidak punya baris di katalog paket, jadi
+     * `settingColumnsFor()` tidak akan pernah menghasilkan kolomnya — tapi
+     * disebut di sini karena inilah tempat orang akan mencoba menambahkannya.
+     */
+    public function applyPreset(Request $request, BusinessPresetService $presets): RedirectResponse
+    {
+        $validated = $request->validate([
+            // Wajib, tanpa bawaan: paket yang diterapkan harus disebut namanya
+            // oleh yang menekan tombolnya. Tidak ada jalur "terapkan yang
+            // sekarang" yang bisa terpanggil tanpa pilihan sadar.
+            'selling_style' => ['required', Rule::in($presets->styleNames())],
+        ]);
+
+        $style = $validated['selling_style'];
+        $tenant = auth()->user()->tenant;
+
+        $tenant->update([
+            'selling_style' => $style,
+            ...$presets->presetColumnsFor($style),
+        ]);
+
+        return back()->with('success', 'Paket setelan berhasil diterapkan.');
     }
 }

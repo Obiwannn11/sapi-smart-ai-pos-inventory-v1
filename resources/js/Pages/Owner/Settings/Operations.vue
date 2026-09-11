@@ -21,6 +21,11 @@ const props = defineProps({
     // tetap tampil, tapi terkunci — menyembunyikannya membuat owner mengira
     // jenis itu tidak pernah ada.
     upsellTypesLockedGlobally: { type: Array, default: () => [] },
+    // Paket setelan awal ([BL-035]).
+    sellingStyles: { type: Array, default: () => [] },
+    stylePresets: { type: Object, default: () => ({}) },
+    settingCatalog: { type: Object, default: () => ({}) },
+    currentStyle: { type: String, default: null },
 });
 
 const form = useForm({
@@ -37,6 +42,62 @@ const form = useForm({
     min_margin_percent:    props.features.min_margin_percent ?? 10,
     cash_payout_approval_threshold: props.features.cash_payout_approval_threshold ?? 50000,
 });
+
+// --- Paket setelan awal ([BL-035]) ---
+
+/**
+ * Paket yang sedang disorot untuk diterapkan. `null` berarti belum ada yang
+ * dipilih, dan selama itu tidak ada tombol terapkan sama sekali.
+ */
+const presetForm = useForm({ selling_style: null });
+
+/**
+ * Apa yang akan BERUBAH kalau paket yang disorot diterapkan.
+ *
+ * Dihitung di layar, bukan diminta ke server, supaya daftarnya berganti
+ * seketika saat paketnya diganti. Isinya cuma selisih: setelan yang nilainya
+ * sudah sama tidak disebut, karena daftar yang memuat "tidak berubah" membuat
+ * yang benar-benar berubah tenggelam.
+ *
+ * Menampilkan ini bukan hiasan — ia salah satu dari tiga syarat yang membuat
+ * tombol terapkan boleh ada sama sekali (`[BL-035]`): diminta pengguna,
+ * memperlihatkan akibatnya lebih dulu, dan tidak pernah terpicu perubahan
+ * jenis usaha.
+ */
+const presetChanges = computed(() => {
+    const style = presetForm.selling_style;
+    const preset = props.stylePresets[style];
+
+    if (!preset) {
+        return [];
+    }
+
+    return Object.entries(props.settingCatalog).flatMap(([name, definition]) => {
+        const now = form[definition.column];
+        const next = definition.type === 'boolean'
+            ? preset.features.includes(name)
+            : (preset.settings[name] ?? now);
+
+        if (now === next) {
+            return [];
+        }
+
+        const describe = (value) => definition.type === 'boolean'
+            ? (value ? 'Menyala' : 'Mati')
+            : (props.orderIdentityModes[value] ?? value);
+
+        return [{
+            name,
+            label: definition.label,
+            from: describe(now),
+            to: describe(next),
+        }];
+    });
+});
+
+const applyPreset = () => {
+    presetForm.post('/owner/settings/operations/preset', { preserveScroll: true });
+};
 
 /**
  * Keempat jenis saran jual, dengan kalimat yang menyebut apa yang HILANG kalau
@@ -256,6 +317,90 @@ const submitServiceCharge = () => {
         </div>
 
         <SettingsNav current="operations" />
+
+        <!--
+            Paket setelan awal ([BL-035]). Kartu TERSENDIRI di atas formulir
+            utama, dan bukan cuma demi tata letak: ia mengirim ke endpoint lain,
+            dan menyarangkan dua form tidak sah. Pemisahan itu juga yang menjaga
+            batas `[BL-034]` — menyimpan setelan di bawah tidak akan pernah
+            ikut menerapkan paket.
+        -->
+        <div
+            v-if="sellingStyles.length"
+            class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4"
+        >
+            <h2 class="text-base font-semibold text-gray-900">Paket Setelan Awal</h2>
+            <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                Menyetel beberapa pilihan sekaligus agar cocok dengan cara Anda berjualan.
+                Tidak ada yang terkunci — setelah diterapkan, semuanya masih bisa Anda ubah satu per satu di bawah.
+            </p>
+
+            <div class="space-y-2">
+                <label
+                    v-for="style in sellingStyles"
+                    :key="style.name"
+                    class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                    :class="presetForm.selling_style === style.name
+                        ? 'border-blue-400 bg-blue-50'
+                        : 'border-gray-200 hover:bg-gray-50'"
+                >
+                    <input
+                        type="radio"
+                        name="selling-style"
+                        :value="style.name"
+                        v-model="presetForm.selling_style"
+                        class="mt-0.5 h-4 w-4 shrink-0"
+                    />
+                    <span class="min-w-0">
+                        <span class="block text-sm font-medium text-gray-900">
+                            {{ style.label }}
+                            <span
+                                v-if="currentStyle === style.name"
+                                class="ml-1 text-xs font-normal text-gray-500"
+                            >&mdash; titik berangkat Anda</span>
+                        </span>
+                        <span class="block text-xs text-gray-500 mt-0.5">{{ style.description }}</span>
+                    </span>
+                </label>
+            </div>
+
+            <!--
+                Pratinjau perubahan. Tombol terapkan TIDAK ada sebelum blok ini
+                bisa tampil — itu syaratnya, bukan kenyamanan.
+            -->
+            <div v-if="presetForm.selling_style" class="mt-4">
+                <div v-if="presetChanges.length" class="rounded-lg bg-gray-50 border border-gray-200 p-3">
+                    <p class="text-xs font-medium text-gray-900 mb-2">Yang akan berubah</p>
+                    <ul class="space-y-1">
+                        <li
+                            v-for="change in presetChanges"
+                            :key="change.name"
+                            class="flex items-baseline justify-between gap-3 text-xs"
+                        >
+                            <span class="text-gray-600">{{ change.label }}</span>
+                            <span class="whitespace-nowrap text-gray-900">
+                                <span class="text-gray-400 line-through">{{ change.from }}</span>
+                                <span class="mx-1 text-gray-400">&rarr;</span>
+                                <span class="font-medium">{{ change.to }}</span>
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+
+                <p v-else class="rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-600">
+                    Setelan Anda sekarang sudah sama persis dengan paket ini. Menerapkannya tidak mengubah apa pun.
+                </p>
+
+                <Button
+                    type="button"
+                    class="mt-3"
+                    :disabled="presetForm.processing || !presetChanges.length"
+                    @click="applyPreset"
+                >
+                    {{ presetForm.processing ? 'Menerapkan…' : 'Terapkan paket ini' }}
+                </Button>
+            </div>
+        </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <form @submit.prevent="submit" class="space-y-5">

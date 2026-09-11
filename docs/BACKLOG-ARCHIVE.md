@@ -2480,6 +2480,54 @@ Umur tagihan terbuka ditetapkan **per hari**: 24 jam setelah transaksinya tercat
 
 ---
 
+### [BL-035] Paket Setelan Awal per Cara Berjualan — "Mode Bazar" Ternyata Bukan Mode
+- **Ditemukan:** 2026-07-31
+- **Sumber:** Review demo pemilik — "mode bazar atau tenant khusus untuk jualan di cfd, event, dll"
+- **Status:** **Selesai 2026-09-07** — mendarat sebagai paket setelan awal per cara berjualan, bukan sebagai mode. Lihat `[ADDITION] "Mode Bazar" Mendarat Sebagai Paket Setelan, Bukan Mode` di `docs/CHANGELOG.md`.
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - Seluruh repo — pencarian `bazar|bazaar` hanya menemukan **satu** kecocokan: `docs/phases-2/PHASE-QUEUE_Kitchen-Order-Queue.md:56`, dan itu pun menyebutnya sebagai sasaran akhir, bukan fitur ("Sasaran akhirnya tetap kaki lima/bazar")
+  - `app/Models/Tenant.php:80-88` — tempat kapabilitas baru akan bergabung bila mode ini jadi capability flag
+- **Deskripsi:**
+  Tidak ada kolom, flag, konfigurasi, maupun rencana tertulis untuk mode bazar. Yang belum terjawab bukan soal teknis melainkan soal produk: **apa yang berubah** saat mode ini aktif? Kandidat yang masuk akal dari catatan pemilik — tagihan terbuka dimatikan (jualan selalu lunas di tempat), nomor antrian ditonjolkan, stok disederhanakan jadi hitungan terpakai/sisa per hari acara, dan penekanan pada operasi offline. Ada juga pertanyaan yang bersinggungan dengan `[BL-031]`: kalau tidak ada open bill, umur tagihan tidak perlu diputuskan untuk mode ini.
+- **Usulan Perbaikan:**
+  Putuskan dulu daftar perbedaannya, lalu wujudkan sebagai capability flag lewat `Tenant::hasFeature()` seperti `kitchen_queue` — bukan sebagai `business_type` baru, karena `business_type` milik penetapan harga dan membeku per tagihan. Sesudah itu barulah `[BL-034]` bisa menawarkan preset "bazar" yang berarti sesuatu, dan `[BL-036]` bisa memperagakannya.
+
+- **Pemutakhiran 2026-08-15 — tempat mendaratnya sudah ada, tinggal keputusannya.** `[BL-034]` selesai tanpa menunggu entri ini: mekanisme presetnya utuh dan berjalan untuk keempat jenis usaha yang ada. Yang berubah untuk entri ini adalah biaya menyelesaikannya. Dulu "mode bazar" berarti memutuskan definisinya **dan** membangun jalan agar ia sampai ke tenant baru. Sekarang jalannya sudah ada: `config/business-presets.php` memetakan jenis usaha ke daftar kapabilitas, dan pendaftar melihatnya sebagai daftar centang yang bisa ia ubah. Begitu daftar perbedaan mode bazar diputuskan dan diwujudkan sebagai flag di `Tenant::hasFeature()`, menyalakannya untuk tenant bazar baru adalah **satu baris tambahan di config** — bukan penyuntingan alur pendaftaran. Yang tersisa di entri ini murni pertanyaan produk, persis seperti judulnya bilang.
+
+- **Pemutakhiran 2026-09-06 — pemilik membalik bentuknya: ini paketan setelan, bukan mode.** Ditanya soal daftar perbedaan, jawaban pemilik justru mengubah jenis barangnya: *"mungkin ini akan lebih ke konsep paketan mode … lebih ke paketan settings saja, sangat berguna untuk first time experienced user agar tidak bingung pilih settingannya."* Konsekuensinya besar dan menyederhanakan: **tidak ada `bazar_enabled`, tidak ada `hasFeature('bazar')`, tidak ada rute yang digerbangi, tidak ada perilaku baru di mana pun.** Aplikasi tidak pernah tahu ia sedang "mode bazar" — yang ada hanya tenant dengan setelan tertentu yang kebetulan disetel sekaligus. Entri ini berhenti jadi "definisikan sebuah fitur" dan jadi "perluas peta yang sudah ada" (`config/business-presets.php` + `BusinessPresetService`).
+
+- **Dua dari empat kandidat di Deskripsi di atas gugur setelah dicek ke kode — jangan dikerjakan.**
+  1. **Operasi offline sudah ada, dan berlaku untuk semua tenant tanpa flag apa pun**: `SyncOfflineTransactionsRequest`, `OfflineReviewController`, `routes/web.php:295` dan `:364`, plus penanganan anomali `SYNC_NEEDS_REVIEW`. `OpenBillExpiryService` bahkan sudah menghitung umur dari `occurred_at` justru karena penjualan offline. Menjadikannya "fitur mode bazar" berarti mengambilnya dari tenant lain.
+  2. **"Nomor antrian ditonjolkan" sudah bisa hari ini**: `kitchen_queue` + `order_identity_mode = 'code'` sudah persis itu, dan sudah bisa disetel dari Pengaturan → Operasional. Ia turun jadi isi paketan, bukan fitur baru.
+
+- **Empat keputusan pemilik, semuanya "ya".**
+  1. **Paketan punya ruang kunci sendiri, terpisah dari `business_type`.** Formulir pendaftaran jadi dua pertanyaan: jenis usaha (untuk harga, seperti sekarang) dan *"paling mirip yang mana cara Anda berjualan?"* (untuk setelan). Alasannya: penjual di CFD tetap `kuliner` untuk penetapan harga — yang berbeda cuma cara ia bekerja. Memaksa `bazar` masuk `business_type` akan menyeretnya ke `PricingRule` dan `BusinessTypeResolver`, persis yang entri ini sudah putuskan tidak boleh terjadi.
+  2. **Aturan kerja boleh masuk paketan** (`order_identity_mode`, `upsell_mandatory`, dst), **dengan syarat terlihat dan bisa diubah di layar yang sama.** Ini **pembalikan tertulis** atas aturan di `config/business-presets.php` yang menyatakan preset sengaja hanya menyentuh kapabilitas modul karena "menebaknya dari jenis usaha berarti menebak cara orang bekerja". Aturan itu ditulis untuk mencegah aplikasi memutuskan **diam-diam**; batas #3 di berkas yang sama sudah menetralkannya (preset mengisi daftar centang, pendaftar boleh mengubahnya). Yang tetap terlarang adalah setelan yang mendarat tanpa pernah muncul di layar. **Komentar di berkas itu harus ikut diperbarui saat ini dikerjakan** — kalau tidak, kode akan menyatakan aturan yang sudah tidak berlaku.
+  3. **Tombol "Terapkan paketan ini" di Pengaturan ikut sekarang**, dengan tiga syarat: diminta pengguna (tidak pernah otomatis), memperlihatkan apa yang akan berubah sebelum dijalankan, dan tidak pernah terpicu oleh perubahan jenis usaha. Aturan "sekali pakai" dari `[BL-034]` tetap utuh — yang dilarang adalah penerapan ulang **diam-diam**, dan ini bukan itu.
+  4. **Tagihan terbuka dipecah keluar** jadi `[BL-104]`. Ia satu-satunya bagian yang butuh migrasi dan perubahan perilaku, jadi menahannya di sini akan membuat entri ini menyeret pekerjaan yang bukan miliknya.
+
+- **Batas dari pemilik yang membentuk seluruh entri ini:** *"perbedaan harga hanya dari adaptif atau premium urutannya, semua setting dan fitur lainnya tetap terbuka."* Artinya **paketan adalah nilai awal, tidak pernah pembatas** — tidak ada setelan atau fitur yang dikunci di baliknya, dan tidak ada paketan yang menaikkan atau menurunkan harga. **Diverifikasi ke kode dan cocok:** `business_type` memang terdaftar sebagai dimensi harga (`config/pricing-dimensions.php:83`, `BusinessTypeResolver`), tapi **tidak ada satu pun `PricingRuleCondition` yang memakainya** — seluruh kondisi yang ada memakai `monthly_revenue`. Jadi jenis usaha hari ini praktis tidak menggerakkan harga, dan menambah ruang kunci kedua untuk paketan tidak mengambil apa pun dari penetapan harga.
+
+- **Draf isi paketan "Gerai Acara & Bazar"** (kolom terakhir: `Ya` = tampil di formulir dan bisa diubah saat itu juga; `Ringkasan` = mendarat lalu disebutkan di layar ringkasan sesudahnya):
+
+  | Setelan | Nilai | Tampil? | Alasan |
+  |---|---|---|---|
+  | Antrian dapur | nyala | Ya | Inti pekerjaan gerai acara |
+  | Analisis AI | nyala | Ya | Sama dengan semua preset lain |
+  | Pesan mandiri | mati | Ya | Membuka tautan publik — harus keputusan sadar, di mana pun |
+  | Bukti pembayaran | mati | Ringkasan | Menambah satu langkah ke tiap penjualan non-tunai; antrean panjang paling rugi |
+  | Identitas pesanan | kode panggil | Ya | Inilah "nomor antrian ditonjolkan" dari catatan pemilik |
+  | Saran jual wajib dijawab | mati | Ringkasan | Ia menahan tombol bayar; di antrean panjang itu racun |
+  | Pajak | tidak disentuh | — | Status pajak urusan hukum, tidak boleh ditebak dari cara berjualan |
+  | Margin minimum & ambang pengeluaran kas | tidak disentuh | — | Angka kebijakan, bukan gaya berjualan |
+
+- **Namanya jangan "mode".** "Mode" membuat orang mengira aplikasi berperilaku berbeda selama ia menyala, lalu mencari tombol mematikannya — dan tidak ada, karena yang ada cuma setelan yang sudah terlanjur berubah. Nama yang dipakai: **"Paket Setelan Awal"**, dengan pilihan seperti **"Gerai Acara & Bazar"**. Judul entri ini sudah diganti mengikutinya.
+
+- **Yang perlu dikerjakan:** satu migrasi kecil (menyimpan paketan yang dipilih), perluasan `config/business-presets.php` agar entri `features` bisa memuat setelan non-boolean (hari ini tiap entri mengasumsikan satu kolom `*_enabled`), penyesuaian `BusinessPresetService` dan formulir pendaftaran, lalu tombol "Terapkan paketan ini" di Pengaturan beserta pratinjau perubahannya. Sesudah itu `[BL-036]` terbuka.
+
+---
+
 ---
 
 ### [BL-097] Service Charge — Ditunda Sejak Awal, dan Belum Ada yang Memintanya

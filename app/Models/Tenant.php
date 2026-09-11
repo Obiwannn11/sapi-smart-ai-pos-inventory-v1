@@ -86,7 +86,7 @@ class Tenant extends Model
     public const TAX_MODE_INCLUSIVE = 'inclusive';
 
     protected $fillable = [
-        'name', 'slug', 'business_type', 'logo', 'address', 'phone', 'status', 'is_demo', 'pricing_track',
+        'name', 'slug', 'business_type', 'selling_style', 'logo', 'address', 'phone', 'status', 'is_demo', 'pricing_track',
         'signup_ip', 'flagged_at', 'flag_reason',
         'ai_provider', 'ai_api_key', 'ai_model',
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
