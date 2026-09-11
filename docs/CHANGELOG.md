@@ -69,6 +69,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-09 | ADDITION | Stok | "Lihat di Stok" Mendarat pada Daftar yang Sama, dan Penyelamat Stok Akhirnya Punya Sisi Bulanan (BL-105 Butir Terakhir) |
 | 2026-09-09 | ADDITION | Kasir | Baris Keranjang Bisa Diubah Tanpa Dipesan Ulang, dan Menghapusnya Harus Dijawab Dulu |
 | 2026-09-09 | ADDITION | Kasir | Saran Jual Berhenti Menggusur Keranjang — Keduanya Berbagi Ruang Lewat Pembatas yang Bisa Digeser |
+| 2026-09-09 | ADDITION | Kasir | Layar Edit Transaksi Akhirnya Punya Kamera — dan Kewajibannya Berhenti pada Metode yang Sudah Ada (BL-075 Sisa) |
 | 2026-09-08 | HOTFIX | Laporan | Produk Terlaris Berhenti Menjumlahkan Tiga Produk Berbeda ke Dalam Satu Baris Bernama "Hot" |
 | 2026-09-08 | ADDITION | Laporan | Laporan Bulanan Dipangkas Jadi Dua Angka dan Satu Tanggal yang Dipilih — Perbandingannya Turun ke Kaki Halaman |
 | 2026-09-08 | ADDITION | UI | Paginasi dan Rentang Tanggal Punya Komponennya Sendiri — Empat Salinan Markup Jadi Satu |
@@ -489,6 +490,43 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   Tidak ada perubahan skema maupun dependensi. Kunci `localStorage` baru: `cashier.upsellHeight` — kasir lama yang belum pernah menggesernya langsung mendapat perilaku "ikut isi".
 
   **Belum dikerjakan:** pembatasnya belum bisa digerakkan lewat papan tik (tidak `tabindex`, tidak menanggapi panah). Pembatas menu ↔ keranjang yang sudah ada pun begitu; menambahkannya sebaiknya untuk keduanya sekaligus, bukan satu saja.
+
+---
+
+### [ADDITION] Layar Edit Transaksi Akhirnya Punya Kamera — dan Kewajibannya Berhenti pada Metode yang Sudah Ada (BL-075 Sisa)
+- **Tanggal:** 2026-09-09
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Request | Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  `[BL-075]` ditutup 2026-08-19 dengan satu sisa yang sengaja dibiarkan terbuka: modal edit transaksi tidak punya tombol kamera. Akibatnya sebuah pembayaran yang **diubah** jadi non-tunai lewat pengeditan lolos tanpa bukti apa pun — kewajibannya hanya berdiri di dua jalur online yang lain (checkout dan pelunasan tagihan terbuka). Sisa itu sekarang tertutup.
+
+  Modal edit sudah memakai ulang `PaymentModal` sejak awal; yang kurang hanya propnya, jadi kameranya tidak perlu ditulis dua kali. Yang butuh keputusan adalah **siapa yang diwajibkan**, dan jawabannya bukan "semua baris non-tunai":
+
+  - **Metode yang SUDAH ada pada transaksi itu tidak dituntut foto baru.** Penjualan QRIS kemarin tidak punya apa pun untuk dipotret hari ini, dan mewajibkannya berarti mengunci orang yang datang hanya untuk mengoreksi qty — persis larangan butir offline (5) di entri asalnya: aturan yang mengunci kasir akan dimatikan owner di hari pertama. Kameranya tetap ditawarkan di sana, berlabel **(opsional)**, supaya bukti yang dulu tidak ada masih bisa dilampirkan menyusul.
+  - **Baris yang BARU jadi non-tunai tetap wajib.** Tunai yang diubah jadi QRIS adalah pembayaran non-tunai yang lahir hari ini, dan ia bisa difoto hari ini juga. Inilah celah yang sebenarnya, dan hanya inilah yang ditutup.
+  - **Daftar pengecualiannya diambil dari basis data, bukan dari kiriman client.** Daftar yang boleh dikarang pihak yang sedang dijaga bukan penjaga.
+
+  Memotret ulang saat edit **mengganti** foto lama dan **membuang berkasnya** — retensi tanpa batas berlaku untuk bukti yang melekat, bukan untuk versi yang sudah digantikan. Satu hal kecil yang ikut diperbaiki di semua jalur: pesan galat kini membedakan "belum ada fotonya" dari "tokennya tidak ditemukan lagi", karena kasir yang memang sudah memotret lalu dibalas "wajib berfoto" akan memotret ulang berkali-kali tanpa tahu yang salah bukan kelalaiannya.
+
+  **Bukti yang sudah melekat kini terlihat, dan modal edit berhenti meminta kasir mengarang ulang pembayarannya.** Semula `PaymentModal` mengosongkan barisnya setiap kali dibuka — benar untuk penjualan baru, salah untuk pengeditan: kasir yang menekan "Atur" kehilangan nominal, kode referensi, dan bukti yang sudah tersimpan, lalu harus mengetiknya kembali dari ingatan. Ia sekarang menerima `initialPayments`, **kosong di jalur kasir** sehingga POS dan pelunasan tagihan terbuka tidak berubah sedikit pun. Tiga hal yang menentukan bentuknya:
+
+  - **Pratinjau foto lama disajikan lewat rute media ber-auth,** `/media/bukti-bayar/{payment}/{thumb|full}` — id barisnya yang menyeberang, bukan path berkasnya, dan pemeriksaan tenant tetap di `MediaController`. Polanya sama persis dengan foto struk mutasi kas `[BL-093]`.
+  - **Nominal yang sudah terjadi dihormati apa adanya** (`touched: true`). Membiarkan satu baris jadi penyeimbang berarti diam-diam mengubah nominal QRIS yang sudah tercatat; bila total belanja berubah karena itemnya diedit, kekurangannya ditampilkan dan kasir yang memutuskan ke mana ia jatuh.
+  - **Foto baru yang belum disimpan ikut dibawa kembali** saat modal dibuka ulang. Tanpa itu, kasir yang membuka "Atur" lagi untuk mengoreksi nominal akan kehilangan foto yang baru saja ia ambil — tanpa galat, tanpa jejak, dan baru ketahuan saat penyimpanannya ditolak. Membatalkan potret ulang mengembalikan tampilan ke bukti lama, bukan ke kotak kosong yang mengesankan pembayaran itu tak pernah berbukti.
+- **Alasan:**
+  Permintaan pemilik 2026-09-09 saat menanyakan status backlog foto bukti bayar. Sisa ini memang ditulis di entri arsipnya sebagai pekerjaan yang menunggu keputusan, bukan sebagai kelupaan.
+- **File Terdampak:**
+  - `resources/js/Components/PaymentModal.vue` — prop `proofExemptMethodIds`; `proofRequiredFor()` memisahkan "ditawarkan" dari "diwajibkan", dan labelnya ikut berubah wajib/opsional. Prop `initialPayments` dan `rowFromInitial()` menggantikan pengosongan tanpa syarat saat modal dibuka; blok bukti kini punya tiga keadaan — foto baru, bukti tersimpan, belum ada
+  - `resources/js/Components/TransactionEditModal.vue` — saklar dibaca dari prop bersama `auth.tenant.features` (modal ini dipakai dua layar dengan dua controller), `proof_token` ikut terkirim, dan pembayaran tersimpan dioper sebagai `initialPayments` berikut `proof_payment_id`
+  - `app/Http/Requests/EditTransactionRequest.php` — `payments.*.proof_token`, dan `withValidator()` yang menyusun daftar pengecualian dari baris pembayaran transaksinya
+  - `app/Services/PaymentProofService.php` — parameter `$exemptMethodIds`; token yang dikirim tetap harus menunjuk berkas nyata, exempt atau tidak
+  - `app/Services/TransactionEditService.php` — foto baru menang atas yang lama, dan yang lama tidak ikut diklaim sehingga berkasnya terbuang bersama yatim lainnya
+  - `tests/Feature/Cashier/PaymentProofTest.php` — lima pengujian baru: celahnya, penutupannya, pengecualian metode lama, penggantian berkas, dan penjaga payload untuk pratinjaunya
+- **Catatan Migrasi:**
+  Tidak ada perubahan skema. Toko yang saklarnya mati tidak melihat perubahan apa pun.
+
+  **Pratinjaunya tidak punya penjaga di sisi peramban** — proyek ini tidak memakai penguji JavaScript. Yang bisa dijaga secara program adalah **payload**-nya, dan itu yang ditulis: `transaction.payments.*.id` dan `.proof_path` harus tetap sampai ke layar edit. Menyembunyikan salah satunya (lewat `$hidden`, atau lewat perpindahan ke API Resource) akan menghilangkan pratinjaunya tanpa satu pun galat. Tampilannya sendiri belum pernah dilihat di peramban sungguhan.
 
 ---
 

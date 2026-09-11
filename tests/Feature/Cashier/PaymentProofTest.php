@@ -337,6 +337,148 @@ test('mengedit transaksi tidak menghapus foto bukti bayarnya', function () {
     Storage::disk('local')->assertExists($pathSebelum);
 });
 
+test('pembayaran yang diubah jadi non-tunai lewat edit wajib berfoto', function () {
+    ['cashier' => $cashier, 'tenant' => $tenant, 'variant' => $variant, 'cash' => $cash, 'qris' => $qris] = makeProofContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    actingAs($cashier);
+    checkoutWithProof($variant, [
+        ['payment_method_id' => $cash->id, 'amount' => 25000],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::firstOrFail();
+
+    actingAs($owner);
+
+    // Celah yang tertinggal saat `[BL-075]` ditutup: penjualan tunai yang
+    // diubah jadi QRIS lewat pengeditan lolos tanpa bukti apa pun, karena
+    // kewajibannya hanya dipasang pada dua jalur online yang lain.
+    $this->put("/cashier/transactions/{$transaction->id}", [
+        'items' => [['variant_id' => $variant->id, 'qty' => 1, 'modifiers' => []]],
+        'payments' => [['payment_method_id' => $qris->id, 'amount' => 25000]],
+    ])->assertSessionHasErrors('payments.0.proof_token');
+
+    expect($transaction->fresh()->payments->first()->payment_method_id)->toBe($cash->id);
+});
+
+test('edit ke non-tunai lolos begitu fotonya dilampirkan', function () {
+    ['cashier' => $cashier, 'tenant' => $tenant, 'variant' => $variant, 'cash' => $cash, 'qris' => $qris] = makeProofContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    actingAs($cashier);
+    checkoutWithProof($variant, [
+        ['payment_method_id' => $cash->id, 'amount' => 25000],
+    ]);
+
+    $transaction = Transaction::firstOrFail();
+
+    actingAs($owner);
+    $token = uploadPaymentProof();
+
+    $this->put("/cashier/transactions/{$transaction->id}", [
+        'items' => [['variant_id' => $variant->id, 'qty' => 1, 'modifiers' => []]],
+        'payments' => [['payment_method_id' => $qris->id, 'amount' => 25000, 'proof_token' => $token]],
+        'reason' => 'Pelanggan batal bayar tunai, pindah QRIS.',
+    ])->assertSessionHasNoErrors();
+
+    $payment = $transaction->fresh()->payments->first();
+
+    expect($payment->payment_method_id)->toBe($qris->id)
+        ->and($payment->proof_path)->toBe("payment-proofs/{$tenant->id}/{$token}.webp");
+    Storage::disk('local')->assertExists($payment->proof_path);
+});
+
+test('metode non-tunai yang sudah ada tidak dituntut foto ulang saat diedit', function () {
+    ['cashier' => $cashier, 'tenant' => $tenant, 'variant' => $variant, 'qris' => $qris] = makeProofContext(proofEnabled: false);
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    actingAs($cashier);
+    checkoutWithProof($variant, [
+        ['payment_method_id' => $qris->id, 'amount' => 25000],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::firstOrFail();
+
+    // Saklarnya baru dinyalakan SESUDAH penjualan itu terjadi — keadaan yang
+    // pasti dialami setiap toko yang mengaktifkan fiturnya.
+    $tenant->update(['payment_proof_enabled' => true]);
+
+    actingAs($owner);
+
+    // Mewajibkan foto di sini akan mengunci layar edit: QRIS kemarin tidak
+    // punya apa pun untuk dipotret hari ini, dan yang gagal bukan fotonya
+    // melainkan koreksi qty-nya. Persis larangan butir offline (5).
+    $this->put("/cashier/transactions/{$transaction->id}", [
+        'items' => [['variant_id' => $variant->id, 'qty' => 2, 'modifiers' => []]],
+        'payments' => [['payment_method_id' => $qris->id, 'amount' => 50000]],
+        'reason' => 'Salah input qty.',
+    ])->assertSessionHasNoErrors();
+
+    expect($transaction->fresh()->items->first()->qty)->toBe(2);
+});
+
+test('memotret ulang saat edit mengganti foto lama dan membuang berkasnya', function () {
+    ['cashier' => $cashier, 'tenant' => $tenant, 'variant' => $variant, 'qris' => $qris] = makeProofContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    actingAs($cashier);
+    $lama = uploadPaymentProof();
+    checkoutWithProof($variant, [
+        ['payment_method_id' => $qris->id, 'amount' => 25000, 'proof_token' => $lama],
+    ]);
+
+    $transaction = Transaction::firstOrFail();
+
+    actingAs($owner);
+    $baru = uploadPaymentProof();
+
+    $this->put("/cashier/transactions/{$transaction->id}", [
+        'items' => [['variant_id' => $variant->id, 'qty' => 1, 'modifiers' => []]],
+        'payments' => [['payment_method_id' => $qris->id, 'amount' => 25000, 'proof_token' => $baru]],
+        'reason' => 'Foto sebelumnya buram.',
+    ])->assertSessionHasNoErrors();
+
+    expect($transaction->fresh()->payments->first()->proof_path)
+        ->toBe("payment-proofs/{$tenant->id}/{$baru}.webp");
+
+    // Yang digantikan tidak boleh tertinggal di disk: retensi tanpa batas
+    // berlaku untuk bukti yang MELEKAT, bukan untuk versi yang sudah dibuang.
+    Storage::disk('local')->assertMissing("payment-proofs/{$tenant->id}/{$lama}.webp");
+});
+
+test('layar edit menerima id pembayaran dan penandanya, cukup untuk memanggil rute media', function () {
+    ['cashier' => $cashier, 'tenant' => $tenant, 'variant' => $variant, 'qris' => $qris] = makeProofContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    actingAs($cashier);
+    $token = uploadPaymentProof();
+    checkoutWithProof($variant, [
+        ['payment_method_id' => $qris->id, 'amount' => 25000, 'proof_token' => $token],
+    ]);
+
+    $transaction = Transaction::firstOrFail();
+    $payment = $transaction->payments->first();
+
+    actingAs($owner);
+
+    // Pratinjau bukti di modal edit berdiri di atas dua medan ini saja: `id`
+    // untuk menyusun /media/bukti-bayar/{id}/thumb, dan `proof_path` sebagai
+    // penanda ada-tidaknya. Menyembunyikan salah satunya — lewat $hidden, atau
+    // lewat perpindahan ke API Resource — akan menghilangkan pratinjaunya tanpa
+    // satu pun galat. Serialisasi modelnya sama untuk riwayat kasir, jadi satu
+    // penjaga menutup kedua layar.
+    get("/owner/transactions/{$transaction->id}")->assertInertia(
+        fn ($page) => $page
+            ->where('transaction.payments.0.id', $payment->id)
+            ->where('transaction.payments.0.proof_path', $payment->proof_path)
+    );
+});
+
 // --- Kebersihan disk ---
 
 test('foto tertunda yang tidak pernah diklaim dibuang, yang sudah melekat tidak', function () {

@@ -137,10 +137,21 @@ class PaymentProofService
      * "wajib berfoto" bisa dipenuhi dengan mengarang UUID, dan pembayarannya
      * tersimpan tanpa bukti apa pun — persis keadaan yang aturan ini cegah.
      *
+     * **`$exemptMethodIds` melonggarkan KEWAJIBANNYA, bukan pemeriksaannya.**
+     * Dipakai satu jalur saja — pengeditan transaksi — dan berisi metode yang
+     * sudah ada pada transaksinya sebelum diedit. Alasannya sama dengan
+     * larangan butir offline (5) di `[BL-075]`: penjualan QRIS kemarin tidak
+     * punya apa pun untuk dipotret hari ini, dan aturan yang mengunci orang
+     * yang datang untuk mengoreksi qty adalah aturan yang akan dimatikan
+     * owner. Yang tetap wajib adalah baris yang BARU jadi non-tunai lewat
+     * pengeditan — celah yang tertinggal saat entri itu ditutup. Token yang
+     * dikirim tetap harus menunjuk berkas nyata, exempt atau tidak.
+     *
      * @param  array<int, array<string, mixed>>  $payments
+     * @param  array<int, int>  $exemptMethodIds
      * @return array<int, string> Indeks baris pembayaran => pesan galatnya.
      */
-    public function missingProofs(array $payments, ?Tenant $tenant): array
+    public function missingProofs(array $payments, ?Tenant $tenant, array $exemptMethodIds = []): array
     {
         if (! $tenant?->hasFeature('payment_proof')) {
             return [];
@@ -160,9 +171,24 @@ class PaymentProofService
                 continue;
             }
 
-            if (! $this->pendingExists($payment['proof_token'] ?? null, $tenant->id)) {
-                $missing[$index] = "Foto bukti bayar wajib untuk {$method->name}.";
+            $token = $payment['proof_token'] ?? null;
+
+            if ($this->pendingExists($token, $tenant->id)) {
+                continue;
             }
+
+            // Tidak mengirim token sama sekali pada metode yang sudah ada:
+            // buktinya yang lama tetap melekat, tidak ada yang perlu diminta.
+            if ($token === null && in_array($method->id, $exemptMethodIds, true)) {
+                continue;
+            }
+
+            // Pesannya dibedakan. Kasir yang MEMANG memotret lalu dibalas
+            // "wajib berfoto" akan memotret ulang berkali-kali tanpa tahu yang
+            // salah adalah tokennya, bukan kelalaiannya.
+            $missing[$index] = $token === null
+                ? "Foto bukti bayar wajib untuk {$method->name}."
+                : "Foto bukti bayar untuk {$method->name} tidak ditemukan lagi — potret ulang.";
         }
 
         return $missing;

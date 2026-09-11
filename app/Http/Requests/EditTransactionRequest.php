@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Models\ModifierGroup;
 use App\Models\Product;
+use App\Models\Transaction;
+use App\Services\PaymentProofService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -53,10 +55,52 @@ class EditTransactionRequest extends FormRequest
             'payments.*.amount' => 'required|numeric|min:0',
             'payments.*.reference_code' => 'nullable|string|max:255',
 
+            // Token, bukan berkasnya — lihat PaymentProofService. Jalur KEEMPAT
+            // pembuat baris pembayaran, dan yang paling lama tidak punya kamera
+            // ([BL-075]).
+            'payments.*.proof_token' => 'nullable|uuid',
+
             // Meta
             'notes' => 'nullable|string|max:1000',
             'reason' => 'nullable|string|max:255',
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $tenant = Auth::user()?->tenant;
+
+            $missing = app(PaymentProofService::class)->missingProofs(
+                $this->input('payments', []),
+                $tenant,
+                $this->exemptMethodIds($tenant?->id),
+            );
+
+            foreach ($missing as $index => $message) {
+                $validator->errors()->add("payments.{$index}.proof_token", $message);
+            }
+        });
+    }
+
+    /**
+     * Metode yang sudah ada pada transaksi ini sebelum diedit — mereka tidak
+     * dituntut foto baru. Alasannya ditulis di PaymentProofService.
+     *
+     * Diambil dari BASIS DATA, bukan dari kiriman client: daftar yang boleh
+     * dikarang pihak yang sedang dijaga bukan penjaga.
+     *
+     * @return array<int, int>
+     */
+    private function exemptMethodIds(?int $tenantId): array
+    {
+        $transaction = $this->route('transaction');
+
+        if (! $transaction instanceof Transaction || $transaction->tenant_id !== $tenantId) {
+            return [];
+        }
+
+        return $transaction->payments()->pluck('payment_method_id')->all();
     }
 
     public function messages(): array

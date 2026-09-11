@@ -35,6 +35,31 @@ const props = defineProps({
      * satu-satunya yang bisa meminta foto — tidak pernah ada di sana.
      */
     proofRequired: { type: Boolean, default: false },
+    /**
+     * Metode yang boleh lewat tanpa foto meski saklarnya menyala ([BL-075]).
+     *
+     * Kosong di kasir — penjualan baru selalu wajib. Diisi hanya oleh modal
+     * EDIT, dengan metode yang SUDAH ada pada transaksinya: sebuah QRIS yang
+     * terjual minggu lalu tidak bisa difoto ulang hari ini, dan mewajibkannya
+     * hanya akan mengunci orang yang datang untuk mengoreksi qty. Kamera tetap
+     * ditawarkan di sana, sebagai pelengkap, bukan sebagai gerbang.
+     */
+    proofExemptMethodIds: { type: Array, default: () => [] },
+    /**
+     * Baris yang sudah ada saat modal dibuka ([BL-075] sisa).
+     *
+     * KOSONG di kasir, dan itu yang membuat penambahan ini aman: penjualan
+     * baru tetap membuka modal yang bersih seperti sebelumnya. Yang mengisinya
+     * hanya modal EDIT, dengan pembayaran yang benar-benar tersimpan — supaya
+     * kasir melihat nominal, kode referensi, dan FOTO yang sudah melekat, bukan
+     * formulir kosong yang memaksanya mengarang ulang apa yang sudah terjadi.
+     *
+     * Bentuk tiap baris: `{ payment_method_id, amount, reference_code,
+     * proof_payment_id }`. `proof_payment_id` adalah id baris
+     * `transaction_payments` yang memegang fotonya — bukan path berkasnya,
+     * yang tidak pernah perlu diketahui peramban.
+     */
+    initialPayments: { type: Array, default: () => [] },
 });
 
 const paymentMethodOptions = computed(() =>
@@ -56,6 +81,30 @@ const blankRow = () => ({
     proof_preview: null,
     proof_uploading: false,
     proof_error: null,
+    // Foto yang SUDAH melekat pada pembayaran tersimpan — hanya diisi modal
+    // edit. Ia tidak ikut dikirim ke server: buktinya diselamatkan di sana
+    // lewat `payment_method_id`, dan yang dibawa client hanya foto baru.
+    proof_payment_id: null,
+});
+
+/** Satu baris dari pembayaran yang sudah tersimpan (modal edit). */
+const rowFromInitial = (payment) => ({
+    ...blankRow(),
+    payment_method_id: payment.payment_method_id ?? null,
+    amount: Number(payment.amount) || 0,
+    // Nominal yang sudah terjadi dihormati apa adanya. Membiarkan salah satu
+    // baris jadi penyeimbang berarti diam-diam mengubah nominal QRIS yang
+    // sudah tercatat; bila total belanjanya berubah karena itemnya diedit,
+    // kekurangannya DITAMPILKAN dan kasir yang memutuskan ke mana ia jatuh.
+    touched: true,
+    reference_code: payment.reference_code || '',
+    // Foto baru yang sudah terunggah pada pembukaan sebelumnya ikut dibawa
+    // kembali. Tanpa ini, kasir yang membuka ulang modal untuk mengoreksi
+    // nominal akan kehilangan foto yang baru saja ia ambil — tanpa galat,
+    // tanpa jejak, dan baru ketahuan saat penyimpanannya ditolak.
+    proof_token: payment.proof_token ?? null,
+    proof_preview: payment.proof_preview ?? null,
+    proof_payment_id: payment.proof_payment_id ?? null,
 });
 
 const rows = ref([blankRow()]);
@@ -69,7 +118,11 @@ const formatNumber = (value) => {
 };
 
 watch(() => props.show, (val) => {
-    if (val) rows.value = [blankRow()];
+    if (! val) return;
+
+    rows.value = props.initialPayments.length > 0
+        ? props.initialPayments.map(rowFromInitial)
+        : [blankRow()];
 });
 
 const getMethodType = (methodId) => {
@@ -142,10 +195,22 @@ const emptyRowIndex = computed(() =>
 
 const { compress } = useImageCompressor();
 
+/** Kamera ditawarkan — belum tentu diwajibkan; lihat `proofRequiredFor`. */
 const needsProof = (row) => props.proofRequired && isNonCash(row.payment_method_id);
 
+const proofRequiredFor = (row) =>
+    needsProof(row) && !props.proofExemptMethodIds.includes(row.payment_method_id);
+
+/**
+ * Foto lama disajikan lewat rute media ber-auth, bukan dari path berkasnya —
+ * pemeriksaan tenant ada di MediaController, dan URL-nya disusun sama persis
+ * seperti foto struk mutasi kas ([BL-093]).
+ */
+const existingProofUrl = (row, size) =>
+    row.proof_payment_id ? `/media/bukti-bayar/${row.proof_payment_id}/${size}` : null;
+
 const missingProofIndex = computed(() =>
-    rows.value.findIndex((row) => needsProof(row) && !row.proof_token)
+    rows.value.findIndex((row) => proofRequiredFor(row) && !row.proof_token)
 );
 
 const uploadingProof = computed(() => rows.value.some((row) => row.proof_uploading));
@@ -202,6 +267,12 @@ const onProofPicked = async (idx, event) => {
     }
 };
 
+/**
+ * Buang foto BARU saja. `proof_payment_id` sengaja tidak ikut dihapus: bukti
+ * lama masih melekat di server, jadi membatalkan potret ulang harus kembali
+ * memperlihatkannya — bukan meninggalkan kotak kosong yang mengesankan
+ * pembayaran itu tak pernah berbukti.
+ */
 const clearProof = (idx) => {
     const row = rows.value[idx];
 
@@ -291,6 +362,20 @@ const quickCash = (idx, denomination) => {
 };
 
 /**
+ * Kosongkan nominal baris ini. `touched` ikut dilepas, bukan hanya angkanya
+ * dinolkan: baris non-tunai yang dikosongkan kembali menjadi penyeimbang —
+ * itulah keadaan awalnya — bukan nol manual yang membekukan sisa tagihan pada
+ * baris lain.
+ */
+const resetAmount = (idx) => {
+    rows.value[idx].amount = 0;
+    rows.value[idx].touched = false;
+};
+
+/** Nol yang otomatis tidak perlu tombol hapus; tidak ada yang dihapus di sana. */
+const canResetAmount = (idx) => idx !== balancerIndex.value && amountAt(idx) > 0;
+
+/**
  * Warna tombol cepat meniru warna uang kertas rupiah — hijau 20rb, biru 50rb,
  * merah 100rb — supaya kasir mengenalinya sekilas dan barisnya terlihat rapi.
  */
@@ -316,6 +401,11 @@ const confirm = () => {
         amount: amountAt(idx),
         reference_code: row.reference_code || null,
         proof_token: row.proof_token,
+        // Dua yang terakhir hanya berarti bagi modal edit, yang mengoper
+        // hasilnya kembali ke sini bila kasir membuka modal ini lagi. Jalur
+        // checkout mengabaikan keduanya.
+        proof_preview: row.proof_preview,
+        proof_payment_id: row.proof_payment_id,
     })));
 
     emit('close');
@@ -397,7 +487,8 @@ const close = () => {
                                             type="text"
                                             inputmode="numeric"
                                             placeholder="0"
-                                            class="w-full pl-9 pr-24 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                            class="w-full pl-9 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                                            :class="idx === balancerIndex ? 'pr-24' : 'pr-10'"
                                         />
                                         <span
                                             v-if="idx === balancerIndex"
@@ -405,6 +496,24 @@ const close = () => {
                                         >
                                             Otomatis
                                         </span>
+
+                                        <!-- Hapus nominal. `mousedown.prevent`
+                                             menahan blur input supaya satu tap
+                                             cukup: tanpa itu tap pertama hanya
+                                             memindahkan fokus. -->
+                                        <button
+                                            v-else-if="canResetAmount(idx)"
+                                            type="button"
+                                            title="Hapus nominal"
+                                            aria-label="Hapus nominal"
+                                            @mousedown.prevent
+                                            @click="resetAmount(idx)"
+                                            class="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-red-600"
+                                        >
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
                                     </div>
 
                                     <!-- Tombol cepat untuk SETIAP baris tunai.
@@ -462,16 +571,51 @@ const close = () => {
                                     </button>
                                 </div>
 
+                                <!-- Bukti yang SUDAH melekat pada pembayaran
+                                     tersimpan ([BL-075] sisa). Tanpa blok ini
+                                     kasir hanya bisa menyimpulkan fotonya ada
+                                     dari fakta barisnya tidak diwajibkan — dan
+                                     kesimpulan bukan pemeriksaan. -->
+                                <div
+                                    v-else-if="row.proof_payment_id"
+                                    class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-2"
+                                >
+                                    <a
+                                        :href="existingProofUrl(row, 'full')"
+                                        target="_blank"
+                                        rel="noopener"
+                                        title="Lihat bukti bayar"
+                                    >
+                                        <img
+                                            :src="existingProofUrl(row, 'thumb')"
+                                            alt="Bukti bayar tersimpan"
+                                            class="h-14 w-14 rounded object-cover border border-gray-200 bg-white"
+                                        />
+                                    </a>
+                                    <span class="flex-1 text-xs font-medium text-gray-600">Bukti bayar tersimpan</span>
+                                    <label
+                                        :for="'proof-' + idx"
+                                        class="cursor-pointer text-xs font-medium text-primary hover:underline"
+                                    >
+                                        {{ row.proof_uploading ? 'Mengunggah…' : 'Potret ulang' }}
+                                    </label>
+                                </div>
+
                                 <label
                                     v-else
                                     :for="'proof-' + idx"
-                                    class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-amber-300 bg-amber-50/60 px-3 py-2.5 text-xs font-medium text-amber-800 hover:border-amber-400"
+                                    class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed px-3 py-2.5 text-xs font-medium"
+                                    :class="proofRequiredFor(row)
+                                        ? 'border-amber-300 bg-amber-50/60 text-amber-800 hover:border-amber-400'
+                                        : 'border-gray-300 bg-gray-50 text-gray-600 hover:border-gray-400'"
                                 >
                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                                     </svg>
-                                    {{ row.proof_uploading ? 'Mengunggah foto...' : 'Foto bukti bayar (wajib)' }}
+                                    {{ row.proof_uploading
+                                        ? 'Mengunggah foto...'
+                                        : (proofRequiredFor(row) ? 'Foto bukti bayar (wajib)' : 'Foto bukti bayar (opsional)') }}
                                 </label>
 
                                 <p v-if="row.proof_error" role="alert" class="text-xs text-destructive">{{ row.proof_error }}</p>

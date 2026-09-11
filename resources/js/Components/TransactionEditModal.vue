@@ -17,7 +17,35 @@ const props = defineProps({
 
 const emit = defineEmits(['close']);
 
+const page = usePage();
+
 const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
+
+/**
+ * Foto bukti bayar di layar EDIT ([BL-075], sisa yang sengaja dibiarkan
+ * terbuka saat entri itu ditutup).
+ *
+ * Saklarnya dibaca dari prop bersama, bukan dititipkan per halaman: modal ini
+ * dipakai dua layar dengan dua controller berbeda (riwayat kasir dan detail
+ * transaksi owner), dan flag yang harus diingat dua controller adalah flag
+ * yang suatu saat akan lupa dikirim salah satunya.
+ */
+const paymentProofEnabled = computed(
+    () => page.props.auth?.tenant?.features?.payment_proof === true
+);
+
+/**
+ * Metode yang sudah ada pada transaksi ini sebelum diedit.
+ *
+ * Kewajiban berfoto TIDAK berlaku untuk mereka — bukan kelonggaran, melainkan
+ * satu-satunya jawaban yang tidak mengunci layar: penjualan QRIS kemarin tidak
+ * punya lagi apa pun untuk dipotret hari ini. Yang tetap wajib adalah baris
+ * yang BARU jadi non-tunai lewat pengeditan, dan itulah celah yang tertinggal
+ * saat `[BL-075]` ditutup.
+ */
+const existingMethodIds = computed(
+    () => (props.transaction?.payments || []).map((p) => p.payment_method_id)
+);
 
 // --- Cart state (pre-fill dari transaksi) ---
 const cart = ref([]);
@@ -52,6 +80,13 @@ const prefill = () => {
         payment_method_id: p.payment_method_id,
         amount: Number(p.amount),
         reference_code: p.reference_code || null,
+        // Bukti yang sudah melekat tidak ikut bolak-balik lewat client: ia
+        // diselamatkan di server lewat `payment_method_id`. Yang lahir di sini
+        // hanya token foto BARU, bila kasir memotret ulang.
+        proof_token: null,
+        // Yang menyeberang hanya id barisnya — cukup untuk memanggil rute
+        // media, dan path berkasnya tidak pernah perlu diketahui peramban.
+        proof_payment_id: p.proof_path ? p.id : null,
     }));
 };
 
@@ -162,6 +197,7 @@ const submit = () => {
             payment_method_id: pay.payment_method_id,
             amount: Number(pay.amount),
             reference_code: pay.reference_code || null,
+            proof_token: pay.proof_token || null,
         })),
         notes: notes.value || null,
         reason: reason.value || null,
@@ -344,6 +380,9 @@ const submit = () => {
         :show="showPayment"
         :total-amount="cartTotal"
         :payment-methods="paymentMethods"
+        :proof-required="paymentProofEnabled"
+        :proof-exempt-method-ids="existingMethodIds"
+        :initial-payments="payments"
         @confirm="onPaymentConfirm"
         @close="showPayment = false"
     />

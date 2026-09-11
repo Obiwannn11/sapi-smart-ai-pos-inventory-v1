@@ -22,7 +22,7 @@ class TransactionEditService
      * Edit penuh transaksi completed: item, modifier, pembayaran.
      * Stok dihitung ulang lewat DELTA per variant.
      *
-     * @param  array{items: array<int, array{variant_id: int, qty: int, notes?: ?string, modifiers?: array<int, array{id: int}>}>, payments: array<int, array{payment_method_id: int, amount: float, reference_code?: ?string}>, notes?: ?string, reason?: ?string}  $data
+     * @param  array{items: array<int, array{variant_id: int, qty: int, notes?: ?string, modifiers?: array<int, array{id: int}>}>, payments: array<int, array{payment_method_id: int, amount: float, reference_code?: ?string, proof_token?: ?string}>, notes?: ?string, reason?: ?string}  $data
      */
     public function edit(Transaction $transaction, array $data, User $editor): Transaction
     {
@@ -122,8 +122,8 @@ class TransactionEditService
             //
             // Foto bukti bayar DIPERTAHANKAN menyeberangi pembangunan ulang
             // ini ([BL-075]). Baris pembayaran dihapus lalu dibuat lagi dari
-            // kiriman client, dan client edit tidak pernah mengirim bukti —
-            // jadi tanpa penyelamatan di bawah, mengoreksi jumlah item pada
+            // kiriman client, dan client edit tidak mengirim ulang bukti yang
+            // sudah ada — jadi tanpa penyelamatan di bawah, mengoreksi qty pada
             // penjualan QRIS akan MENGHAPUS buktinya sebagai efek samping.
             // Itu persis jenis kesalahan yang paling sulit disadari: tidak ada
             // pesan galat, tidak ada yang gagal, buktinya hanya tidak ada lagi
@@ -142,9 +142,15 @@ class TransactionEditService
             $claimedProofs = [];
             foreach ($data['payments'] as $payment) {
                 $methodId = $payment['payment_method_id'];
-                $proofPath = $survivingProofs[$methodId] ?? null;
 
-                if ($proofPath !== null) {
+                // Foto BARU menang atas yang lama, dan yang lama tidak ikut
+                // diklaim — jadi berkasnya dibuang bersama yatim lainnya di
+                // bawah. Tanpa itu, memotret ulang bukti yang buram akan
+                // meninggalkan versi buramnya selamanya di disk.
+                $freshProof = $this->paymentProofs->claim($payment['proof_token'] ?? null, $transaction->tenant_id);
+                $proofPath = $freshProof ?? ($survivingProofs[$methodId] ?? null);
+
+                if ($freshProof === null && $proofPath !== null) {
                     $claimedProofs[] = $proofPath;
                 }
 
