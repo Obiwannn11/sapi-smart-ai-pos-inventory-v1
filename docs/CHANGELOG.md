@@ -62,6 +62,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
+| 2026-09-11 | ADDITION | UI | Logo Usaha Menggantikan Huruf Pertama Nama Toko di Sidebar, Topbar Kasir, dan Kepala Struk |
 | 2026-09-10 | DECISION | Kasir | Aksi Baris Keranjang Berhenti Bergantung pada Hover — dan "Harga Khusus" Pindah ke Baris Ikon |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
 | 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
@@ -260,6 +261,41 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Logo Usaha Menggantikan Huruf Pertama Nama Toko di Sidebar, Topbar Kasir, dan Kepala Struk
+- **Tanggal:** 2026-09-11
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Backend, Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Kolom `tenants.logo` sudah ada sejak migrasi pertama dan tidak pernah dipakai sama sekali — tidak ada layar yang mengisinya, tidak ada layar yang membacanya. Tiga permukaan yang seharusnya memakainya justru menghitung huruf pertama nama toko sendiri-sendiri: kepala sidebar owner, topbar kasir, dan kepala struk. Sekarang pemilik bisa mengunggahnya di Profil & Merek, dan ketiganya berganti sekaligus tanpa pengaturan terpisah.
+
+  **Satu usaha, satu logo — dan satu komponen yang merendernya.** `BrandMark.vue` menjawab satu pertanyaan ("saya sedang di toko mana") untuk ketiga permukaan itu. Sebelumnya masing-masing menghitung inisialnya sendiri dengan huruf cadangan yang bahkan berbeda — `S` di sidebar, `U` di tempat lain. Selama belum ada logo, kotaknya berlatar warna merek berisi inisial, persis seperti sebelumnya; setelah ada, latarnya hilang supaya logo bertepi transparan tidak terbaca sebagai stiker yang ditempel di atas kotak hijau.
+
+  **Logo dimuat utuh, bukan dipotong penuhi.** `TenantLogoService` memakai `contain`, bukan `cover` seperti `ImageService` untuk gambar produk. Logo usaha sering melebar — namanya di samping lambang — dan `cover` akan memotong justru bagian yang membuatnya dikenali. Hasilnya satu rendition WEBP 256×256 berlatar transparan; permukaan terbesar yang memakainya adalah kepala struk (~48 px), jadi rendition kedua hanya akan menambah berkas yang tidak pernah diminta.
+
+  **Berkasnya privat, dan rutenya tidak menerima parameter.** `/media/logo` selalu berarti "logo milik tenant saya" — tidak ada id yang bisa ditukar, jadi pemisahan antar tokonya lahir dari bentuk rutenya sendiri, bukan dari pemeriksaan yang bisa lupa ditulis. Karena URL-nya tidak membawa nama berkas, `Cache-Control: immutable` di sana baru aman berkat sidik `?v=` yang ditempelkan `TenantLogoService::urlFor()` dan ikut berganti setiap kali logonya diganti.
+
+  **"Jangan sentuh" dibedakan dari "buang".** Halaman yang sama juga menyimpan alamat dan nomor telepon, jadi "tidak ada berkas di request" tidak boleh berarti "hapus logo" — kalau begitu, membetulkan nomor telepon akan diam-diam membuang logo yang sudah terpasang. Penghapusan punya sinyalnya sendiri, `remove_logo`, yang dikirim hanya ketika pengguna membersihkan pratinjaunya.
+
+  **Kepala struk ikut dibetulkan.** Logo di atas nama toko yang salah lebih buruk daripada tanpa logo, dan `ReceiptModal` memang sudah lama salah: dari tiga pemanggilnya hanya `CashierTopbar` yang meneruskan `tenantName`, sehingga struk yang dibuka dari Riwayat mencetak "SAPI POS" — nama produk — di kepala struk orang. Sekarang nama dan logo sama-sama jatuh ke prop bersama bila tidak dititipkan.
+- **Alasan:**
+  Permintaan pemilik 2026-09-11: logo usaha yang diunggah sekali lalu terpasang sendiri di layar kasir dan dashboard owner, menggantikan huruf pertama nama toko.
+- **File Terdampak:**
+  - `app/Services/TenantLogoService.php` — baru; unggah/hapus, `contain` 256×256 WEBP transparan di disk privat, plus `urlFor()` yang menempelkan sidik `?v=`
+  - `app/Http/Controllers/MediaController.php` — `tenantLogo()`; satu-satunya rute media tanpa parameter
+  - `app/Http/Controllers/Owner/Settings/BusinessProfileController.php` — validasi `logo`/`remove_logo`, dan `logo` yang sengaja di-`unset` sebelum `->update()` supaya null tidak pernah menghapus apa pun
+  - `app/Http/Middleware/HandleInertiaRequests.php` — `auth.tenant.logo_url`, berdampingan dengan namanya
+  - `routes/web.php` — `GET /media/logo` (`media.tenant-logo`)
+  - `resources/js/Components/BrandMark.vue` — baru; logo dengan cadangan inisial, satu tempat untuk ketiga permukaan
+  - `resources/js/Layouts/OwnerLayout.vue`, `resources/js/Components/CashierTopbar.vue` — glyph inisialnya diganti `BrandMark`; di kasir lencananya hanya muncul di POS, satu-satunya halaman yang judulnya memang nama toko
+  - `resources/js/Components/ReceiptModal.vue` — logo di kepala struk, dan `tenantName` yang akhirnya punya cadangan dari prop bersama
+  - `resources/js/Pages/Owner/Settings/Index.vue` — `ImageUpload` untuk logo; formnya berpindah ke POST + `_method` karena PHP tidak mengurai body multipart pada PATCH
+  - `tests/Feature/Owner/TenantLogoTest.php` — baru; 12 tes
+- **Catatan Migrasi:**
+  Tidak ada. Kolom `tenants.logo` sudah tersedia sejak `2026_03_06_000001_create_tenants_table`; tenant yang belum mengunggah apa pun tetap menampilkan huruf pertama nama tokonya, persis seperti sebelumnya.
+
+---
 
 ### [ADDITION] Keluar Selalu Ditanya Dulu, di Semua Jenis Akun
 - **Tanggal:** 2026-09-11

@@ -5,6 +5,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import Button from '@/Components/Button.vue';
+import ImageUpload from '@/Components/ImageUpload.vue';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -17,7 +18,27 @@ const form = useForm({
     address:       props.tenant.address ?? '',
     phone:         props.tenant.phone ?? '',
     business_type: props.tenant.business_type ?? 'lainnya',
+    // Berkas baru yang dipilih, atau null bila logonya tidak disentuh.
+    logo:          null,
+    // Sinyal hapus yang berdiri sendiri. Tanpa ini, "tidak ada berkas" berarti
+    // dua hal sekaligus — "jangan sentuh" dan "buang" — dan menyimpan nomor
+    // telepon akan diam-diam menghapus logo yang sudah terpasang.
+    remove_logo:   false,
 });
+
+// Ditangani dari emit-nya, BUKAN dengan mengawasi `form.logo`. Menekan × pada
+// pratinjau mengirim null, dan `form.logo` memang sudah null selama pengguna
+// belum memilih berkas apa pun — jadi sebuah watcher tidak akan pernah menyala
+// justru pada satu-satunya kejadian yang perlu ditangkap di sini.
+//
+// Layar kosong berarti "tidak ada logo": pratinjau yang dibersihkan × juga
+// menghapus tampilan logo LAMA, jadi menyimpan setelah itu memang berarti
+// membuangnya. Hanya layar yang tahu ada logo tersimpan di balik pratinjau itu,
+// karena itu pembedaannya di sini dan bukan di server.
+const onLogoChange = (file) => {
+    form.logo = file;
+    form.remove_logo = !file && !!props.tenant.logo_url;
+};
 
 // Daftar jenis usaha datang sebagai peta nilai→label; SelectDropdown bekerja
 // dengan daftar.
@@ -25,8 +46,19 @@ const businessTypeOptions = computed(() =>
     Object.entries(props.businessTypes).map(([value, label]) => ({ value, label })),
 );
 
+// POST + `_method`, bukan patch(). PHP tidak mengurai body multipart pada
+// PATCH, jadi berkasnya akan sampai di server sebagai request kosong — unggahan
+// yang gagal tanpa pesan kesalahan apa pun. Rute dan nama rutenya tidak berubah.
 const submit = () => {
-    form.patch('/owner/settings', { preserveScroll: true });
+    form
+        .transform((data) => ({ ...data, _method: 'patch' }))
+        .post('/owner/settings', {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.logo = null;
+                form.remove_logo = false;
+            },
+        });
 };
 </script>
 
@@ -57,6 +89,26 @@ const submit = () => {
             </div>
 
             <form @submit.prevent="submit" class="space-y-5">
+                <!-- Logo usaha -->
+                <!-- Satu usaha, satu logo. Ia menggantikan huruf pertama nama
+                     toko di kepala sidebar, di topbar kasir, dan di kepala
+                     struk — ketiganya sekaligus, tanpa pengaturan terpisah. -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Logo Usaha</label>
+                    <ImageUpload
+                        :model-value="form.logo"
+                        :current-image="tenant.logo_url"
+                        :error="form.errors.logo"
+                        @update:model-value="onLogoChange"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                        Tampil di kepala sidebar, di layar kasir, dan di struk.
+                        Kosongkan untuk kembali memakai huruf pertama nama usaha.
+                        Logo dimuat utuh ke dalam kotak persegi — bagian tepinya
+                        tidak dipotong.
+                    </p>
+                </div>
+
                 <!-- Alamat -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Alamat</label>

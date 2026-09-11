@@ -4,6 +4,7 @@ import FlashMessage from '@/Components/FlashMessage.vue';
 import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
 import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
+import BrandMark from '@/Components/BrandMark.vue';
 import { ref, computed, h, onMounted, onBeforeUnmount, defineComponent } from 'vue';
 import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
 import { BUSINESS_TZ } from '@/support/date';
@@ -213,9 +214,11 @@ const isSuspended = computed(() => auth.tenant?.is_suspended === true);
 // yang menjawab pertanyaan sama ("saya sedang di toko mana") tidak boleh
 // menjawabnya dengan dua cara.
 const tenantName = computed(() => auth.tenant?.name || 'SAPI POS');
-// Inisialnya ikut nama toko. Glyph `S` di sebelah "Kopi Nusantara" akan
-// terbaca sebagai merek yang salah, bukan sebagai penanda produk.
-const tenantInitial = computed(() => tenantName.value.trim().charAt(0).toUpperCase() || 'S');
+// Logo usaha bila pemiliknya sudah mengunggahnya di Profil & Merek. Kalau
+// belum, BrandMark jatuh kembali ke inisial nama toko — glyph `S` di sebelah
+// "Kopi Nusantara" akan terbaca sebagai merek yang salah, jadi inisialnya ikut
+// nama toko, bukan nama produk.
+const tenantLogo = computed(() => auth.tenant?.logo_url ?? null);
 const isLocked = (item) => isSuspended.value && item.href !== '/langganan';
 
 // Tautan yang jadi awalan tautan lain di sidebar — `/owner/settings` terhadap
@@ -341,13 +344,12 @@ const logout = () => requestLogout({
                 :class="sidebarOpen ? 'justify-between px-4' : 'justify-center px-0'"
             >
                 <div class="flex items-center gap-2.5">
-                    <!-- S glyph (always visible) -->
-                    <div
-                        class="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0"
-                        aria-hidden="true"
-                    >
-                        <span class="text-primary-foreground text-[11px] font-bold tracking-tight select-none">{{ tenantInitial }}</span>
-                    </div>
+                    <!-- Logo usaha, atau inisialnya bila belum diunggah (always visible) -->
+                    <BrandMark
+                        :src="tenantLogo"
+                        :name="tenantName"
+                        class="w-7 h-7 rounded-lg text-[11px]"
+                    />
                     <!-- Store name — hidden in icon-only rail mode ([BL-084]) -->
                     <span
                         v-show="sidebarOpen"

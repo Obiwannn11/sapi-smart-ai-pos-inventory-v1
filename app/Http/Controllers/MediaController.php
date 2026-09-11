@@ -8,6 +8,7 @@ use App\Models\TransactionPayment;
 use App\Services\CashMovementProofService;
 use App\Services\ImageService;
 use App\Services\PaymentProofService;
+use App\Services\TenantLogoService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -26,6 +27,7 @@ class MediaController extends Controller
         private ImageService $imageService,
         private PaymentProofService $paymentProofs,
         private CashMovementProofService $movementProofs,
+        private TenantLogoService $tenantLogos,
     ) {}
 
     /**
@@ -105,6 +107,31 @@ class MediaController extends Controller
 
         return $this->movementProofs->files()->disk()->response($path, null, [
             'Content-Type' => 'image/webp',
+            'Cache-Control' => 'private, max-age=31536000, immutable',
+        ]);
+    }
+
+    /**
+     * Sajikan logo usaha milik tenant pengguna yang sedang masuk.
+     *
+     * Tidak ada parameter tenant, dan itu disengaja: tiga rute media di atas
+     * menerima id lalu memeriksanya, sementara di sini tidak ada apa pun yang
+     * bisa ditukar. Satu usaha hanya punya satu logo, jadi "logo siapa" selalu
+     * terjawab oleh sesi — bukan oleh URL.
+     */
+    public function tenantLogo(Request $request): StreamedResponse
+    {
+        $tenant = $request->user()->tenant;
+
+        abort_unless((bool) $tenant?->logo, 404);
+        abort_unless($this->tenantLogos->disk()->exists($tenant->logo), 404);
+
+        return $this->tenantLogos->disk()->response($tenant->logo, null, [
+            'Content-Type' => 'image/webp',
+            // Sama seperti tiga rute di atas. Yang membuat 'immutable' aman di
+            // sini bukan nama berkas di URL — tidak ada — melainkan sidik `v`
+            // yang ditempelkan TenantLogoService::urlFor() dan ikut berganti
+            // setiap kali logonya diganti.
             'Cache-Control' => 'private, max-age=31536000, immutable',
         ]);
     }

@@ -76,6 +76,18 @@ Route::middleware('auth')
     ->whereIn('size', ['full', 'thumb'])
     ->name('media.cash-movement-proof');
 
+// Logo usaha. Ia ada di sini, bukan di grup owner, karena permukaan yang
+// memakainya paling banyak justru cangkang KASIR — topbar POS dan kepala
+// struk — dan <img> di sana tidak bisa menampilkan halaman pengalihan.
+//
+// Tanpa parameter: rute ini selalu berarti "logo milik tenant saya". Tidak
+// ada id yang bisa ditukar, jadi tidak ada pula yang perlu ditebak orang
+// lain — pemisahan antar tokonya lahir dari bentuk rutenya sendiri, bukan
+// dari pemeriksaan yang bisa lupa ditulis.
+Route::middleware('auth')
+    ->get('/media/logo', [\App\Http\Controllers\MediaController::class, 'tenantLogo'])
+    ->name('media.tenant-logo');
+
 // --- Langganan (sisi tenant) ---
 // Satu-satunya halaman bertenant yang tetap terbuka saat tenant ditangguhkan —
 // lihat daftar ALWAYS_ALLOWED di EnsureSubscriptionActive. Menutupnya berarti

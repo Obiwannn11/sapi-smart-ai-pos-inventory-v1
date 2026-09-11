@@ -10,6 +10,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\SubscriptionService;
+use App\Services\TenantLogoService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -53,6 +54,18 @@ class HandleInertiaRequests extends Middleware
                 // kebenarannya. Menyembunyikan menu bukan pengamanan.
                 'tenant' => $user instanceof User && $user->tenant ? [
                     'name' => $user->tenant->name,
+                    // Logo usaha, dibagikan berdampingan dengan namanya karena
+                    // dipakai untuk hal yang sama: menjawab "saya sedang di toko
+                    // mana". Ia tinggal di sini dan bukan di prop halaman sebab
+                    // kepala sidebar owner dan topbar kasir ada di SETIAP
+                    // halaman dan tak satu pun punya controller sendiri.
+                    //
+                    // null bila belum diunggah — layar jatuh kembali ke inisial
+                    // nama toko, bukan ke kotak kosong.
+                    //
+                    // Tidak ada query tambahan: tenant-nya sudah dimuat, dan
+                    // `logo` ada di barisnya.
+                    'logo_url' => app(TenantLogoService::class)->urlFor($user->tenant),
                     // Bukan kapabilitas, jadi tidak ikut `features`: ia
                     // menentukan apa yang ditanyakan kasir sebelum menyimpan,
                     // bukan pintu mana yang terbuka ([BL-026]). Skalar biasa —

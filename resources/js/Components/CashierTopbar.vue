@@ -9,6 +9,7 @@ import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
 import GraceModal from '@/Components/GraceModal.vue';
 import TapTooltip from '@/Components/TapTooltip.vue';
 import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
+import BrandMark from '@/Components/BrandMark.vue';
 import { useInstallPrompt } from '@/composables/useInstallPrompt';
 import { useFullscreen } from '@/composables/useFullscreen';
 import { useOnlineStatus } from '@/composables/useOnlineStatus';
@@ -143,6 +144,10 @@ const showSettleSuccess = ref(false);
 const showSettleReceipt = ref(false);
 
 const tenantName = computed(() => page.props.auth?.tenant?.name ?? 'SAPI POS');
+// Logo usaha, dari prop bersama yang sama yang dibaca kepala sidebar owner.
+// Dua cangkang yang menjawab pertanyaan yang sama tidak boleh membacanya dari
+// dua sumber berbeda. null bila belum diunggah — BrandMark jatuh ke inisial.
+const tenantLogo = computed(() => page.props.auth?.tenant?.logo_url ?? null);
 
 const formatCurrency = (value) => 'Rp ' + Number(value).toLocaleString('id-ID');
 
@@ -273,6 +278,20 @@ const logout = () => requestLogout({
                 jelas: panah kembali di kiri dan tombol nav yang menyala di
                 kanan. Jadi judulnya yang mengalah, bukan judulnya yang dipotong.
             -->
+            <!--
+                Lencana merek hanya di POS. Di sanalah `title` berisi nama toko,
+                jadi logonya duduk tepat di sebelah namanya. Di halaman lain
+                judulnya berbunyi "Riwayat" atau "Kas", dan logo toko di
+                sebelahnya akan terbaca sebagai lambang halaman itu, bukan
+                sebagai penanda toko — lagipula di sana tempat ini sudah diisi
+                tombol kembali.
+            -->
+            <BrandMark
+                v-if="isActive('/cashier/pos')"
+                :src="tenantLogo"
+                :name="tenantName"
+                class="w-8 h-8 rounded-lg text-xs"
+            />
             <h1
                 class="text-lg font-bold text-primary truncate"
                 :class="isActive('/cashier/pos') ? '' : 'hidden sm:block'"
@@ -517,6 +536,7 @@ const logout = () => requestLogout({
             :show="showSettleReceipt"
             :transaction="settledTransaction"
             :tenant-name="tenantName"
+            :tenant-logo="tenantLogo"
             @close="showSettleReceipt = false; settledTransaction = null"
         />
     </header>

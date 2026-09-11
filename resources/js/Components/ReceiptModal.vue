@@ -1,5 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { usePage } from '@inertiajs/vue3';
+import BrandMark from '@/Components/BrandMark.vue';
 import { useThermalPrinter } from '@/composables/useThermalPrinter';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 import { BUSINESS_TZ } from '@/support/date';
@@ -8,10 +10,20 @@ import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 const props = defineProps({
     show: { type: Boolean, default: false },
     transaction: Object,
-    tenantName: { type: String, default: 'SAPI POS' },
+    // Dua-duanya BOLEH dititipkan pemanggil, tapi tak satu pun wajib: dari tiga
+    // pemanggil, hanya CashierTopbar yang meneruskan namanya. Cadangan `null`
+    // di sini, bukan 'SAPI POS', supaya keduanya bisa jatuh ke prop bersama di
+    // bawah — dengan default lama, struk yang dibuka dari Riwayat mencetak
+    // "SAPI POS" di atas logo Kopi Nusantara, nama produk di kepala struk orang.
+    tenantName: { type: String, default: null },
+    tenantLogo: { type: String, default: null },
 });
 
 const emit = defineEmits(['close']);
+
+const page = usePage();
+const brandName = computed(() => props.tenantName || page.props.auth?.tenant?.name || 'SAPI POS');
+const logoSrc = computed(() => props.tenantLogo ?? page.props.auth?.tenant?.logo_url ?? null);
 
 const printer = useThermalPrinter();
 const showPrinterSetup = ref(false);
@@ -69,7 +81,7 @@ const printThermal = async () => {
     thermalBusy.value = true;
     thermalError.value = '';
     try {
-        await printer.printReceipt(props.transaction, { tenantName: props.tenantName });
+        await printer.printReceipt(props.transaction, { tenantName: brandName.value });
     } catch (err) {
         thermalError.value = err?.message || 'Gagal mencetak. Buka pengaturan printer.';
     } finally {
@@ -101,7 +113,24 @@ const printThermal = async () => {
 
                             <!-- ===== HEADER ===== -->
                             <div class="text-center pb-3 border-b border-dashed border-gray-400">
-                                <p class="text-base font-bold uppercase tracking-widest">{{ tenantName }}</p>
+                                <!--
+                                    Logo hanya dirender bila ada. Kotak
+                                    berlatar warna merek milik BrandMark tidak
+                                    punya tempat di kepala struk — kertas
+                                    thermal hitam-putih akan mencetaknya sebagai
+                                    balok gelap dengan satu huruf di tengah,
+                                    yang justru lebih buruk daripada tanpa
+                                    lambang sama sekali. Jadi di sini cadangan
+                                    inisialnya sengaja dilewati: nama tokonya
+                                    sudah tercetak tepat di bawah.
+                                -->
+                                <BrandMark
+                                    v-if="logoSrc"
+                                    :src="logoSrc"
+                                    :name="brandName"
+                                    class="w-14 h-14 mx-auto mb-2"
+                                />
+                                <p class="text-base font-bold uppercase tracking-widest">{{ brandName }}</p>
                                 <p class="text-[10px] text-gray-500 mt-0.5">Point of Sale</p>
 
                                 <!--
