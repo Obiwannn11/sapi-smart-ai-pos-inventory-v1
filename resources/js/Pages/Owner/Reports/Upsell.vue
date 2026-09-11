@@ -226,14 +226,27 @@ const showRescue = computed(
                              ditawarkan · 3 ditolak" lebih panjang daripada sisa
                              ruang di sebelah batang 375px, dan yang meluber
                              keluar kartu tidak terbaca sama sekali. -->
-                        <div class="flex min-w-0 flex-1 flex-col gap-1 lg:flex-row lg:items-center lg:gap-2">
-                            <div
-                                :class="['flex h-8 shrink-0 items-center justify-end rounded-md px-2.5', stage.tone]"
-                                :style="{ width: stage.width, minWidth: '3rem' }"
-                            >
-                                <span class="text-sm font-semibold">{{ stage.value }}</span>
+                        <div class="flex min-w-0 flex-1 flex-col gap-1 lg:flex-row lg:items-center lg:gap-3">
+                            <!-- Batang hidup di relnya sendiri. Kalau ia dibiarkan
+                                 jadi anak langsung baris ini, batang 100% memakan
+                                 seluruh lebar dan persentase di sebelahnya diperas
+                                 jadi kolom selebar satu huruf yang meluber keluar
+                                 kartu. Rel ini juga membuat semua batang diukur
+                                 terhadap lebar yang sama, jadi antar baris masih
+                                 bisa dibandingkan. -->
+                            <div class="min-w-0 flex-1">
+                                <div
+                                    :class="['flex h-8 items-center justify-end rounded-md px-2.5', stage.tone]"
+                                    :style="{ width: stage.width, minWidth: '3rem' }"
+                                >
+                                    <span class="text-sm font-semibold">{{ stage.value }}</span>
+                                </div>
                             </div>
-                            <span v-if="stage.rate" class="min-w-0 text-xs text-gray-500">
+                            <!-- Jatah lebarnya tetap walau barisnya tak punya
+                                 persentase, supaya rel batang sama panjang. -->
+                            <span
+                                :class="['text-xs text-gray-500 lg:w-52 lg:shrink-0', stage.rate ? '' : 'hidden lg:block']"
+                            >
                                 {{ stage.rate }}
                             </span>
                         </div>
