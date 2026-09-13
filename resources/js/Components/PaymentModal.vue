@@ -15,6 +15,13 @@
  *   non-tunai TERAKHIR yang belum disentuh kasir; begitu kasir mengetik di
  *   sana, baris itu jadi manual dan penyeimbangnya berpindah.
  *
+ *   NOMINAL TUNAI TIDAK PERNAH DIISI SENDIRI OLEH MODAL. Yang otomatis hanya
+ *   baris non-tunai. Uang tunai harus dihitung dulu di tangan kasir; angka
+ *   "pas" yang muncul begitu metode tunai dipilih membuat kasir menekan Bayar
+ *   atas nominal yang belum pernah ia terima — dan laci pun selisih. Tombol
+ *   "Uang Pas" tetap ada untuk yang memang membayar pas, ditekan sesudah
+ *   uangnya dicek.
+ *
  *   KEMBALIAN HANYA DARI PORSI TUNAI. QRIS tidak mengenal kembalian, jadi
  *   kelebihan yang berasal dari baris non-tunai tidak boleh ditawarkan sebagai
  *   uang keluar dari laci.
@@ -333,20 +340,6 @@ const onAmountBlur = (idx, event) => {
     event.target.value = displayFor(idx);
 };
 
-/**
- * Metode baru dipilih: baris non-tunai yang belum disentuh otomatis jadi
- * penyeimbang, jadi tidak ada yang perlu diisi di sini. Baris tunai yang masih
- * kosong diisikan sisanya — inilah yang dulu memaksa kasir mengetik manual
- * tiap kali split.
- */
-const onMethodChange = (idx) => {
-    const row = rows.value[idx];
-
-    if (isCash(row.payment_method_id) && !row.touched) {
-        fillRemainder(idx);
-    }
-};
-
 /** Isi baris ini dengan sisa yang belum tertutup baris lain. */
 const fillRemainder = (idx) => {
     const others = amounts.value.reduce(
@@ -469,7 +462,6 @@ const close = () => {
                                 v-model="row.payment_method_id"
                                 :options="paymentMethodOptions"
                                 placeholder="Pilih metode pembayaran"
-                                @change="onMethodChange(idx)"
                             />
 
                             <!-- Nominal: satu input untuk semua metode. Baris

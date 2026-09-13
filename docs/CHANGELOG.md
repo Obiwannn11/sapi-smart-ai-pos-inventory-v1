@@ -67,6 +67,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-12 | ADDITION | Promosi | Tabel Aturan Saran Jual Berhenti Menulis "Aktif" untuk Aturan yang Kasir Tidak Pernah Lihat |
 | 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
 | 2026-09-11 | ADDITION | UI | Logo Usaha Menggantikan Huruf Pertama Nama Toko di Sidebar, Topbar Kasir, dan Kepala Struk |
+| 2026-09-11 | DECISION | Kasir | Nominal Tunai Berhenti Terisi Sendiri — "Uang Pas" Ditekan Setelah Uangnya Dihitung |
 | 2026-09-10 | DECISION | Kasir | Aksi Baris Keranjang Berhenti Bergantung pada Hover — dan "Harga Khusus" Pindah ke Baris Ikon |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
 | 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
@@ -412,6 +413,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `tests/Feature/Owner/TenantLogoTest.php` — baru; 12 tes
 - **Catatan Migrasi:**
   Tidak ada. Kolom `tenants.logo` sudah tersedia sejak `2026_03_06_000001_create_tenants_table`; tenant yang belum mengunggah apa pun tetap menampilkan huruf pertama nama tokonya, persis seperti sebelumnya.
+
+---
+
+### [DECISION] Nominal Tunai Berhenti Terisi Sendiri — "Uang Pas" Ditekan Setelah Uangnya Dihitung
+- **Tanggal:** 2026-09-11
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Modal pembayaran mengisikan sisa tagihan ke baris tunai begitu metode tunai dipilih. Niatnya menghemat ketikan saat split bill; yang terjadi di meja kasir adalah nominal "pas" sudah duduk di kotaknya sebelum uangnya sempat dihitung.
+
+  Uang tunai adalah satu-satunya nominal di modal ini yang datang dari luar layar. Non-tunai sudah pasti sebesar tagihannya — mesinnya yang menentukan — jadi mengisinya sendiri hanya menuliskan apa yang memang sudah benar. Tunai tidak: berapa yang diterima baru diketahui setelah lembarannya ada di tangan. Angka yang sudah terisi membuat Bayar bisa ditekan tanpa itu pernah terjadi, dan selisihnya baru muncul saat laci ditutup — jauh dari pelanggan yang bisa ditanyai.
+
+  **Yang otomatis tetap otomatis, tapi hanya untuk non-tunai.** Baris penyeimbang tidak berubah sama sekali: ia masih baris non-tunai TERAKHIR yang belum disentuh, masih menampilkan "Otomatis" di kanan kotaknya. Split QRIS + tunai pun tidak jadi lebih repot — kasir mengetik nominal tunai yang ia terima, dan sisanya jatuh sendiri ke baris QRIS.
+
+  **Tombol "Uang Pas" tidak dihapus, dan memang tidak boleh dihapus.** Pelanggan yang membayar pas tetap ada, dan bagi merekalah tombol itu dibuat. Yang berubah hanya urutannya: dulu modal menebak lebih dulu, kini kasir yang memutuskan — cek uangnya, baru tekan. Pada split, tombol yang sama berlabel "Sisa" dan perannya persis sama.
+- **Alasan:**
+  Laporan pemilik 2026-09-11. Isian otomatis di baris tunai dinilai mengganggu: ia mendahului pekerjaan yang justru menjadi inti kerja kasir, yaitu menghitung uang yang diterima.
+- **File Terdampak:**
+  - `resources/js/Components/PaymentModal.vue` — `onMethodChange` dilepas beserta ikatan `@change` pada pemilih metode; aturannya ditulis di docblock kepala berkas supaya tidak dikembalikan tanpa sengaja
+  - `tests/Feature/Cashier/CashAmountNotAutofilledTest.php` — baru; menjaga kaitnya tidak kembali, penyeimbang tetap khusus non-tunai, dan tombol "Uang Pas" tetap ada
+- **Catatan Migrasi:**
+  Tidak ada. Validasi modal tidak berubah: baris bernominal nol masih diblokir lewat `blockingReason`, jadi baris tunai yang dibiarkan kosong tidak bisa ikut tersimpan.
 
 ---
 
