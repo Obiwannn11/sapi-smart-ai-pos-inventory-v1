@@ -19,8 +19,15 @@
  * BANYAK JARUM, bukan pesan kegagalan. Karena itu setiap pemeriksaan di bawah
  * ditulis sebagai `toBe(true|false, $pesan)` — satu-satunya bentuk yang benar
  * membawa pesannya.
+ *
+ * Pembantu di bawah diberi awalan `coldStart` dengan sengaja. Fungsi yang
+ * dideklarasikan di puncak berkas Pest bersifat GLOBAL, jadi dua berkas uji
+ * yang sama-sama membaca POS.vue dengan nama polos `posSource()` bentrok
+ * begitu keduanya dimuat — dan `php artisan test --filter=...` selalu memuat
+ * SEMUA berkas uji untuk menyelesaikan filternya. Bentrokan itu mematikan
+ * `composer run check:boot`, penjaga `[BL-072]`. Lihat `[BL-110]`.
  */
-function posSource(): string
+function coldStartPosSource(): string
 {
     return file_get_contents(resource_path('js/Pages/Cashier/POS.vue'));
 }
@@ -46,7 +53,7 @@ test('POS menandai dirinya offline saat permintaan Inertia gagal', function () {
     // saat yang mati hanya servernya, jadi tanpa penanda ini `isOnline` tidak
     // pernah jatuh, `watch(isOnline)` tidak pernah menyala, dan katalog cadangan
     // di IndexedDB tidak pernah dibaca — meski isinya lengkap.
-    $source = posSource();
+    $source = coldStartPosSource();
 
     expect(str_contains($source, "router.on('exception'"))->toBe(true, implode("\n", [
         'POS.vue tidak lagi mendengarkan peristiwa `exception` Inertia.',
@@ -67,7 +74,7 @@ test('POS punya jalan pulang dari keadaan offline yang ditandai sendiri', functi
     // peramban yang bisa memulihkannya. Menambah pemicu offline tanpa menambah
     // pemulihnya akan menukar satu cacat dengan cacat lain: kasir terkunci di
     // mode tunai padahal sinyalnya sudah kembali.
-    $source = posSource();
+    $source = coldStartPosSource();
 
     expect(str_contains($source, "router.on('success'"))->toBe(true, implode("\n", [
         'POS.vue tidak lagi mendengarkan peristiwa `success` Inertia.',
@@ -86,7 +93,7 @@ test('pendengar peristiwa Inertia dilepas saat POS ditinggalkan', function () {
     // didaftarkan di dalam komponen menumpuk dan menyala berkali-kali kalau
     // tidak dilepas. Pada layar kasir yang dibuka-tutup sepanjang hari, itu
     // berarti satu kegagalan jaringan memanggil markOffline() belasan kali.
-    $source = posSource();
+    $source = coldStartPosSource();
 
     expect(str_contains($source, 'stopExceptionListener()'))->toBe(true, implode("\n", [
         'Pendengar `exception` tidak lagi dilepas di onUnmounted.',
@@ -106,7 +113,7 @@ test('POS menyelidiki sendiri apakah server sudah kembali', function () {
     // melahirkan entri ini antarmuka tidak pernah putus — yang mati servernya.
     // Tanpa penyelidik berkala, kasir terkunci di mode tunai sampai ia
     // kebetulan berpindah halaman.
-    $source = posSource();
+    $source = coldStartPosSource();
 
     expect(str_contains($source, "router.reload({ only: ['products', 'upsell'] })"))->toBe(true, implode("\n", [
         'Penyelidik pemulihan berkala di POS.vue hilang.',
@@ -121,7 +128,7 @@ test('POS membaca snapshot katalog tanpa menunggu status daring', function () {
     // dan justru itu yang melewatkan keadaan paling genting: cold start dengan
     // server tak terjangkau, saat `navigator.onLine` masih `true`. Penjaga ini
     // memastikan pembungkus itu tidak diam-diam kembali.
-    $source = posSource();
+    $source = coldStartPosSource();
 
     expect(str_contains($source, 'if (!isOnline.value) loadSnapshot();'))->toBe(false, implode("\n", [
         'loadSnapshot() kembali digantungkan pada `!isOnline.value` di onMounted.',

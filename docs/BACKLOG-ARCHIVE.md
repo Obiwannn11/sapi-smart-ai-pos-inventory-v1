@@ -10,6 +10,23 @@
 
 ## Daftar Entri
 
+### [BL-110] Nama Pembantu Uji Bersifat Global tapi Tidak Ada yang Menjaga Keunikannya — Bentrokan Berikutnya Mematikan `check:boot` Lagi
+- **Ditemukan:** 2026-09-12, saat `composer run check:boot` menolak jalan sebelum commit
+- **Sumber:** Buntut langsung dari bentrokan `posSource()` — lihat entri `CHANGELOG.md` 2026-09-12 "Dua Berkas Uji Menamai Pembantunya Sama"
+- **Status:** **Selesai 2026-09-12.** Penjaganya mendarat sebagai perintah Artisan `tests:check-helper-names`, bukan sebagai tes: pertanyaan terbuka di "Usulan Perbaikan" di bawah terjawab oleh buktinya — bentrokan mematikan pelari uji pada tahap PEMUATAN, jadi tes penjaga ikut mati bersama yang dijaganya. Dipasang sebagai langkah pertama `composer run check:boot`, mendahului `php artisan test`.
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `tests/` — ~180 fungsi pembantu dideklarasikan di tingkat atas berkas uji, semuanya global, tidak satu pun diperiksa keunikannya
+  - `composer.json:62` — `check:boot`, penjaga `[BL-072]` yang jadi korban pertama
+- **Deskripsi:**
+  Fungsi yang dideklarasikan di puncak berkas Pest masuk ke ruang nama global, bukan ke berkasnya. Dua berkas uji yang memilih nama sama akan menabrakkan PHP ke `Fatal error: Cannot redeclare ...` begitu keduanya dimuat — dan `php artisan test --filter=...` **selalu** memuat seluruh berkas uji untuk menyelesaikan filternya. Akibatnya tidak sebanding dengan sebabnya: dua berkas yang tidak berhubungan dengan apa pun yang sedang dikerjakan bisa mematikan seluruh pelari uji, termasuk `composer run check:boot`.
+  Yang membuatnya sulit terlihat: berkas yang bersangkutan **lulus sendirian**. `php artisan test tests/Feature/CommitBootabilityTest.php` hijau; yang rusak hanya pemuatan se-suite. Jadi penjaganya tampak sehat bagi siapa pun yang memeriksanya terpisah, dan diam-diam tidak bisa dijalankan lewat perintah yang sebenarnya dipakai sebelum commit — bentuk kegagalan yang sama persis dengan yang melahirkan `[BL-072]`.
+  Bentrokan hari ini sudah diperbaiki dengan penggantian nama, dan seluruh suite sudah disisir: `posSource` adalah satu-satunya nama ganda yang tersisa. Yang belum ada adalah apa pun yang mencegah yang ketiga lahir.
+- **Usulan Perbaikan:**
+  Satu tes penjaga yang menyisir `tests/` untuk deklarasi `^function nama` dan gagal bila ada nama yang muncul di lebih dari satu berkas, melaporkan `berkas:baris` tiap kandidatnya — sejajar dengan cara `CommitBootabilityTest` melaporkan `berkas:baris → kelas`. Murah, tidak butuh basis data, dan ikut terjaring `--filter=CommitBootability` bila diberi nama yang sama keluarganya.
+  Yang perlu diputuskan saat mengerjakannya: apakah penjaga ini digabungkan ke `CommitBootabilityTest` (satu perintah `check:boot` tetap menangkap dua-duanya) atau berdiri sendiri lalu `check:boot` menjalankan keduanya. Yang kedua lebih jujur menamai perkaranya, tapi menambah satu baris di `composer.json`.
+- **Yang sengaja TIDAK diusulkan:** memindahkan pembantu-pembantu itu ke `tests/Pest.php`. Konvensi repositori ini adalah pembantu milik berkas dengan awalan pembeda, dan `Pest.php` sampai sekarang hanya berisi `something()` bawaan. Mengangkat mereka ke sana justru menjadikan **lebih banyak** nama global — arah yang berlawanan dengan masalahnya.
+
 ### [BL-105] Penyelamat Stok Tidak Pernah Menyebut Angkanya — Rantainya Sudah Utuh, Hasilnya Berhenti Jadi Satu Baris Tabel
 - **Ditemukan:** 2026-09-07
 - **Sumber:** Pertanyaan pemilik — *"fitur apa yang bisa saya maksimalkan dan menjadi keunikan dari semua POS yang ada? saya mau unggulkan 1 fitur"* — dijawab dengan penyisiran seluruh sistem, bukan dengan usulan fitur baru.

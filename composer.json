@@ -60,6 +60,7 @@
             "@php artisan test"
         ],
         "check:boot": [
+            "@php artisan tests:check-helper-names",
             "@php artisan route:list -q",
             "@php artisan test --compact --filter=CommitBootability"
         ],

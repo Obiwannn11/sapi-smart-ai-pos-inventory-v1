@@ -64,10 +64,12 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-13 | DECISION | Kasir | Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat |
 | 2026-09-12 | DECISION | Kasir | Strip Saran Jadi Satu Kartu Bergiliran yang Menunjuk Baris Asalnya — dan Penyebut Konversi Berhenti Menghitung yang Tak Pernah Tampil |
 | 2026-09-12 | ADDITION | Promosi | Data Peraga Sepuluh Keadaan Aturan Saran Jual, dan Aturan yang Kalah Dedup Disebut "Diwakili Saran Lain" |
+| 2026-09-12 | ADDITION | Infra | Penjaga Bentrokan Nama Pembantu Uji Jadi Perintah Artisan — Karena Sebuah Tes Tidak Bisa Menjaganya (BL-110) |
+| 2026-09-12 | HOTFIX | Infra | Dua Berkas Uji Menamai Pembantunya Sama — dan `composer run check:boot` Ikut Mati Bersamanya (BL-072) |
 | 2026-09-12 | ADDITION | Promosi | Tabel Aturan Saran Jual Berhenti Menulis "Aktif" untuk Aturan yang Kasir Tidak Pernah Lihat |
-| 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
 | 2026-09-11 | ADDITION | UI | Logo Usaha Menggantikan Huruf Pertama Nama Toko di Sidebar, Topbar Kasir, dan Kepala Struk |
 | 2026-09-11 | DECISION | Kasir | Nominal Tunai Berhenti Terisi Sendiri — "Uang Pas" Ditekan Setelah Uangnya Dihitung |
+| 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
 | 2026-09-10 | DECISION | Kasir | Aksi Baris Keranjang Berhenti Bergantung pada Hover — dan "Harga Khusus" Pindah ke Baris Ikon |
 | 2026-09-10 | DECISION | UI | Penampung Produk Tanpa Gambar Berhenti Berwarna-Warni — Satu Nada Hijau Merek untuk Semua Kartu |
 | 2026-09-10 | ADDITION | UI | Identitas Akun Owner Pindah ke Dropdown Topbar, dan Kaki Sidebar Kehilangan Tombol Keluarnya |
@@ -341,6 +343,45 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `tests/Feature/Upsell/RuleOutcomeStatusTest.php` — test keadaan `represented`
 - **Catatan Migrasi:**
   Tidak ada. Seeder hanya dijalankan manual: `php artisan db:seed --class=UpsellRuleShowcaseSeeder`.
+
+---
+
+### [ADDITION] Penjaga Bentrokan Nama Pembantu Uji Jadi Perintah Artisan — Karena Sebuah Tes Tidak Bisa Menjaganya (BL-110)
+- **Tanggal:** 2026-09-12
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-110]`, yang dibuka hari ini juga oleh entri di bawahnya
+- **Dampak:** Tooling | Test | Console
+- **Breaking Change:** Tidak. `composer run check:boot` bertambah satu langkah di depan; tidak ada kode aplikasi yang berubah perilakunya.
+- **Deskripsi:** Perintah baru `php artisan tests:check-helper-names` menyisir `tests/` untuk deklarasi fungsi tingkat atas dan gagal bila ada nama yang dipakai lebih dari satu berkas, melaporkan `berkas:baris` setiap tempatnya. Ia dipasang sebagai langkah **pertama** `composer run check:boot`, mendahului `php artisan test`.
+- **Alasan:** `[BL-110]` mencatat bahwa nama pembantu uji bersifat global dan bentrokannya mematikan `check:boot` — penjaga `[BL-072]` — tanpa hubungan dengan perubahan yang sedang dikerjakan.
+
+- **Usulan asli entrinya adalah sebuah TES, dan itu DICOBA lalu ditolak oleh buktinya.** Bentrokan ditanam betulan (`posSource()` kedua di sebuah berkas uji baru), lalu `php artisan test --filter=CommitBootability` dijalankan. Yang keluar: `Fatal error: Cannot redeclare posSource()`, status **255**, dan **nol tes berjalan**. Bentrokan itu mematikan pelari uji pada tahap **pemuatan**, sebelum satu assertion pun sempat dieksekusi — jadi tes penjaga akan ikut mati bersama persis hal yang dijaganya. Ini pengulangan pelajaran `[BL-072]` butir (d), waktu itu `route:list` yang tidak bisa gagal; kali ini tes yang tidak bisa berjalan.
+- **Karena itu penjaganya sebuah perintah Artisan.** Artisan tidak memuat `tests/` sama sekali, jadi perintah ini masih hidup justru pada saat satu-satunya ia dibutuhkan. **Urutannya di `check:boot` bukan selera:** ia harus berjalan sebelum `php artisan test`, karena sesudahnya sudah tidak ada yang tersisa untuk dilapori.
+- **Yang berubah bagi orang yang tertimpa.** Sebelumnya: satu fatal error PHP yang menyebut **satu** berkas, muncul dari perintah yang sedang dipakai untuk hal lain. Sekarang: `posSource() → tests/Feature/Cashier/CartLineActionAffordanceTest.php:27, tests/Feature/ZzTempDupeProbeTest.php:3`, menyebut **kedua** tempatnya, ditutup penjelasan kenapa itu terjadi dan cara memperbaikinya — dan `check:boot` berhenti di situ, tidak melanjutkan ke fatal yang membingungkan.
+- **Pembedanya sama dengan yang dipakai `CommitBootabilityTest`: polanya menempel di awal baris.** Fungsi tingkat atas selalu mulai di kolom 1; metode di dalam kelas dan deklarasi bersyarat `if (! function_exists(...))` selalu menjorok. Keduanya memang tidak pernah bertabrakan, jadi keduanya terlewat **karena konstruksinya**, bukan karena dikecualikan satu per satu. Penjaga yang sering salah lapor akan dimatikan orang.
+- **Penjaganya diuji dengan menanam cacatnya, bukan hanya dijalankan pada kode sehat** — enam tes: bentrokan lintas subdirektori benar-benar tertangkap beserta kedua nomor barisnya, nama yang muncul sekali didiamkan, metode sekelas-nama tidak dilaporkan, `function_exists()` tidak dilaporkan, jalur yang salah ketik merah dan bukan hijau diam-diam, serta `tests/` yang sebenarnya bersih.
+- **Ditemukan saat menulis tesnya, dan dicatat supaya tidak menjebak lagi:** `expectsOutputToContain()` milik Laravel **menghabiskan** baris yang sudah cocok. Dua harapan terhadap satu baris keluaran yang sama membuat harapan kedua gagal walau barisnya benar-benar memuat keduanya. Tesnya berpindah ke `Artisan::call()` + `Artisan::output()`.
+- **Yang TIDAK dikerjakan:** penjaga ini tidak dipasang sebagai git hook maupun langkah CI, sama seperti `[BL-072]` butir (d) dahulu — repositori ini belum punya workflow tes, dan menambahkannya tetap keputusan tersendiri.
+- **Berkas:** `app/Console/Commands/CheckTestHelperNames.php` (baru) · `tests/Feature/TestHelperNamesGuardTest.php` (baru, 6 tes) · `composer.json` — `check:boot` bertambah `tests:check-helper-names` di urutan pertama
+- **Catatan Migrasi:** Tidak ada. `composer run check:boot` kini tiga langkah; jalankan seperti biasa sebelum commit.
+
+---
+
+### [HOTFIX] Dua Berkas Uji Menamai Pembantunya Sama — dan `composer run check:boot` Ikut Mati Bersamanya (BL-072)
+- **Tanggal:** 2026-09-12
+- **Fase Terkait:** Di Luar Fase — memulihkan penjaga `[BL-072]`; sisanya dibuka sebagai `[BL-110]`
+- **Dampak:** Test | Tooling
+- **Breaking Change:** Tidak. Tidak ada kode aplikasi yang disentuh; yang berubah hanya nama satu pembantu uji beserta lima pemanggilnya.
+- **Deskripsi:** `tests/Feature/OfflineColdStartTest.php` dan `tests/Feature/Cashier/CartLineActionAffordanceTest.php` sama-sama mendeklarasikan `posSource()` di tingkat atas berkas, dan keduanya membaca berkas yang sama (`resources/js/Pages/Cashier/POS.vue`) dengan badan yang identik baris demi baris. Yang di berkas cold start diganti jadi `coldStartPosSource()`. Berkas kasir tidak disentuh.
+- **Alasan:** Fungsi yang dideklarasikan di puncak berkas Pest bersifat **global**, bukan milik berkasnya. Dua deklarasi bernama sama bertabrakan begitu keduanya dimuat, dan hasilnya bukan tes yang gagal melainkan `Fatal error: Cannot redeclare posSource()` — seluruh pelari uji berhenti sebelum satu pun assertion dijalankan.
+
+- **Yang mati karena ini adalah penjaganya sendiri, dan itu inti persoalannya.** `composer run check:boot` menjalankan `php artisan test --compact --filter=CommitBootability`, dan `--filter` **tetap memuat semua berkas uji** untuk menyelesaikan filternya. Jadi penjaga `[BL-072]` — satu-satunya hal yang berdiri antara repositori ini dan rentang commit yang tidak bisa boot — tidak bisa dijalankan sama sekali, karena dua berkas yang sama sekali tidak berhubungan dengannya kebetulan memilih nama yang sama.
+- **Bentuknya menipu persis seperti `[BL-072]`:** `php artisan test tests/Feature/CommitBootabilityTest.php` **lulus** sendirian, jadi tesnya sendiri sehat dan terlihat hijau bagi siapa pun yang memeriksanya secara terpisah. Yang rusak hanya pemuatan se-suite — keadaan yang cuma muncul lewat perintah yang sebenarnya dipakai sebelum commit. Penjaga yang diam-diam tidak bisa dijalankan sama saja dengan tidak ada penjaga.
+- **Diganti namanya, bukan diangkat ke `tests/Pest.php`,** walau kedua badannya identik dan DRY jelas menggoda. Repositori ini punya ~180 pembantu tingkat atas di `tests/` dan **tidak satu pun** tinggal di `Pest.php` — berkas itu masih berisi `something()` bawaan Pest apa adanya. Konvensi yang sudah berjalan adalah pembantu milik berkas dengan awalan pembeda (`attributionDrawer`, `outcomeVariant`, `pressedVariant`, `cashDrawerPageSource`). Mengangkatnya ke `Pest.php` juga akan menjadikannya global bagi seluruh 180-an berkas uji — persis sifat yang melahirkan bentrokan ini.
+- **Yang di berkas cold start yang mengalah, bukan yang di berkas kasir.** Di `CartLineActionAffordanceTest`, `posSource()` berdiri berpasangan dengan `cartItemSource()` dan dipakai berdampingan di dalam satu tes (`$cartItem = cartItemSource(); $pos = posSource();`) — tesnya memang membandingkan apa yang pindah dari POS.vue ke CartItem.vue, jadi kesimetrian namanya ada gunanya. Di berkas cold start ia berdiri sendiri, dan awalan `coldStart` sekaligus menyebutkan perkaranya.
+- **Seluruh suite disisir untuk bentrokan sejenis:** `posSource` adalah **satu-satunya** nama ganda di antara ~180 pembantu. Tidak ada bom waktu kedua yang sedang menunggu.
+- **Yang TIDAK dikerjakan di sini:** tidak ada apa pun yang mencegah bentrokan ketiga lahir minggu depan, dan akibatnya akan sama persis — `check:boot` mati tanpa hubungan dengan perubahan yang sedang dikerjakan. Penjaga untuk keunikan nama pembantu dibuka sebagai `[BL-110]`, bukan diselundupkan ke perbaikan ini.
+- **Berkas:** `tests/Feature/OfflineColdStartTest.php` — `posSource()` → `coldStartPosSource()` (5 pemanggil) + catatan docblock yang menyebutkan kenapa namanya berawalan
+- **Catatan Migrasi:** Tidak ada. Jalankan `composer run check:boot` seperti biasa; ia kini sampai ke ujung.
 
 ---
 
