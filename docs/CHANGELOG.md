@@ -61,6 +61,10 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-13 | DECISION | Kasir | Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat |
+| 2026-09-12 | DECISION | Kasir | Strip Saran Jadi Satu Kartu Bergiliran yang Menunjuk Baris Asalnya — dan Penyebut Konversi Berhenti Menghitung yang Tak Pernah Tampil |
+| 2026-09-12 | ADDITION | Promosi | Data Peraga Sepuluh Keadaan Aturan Saran Jual, dan Aturan yang Kalah Dedup Disebut "Diwakili Saran Lain" |
+| 2026-09-12 | ADDITION | Promosi | Tabel Aturan Saran Jual Berhenti Menulis "Aktif" untuk Aturan yang Kasir Tidak Pernah Lihat |
 | 2026-09-11 | ADDITION | UI | Keluar Selalu Ditanya Dulu, di Semua Jenis Akun |
 | 2026-09-11 | ADDITION | UI | Logo Usaha Menggantikan Huruf Pertama Nama Toko di Sidebar, Topbar Kasir, dan Kepala Struk |
 | 2026-09-10 | DECISION | Kasir | Aksi Baris Keranjang Berhenti Bergantung pada Hover — dan "Harga Khusus" Pindah ke Baris Ikon |
@@ -261,6 +265,120 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat
+- **Tanggal:** 2026-09-13
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Setelah strip saran menjadi satu kartu bergiliran, kolom keranjang terlalu pendek untuk menampung kartu dan daftar pesanan sekaligus. Di layar 1366×768 kolom itu cuma ±711 px: kepala ±50, kartu saran ±240, footer ±275 (toko berpajak, mode saran wajib, akun kasir), dan daftar item — satu-satunya blok yang boleh menyusut — tinggal ±140 px. Satu baris kopi bermodifier ±134 px termasuk baris qty-nya, jadi **kasir melihat satu baris pesanan** tepat saat ia sedang menawar ke pelanggan. Pembatas geser tidak menolong: batas bawah daftar item dikunci 132 px, dan kartunya sudah menekan sampai batas itu.
+
+  **Kartunya pindah ke dasar kolom katalog**, sejajar tombol Bayar. Kolom katalog pada layar yang sama selebar ±976 px, jadi kartu yang sama bisa mendatar — keterangan di kiri, harga di tengah, keputusan di kanan — dan cukup setinggi 88 px. Tata letaknya memakai `@container`, bukan breakpoint layar: layar 768 px bisa punya kolom katalog 378 px dan layar 1366 px kolom 976 px, jadi yang ditanya adalah lebar wadahnya. Di wadah sempit kartunya kembali bertumpuk, tetap di kolom katalog. Baris asal saran tetap menyala di keranjang, jadi "tawaran ini untuk barang yang mana" tidak putus walau beda kolom.
+
+  **Footer dirapikan dari ±275 ke 118 px.** Subtotal, biaya layanan, dan pajak jadi satu baris. Kotak kuning "Selesaikan penawaran dulu" dibuang karena mengulang "Wajib dijawab" di kartu; penjelasannya tidak ikut dibuang (`[BL-025]`) — tombol Bayar yang terkunci kini bertuliskan "Jawab N saran dulu", dengan kalimat utuhnya di `title` dan untuk pembaca layar. Catatan batas diskon kasir (`[BL-018]`) tertutup di balik tombol ⓘ yang membukanya sebagai baris biasa — **bukan tooltip**: gelembung `TapTooltip` tidak membungkus teks dan muncul di bawah pemicunya, sedangkan pemicunya di dasar layar.
+
+  Hasilnya daftar item 539 px, ±3,9 baris. Harganya dibayar katalog dan hanya selama ada saran menunggu: produk terlihat turun dari ±12,6 ke ±10,1. Angka keadaan lama dihitung dari kelas Tailwind; angka keadaan baru diukur di akun kasir pada 1366×768 (kartu 88 px, footer 118 px, daftar item 539 px, dan di tablet tegak kartu menumpuk setinggi 182 px dalam kolom 346 px).
+- **Alasan:**
+  Laporan pemilik 2026-09-13: keranjang "dikorbankan" oleh kartu saran. Tiga opsi dibandingkan dengan mockup berskala asli — kartu pindah ke katalog, kartu ringkas yang bisa dibuka, dan rombak tiga kolom. Kartu ringkas ditolak karena membukanya mengulang masalah yang sama; tiga kolom ditolak karena katalog turun dari 4 ke 3 kolom di setiap transaksi, termasuk yang tanpa saran, tanpa membuat keranjang lebih lega daripada opsi yang dipilih.
+- **File Terdampak:**
+  - `resources/js/Pages/Cashier/POS.vue` — `UpsellStrip` pindah ke kolom katalog; pembatas geser tinggi saran beserta seluruh logikanya (`cashier.upsellHeight`, `fitUpsellHeightToContent`, `maxUpsellHeight`, dan ref yang hanya ia pakai) dihapus; footer dirapikan; `payButtonHint` dan `showDiscountNote` baru
+  - `resources/js/Components/UpsellStrip.vue` — tata letak mendatar lewat `@container`/`@2xl:`; saran yang sudah diambil berbaris menyamping di wadah lebar
+  - `tests/Feature/Cashier/UpsellCardPlacementTest.php` — baru; menjaga kartu di kolom katalog, tidak ada pembatas geser, kartu mengikuti wadah, tombol Bayar tetap menjelaskan dirinya, dan catatan diskon tetap tersedia
+- **Catatan Migrasi:**
+  Perlu `npm run build`. Nilai `cashier.upsellHeight` yang sudah tersimpan di `localStorage` perangkat kasir tidak lagi dibaca; ia tidak mengganggu apa pun dan tidak dibersihkan.
+
+---
+
+### [DECISION] Strip Saran Jadi Satu Kartu Bergiliran yang Menunjuk Baris Asalnya — dan Penyebut Konversi Berhenti Menghitung yang Tak Pernah Tampil
+- **Tanggal:** 2026-09-12
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Strip saran berhenti menampilkan tiga baris setara. Tiga baris kecil berbobot sama dibaca sekilas lalu ditutup tiga-tiganya; kini kasir menghadapi **satu kartu** — jenis, nama, catatan, harga, Diterima/Ditolak — dengan titik pager dan "lewati dulu" untuk giliran berikutnya. Slotnya tetap tiga di server.
+
+  **Kartunya menyebut asal sarannya** ("Dari Espresso - Double" atau "Untuk seluruh pesanan"), dan baris keranjang asalnya ikut menyala berikut lencana "N saran". Yang dinyalakan adalah baris PERTAMA dengan varian itu, karena `applyUpsell` memakai `cart.find(...)` — varian yang sama bisa hadir dua kali dengan modifier berbeda, dan menyalakan keduanya akan menunjuk baris yang tidak akan berubah apa-apa. Tombolnya sengaja tidak dipindahkan ke dalam baris keranjang: daftar itu bisa digulir, dan saran yang belum dijawab bisa hilang dari pandangan sementara tombol Bayar terkunci.
+
+  **Empat cacat yang lahir justru dari perubahan ini** — dua pertama ditemukan saat menulisnya, dua terakhir saat diverifikasi sebagai kasir pada 2026-09-14:
+
+  1. **Penyebut konversi menggelembung.** `useUpsell` dulu menandai setiap saran yang lolos penyaringan sebagai "tampil", karena ketiganya memang tergambar sekaligus. Dengan satu kartu, kasir bisa hanya melihat yang pertama sebelum membayar, dan dua sisanya tercatat `ignored` padahal tidak pernah ditawarkan. Kini pemanggil yang menyebut apa yang benar-benar tergambar, lewat `markShown()`.
+  2. **Saran pertama transaksi berikutnya tak pernah tercatat tampil.** Objek saran datang langsung dari indeks di props, jadi identitasnya stabil antar-transaksi; `watch(current, …)` membandingkan identitas dan tidak menyala lagi setelah `reset()`. Diganti `watchEffect`, yang menjejaki array `visible` yang selalu baru.
+  3. **Baris keranjang tetap menyala setelah semua saran ditolak.** Sorotan disimpan dari `source` terakhir yang dikirim kartu, dan menolak saran terakhir tanpa ada yang diterima mencabut kartunya dari DOM sebelum ia sempat mengirim `source` kosong — baris itu menyala tanpa kartu apa pun di layar, tepat saat kasir hendak menekan Bayar. `activeUpsellLineIndex` kini menurunkannya dari keadaan: tanpa saran yang menunggu, tidak ada baris yang menyala.
+  4. **Tombol di kartu yang sedang keluar memutuskan saran berikutnya.** Dengan `mode="out-in"` kartu lama masih terlihat selama animasi keluarnya, sementara `current` sudah menunjuk saran berikutnya — dan tombolnya membaca `current` saat diketuk. Ketuk ganda dalam jeda ±100 ms itu menolak saran yang belum pernah dilihat kasir, dan tercatat di laporan konversi. Keputusan kini diikat ke kunci saran yang tergambar (`data-suggestion-key` lewat `decide()`); ketukan pada kartu yang sedang keluar tidak melakukan apa pun.
+- **Alasan:**
+  Permintaan pemilik 2026-09-12: gabungan dari dua opsi yang ditunjukkan di mockup — penempatan yang menempel pada baris pemicu, dengan keputusan di satu kartu besar.
+- **File Terdampak:**
+  - `resources/js/Components/UpsellStrip.vue` — satu kartu bergiliran, keterangan asal, pager; emit `shown` dan `source`
+  - `resources/js/composables/useUpsell.js` — watch otomatis "tampil" diganti `markShown()`
+  - `resources/js/Pages/Cashier/POS.vue` — `upsellSourceNames`, `upsellCountByTrigger`, `activeUpsellLineIndex`; meneruskan `markShown`
+  - `resources/js/Components/CartItem.vue` — prop `upsellCount` dan `upsellActive`: lencana dan sorotan tepi kiri
+- **Catatan Migrasi:**
+  Perlu `npm run build`. Tidak ada perubahan bentuk `upsell_events`; hanya saran yang benar-benar tergambar yang kini ikut dikirim.
+
+---
+
+### [ADDITION] Data Peraga Sepuluh Keadaan Aturan Saran Jual, dan Aturan yang Kalah Dedup Disebut "Diwakili Saran Lain"
+- **Tanggal:** 2026-09-12
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service, Seeder, Frontend, Test
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  **`UpsellRuleShowcaseSeeder`** memasang aturan peraga yang memunculkan setiap keadaan halaman Aturan Saran Jual sekaligus: tampil di slot 1–3, kalah slot, stok habis, kedaluwarsa, produk nonaktif, pemicu nonaktif, belum mulai, sudah berakhir, dimatikan, dan diwakili saran lain. Toko yang sehat hanya pernah memperlihatkan "Tampil", jadi tanpa peraga sembilan keadaan lainnya tidak bisa divalidasi selain dengan merusak katalog sungguhan. Semua yang dibuatnya bertanda (SKU `DEMO-UPSELL-`, catatan `[peraga]`), menjalankannya lagi mencabut yang lama lebih dulu, dan `PERAGA=bersih` mencabut tanpa memasang apa pun. Setelah selesai ia mencetak keadaan yang **benar-benar terbentuk**, dihitung lewat `RuleOutcomeResolver` yang sama dengan layarnya — versi pertamanya diam-diam gagal membentuk "Kalah slot" karena memilih varian kedaluwarsa sebagai penantang sehat, dan tabel bukti itulah yang menangkapnya.
+
+  Tiga produk peraganya tidak bisa disarankan ke pelanggan, tapi **dua di antaranya tetap terlihat di grid katalog kasir** (stok nol berlencana "Habis", kedaluwarsa tampil biasa); hanya yang nonaktif yang hilang dari layar kasir.
+
+  **Keadaan baru `represented` ("Diwakili saran lain").** Dua aturan yang mendorong barang yang sama menghasilkan dua saran atas varian yang sama, dan dedup `[BL-101]` membuang yang skornya lebih rendah. Sebelumnya aturan itu berstatus "Tidak ikut perebutan" dengan saran memeriksa hal yang keliru. Kini resolver mencari penghuni varian itu di pita perebutannya dan menyebutnya, dengan nada tenang — tidak ada yang rusak.
+
+  **Tab "Muncul di kasir" menyebut hubungannya dengan tab sebelah.** Kedua panelnya kini punya satu kalimat keterangan yang memakai kata yang sama persis dengan kolom Pemicu ("Setiap penjualan" / "sebuah barang"), dan panel pertama menyebut "N dari 3 slot terisi".
+- **Alasan:**
+  Permintaan pemilik 2026-09-12: bagian "Pada setiap penjualan" tidak dijelaskan dan tidak jelas hubungannya dengan tab Aturan saya, dan pemilik meminta data peraga untuk memahami serta memvalidasi halaman itu.
+- **File Terdampak:**
+  - `database/seeders/UpsellRuleShowcaseSeeder.php` — baru
+  - `app/Services/Upsell/RuleOutcomeResolver.php` — keadaan `represented`, `occupantOf()`, `typeWord()`
+  - `resources/js/Pages/Owner/UpsellRules/Index.vue` — keterangan kedua panel pratinjau dan hitungan slot terisi
+  - `tests/Feature/Upsell/RuleOutcomeStatusTest.php` — test keadaan `represented`
+- **Catatan Migrasi:**
+  Tidak ada. Seeder hanya dijalankan manual: `php artisan db:seed --class=UpsellRuleShowcaseSeeder`.
+
+---
+
+### [ADDITION] Tabel Aturan Saran Jual Berhenti Menulis "Aktif" untuk Aturan yang Kasir Tidak Pernah Lihat
+- **Tanggal:** 2026-09-12
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service, Controller, Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Halaman Aturan Saran Jual menulis **Aktif** pada baris yang kasir tidak pernah lihat. Kolom `is_active` menjawab pertanyaan yang salah — ia menyatakan NIAT owner, bukan KEADAAN di kasir — dan tidak ada satu pun layar yang menjawab yang kedua. Owner yang menulis aturan lalu tidak menemukannya di kasir menyimpulkan fiturnya rusak, dan dari tempat ia berdiri ia tidak salah.
+
+  Pemeriksaan lama dilakukan di klien dan hanya mengenal tiga sebab (saklar owner, jendela tanggal, stok nol), lalu menyimpulkan "Tampil di kasir" untuk sisanya. **Empat keadaan lolos dari kesimpulan itu, dan yang pertama adalah kebalikan dari kenyataan:**
+
+  1. **KALAH SLOT** terbaca "Tampil di kasir". Ini satu-satunya keadaan yang memang TIDAK BISA dijawab klien: jawabannya menuntut indeks saran penuh beserta skor seluruh pesaingnya.
+  2. **Varian yang sudah KEDALUWARSA** — gugur di `SellableVariantQuery`, tidak pernah diperiksa layar.
+  3. **Produk NONAKTIF atau terhapus** — klien bahkan tidak memuat `is_active` produknya, jadi ia tidak punya bahan untuk memeriksanya.
+  4. **Jenis saran `manual` yang DIMATIKAN**, oleh owner di Setelan maupun oleh pemilik SaaS di `config/upsell.php`. Saat itu terjadi seluruh aturan berhenti muncul sekaligus, dan tabelnya tetap menulis "Aktif" pada semuanya.
+
+  **Dijawab di server, dan itu bukan selera.** Hasilnya harus sependapat dengan tab pratinjau sampai ke nomor slotnya, dan pratinjau memakai `UpsellIndexBuilder` — kode yang sama persis dengan kasir. Perhitungan kedua di klien akan berselisih dengan yang pertama pada hari pertama stok berubah, dan owner yang melihat dua angka berbeda akan berhenti mempercayai keduanya. Sebagai efek samping, perselisihan hari-toko yang dikhawatirkan `[BL-082]` ikut hilang: hanya ada satu `now()` sekarang, milik server, yang sama dengan yang dipakai `scopeActiveOn()`.
+
+  **Dua permukaan, satu perhitungan.** Statusnya dipakai dua kali: sebagai lencana per baris di kolom tabel yang berganti nama dari "Status" menjadi "Di kasir hari ini" (kini menyebut nomor slotnya — "Tampil · slot 2"), dan sebagai daftar baru **"Tidak muncul sama sekali, dan kenapa"** di puncak tab pratinjau, tiap baris dengan kalimat sebabnya dan tombol yang membawa owner ke tempat memperbaikinya.
+
+  **Dua keadaan sengaja TIDAK masuk daftar itu,** dan keduanya diputuskan di server supaya kedua permukaan tidak bisa berselisih: aturan yang owner matikan sendiri (ia tidak sedang bertanya kenapa ia tidak muncul), dan aturan yang kalah slot (ia sudah terlihat di daftar slot, bertanda "Tergeser"). Daftar yang memuat segalanya berhenti menjadi daftar.
+
+  **Jenis yang dimatikan pemilik SaaS tetap tanpa tombol apa pun** — aturan `[BL-099]` dihormati apa adanya: owner perlu tahu sebabnya, tapi menunjukkan jalan yang tidak bisa ia tempuh terbaca seperti izin.
+
+  **Ikut menumpang:** lencana "Tergeser" di daftar slot sekarang menyebut LAWANNYA — penghuni slot terakhir yang masih tampil, bukan yang di puncak, karena itulah lawan yang masih bisa dikejar. Ajakan "naikkan urutannya" hanya muncul pada aturan manual; saran temuan mesin tidak punya urutan yang bisa digeser owner.
+- **Alasan:**
+  Permintaan pemilik 2026-09-12: upsell yang aktif tidak bisa dilihat apa saja, dan tab "Muncul di kasir" belum bisa menunjukkan detail apa pun. Pemeriksaan terhadap kode menemukan persoalan yang lebih besar daripada kurang detail — status yang menyesatkan.
+- **File Terdampak:**
+  - `app/Services/Upsell/RuleOutcomeResolver.php` — baru; satu sebab per aturan, urutan pemeriksaannya menentukan artinya (saklar owner menang dari segalanya, perebutan slot paling akhir)
+  - `app/Services/Upsell/Suggestion.php` — `key()` dipecah menjadi `keyFor()` statis supaya resolver memakai susunan kunci yang SAMA, bukan salinannya; kunci yang menyimpang tidak melempar error apa pun, ia hanya berhenti menemukan pasangannya
+  - `app/Http/Controllers/Owner/UpsellRuleController.php` — prop tunda `outcomes` di grup `pratinjau`; indeks dimemo lewat `suggestionIndex()` supaya dua prop tidak merakitnya dua kali; `asSlots()` kini membawa `lost_to`
+  - `resources/js/Pages/Owner/UpsellRules/Index.vue` — `dormantReason()` beserta tebakannya dihapus; lencana status memakai `outcomes` dengan kerangka berdenyut selama prop-nya belum tiba; daftar "Tidak muncul sama sekali, dan kenapa" ditambahkan di puncak tab pratinjau
+  - `tests/Feature/Upsell/RuleOutcomeStatusTest.php` — baru; 12 test, satu per sebab, plus penjaga kesepakatan kunci `Suggestion`/resolver dan penjaga "indeks dirakit sekali"
+- **Catatan Migrasi:**
+  Tidak ada migrasi. Perlu `npm run build` karena halaman owner-nya berubah. Satu hal yang BELUM dijawab dan sengaja dibiarkan: dua aturan yang menunjuk pasangan pemicu–saran yang sama persis menghasilkan kunci yang sama, jadi keduanya menerima status slot yang sama — nyaris benar, karena kasir memang melihat saran itu satu kali, tapi aturan mana dari keduanya yang sebenarnya mengisinya tidak disebut.
+
+---
 
 ### [ADDITION] Logo Usaha Menggantikan Huruf Pertama Nama Toko di Sidebar, Topbar Kasir, dan Kepala Struk
 - **Tanggal:** 2026-09-11
