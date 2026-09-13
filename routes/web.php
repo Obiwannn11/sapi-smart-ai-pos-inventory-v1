@@ -188,7 +188,8 @@ Route::middleware(['auth', 'tenant'])
             Route::resource('categories', \App\Http\Controllers\Owner\CategoryController::class)
                 ->only(['index', 'store', 'update', 'destroy']);
 
-            Route::resource('products', \App\Http\Controllers\Owner\ProductController::class);
+            Route::resource('products', \App\Http\Controllers\Owner\ProductController::class)
+                ->except(['show']);
 
             Route::post('products/{product}/variants', [\App\Http\Controllers\Owner\VariantController::class, 'store'])
                 ->name('products.variants.store');
