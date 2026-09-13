@@ -238,6 +238,37 @@ test('stok habis, jendela belum mulai, dan saklar owner masing-masing punya stat
         ->and(outcomeFor($this->tenant, $ruleHabis)['needs_attention'])->toBeTrue();
 });
 
+test('dua aturan yang mendorong barang sama: yang kalah disebut diwakili, bukan rusak', function () {
+    $barang = outcomeVariant($this->tenant, ['price' => 9000]);
+    $pemicu = outcomeVariant($this->tenant, ['price' => 9000]);
+
+    // Tanpa pemicu, prioritas tinggi — ini yang akan mengisi slotnya.
+    UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'suggested_variant_id' => $barang->id,
+        'priority' => 90,
+    ]);
+
+    // Berpemicu, menunjuk barang yang sama. Sehat, lolos semua penjagaan, tapi
+    // dedup `[BL-101]` membuangnya karena satu barang hanya boleh satu slot.
+    $kembar = UpsellRule::factory()->create([
+        'tenant_id' => $this->tenant->id,
+        'trigger_variant_id' => $pemicu->id,
+        'suggested_variant_id' => $barang->id,
+        'priority' => 10,
+    ]);
+
+    $outcome = outcomeFor($this->tenant, $kembar);
+
+    expect($outcome['state'])->toBe('represented')
+        ->and($outcome['status'])->toBe('Diwakili saran lain')
+        // Bukan `blocked`: tidak ada yang rusak dan tidak ada yang perlu
+        // diperbaiki — barangnya memang sudah ditawarkan.
+        ->and($outcome['tone'])->toBe('quiet')
+        ->and($outcome['detail'])->toContain('Pilihan pemilik')
+        ->and($outcome['detail'])->toContain('satu slot kasir');
+});
+
 // --- Kesepakatan yang gagal dalam diam bila lepas ---
 
 test('kunci yang dihitung dari aturan sama persis dengan kunci sarannya', function () {

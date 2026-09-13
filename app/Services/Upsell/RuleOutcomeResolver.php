@@ -294,15 +294,36 @@ class RuleOutcomeResolver
             $rule->suggested_variant_id,
         );
 
-        $place = $rule->trigger_variant_id === null
-            ? ($placements['cart'][$key] ?? null)
-            : ($placements['trigger'][$rule->trigger_variant_id][$key] ?? null);
+        $band = $rule->trigger_variant_id === null
+            ? ($placements['cart'] ?? [])
+            : ($placements['trigger'][$rule->trigger_variant_id] ?? []);
+
+        $place = $band[$key] ?? null;
 
         if ($place === null) {
-            // Tidak seharusnya terjadi, jadi dikatakan apa adanya alih-alih
-            // ditebak. Satu-satunya jalan yang diketahui ke sini: barang yang
-            // disarankan sama dengan pemicunya, yang disaring `rankForCart()`
-            // karena menyarankan isi keranjang kepada kasir terbaca asal-asalan.
+            // Sebab yang paling sering: SATU BARANG HANYA BOLEH MENGISI SATU
+            // SLOT ([BL-101]). Dua aturan yang mendorong produk yang sama —
+            // atau satu aturan yang kebetulan menunjuk barang yang sudah
+            // ditemukan mesin — menghasilkan dua saran atas varian yang sama,
+            // dan dedup membuang yang skornya lebih rendah. Aturannya tidak
+            // rusak; suaranya sudah diwakili.
+            $occupant = $this->occupantOf($band, $rule->suggested_variant_id);
+
+            if ($occupant !== null) {
+                return $this->dormant(
+                    'represented',
+                    'Diwakili saran lain',
+                    'Barang yang sama sudah diusulkan sebagai "'.$this->typeWord($occupant['type']).'"'
+                        .($occupant['slot'] !== null ? ' di slot '.$occupant['slot'] : ' tapi ikut tergeser')
+                        .'. Satu barang hanya boleh mengisi satu slot kasir, jadi aturan ini tidak menambah apa pun.',
+                    self::TONE_QUIET,
+                );
+            }
+
+            // Sisanya tidak seharusnya terjadi, jadi dikatakan apa adanya
+            // alih-alih ditebak. Jalan yang diketahui: barang yang disarankan
+            // sama dengan pemicunya, yang disaring `rankForCart()` karena
+            // menyarankan isi keranjang kepada kasir terbaca asal-asalan.
             return $this->dormant(
                 'not_ranked',
                 'Tidak ikut perebutan',
@@ -426,10 +447,56 @@ class RuleOutcomeResolver
             $positions[$suggestion['key']] = [
                 'slot' => $wins ? $position + 1 : null,
                 'lost_to' => $wins ? null : $lastWinner,
+                // Ikut dibawa supaya saran yang HILANG dari peta ini masih bisa
+                // dijelaskan: lihat `occupantOf()`.
+                'variant_id' => $suggestion['suggested_variant_id'] ?? null,
+                'type' => $suggestion['type'],
             ];
         }
 
         return $positions;
+    }
+
+    /**
+     * Siapa yang sudah memegang varian ini di dalam satu pita perebutan.
+     *
+     * Dedup `[BL-101]` membuang saran kedua yang menunjuk varian yang SAMA,
+     * jadi saran yang hilang dari peta posisi belum tentu gugur — bisa jadi ia
+     * kalah dedup dari saran lain atas barang yang sama. Owner yang menulis dua
+     * aturan untuk mendorong satu produk mengalaminya persis begitu.
+     *
+     * @param  array<string, array{slot: int|null, lost_to: string|null, variant_id: int|null, type: string}>  $band
+     * @return array{slot: int|null, type: string}|null
+     */
+    private function occupantOf(array $band, ?int $variantId): ?array
+    {
+        if ($variantId === null) {
+            return null;
+        }
+
+        foreach ($band as $entry) {
+            if ($entry['variant_id'] === $variantId) {
+                return ['slot' => $entry['slot'], 'type' => $entry['type']];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Kata yang dibaca kasir untuk tiap jenis saran — disalin dari
+     * `UpsellStrip.vue`, bukan dikarang ulang, dengan alasan yang sama seperti
+     * di halaman Aturan: satu sistem, satu kosakata.
+     */
+    private function typeWord(string $type): string
+    {
+        return match ($type) {
+            UpsellEvent::TYPE_MANUAL => 'Pilihan pemilik',
+            UpsellEvent::TYPE_PRESSED_STOCK => 'Dorong',
+            UpsellEvent::TYPE_UPSIZE => 'Naik ukuran',
+            UpsellEvent::TYPE_ATTACH => 'Tambah',
+            default => $type,
+        };
     }
 
     /**
@@ -439,7 +506,7 @@ class RuleOutcomeResolver
     {
         return [
             'label' => 'Lihat produk',
-            'href' => route('owner.products.show', $variant->product_id, absolute: false),
+            'href' => route('owner.products.edit', $variant->product_id, absolute: false),
         ];
     }
 

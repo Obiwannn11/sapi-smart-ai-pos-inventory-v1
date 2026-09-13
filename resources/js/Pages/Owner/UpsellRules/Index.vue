@@ -678,8 +678,29 @@ const doDelete = () => {
 
                     <!-- Tanpa pemicu: inilah yang dilihat kasir pada penjualan apa pun. -->
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                        <div class="px-5 py-3 border-b border-gray-100">
-                            <h3 class="text-sm font-semibold text-gray-800">Pada setiap penjualan</h3>
+                        <!-- Keterangannya memakai KATA YANG SAMA PERSIS dengan
+                             kolom "Pemicu" di tab sebelah ("Setiap penjualan").
+                             Tanpa itu, kedua tab memakai dua kosakata untuk satu
+                             hal, dan owner yang membandingkannya sedang memetakan
+                             dua sistem alih-alih membaca satu.
+
+                             Satu kalimat menempel pada panelnya, bukan paragraf di
+                             kepala halaman: paragraf di sana sudah pernah ada dan
+                             sengaja dibuang — ia dibaca sekali, oleh owner yang
+                             belum punya satu pun aturan, lalu tidak pernah dibaca
+                             lagi tepat saat batasnya menggigit. -->
+                        <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-5 py-3 border-b border-gray-100">
+                            <div class="min-w-[12rem] flex-1 basis-0">
+                                <h3 class="text-sm font-semibold text-gray-800">Pada setiap penjualan</h3>
+                                <p class="mt-0.5 text-xs text-gray-500">
+                                    Aturan yang pemicunya <span class="font-medium text-gray-700">“Setiap penjualan”</span>,
+                                    ditambah barang tertekan temuan sistem. Muncul di keranjang mana pun, apa pun isinya.
+                                </p>
+                            </div>
+                            <span v-if="preview.cart_level.length > 0" class="shrink-0 text-xs text-gray-500">
+                                {{ preview.cart_level.filter((slot) => slot.wins_slot).length }} dari
+                                {{ preview.max_per_transaction }} slot terisi
+                            </span>
                         </div>
 
                         <ul v-if="preview.cart_level.length > 0" class="divide-y divide-gray-100">
@@ -740,6 +761,11 @@ const doDelete = () => {
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                         <div class="px-5 py-3 border-b border-gray-100">
                             <h3 class="text-sm font-semibold text-gray-800">Saat barang tertentu masuk keranjang</h3>
+                            <p class="mt-0.5 text-xs text-gray-500">
+                                Aturan yang pemicunya <span class="font-medium text-gray-700">sebuah barang</span>,
+                                ditambah add-on dan naik ukuran temuan sistem. Baru muncul setelah barang pemicunya
+                                ada di keranjang — jadi ia tidak pernah tampil di daftar atas.
+                            </p>
                         </div>
 
                         <div v-if="preview.triggers.length > 0" class="overflow-x-auto">
