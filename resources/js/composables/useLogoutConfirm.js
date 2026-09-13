@@ -71,9 +71,15 @@ export function useLogoutConfirm() {
 
         // Dialognya sengaja dibiarkan terbuka sampai halaman berpindah:
         // menutupnya lebih dulu menampilkan kembali layar yang sudah tidak
-        // berlaku. `onError` mengembalikannya supaya tombolnya tidak mati
-        // selamanya kalau POST-nya gagal.
+        // berlaku. `request` ini singleton lintas modul (bukan per komponen),
+        // jadi kalau tidak dibersihkan di sini ia bertahan melewati navigasi
+        // Inertia yang tidak memuat ulang JS — muncul lagi begitu dialog
+        // dipasang ulang di sesi login berikutnya. `onError` membersihkannya
+        // juga supaya tombolnya tidak mati selamanya kalau POST-nya gagal.
         router.post(endpoint, {}, {
+            onSuccess: () => {
+                request.value = null;
+            },
             onError: () => {
                 processing.value = false;
                 request.value = null;
