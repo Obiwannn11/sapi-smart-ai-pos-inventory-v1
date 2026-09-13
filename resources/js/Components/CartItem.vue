@@ -17,6 +17,19 @@ const props = defineProps({
      * diberi tombolnya sama sekali, bukan tombol yang menolak saat ditekan.
      */
     canSetSpecialPrice: { type: Boolean, default: false },
+    /**
+     * Berapa saran jual yang masih menunggu keputusan dan berasal dari baris
+     * ini. Kartunya hanya memuat satu saran sekaligus, jadi tanpa angka ini
+     * kasir tidak punya cara tahu masih ada yang mengantre di belakangnya
+     * selain menghitung titik pager.
+     */
+    upsellCount: { type: Number, default: 0 },
+    /**
+     * Apakah saran yang SEDANG tergambar di kartu berasal dari baris ini.
+     * Inilah yang menjawab "tawaran ini untuk barang yang mana" — dijawab
+     * dengan menunjuk, bukan dengan memindahkan tombolnya ke sini.
+     */
+    upsellActive: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['updateQty', 'remove', 'updateNotes', 'edit', 'specialPrice', 'clearSpecialPrice']);
@@ -156,10 +169,33 @@ const subtotal = () => {
 </script>
 
 <template>
-    <div class="bg-white rounded-lg border border-gray-200 p-3">
+    <!-- Baris yang sedang ditunjuk kartu saran menyala dengan garis tepi kiri,
+         bukan dengan warna latar sendirian: latar berwarna sudah dipakai
+         keadaan lain di layar ini, sedangkan tepi kiri membaca sebagai "yang
+         ini, yang sedang dibicarakan" tanpa menambah satu warna baru pun. -->
+    <div
+        :class="[
+            'rounded-lg border p-3 transition-colors',
+            upsellActive
+                ? 'border-primary/40 bg-primary/5 shadow-[inset_3px_0_0_0_var(--color-primary)]'
+                : 'bg-white border-gray-200',
+        ]"
+    >
         <div class="flex items-start justify-between gap-2">
             <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-800 truncate">{{ item.variant_name }}</p>
+                <div class="flex items-center gap-1.5">
+                    <p class="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{{ item.variant_name }}</p>
+                    <span
+                        v-if="upsellCount > 0"
+                        :class="[
+                            'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+                            upsellActive ? 'bg-primary/15 text-primary' : 'bg-gray-100 text-gray-500',
+                        ]"
+                        :title="`${upsellCount} saran jual menunggu keputusan untuk baris ini`"
+                    >
+                        {{ upsellCount }} saran
+                    </span>
+                </div>
                 <p class="text-xs text-gray-400">@ {{ formatCurrency(item.unit_price) }} x {{ item.qty }}</p>
 
                 <!-- Modifiers -->

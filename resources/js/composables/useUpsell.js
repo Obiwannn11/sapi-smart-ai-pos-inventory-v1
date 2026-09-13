@@ -15,7 +15,10 @@
  *   kasir membenci fitur ini.
  *
  *   Yang sempat TAMPIL tetap dicatat meski tidak diambil. Tanpa penyebutnya,
- *   angka "berapa persen saran diterima" tidak berarti apa-apa.
+ *   angka "berapa persen saran diterima" tidak berarti apa-apa. Yang menyebut
+ *   "tampil" adalah pemanggil lewat `markShown()`, bukan composable ini —
+ *   sejak strip berganti jadi satu kartu bergiliran, "lolos penyaringan" dan
+ *   "terlihat kasir" bukan lagi hal yang sama.
  *
  *   DITOLAK berbeda dari DIABAIKAN. Yang pertama sampai ke pelanggan dan
  *   dijawab tidak; yang kedua cuma lewat di layar kasir. Mencampur keduanya
@@ -170,18 +173,32 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
         ).slice(0, maxPerTransaction.value);
     });
 
-    // Apa pun yang sempat terlihat kasir masuk penyebut, sekali saja.
-    watch(
-        suggestions,
-        (visible) => {
-            for (const suggestion of visible) {
-                if (!shownByKey.value.has(suggestion.key)) {
-                    shownByKey.value.set(suggestion.key, suggestion);
-                }
-            }
-        },
-        { immediate: true, deep: false }
-    );
+    /**
+     * Tandai satu saran BENAR-BENAR sampai ke mata kasir.
+     *
+     * Dulu ini sebuah watch atas `suggestions`: apa pun yang lolos penyaringan
+     * langsung masuk penyebut, karena ketiganya memang tergambar sekaligus
+     * sebagai tiga baris. Sejak strip berganti jadi SATU KARTU BERGILIRAN,
+     * anggapan itu tidak berlaku lagi — dari tiga saran yang lolos, kasir bisa
+     * jadi hanya pernah melihat yang pertama sebelum menekan Bayar.
+     *
+     * Membiarkannya akan menggelembungkan penyebut dengan saran yang tidak
+     * pernah muncul, dan keduanya tercatat sebagai `ignored` — persis kesalahan
+     * yang dijaga aturan ketiga di kepala berkas ini, cuma dari arah sebaliknya:
+     * bukan mencampur "ditolak" dengan "diabaikan", melainkan menghitung yang
+     * tidak pernah ditawarkan sebagai diabaikan. Angka konversi yang mengaku
+     * lebih kecil dari kenyataan sama tidak dipercayainya dengan yang mengaku
+     * lebih besar.
+     *
+     * Pemanggillah yang tahu apa yang sedang tergambar, jadi pemanggil yang
+     * menyebutnya. Keputusan (`accept`/`reject`) tetap menandainya sendiri —
+     * saran yang diputuskan sudah pasti pernah dilihat.
+     */
+    const markShown = (suggestion) => {
+        if (!suggestion || shownByKey.value.has(suggestion.key)) return;
+
+        shownByKey.value.set(suggestion.key, suggestion);
+    };
 
     /**
      * Ditawarkan, pelanggan menolak. Dicatat sebagai keputusan — bukan sebagai
@@ -303,6 +320,7 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
         accept,
         reject,
         retract,
+        markShown,
         collectEvents,
         reset,
     };

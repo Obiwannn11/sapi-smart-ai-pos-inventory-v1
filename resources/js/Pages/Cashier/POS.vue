@@ -1,6 +1,6 @@
 <script setup>
 import { router, Head, usePage } from '@inertiajs/vue3';
-import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
+import { ref, computed, watch, onUnmounted, onMounted } from 'vue';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import { useFlash } from '@/composables/useFlash';
 import ProductCard from '@/Components/ProductCard.vue';
@@ -650,6 +650,7 @@ const {
     accept: acceptUpsell,
     reject: rejectUpsell,
     retract: retractUpsell,
+    markShown: markUpsellShown,
     collectEvents: collectUpsellEvents,
     reset: resetUpsell,
 } = useUpsell(catalogUpsell, cart, {
@@ -657,6 +658,77 @@ const {
     getCartQtyForVariant,
     isApplied: upsellStillApplied,
 });
+
+// --- Saran ↔ baris keranjang yang melahirkannya ---
+//
+// Strip hanya memuat SATU saran sekaligus, jadi "untuk barang yang mana"
+// berhenti terjawab oleh urutan di layar. Jawabannya dikembalikan dua arah:
+// kartunya menyebut nama barisnya, dan barisnya sendiri ikut menyala.
+//
+// Alternatifnya — memindahkan tombol terima/tolak ke dalam baris keranjang —
+// menaruh kendali di daftar yang bisa DIGULIR, sehingga saran yang belum
+// dijawab bisa hilang dari pandangan sementara tombol bayar terkunci. Kartunya
+// tidak pernah bergerak dari atas tombol Bayar.
+
+/** id varian pemicu → nama baris keranjangnya, untuk keterangan "Dari …". */
+const upsellSourceNames = computed(() => {
+    const names = {};
+
+    for (const line of cart.value) {
+        if (!(line.variant_id in names)) {
+            names[line.variant_id] = line.variant_name;
+        }
+    }
+
+    return names;
+});
+
+/** Berapa saran yang masih menunggu keputusan, per varian pemicunya. */
+const upsellCountByTrigger = computed(() => {
+    const counts = {};
+
+    for (const suggestion of upsellSuggestions.value) {
+        const triggerId = suggestion.trigger_variant_id;
+
+        if (!triggerId) continue;
+
+        counts[triggerId] = (counts[triggerId] ?? 0) + 1;
+    }
+
+    return counts;
+});
+
+const activeUpsellTrigger = ref(null);
+
+/**
+ * Baris mana yang menyala — INDEKS, bukan sekadar id varian.
+ *
+ * `applyUpsell` memakai `cart.find(...)`, jadi yang benar-benar disentuh saran
+ * ini adalah baris PERTAMA dengan varian itu. Varian yang sama bisa hadir dua
+ * kali dengan modifier berbeda; menyalakan keduanya akan menunjuk satu baris
+ * yang tidak akan berubah apa-apa.
+ */
+const activeUpsellLineIndex = computed(() => {
+    // Tanpa saran yang menunggu, tidak ada kartu — maka tidak boleh ada baris
+    // yang menyala, apa pun `source` terakhir yang sempat dikirim kartu.
+    //
+    // `activeUpsellTrigger` hanya diperbarui SELAMA kartu terpasang. Saat saran
+    // terakhir ditolak dan tidak ada yang diterima, `hasUpsellContent` jadi
+    // false dan kartunya dicabut dari DOM sebelum sempat mengabarkan bahwa ia
+    // sudah tidak menunjuk apa-apa. Tanpa penjaga ini baris itu tetap menyala
+    // tanpa kartu di layar — tepat pada saat kasir hendak menekan Bayar.
+    if (activeUpsellTrigger.value === null || upsellSuggestions.value.length === 0) return -1;
+
+    return cart.value.findIndex((line) => line.variant_id === activeUpsellTrigger.value);
+});
+
+const upsellCountForLine = (item, index) => {
+    // Dengan alasan yang sama: penghitungnya menempel pada baris yang akan
+    // benar-benar disentuh, bukan pada setiap baris bervarian sama.
+    if (cart.value.findIndex((line) => line.variant_id === item.variant_id) !== index) return 0;
+
+    return upsellCountByTrigger.value[item.variant_id] ?? 0;
+};
 
 /**
  * Terapkan saran ke keranjang, lalu catat tambahan omzet yang BENAR-BENAR
@@ -831,6 +903,42 @@ const checkoutBlockedReason = computed(() => {
 });
 
 const canCheckout = computed(() => !processing.value && checkoutBlockedReason.value === '');
+
+/**
+ * Label pendek tombol BAYAR saat saran wajib belum dijawab.
+ *
+ * Menggantikan kotak peringatan kuning yang dulu berdiri di atas total. Kotak
+ * itu memakan ±60 px dari kolom keranjang di setiap transaksi bermode wajib,
+ * padahal isinya mengulang "Wajib dijawab" yang sudah tertulis di kartu saran.
+ * Penjelasannya tidak dihapus ([BL-025] tetap berlaku): ia pindah ke tombol
+ * yang mati itu sendiri, tempat kasir memang melihat saat mencoba membayar.
+ * Kalimat utuhnya — lengkap dengan nama sarannya — tetap ada di `title` tombol
+ * dan di teks pembaca layar.
+ *
+ * Kosong bila tidak ada yang perlu dijawab: tombolnya kembali bertuliskan
+ * BAYAR, termasuk saat keranjang masih kosong, karena di situ tidak ada yang
+ * perlu dijelaskan.
+ */
+const payButtonHint = computed(() => {
+    if (processing.value || cart.value.length === 0) return '';
+
+    if (upsellMandatory.value && upsellUnresolved.value.length > 0) {
+        return `Jawab ${upsellUnresolved.value.length} saran dulu`;
+    }
+
+    return '';
+});
+
+/**
+ * Catatan batas diskon untuk kasir — tertutup sampai diminta.
+ *
+ * Dulu paragraf dua baris yang selalu terbuka di footer, ±40 px di setiap
+ * transaksi, untuk keterangan yang dibaca kasir sekali lalu dihafal. Ia TIDAK
+ * dijadikan tooltip: gelembung `TapTooltip` tidak membungkus teks dan muncul di
+ * bawah pemicunya, sedangkan pemicunya di dasar layar — kalimatnya akan
+ * terpotong di tepi. Ketuk ⓘ membukanya sebagai baris biasa.
+ */
+const showDiscountNote = ref(false);
 
 const openPaymentModal = () => {
     if (!canCheckout.value) return;
@@ -1158,157 +1266,30 @@ const resetCartWidth = () => {
     localStorage.setItem(CART_WIDTH_KEY, String(CART_DEFAULT_WIDTH));
 };
 
-// --- Pembagian ruang: keranjang vs saran jual ---
+// --- Kartu saran jual: di dasar kolom katalog ---
 //
-// Saran jual dulu menumpang di footer yang `shrink-0`, jadi footer mengambil
-// setinggi apa pun yang ia butuhkan dan daftar keranjang di atasnya yang
-// mengalah. Tiga saran sekaligus menyisakan satu baris keranjang — kasir jadi
-// kehilangan pandangan atas pesanan justru pada saat ia harus menawar ke
-// pelanggan yang sedang berdiri di depannya.
+// Kartunya berdiri di kolom KATALOG, bukan di kolom keranjang.
 //
-// Sekarang keduanya panel terpisah dengan pembatas yang bisa digeser: saran
-// dibuka lebar saat menawarkan, dikecilkan saat yang penting isi keranjangnya.
-// Kasir yang menentukan, bukan jumlah saran yang kebetulan muncul.
-const UPSELL_HEIGHT_KEY = 'cashier.upsellHeight';
-const UPSELL_MIN_HEIGHT = 76; // satu baris saran masih terbaca utuh
-const UPSELL_DEFAULT_HEIGHT = 168;
-const CART_ITEMS_MIN_HEIGHT = 132; // keranjang tidak boleh habis tergusur
-
-const cartPanel = ref(null);
-const cartHeader = ref(null);
-const cartFooter = ref(null);
-const upsellPanel = ref(null);
-const upsellHeight = ref(UPSELL_DEFAULT_HEIGHT);
-const isResizingUpsell = ref(false);
-// Kasir yang pernah menggeser sendiri pembatasnya tidak boleh diatur ulang
-// diam-diam oleh jumlah saran yang kebetulan muncul berikutnya.
-const upsellHeightIsChosen = ref(false);
-
+// Sebelumnya ia panel sendiri di dalam kolom keranjang, dengan pembatas yang
+// bisa digeser. Pembatas itu tidak menyelesaikan persoalannya, hanya
+// menyerahkannya ke kasir: di layar 1366×768 kolom keranjang cuma ±711 px,
+// kartu bergiliran butuh ±240 px, footer ±275 px, dan daftar item — satu-
+// satunya blok yang boleh menyusut — tinggal ±140 px. Satu baris kopi dengan
+// modifier ±134 px, jadi kasir melihat SATU baris pesanan tepat saat ia sedang
+// menawar ke pelanggan di depannya.
+//
+// Kolom katalog pada layar yang sama selebar ±976 px, jadi kartu yang sama bisa
+// melebar dan cukup setinggi ±88 px (lihat `@container` di UpsellStrip.vue).
+// Harganya dibayar katalog, dan hanya selama ada saran menunggu: katalog bisa
+// digulir, daftar pesanan yang terpotong tidak menolong siapa pun. Hubungan
+// "tawaran ini untuk barang yang mana" tidak putus walau beda kolom — baris
+// asalnya tetap menyala di keranjang.
 const hasUpsellContent = computed(() => {
     return upsellSuggestions.value.length > 0 || upsellAccepted.value.length > 0;
 });
 
-/**
- * Batas atasnya diukur dari panel yang sebenarnya, bukan angka mati: tinggi
- * footer ikut berubah saat baris pajak atau peringatan muncul, dan layar kasir
- * 768px punya sisa ruang yang jauh berbeda dari tablet.
- */
-const maxUpsellHeight = () => {
-    const panel = cartPanel.value?.clientHeight ?? 0;
-    if (!panel) {
-        return UPSELL_DEFAULT_HEIGHT;
-    }
-
-    const reserved = (cartHeader.value?.offsetHeight ?? 0)
-        + (cartFooter.value?.offsetHeight ?? 0)
-        + CART_ITEMS_MIN_HEIGHT;
-
-    return Math.max(UPSELL_MIN_HEIGHT, panel - reserved);
-};
-
-const clampUpsellHeight = (value) => {
-    return Math.min(maxUpsellHeight(), Math.max(UPSELL_MIN_HEIGHT, value));
-};
-
-const pointerY = (event) => {
-    return event.touches ? event.touches[0].clientY : event.clientY;
-};
-
-let upsellDragStartY = 0;
-let upsellDragStartHeight = 0;
-
-const onResizeUpsellMove = (event) => {
-    if (!isResizingUpsell.value) return;
-    // Pembatas berada DI ATAS blok saran, jadi menggeser ke atas melebarkannya.
-    upsellHeight.value = clampUpsellHeight(upsellDragStartHeight - (pointerY(event) - upsellDragStartY));
-    event.preventDefault();
-};
-
-const stopResizeUpsell = () => {
-    if (!isResizingUpsell.value) return;
-    isResizingUpsell.value = false;
-    upsellHeightIsChosen.value = true;
-    document.body.style.userSelect = '';
-    document.body.style.cursor = '';
-    localStorage.setItem(UPSELL_HEIGHT_KEY, String(Math.round(upsellHeight.value)));
-
-    window.removeEventListener('mousemove', onResizeUpsellMove);
-    window.removeEventListener('mouseup', stopResizeUpsell);
-    window.removeEventListener('touchmove', onResizeUpsellMove);
-    window.removeEventListener('touchend', stopResizeUpsell);
-};
-
-const startResizeUpsell = (event) => {
-    isResizingUpsell.value = true;
-    upsellDragStartY = pointerY(event);
-    upsellDragStartHeight = upsellHeight.value;
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'row-resize';
-
-    window.addEventListener('mousemove', onResizeUpsellMove);
-    window.addEventListener('mouseup', stopResizeUpsell);
-    window.addEventListener('touchmove', onResizeUpsellMove, { passive: false });
-    window.addEventListener('touchend', stopResizeUpsell);
-    event.preventDefault();
-};
-
-/**
- * Tinggi bawaan mengikuti isinya, bukan satu angka tetap. Saran ketiga yang
- * terpotong sejak awal mengulang persoalan yang sama: kasir harus membereskan
- * tampilan dulu sebelum bisa menawar. Begitu ia menggeser sendiri, pilihannya
- * yang dipakai.
- */
-const UPSELL_PANEL_PADDING = 24; // py-3 atas + bawah
-
-const fitUpsellHeightToContent = () => {
-    // Yang diukur isinya, bukan panelnya: `scrollHeight` panel tidak pernah
-    // lebih kecil dari tinggi yang sedang dipasang, jadi ia tidak bisa menyusut.
-    const content = upsellPanel.value?.firstElementChild?.offsetHeight;
-    upsellHeight.value = clampUpsellHeight(
-        content ? content + UPSELL_PANEL_PADDING : UPSELL_DEFAULT_HEIGHT
-    );
-};
-
-const resetUpsellHeight = () => {
-    upsellHeightIsChosen.value = false;
-    localStorage.removeItem(UPSELL_HEIGHT_KEY);
-    fitUpsellHeightToContent();
-};
-
-const reclampUpsellHeight = () => {
-    upsellHeight.value = clampUpsellHeight(upsellHeight.value);
-};
-
-onMounted(async () => {
-    const stored = Number(localStorage.getItem(UPSELL_HEIGHT_KEY));
-    await nextTick();
-    if (stored) {
-        upsellHeightIsChosen.value = true;
-        // Nilai simpanan dari layar besar tetap harus diperas ke layar kecil,
-        // kalau tidak ia menelan seluruh daftar keranjang saat dibuka di tablet.
-        upsellHeight.value = clampUpsellHeight(stored);
-    } else {
-        fitUpsellHeightToContent();
-    }
-    window.addEventListener('resize', reclampUpsellHeight);
-});
-
-// Footer tumbuh dan menyusut sendiri (baris pajak, peringatan bayar terkunci)
-// dan jumlah sarannya berubah tiap keranjang disentuh, jadi ukurannya dihitung
-// ulang tiap isi bloknya berganti.
-watch([hasUpsellContent, upsellSuggestions, upsellAccepted], async () => {
-    await nextTick();
-    if (upsellHeightIsChosen.value) {
-        reclampUpsellHeight();
-    } else {
-        fitUpsellHeightToContent();
-    }
-}, { deep: true });
-
 onUnmounted(() => {
     stopResizeCart();
-    stopResizeUpsell();
-    window.removeEventListener('resize', reclampUpsellHeight);
 });
 
 </script>
@@ -1449,6 +1430,33 @@ onUnmounted(() => {
                         Produk tidak ditemukan
                     </div>
                 </div>
+
+                <!-- Saran jual: di DASAR KOLOM KATALOG, sejajar tombol Bayar di
+                     kanan — di situlah mata kasir berakhir sebelum membayar.
+                     Bukan pop-up (lihat UpsellStrip.vue), dan bukan lagi panel
+                     di kolom keranjang yang menggencet daftar pesanan sampai
+                     tinggal satu baris (lihat komentar `hasUpsellContent`).
+
+                     `max-h-[45%]` + gulir sendiri: beberapa saran yang sudah
+                     diterima menambah baris di bawah kartu, dan tanpa batas itu
+                     di layar pendek mereka bisa menelan katalog sepenuhnya. -->
+                <div
+                    v-if="hasUpsellContent"
+                    class="shrink-0 max-h-[45%] overflow-y-auto border-t border-border bg-background px-4 pt-3 pb-4 shadow-[0_-8px_16px_-12px_rgba(0,0,0,0.18)]"
+                >
+                    <UpsellStrip
+                        :suggestions="upsellSuggestions"
+                        :accepted="upsellAccepted"
+                        :disabled="processing"
+                        :mandatory="upsellMandatory"
+                        :source-names="upsellSourceNames"
+                        @accept="applyUpsell"
+                        @reject="rejectUpsell"
+                        @retract="undoUpsell"
+                        @shown="markUpsellShown"
+                        @source="activeUpsellTrigger = $event"
+                    />
+                </div>
             </div>
 
             <!-- Resize Handle: drag / long-press to change cart width -->
@@ -1474,11 +1482,10 @@ onUnmounted(() => {
 
             <!-- RIGHT: Cart Panel -->
             <div
-                ref="cartPanel"
                 :style="{ width: cartWidth + 'px' }"
                 class="bg-card border-l border-border flex flex-col shrink-0">
                 <!-- Cart Header -->
-                <div ref="cartHeader" class="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div class="px-4 py-3 border-b border-border flex items-center justify-between">
                     <div class="flex items-center gap-2">
                         <h2 class="text-sm font-semibold text-gray-800">Keranjang</h2>
                         <span v-if="cartItemCount > 0" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
@@ -1503,8 +1510,8 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Cart Items. `min-h-0` wajib: tanpa itu flex item menolak
-                     menyusut di bawah tinggi isinya, dan pembatas di bawahnya
-                     tidak bisa digeser turun. -->
+                     menyusut di bawah tinggi isinya, dan footer di bawahnya
+                     terdorong keluar layar saat pesanannya panjang. -->
                 <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     <template v-if="cart.length > 0">
                         <CartItem
@@ -1514,6 +1521,8 @@ onUnmounted(() => {
                             :index="idx"
                             :can-edit="canEditCartLine(item)"
                             :can-set-special-price="isOwner"
+                            :upsell-count="upsellCountForLine(item, idx)"
+                            :upsell-active="activeUpsellLineIndex === idx"
                             @update-qty="updateCartQty"
                             @update-notes="updateCartNotes"
                             @edit="requestEditCartItem"
@@ -1531,97 +1540,60 @@ onUnmounted(() => {
                     </div>
                 </div>
 
-                <!-- Pembatas keranjang ↔ saran: geser untuk membuka saran lebar-lebar
-                     saat menawar, atau mengecilkannya saat isi keranjang yang penting.
-                     Hanya ada saat memang ada yang dibagi ruangnya. -->
-                <div
-                    v-if="hasUpsellContent"
-                    role="separator"
-                    aria-orientation="horizontal"
-                    aria-label="Atur tinggi saran untuk pelanggan"
-                    @mousedown="startResizeUpsell"
-                    @touchstart="startResizeUpsell"
-                    @dblclick="resetUpsellHeight"
-                    :class="[
-                        'group relative h-1.5 shrink-0 cursor-row-resize select-none touch-none flex items-center justify-center transition-colors',
-                        isResizingUpsell ? 'bg-primary/60' : 'bg-border hover:bg-primary/40'
-                    ]"
-                    title="Geser untuk atur tinggi saran · klik dua kali untuk kembali mengikuti isi"
-                >
-                    <!-- Sasaran sentuh diperlebar; batangnya sendiri tetap tipis -->
-                    <span class="absolute inset-x-0 -top-1.5 -bottom-1.5"></span>
-                    <span class="relative flex gap-1 pointer-events-none">
-                        <span :class="['w-0.5 h-0.5 rounded-full', isResizingUpsell ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
-                        <span :class="['w-0.5 h-0.5 rounded-full', isResizingUpsell ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
-                        <span :class="['w-0.5 h-0.5 rounded-full', isResizingUpsell ? 'bg-white' : 'bg-gray-400 group-hover:bg-primary']"></span>
-                    </span>
-                </div>
-
-                <!-- Saran jual: strip tipis, bukan pop-up (lihat UpsellStrip.vue).
-                     Panelnya sendiri, dengan tinggi yang diatur kasir — bukan
-                     menumpang di footer dan menggusur keranjang. -->
-                <div
-                    v-if="hasUpsellContent"
-                    ref="upsellPanel"
-                    :style="{ height: upsellHeight + 'px' }"
-                    class="shrink-0 overflow-y-auto px-4 py-3"
-                >
-                    <UpsellStrip
-                        :suggestions="upsellSuggestions"
-                        :accepted="upsellAccepted"
-                        :disabled="processing"
-                        :mandatory="upsellMandatory"
-                        @accept="applyUpsell"
-                        @reject="rejectUpsell"
-                        @retract="undoUpsell"
-                    />
-                </div>
-
-                <!-- Cart Footer -->
-                <div ref="cartFooter" class="border-t border-border p-4 space-y-3 flex-shrink-0">
-                    <!-- Sebab tombol bayar mati, bukan sekadar tombol kelabu -->
-                    <div
-                        v-if="checkoutBlockedReason && cart.length > 0"
-                        class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
-                        role="status"
+                <!-- Cart Footer — dirapikan. Pada toko berpajak dengan mode saran
+                     wajib ia dulu ±275 px; sekarang ±118 px, dan setiap piksel
+                     yang dikembalikan jatuh ke daftar pesanan di atasnya. -->
+                <div class="border-t border-border p-4 space-y-3 flex-shrink-0">
+                    <!-- Subtotal, biaya layanan, dan pajak dalam SATU baris.
+                         Pembagiannya tetap muncul hanya kalau ada yang dipungut
+                         ([BL-097]) — toko tanpa pungutan melihat Total saja. -->
+                    <p
+                        v-if="cartTotals.tax > 0 || cartTotals.serviceCharge > 0"
+                        class="flex flex-wrap gap-x-2 text-xs tabular-nums text-gray-500"
                     >
-                        <svg class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                        </svg>
-                        <span class="text-xs text-amber-800">{{ checkoutBlockedReason }}</span>
+                        <span>Subtotal {{ formatCurrency(cartTotals.subtotal) }}</span>
+                        <span v-if="cartTotals.serviceCharge > 0">· {{ (serviceChargeContext?.label || 'Biaya Layanan') }} {{ Number(serviceChargeContext?.rate || 0) }}% {{ formatCurrency(cartTotals.serviceCharge) }}</span>
+                        <span v-if="cartTotals.tax > 0">· {{ (taxContext?.label || 'Pajak') }} {{ Number(taxContext?.rate || 0) }}% {{ formatCurrency(cartTotals.tax) }}</span>
+                    </p>
+
+                    <div class="flex items-center justify-between">
+                        <span class="flex items-center gap-1.5 text-sm text-gray-600">
+                            Total
+                            <!-- Batas diskon untuk kasir ([BL-018]) — tetap bisa
+                                 dibaca, tapi tertutup sampai diminta. Lihat
+                                 `showDiscountNote` untuk kenapa bukan tooltip. -->
+                            <button
+                                v-if="!isOwner && cart.length > 0"
+                                type="button"
+                                :aria-expanded="showDiscountNote"
+                                aria-controls="cashier-discount-note"
+                                :aria-label="showDiscountNote ? 'Tutup keterangan batas diskon' : 'Lihat keterangan batas diskon'"
+                                :class="[
+                                    'flex h-6 w-6 pointer-coarse:h-9 pointer-coarse:w-9 items-center justify-center rounded-full border text-[11px] font-semibold transition',
+                                    showDiscountNote ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted',
+                                ]"
+                                @click="showDiscountNote = !showDiscountNote"
+                            >
+                                i
+                            </button>
+                        </span>
+                        <span class="text-xl font-bold text-gray-800">{{ formatCurrency(cartTotal) }}</span>
                     </div>
 
-                    <!-- Batasnya ditunjukkan apa adanya, bukan dibiarkan jadi
-                         jalan buntu ([BL-018]). Kasir yang menemukan barang
-                         hampir kedaluwarsa saat owner tidak di tempat perlu
-                         tahu apa yang bisa dan tidak bisa ia lakukan. -->
-                    <p v-if="!isOwner && cart.length > 0" class="text-[11px] text-gray-400">
+                    <p
+                        v-if="showDiscountNote && !isOwner && cart.length > 0"
+                        id="cashier-discount-note"
+                        class="text-[11px] text-gray-500"
+                    >
                         Diskon yang sudah disetujui pemilik berlaku otomatis. Harga di bawah batas untung hanya bisa ditetapkan pemilik.
                     </p>
 
-                    <!-- Pembagian hanya muncul kalau ada yang dipungut; toko
-                         yang tidak memungut apa pun melihat baris Total
-                         seperti dulu. Biaya layanan ikut membukanya
-                         ([BL-097]) — toko yang memungutnya tanpa pajak tetap
-                         harus menunjukkan subtotalnya. -->
-                    <template v-if="cartTotals.tax > 0 || cartTotals.serviceCharge > 0">
-                        <div class="flex items-center justify-between text-xs text-gray-500">
-                            <span>Subtotal</span>
-                            <span>{{ formatCurrency(cartTotals.subtotal) }}</span>
-                        </div>
-                        <div v-if="cartTotals.serviceCharge > 0" class="flex items-center justify-between text-xs text-gray-500">
-                            <span>{{ (serviceChargeContext?.label || 'Biaya Layanan') }} {{ Number(serviceChargeContext?.rate || 0) }}%</span>
-                            <span>{{ formatCurrency(cartTotals.serviceCharge) }}</span>
-                        </div>
-                        <div v-if="cartTotals.tax > 0" class="flex items-center justify-between text-xs text-gray-500">
-                            <span>{{ (taxContext?.label || 'Pajak') }} {{ Number(taxContext?.rate || 0) }}%</span>
-                            <span>{{ formatCurrency(cartTotals.tax) }}</span>
-                        </div>
-                    </template>
-                    <div class="flex items-center justify-between">
-                        <span class="text-sm text-gray-600">Total</span>
-                        <span class="text-xl font-bold text-gray-800">{{ formatCurrency(cartTotal) }}</span>
-                    </div>
+                    <!-- Kalimat utuh sebab tombol bayar mati, untuk pembaca layar.
+                         Yang terlihat adalah label pendek di tombolnya sendiri
+                         (`payButtonHint`) — kotak kuning yang dulu mengulangnya
+                         di sini sudah dibuang. -->
+                    <p v-if="payButtonHint" class="sr-only" role="status">{{ checkoutBlockedReason }}</p>
+
                     <div class="flex gap-2">
                         <button
                             @click="saveAsOpenBill"
@@ -1631,16 +1603,25 @@ onUnmounted(() => {
                         >
                             Tunda Bayar
                         </button>
+                        <!-- Saat terkunci karena saran wajib, tombolnya tidak
+                             sekadar memudar: memudar ke 40% membuat labelnya
+                             ikut tak terbaca, padahal labelnya kini satu-satunya
+                             penjelasan yang terlihat. -->
                         <button
                             @click="openPaymentModal"
                             :disabled="!canCheckout"
                             :title="checkoutBlockedReason || undefined"
-                            class="flex-[2] py-3 bg-success text-success-foreground font-semibold rounded-lg hover:bg-success/90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            :class="[
+                                'flex-[2] py-3 font-semibold rounded-lg transition flex items-center justify-center gap-2 disabled:cursor-not-allowed',
+                                payButtonHint
+                                    ? 'border border-dashed border-amber-300 bg-amber-50 text-sm text-amber-800'
+                                    : 'bg-success text-success-foreground hover:bg-success/90 disabled:opacity-40',
+                            ]"
                         >
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg v-if="!payButtonHint" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
-                            {{ processing ? 'Memproses...' : 'BAYAR' }}
+                            {{ processing ? 'Memproses...' : (payButtonHint || 'BAYAR') }}
                         </button>
                     </div>
                 </div>
