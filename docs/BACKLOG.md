@@ -105,6 +105,26 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
+### [BL-111] Stok Satu Varian Tidak Bisa Punya Lebih dari Satu Tanggal Kedaluwarsa — Restock Menimpa Batch Sebelumnya
+- **Ditemukan:** 2026-09-14, saat menjawab pertanyaan pemilik soal uji integrasi FEFO (barang datang bulan 1 vs bulan 5, tanggal kedaluwarsa beda, tapi terhitung satu produk)
+- **Sumber:** Pertanyaan pemilik langsung, diverifikasi terhadap kode sebelum jadi entri
+- **Status:** Open — belum ada satu baris kode pun untuk ini; ini fitur baru, bukan perbaikan
+- **Prioritas:** Medium — belum ada laporan kerugian nyata (lihat `[BL-107]`: 41 dari 42 varian bahkan tidak punya `expiry_date` sama sekali, jadi kasusnya jarang tersentuh hari ini), tapi begitu restock rutin diisi tanggalnya, cacatnya pasti muncul.
+- **Area Terdampak:**
+  - `database/migrations/2026_03_06_000006_create_product_variants_table.php:11-22` — `stock` dan `expiry_date` adalah kolom TUNGGAL di `product_variants`, bukan baris per kedatangan barang
+  - `app/Services/StockService.php:60-68` (`restock()`) — komentarnya sendiri mengaku: `expiry_date` diisi ulang dengan "tanggal expiry batch terakhir", menimpa yang lama tanpa jejak
+  - `app/Services/StockService.php:15-37` (`deduct()`) — pengurangan stok saat checkout murni `stock = stock - qty`, tidak ada konsep "batch mana yang dikurangi duluan"
+  - `app/Services/Upsell/SellableVariantQuery.php:24-42` — kandidat "boleh dijual" dihitung dari satu `expiry_date` per varian, bukan dari batch yang belum kedaluwarsa
+- **Deskripsi:** Kalau satu varian menerima stok baru pada 2026-01-10 (kedaluwarsa 2026-04-10, qty 20) lalu menerima kiriman kedua pada 2026-05-10 (kedaluwarsa 2026-08-10, qty 30), sistem hari ini hanya menyimpan `stock = 50` dan `expiry_date = 2026-08-10` — tanggal kedaluwarsa batch pertama **hilang sepenuhnya**. Akibatnya:
+  1. Tidak ada cara membedakan 20 unit yang seharusnya sudah kedaluwarsa dari 30 unit yang masih baik, sampai keduanya dianggap kedaluwarsa bersamaan pada 2026-08-10 (salah — 20 unit itu sudah basi 30 hari sebelumnya) atau keduanya dianggap masih baik sampai 2026-08-10 (juga salah, dan ini yang benar-benar terjadi di kode saat ini).
+  2. Tidak ada logika FEFO (First-Expired-First-Out) maupun FIFO: `deduct()` tidak tahu — dan tidak bisa tahu, karena datanya tidak ada — batch mana yang harus dikurangi lebih dulu saat penjualan terjadi.
+  3. `ExpiredStockRecorder` (job harian) dan `SellableVariantQuery` ikut salah baca keadaan varian ini karena keduanya hanya melihat satu `expiry_date`.
+- **Usulan Perbaikan (arah, belum diputuskan pemilik):** tabel baru `product_stock_batches` (`product_variant_id`, `qty`, `qty_remaining`, `expiry_date`, `received_at`), `product_variants.stock` menjadi kolom turunan (sum `qty_remaining`) atau tetap kolom cache yang disinkronkan tiap mutasi batch. `StockService::restock()` menulis baris batch baru alih-alih menimpa; `StockService::deduct()` memilih batch dengan `expiry_date` paling dekat lebih dulu (FEFO — bukan FIFO, karena tujuannya mencegah barang basi di rak, bukan sekadar urutan masuk), lintas beberapa batch bila satu batch tidak cukup. Butuh migrasi backfill: setiap varian dengan stok/expiry hari ini menjadi satu baris batch awal.
+- **Hubungan dengan entri lain:** `[BL-108]` (barang SUDAH kedaluwarsa terjual tanpa peringatan) beririsan tapi berbeda masalah — BL-108 soal *sudah lewat tanggal dan tetap terjual*, entri ini soal *tidak bisa mewakili lebih dari satu tanggal kedaluwarsa per varian sama sekali*. Keduanya sebaiknya dikerjakan berurutan: gerbang konfirmasi BL-108 akan lebih akurat begitu ada tanggal kedaluwarsa per-batch, bukan satu tanggal gabungan. `[BL-107]` menjelaskan kenapa dampaknya belum terasa: mayoritas varian belum pernah diisi `expiry_date` sama sekali.
+- **Uji yang sudah ditulis untuk mendokumentasikan celah ini (2026-09-14):** `tests/Feature/Stock/StockBatchGapTest.php` — membuktikan restock kedua menimpa `expiry_date` batch pertama tanpa jejak, dan `deduct()` tidak membedakan asal batch saat mengurangi stok gabungan.
+
+---
+
 ### [BL-108] Barang Kedaluwarsa Terjual Tanpa Satu Pun Peringatan — dan Tiga Komentar Menjanjikan Penjagaan yang Tidak Pernah Ada
 - **Ditemukan:** 2026-09-08, saat uji jalur nyata dari POS (bukan dari membaca kode)
 - **Sumber:** Permintaan pemilik untuk membuat satu transaksi sungguhan dan memeriksa apakah seluruh datanya mendarat benar. Datanya mendarat benar; yang tidak benar adalah bahwa transaksinya boleh terjadi sama sekali.
