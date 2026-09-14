@@ -492,7 +492,7 @@ class RuleOutcomeResolver
     {
         return match ($type) {
             UpsellEvent::TYPE_MANUAL => 'Pilihan pemilik',
-            UpsellEvent::TYPE_PRESSED_STOCK => 'Dorong',
+            UpsellEvent::TYPE_PRESSED_STOCK => 'Segera jual',
             UpsellEvent::TYPE_UPSIZE => 'Naik ukuran',
             UpsellEvent::TYPE_ATTACH => 'Tambah',
             default => $type,

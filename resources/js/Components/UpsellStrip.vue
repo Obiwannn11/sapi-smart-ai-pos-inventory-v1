@@ -77,8 +77,10 @@ const TONE = {
     pressed_stock: {
         ring: 'border-warning/30 bg-warning/5',
         chip: 'bg-warning/15 text-warning-foreground',
-        // Bukan "Dorong" seperti di halaman owner: itu niat toko, bukan
-        // sesuatu yang bisa diucapkan kasir ke pelanggan.
+        // Bukan "Barang tertekan" seperti di laporan owner: itu istilah
+        // toko, bukan sesuatu yang bisa diucapkan kasir ke pelanggan.
+        // Pratinjau di halaman Aturan (`SOURCE_BADGES`, RuleOutcomeResolver)
+        // menyalin kata ini, jadi ubah ketiganya bersamaan.
         title: 'Segera jual',
     },
     upsize: {

@@ -117,7 +117,7 @@ class BadgeHelperService
                 'count' => $alreadyExpired->count(),
                 'value' => $expiredValue,
                 'message' => 'varian masih di rak · modal Rp '
-                    .number_format($expiredValue, 0, ',', '.').' mati',
+                    .number_format($expiredValue, 0, ',', '.').' hangus',
                 'items' => $alreadyExpired->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,

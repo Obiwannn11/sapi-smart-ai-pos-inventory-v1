@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | DECISION | Promosi | Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar |
 | 2026-09-15 | DECISION | Owner | Bagian Bawah Dashboard Owner: Kartu "Perlu Perhatian" Memakai Nama Sidebar, dan Baris Koreksi Offline Tidak Lagi Kosong |
 | 2026-09-14 | DECISION | Owner | Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok |
 | 2026-09-14 | DECISION | Kasir | Teks Layar Kasir Dipadatkan: Satu Istilah per Hal, Tanpa Istilah Sistem, Tanpa Tanda Pisah |
@@ -271,6 +272,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting halaman Laporan Saran Jual, plus dua keputusan istilah yang disetujui pemilik untuk semua layar owner.
+  - **Satu kata per tahap.** Tahap "pelanggan mau" sebelumnya disebut "Jadi dibeli" (corong), "Diterima" (kolom sumber), "Diambil" (tabel), dan "Sukses tawar" (persentase). Sekarang: Tampil → Dijawab kasir → Diterima, dengan persentase "Tingkat terima", sama dengan tombol di kasir.
+  - **"Ditawarkan kasir" jadi "Dijawab kasir".** Di `ReportController`, `offered = accepted + rejected`: sistem hanya tahu kasir menekan jawaban, bukan apakah tawarannya diucapkan.
+  - Kolom tabel "Omzet" jadi "Tambahan omzet". Isinya `extra_revenue`, bukan total penjualan.
+  - "Per Permukaan" (terjemahan kaku *surface*) jadi "Per Saluran". "Otomatis (sistem)" jadi "Otomatis", dan "Aturan Anda sendiri" jadi "Aturan Anda" seperti kolom sumbernya. `<h1>` "Saran Jual (Upsell)" jadi "Laporan Saran Jual", sama dengan tab dan tautan dashboard.
+  - Kalimat Penyelamat Stok dan pesan kosong dipadatkan tanpa tanda pisah. Beda periode dua kartu tetap disebut ("Per hari ini: …").
+  - Persentase memakai format Indonesia ("12,5%", sebelumnya "12.5%").
+  - **Keputusan A:** jenis `pressed_stock` bernama "Barang tertekan" di laporan dan dashboard pemilik, dan "Segera jual" di kasir. Label "Dorong" di halaman Aturan Saran Jual (`SOURCE_BADGES`) dan `RuleOutcomeResolver::typeWord()` sengaja menyalin kata kasir, supaya pemilik melihat persis apa yang tampil di layar kasir. Keduanya sudah tertinggal sejak chip kasir diganti, jadi sekarang ikut jadi "Segera jual".
+  - **Keputusan B:** modal barang kedaluwarsa bernama "Modal hangus" di laporan, dashboard ("Modal hangus bulan ini", sebelumnya "Modal basi bulan ini"), dan kartu Kedaluwarsa. Kata "hangus" dipilih karena sudah lazim untuk sesuatu yang lewat masa berlakunya.
+- **Alasan:** Satu hal dengan beberapa nama membuat pemilik mencari beda yang tidak ada.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/Reports/Upsell.vue`: teks UI, format persentase
+  - `resources/js/Pages/Owner/UpsellRules/Index.vue`, `app/Services/Upsell/RuleOutcomeResolver.php`: "Dorong" jadi "Segera jual", mengikuti chip kasir yang disalinnya
+  - `resources/js/Pages/Owner/Dashboard.vue`, `app/Services/BadgeHelperService.php`: "Modal hangus"
+  - `resources/js/Components/UpsellStrip.vue`: komentar
+  - `tests/Feature/Owner/UpsellReportCopyTest.php`: penjaga baru
 
 ### [DECISION] Bagian Bawah Dashboard Owner: Kartu "Perlu Perhatian" Memakai Nama Sidebar, dan Baris Koreksi Offline Tidak Lagi Kosong
 - **Tanggal:** 2026-09-15

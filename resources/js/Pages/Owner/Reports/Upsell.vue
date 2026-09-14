@@ -36,13 +36,16 @@ const formatCurrency = (value) => 'Rp ' + Number(value ?? 0).toLocaleString('id-
 
 const rate = (accepted, shown) => (shown > 0 ? Math.round((accepted / shown) * 1000) / 10 : 0);
 
+/** Persentase berformat Indonesia: "12,5", bukan "12.5". */
+const formatPercent = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 });
+
 const TYPE_LABELS = {
     attach: 'Tambah add-on',
     pressed_stock: 'Barang tertekan',
     upsize: 'Naik ukuran',
     // Tanpa baris ini tabelnya menampilkan kata "manual" mentah — satu-satunya
     // jenis yang owner tulis sendiri justru yang paling tidak dikenali.
-    manual: 'Aturan Anda sendiri',
+    manual: 'Aturan Anda',
 };
 
 /**
@@ -63,27 +66,29 @@ const funnel = computed(() => {
     return [
         {
             key: 'shown',
-            label: 'Muncul di layar',
+            label: 'Tampil',
             value: shown,
             width: '100%',
             tone: 'bg-gray-200 text-gray-700',
             rate: null,
         },
         {
+            // `offered` = diterima + ditolak. Sistem hanya tahu kasir menekan
+            // jawaban, bukan apakah tawarannya benar-benar diucapkan.
             key: 'offered',
-            label: 'Ditawarkan kasir',
+            label: 'Dijawab kasir',
             value: offered,
             width: width(offered),
             tone: 'bg-gray-300 text-gray-800',
-            rate: shown > 0 ? `${rate(offered, shown)}% dari yang muncul` : null,
+            rate: shown > 0 ? `${formatPercent(rate(offered, shown))}% dari yang tampil` : null,
         },
         {
             key: 'accepted',
-            label: 'Jadi dibeli',
+            label: 'Diterima',
             value: accepted,
             width: width(accepted),
             tone: 'bg-success/20 text-success',
-            rate: offered > 0 ? `${offerRate}% dari yang ditawarkan · ${rejected} ditolak` : null,
+            rate: offered > 0 ? `${formatPercent(offerRate)}% dari yang dijawab · ${rejected} ditolak` : null,
         },
     ];
 });
@@ -98,7 +103,7 @@ const funnel = computed(() => {
 const sourceColumns = computed(() => [
     {
         key: 'auto',
-        title: 'Otomatis (sistem)',
+        title: 'Otomatis',
         href: null,
         accent: 'text-sky-700',
         summary: props.sources?.auto,
@@ -146,17 +151,19 @@ const rescueCards = computed(() => {
             value: formatCurrency(rescued.amount),
             color: 'success',
             subtitle: rescued.shown > 0
-                ? `${rescued.accepted} dari ${rescued.shown} saran diambil · rentang tanggal di atas`
+                ? `${rescued.accepted} dari ${rescued.shown} saran diterima pelanggan`
                 : 'Belum ada saran barang tertekan pada rentang ini',
         },
         {
             key: 'spoiled',
-            title: 'Modal mati di rak',
+            title: 'Modal hangus',
             value: formatCurrency(spoiled.amount),
             color: 'warning',
+            // "Per hari ini" wajib tetap ada: kartu sebelahnya mengikuti
+            // rentang tanggal, kartu ini tidak.
             subtitle: spoiled.variants > 0
-                ? `${spoiled.variants} varian kedaluwarsa, ${spoiled.units} pcs · posisi hari ini, bukan rentang`
-                : 'Tidak ada barang kedaluwarsa yang masih tercatat',
+                ? `Per hari ini: ${spoiled.variants} varian, ${spoiled.units} pcs kedaluwarsa`
+                : 'Tidak ada barang kedaluwarsa di rak',
         },
     ];
 });
@@ -173,7 +180,7 @@ const showRescue = computed(
     <div class="max-w-6xl mx-auto space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-gray-900">Saran Jual (Upsell)</h1>
+                <h1 class="text-2xl font-bold text-gray-900">Laporan Saran Jual</h1>
             </div>
             <div class="flex items-end gap-2">
                 <DateRangePicker v-model:from="from" v-model:to="to" @change="applyFilter" />
@@ -193,9 +200,9 @@ const showRescue = computed(
                      satu-satunya tempat yang menyebutkan bahwa keduanya ujung
                      dari rantai yang sama. -->
                 <p class="mt-0.5 text-xs text-gray-500">
-                    Barang yang mendekati kedaluwarsa atau tak terjual sebulan diberi
+                    Barang yang hampir kedaluwarsa atau tak terjual sebulan diberi
                     <Link href="/owner/discount-rules" class="text-primary hover:underline">potongan</Link>,
-                    didorong lewat saran di layar kasir, lalu hasilnya dihitung di sini.
+                    lalu ditawarkan kasir. Hasilnya dihitung di sini.
                 </p>
             </div>
 
@@ -291,7 +298,7 @@ const showRescue = computed(
                             <dd class="font-medium text-gray-800">{{ column.summary.shown }}</dd>
                         </div>
                         <div class="flex justify-between gap-2">
-                            <dt class="text-gray-500">Ditawarkan</dt>
+                            <dt class="text-gray-500">Dijawab</dt>
                             <dd class="font-medium text-gray-800">{{ column.summary.offered }}</dd>
                         </div>
                         <div class="flex justify-between gap-2">
@@ -299,9 +306,9 @@ const showRescue = computed(
                             <dd class="font-medium text-gray-800">{{ column.summary.accepted }}</dd>
                         </div>
                         <div class="flex justify-between gap-2">
-                            <dt class="text-gray-500">Sukses tawar</dt>
+                            <dt class="text-gray-500">Tingkat terima</dt>
                             <dd class="font-semibold text-gray-900">
-                                {{ column.summary.offered > 0 ? column.summary.offer_rate + '%' : '—' }}
+                                {{ column.summary.offered > 0 ? formatPercent(column.summary.offer_rate) + '%' : '—' }}
                             </dd>
                         </div>
                         <div class="flex justify-between gap-2 pt-1.5 border-t border-gray-100">
@@ -321,8 +328,7 @@ const showRescue = computed(
         >
             <p class="text-sm font-medium text-gray-700">Belum ada saran yang tercatat pada rentang ini.</p>
             <p class="mt-1 text-xs text-gray-500">
-                Saran baru tercatat saat transaksi benar-benar jadi — keranjang yang dibatalkan dan transaksi
-                yang di-void tidak dihitung.
+                Saran dihitung setelah transaksinya selesai. Keranjang yang dikosongkan dan transaksi void tidak ikut.
             </p>
         </div>
 
@@ -335,7 +341,7 @@ const showRescue = computed(
                         <SkeletonPanel flush label="Memuat rekap per jenis saran…">
                             <SkeletonTable :rows="4" :columns="4" />
                         </SkeletonPanel>
-                        <SkeletonPanel flush label="Memuat rekap per permukaan…">
+                        <SkeletonPanel flush label="Memuat rekap per saluran…">
                             <SkeletonTable :rows="4" :columns="4" />
                         </SkeletonPanel>
                     </div>
@@ -353,7 +359,7 @@ const showRescue = computed(
                             href="/owner/settings/operations"
                             class="text-xs text-primary hover:underline font-medium shrink-0"
                         >
-                            Atur jenis
+                            Nyalakan/matikan jenis
                         </Link>
                     </div>
                     <table class="w-full text-sm">
@@ -361,8 +367,8 @@ const showRescue = computed(
                             <tr>
                                 <th class="px-5 py-2 text-left font-medium">Jenis</th>
                                 <th class="px-3 py-2 text-right font-medium">Tampil</th>
-                                <th class="px-3 py-2 text-right font-medium">Diambil</th>
-                                <th class="px-5 py-2 text-right font-medium">Omzet</th>
+                                <th class="px-3 py-2 text-right font-medium">Diterima</th>
+                                <th class="px-5 py-2 text-right font-medium">Tambahan omzet</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -379,7 +385,7 @@ const showRescue = computed(
                                 <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
                                 <td class="px-3 py-2.5 text-right text-gray-600">
                                     {{ row.accepted }}
-                                    <span class="text-xs text-gray-400">({{ rate(row.accepted, row.shown) }}%)</span>
+                                    <span class="text-xs text-gray-400">({{ formatPercent(rate(row.accepted, row.shown)) }}%)</span>
                                 </td>
                                 <td class="px-5 py-2.5 text-right font-medium text-gray-800">
                                     {{ formatCurrency(row.extra_revenue) }}
@@ -391,15 +397,15 @@ const showRescue = computed(
 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-5 py-3 border-b border-gray-100">
-                        <h2 class="text-sm font-semibold text-gray-800">Per Permukaan</h2>
+                        <h2 class="text-sm font-semibold text-gray-800">Per Saluran</h2>
                     </div>
                     <table class="w-full text-sm">
                         <thead class="bg-gray-50 text-xs text-gray-500">
                             <tr>
-                                <th class="px-5 py-2 text-left font-medium">Permukaan</th>
+                                <th class="px-5 py-2 text-left font-medium">Saluran</th>
                                 <th class="px-3 py-2 text-right font-medium">Tampil</th>
-                                <th class="px-3 py-2 text-right font-medium">Diambil</th>
-                                <th class="px-5 py-2 text-right font-medium">Omzet</th>
+                                <th class="px-3 py-2 text-right font-medium">Diterima</th>
+                                <th class="px-5 py-2 text-right font-medium">Tambahan omzet</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -408,7 +414,7 @@ const showRescue = computed(
                                 <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
                                 <td class="px-3 py-2.5 text-right text-gray-600">
                                     {{ row.accepted }}
-                                    <span class="text-xs text-gray-400">({{ rate(row.accepted, row.shown) }}%)</span>
+                                    <span class="text-xs text-gray-400">({{ formatPercent(rate(row.accepted, row.shown)) }}%)</span>
                                 </td>
                                 <td class="px-5 py-2.5 text-right font-medium text-gray-800">
                                     {{ formatCurrency(row.extra_revenue) }}
@@ -438,8 +444,8 @@ const showRescue = computed(
                             <th class="px-5 py-2 text-left font-medium">Saran</th>
                             <th class="px-3 py-2 text-left font-medium">Jenis</th>
                             <th class="px-3 py-2 text-right font-medium">Tampil</th>
-                            <th class="px-3 py-2 text-right font-medium">Diambil</th>
-                            <th class="px-5 py-2 text-right font-medium">Omzet</th>
+                            <th class="px-3 py-2 text-right font-medium">Diterima</th>
+                            <th class="px-5 py-2 text-right font-medium">Tambahan omzet</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -449,7 +455,7 @@ const showRescue = computed(
                             <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
                             <td class="px-3 py-2.5 text-right text-gray-600">
                                 {{ row.accepted }}
-                                <span class="text-xs text-gray-400">({{ rate(row.accepted, row.shown) }}%)</span>
+                                <span class="text-xs text-gray-400">({{ formatPercent(rate(row.accepted, row.shown)) }}%)</span>
                             </td>
                             <td class="px-5 py-2.5 text-right font-medium text-gray-800">
                                 {{ formatCurrency(row.extra_revenue) }}

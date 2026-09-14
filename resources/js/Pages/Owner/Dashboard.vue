@@ -88,7 +88,7 @@ const hasRescue = computed(() =>
  * Dua angka bulan berjalan, masing-masing dengan kalimat yang menerangkan
  * dari mana ia datang.
  *
- * Subtitle "modal basi" memikul beban yang tidak terlihat: Rp 0 karena tidak
+ * Subtitle "modal hangus" memikul beban yang tidak terlihat: Rp 0 karena tidak
  * ada yang basi dan Rp 0 karena pencatatnya baru berjalan tiga hari terlihat
  * sama persis di layar, dan yang kedua bukan kabar baik.
  */
@@ -109,14 +109,14 @@ const rescueMonthCards = computed(() => {
         },
         {
             key: 'spoiled',
-            title: 'Modal basi bulan ini',
+            title: 'Modal hangus bulan ini',
             value: formatCurrency(spoiled.amount),
             tone: 'text-warning-foreground',
             note: spoiled.variants > 0
-                ? `${spoiled.variants} varian, ${spoiled.units} pcs tercatat basi`
+                ? `${spoiled.variants} varian, ${spoiled.units} pcs kedaluwarsa`
                 : startedOn === null
                     ? 'Belum ada barang berkedaluwarsa yang tercatat'
-                    : `Tidak ada yang basi sejak ${formatCalendarDate(startedOn)}`,
+                    : `Tidak ada modal hangus sejak ${formatCalendarDate(startedOn)}`,
         },
     ];
 });

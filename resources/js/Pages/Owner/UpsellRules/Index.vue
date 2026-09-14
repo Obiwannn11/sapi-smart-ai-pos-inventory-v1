@@ -59,7 +59,7 @@ const props = defineProps({
 const SOURCE_BADGES = {
     manual: { text: 'Pilihan pemilik', class: 'bg-primary/10 text-primary' },
     attach: { text: 'Tambah', class: 'bg-muted text-muted-foreground' },
-    pressed_stock: { text: 'Dorong', class: 'bg-warning/15 text-warning-foreground' },
+    pressed_stock: { text: 'Segera jual', class: 'bg-warning/15 text-warning-foreground' },
     upsize: { text: 'Naik ukuran', class: 'bg-success/10 text-success' },
 };
 
