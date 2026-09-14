@@ -126,7 +126,7 @@ test('aturan yang kalah slot tidak lagi mengaku tampil, dan menyebut lawannya', 
         // Penghuni slot TERAKHIR yang masih tampil — lawan yang bisa dikejar,
         // bukan yang di puncak.
         ->and($outcome['detail'])->toContain($winners[20]->product->name)
-        ->and($outcome['detail'])->toContain('naikkan urutannya')
+        ->and($outcome['detail'])->toContain('Naikkan urutannya')
         // Sudah terlihat di daftar slot bertanda "Tergeser", jadi tidak
         // diulang di daftar "tidak muncul sama sekali".
         ->and($outcome['needs_attention'])->toBeFalse();

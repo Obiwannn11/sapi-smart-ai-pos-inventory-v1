@@ -49,7 +49,7 @@ const props = defineProps({
  * Label sumber tiap saran di pratinjau.
  *
  * KATA DAN WARNANYA disalin dari `UpsellStrip.vue`, bukan dikarang ulang.
- * Tab ini mengaku memperagakan layar kasir; kalau kasir membaca "DORONG"
+ * Tab ini mengaku memperagakan layar kasir; kalau kasir membaca "SEGERA JUAL"
  * sementara layar ini menulis "Barang tertekan", owner yang membandingkan
  * keduanya sedang memetakan dua kosakata, bukan membaca satu sistem.
  *
@@ -69,7 +69,7 @@ const TYPE_NAMES = {
     attach: 'tambah add-on',
     pressed_stock: 'barang tertekan',
     upsize: 'naik ukuran',
-    manual: 'aturan Anda sendiri',
+    manual: 'aturan Anda',
 };
 
 const typeNameList = (types) => (types ?? []).map((type) => TYPE_NAMES[type] ?? type).join(', ');
@@ -88,7 +88,7 @@ const variantOptions = computed(() =>
 );
 
 const triggerOptions = computed(() => [
-    { value: '', label: 'Setiap penjualan (tanpa pemicu)' },
+    { value: '', label: 'Setiap penjualan' },
     ...variantOptions.value,
 ]);
 
@@ -206,7 +206,7 @@ const previewSlotCount = computed(() => {
 
 const tabs = computed(() => [
     { key: 'rules', label: 'Aturan saya' },
-    { key: 'preview', label: 'Muncul di kasir', badge: previewSlotCount.value },
+    { key: 'preview', label: 'Tampil di kasir', badge: previewSlotCount.value },
 ]);
 
 // --- Form ---
@@ -307,9 +307,9 @@ const doDelete = () => {
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Aturan Saran Jual</h1>
                 <p v-if="ruleCounts" class="text-sm text-gray-500 mt-1">
-                    {{ ruleCounts.live }} tampil di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} diam</template>
+                    {{ ruleCounts.live }} tampil di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} tidak tampil</template>
                 </p>
-                <p v-else class="text-sm text-gray-500 mt-1">Memeriksa apa yang muncul di kasir…</p>
+                <p v-else class="text-sm text-gray-500 mt-1">Memeriksa apa yang tampil di kasir…</p>
             </div>
             <button
                 @click="openCreate"
@@ -378,11 +378,11 @@ const doDelete = () => {
 
                         <form @submit.prevent="submit" class="space-y-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Kapan saran ini muncul</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Tampil saat barang ini masuk keranjang</label>
                                 <SelectDropdown
                                     v-model="form.trigger_variant_id"
                                     :options="triggerOptions"
-                                    placeholder="Setiap penjualan (tanpa pemicu)"
+                                    placeholder="Setiap penjualan"
                                     searchable
                                     :error="form.errors.trigger_variant_id"
                                 />
@@ -422,11 +422,11 @@ const doDelete = () => {
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Berakhir</label>
                                     <DatePicker v-model="form.ends_on" block clearable />
                                     <p v-if="form.errors.ends_on" class="mt-1 text-xs text-destructive">{{ form.errors.ends_on }}</p>
-                                    <p v-else class="mt-1 text-xs text-gray-500">Kosong = sampai dimatikan</p>
+                                    <p v-else class="mt-1 text-xs text-gray-500">Kosong = tanpa batas</p>
                                 </div>
                             </div>
 
-                            <Checkbox v-model="form.is_active" label="Aktif" />
+                            <Checkbox v-model="form.is_active" label="Nyala" />
 
                             <div class="flex gap-3 pt-2">
                                 <button type="button" @click="closeForm" class="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">
@@ -479,7 +479,7 @@ const doDelete = () => {
                                             :disabled="index === 0 || moveForm.processing"
                                             :title="index === 0
                                                 ? 'Sudah paling atas'
-                                                : 'Naikkan — aturan ini lebih dulu mengisi slot kasir'"
+                                                : 'Naikkan supaya aturan ini lebih dulu dapat slot kasir'"
                                             :aria-label="`Naikkan ${variantLabel(rule.suggested_variant)}`"
                                             class="rounded-md border border-gray-200 bg-white p-1 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:hover:text-gray-500"
                                             @click="move(rule, 'up')"
@@ -492,7 +492,7 @@ const doDelete = () => {
                                             :disabled="index === rules.length - 1 || moveForm.processing"
                                             :title="index === rules.length - 1
                                                 ? 'Sudah paling bawah'
-                                                : 'Turunkan — aturan lain lebih dulu mengisi slot kasir'"
+                                                : 'Turunkan supaya aturan lain lebih dulu dapat slot kasir'"
                                             :aria-label="`Turunkan ${variantLabel(rule.suggested_variant)}`"
                                             class="rounded-md border border-gray-200 bg-white p-1 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:bg-white disabled:hover:text-gray-500"
                                             @click="move(rule, 'down')"
@@ -533,11 +533,11 @@ const doDelete = () => {
                                         <span class="block">
                                             <span class="text-xs text-gray-400">Sampai</span>
                                             <span class="font-medium text-gray-900">
-                                                {{ rule.ends_on ? formatRuleDate(rule.ends_on) : 'dimatikan' }}
+                                                {{ rule.ends_on ? formatRuleDate(rule.ends_on) : 'tanpa batas' }}
                                             </span>
                                         </span>
                                     </template>
-                                    <span v-else class="font-medium text-gray-900">Selamanya</span>
+                                    <span v-else class="font-medium text-gray-900">Tanpa batas</span>
                                 </td>
                                 <!-- Statusnya tiba belakangan: ia ikut grup tunda
                                      "pratinjau", karena menjawabnya menuntut indeks
@@ -603,7 +603,7 @@ const doDelete = () => {
             <Deferred data="preview">
                 <template #fallback>
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                        <SkeletonTable :rows="4" :columns="3" label="Menghitung saran yang muncul hari ini…" />
+                        <SkeletonTable :rows="4" :columns="3" label="Menghitung saran yang tampil hari ini…" />
                     </div>
                 </template>
 
@@ -621,7 +621,7 @@ const doDelete = () => {
                          ketika semuanya berjalan. -->
                     <div v-if="blockedOutcomes.length > 0" class="bg-white rounded-lg shadow-sm border border-warning/30 overflow-hidden">
                         <div class="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
-                            <h3 class="text-sm font-semibold text-gray-800">Tidak muncul sama sekali, dan kenapa</h3>
+                            <h3 class="text-sm font-semibold text-gray-800">Tidak tampil di kasir</h3>
                             <span class="shrink-0 text-xs text-gray-500">{{ blockedOutcomes.length }} aturan</span>
                         </div>
 
@@ -693,8 +693,8 @@ const doDelete = () => {
                             <div class="min-w-[12rem] flex-1 basis-0">
                                 <h3 class="text-sm font-semibold text-gray-800">Pada setiap penjualan</h3>
                                 <p class="mt-0.5 text-xs text-gray-500">
-                                    Aturan yang pemicunya <span class="font-medium text-gray-700">“Setiap penjualan”</span>,
-                                    ditambah barang tertekan temuan sistem. Muncul di keranjang mana pun, apa pun isinya.
+                                    Aturan dengan pemicu <span class="font-medium text-gray-700">“Setiap penjualan”</span>,
+                                    ditambah barang tertekan dari sistem. Tampil di setiap keranjang.
                                 </p>
                             </div>
                             <span v-if="preview.cart_level.length > 0" class="shrink-0 text-xs text-gray-500">
@@ -736,7 +736,7 @@ const doDelete = () => {
                                          urutan yang bisa digeser owner. -->
                                     <p v-if="!slot.wins_slot && slot.lost_to" class="mt-0.5 text-xs text-gray-400">
                                         Kalah dari <span class="font-medium text-gray-600">{{ slot.lost_to }}</span
-                                        ><template v-if="slot.is_manual"> — naikkan urutannya untuk menukar posisi</template>.
+                                        >.<template v-if="slot.is_manual"> Naikkan urutannya untuk bertukar posisi.</template>
                                     </p>
                                 </div>
 
@@ -762,9 +762,9 @@ const doDelete = () => {
                         <div class="px-5 py-3 border-b border-gray-100">
                             <h3 class="text-sm font-semibold text-gray-800">Saat barang tertentu masuk keranjang</h3>
                             <p class="mt-0.5 text-xs text-gray-500">
-                                Aturan yang pemicunya <span class="font-medium text-gray-700">sebuah barang</span>,
-                                ditambah add-on dan naik ukuran temuan sistem. Baru muncul setelah barang pemicunya
-                                ada di keranjang — jadi ia tidak pernah tampil di daftar atas.
+                                Aturan dengan pemicu <span class="font-medium text-gray-700">sebuah barang</span>,
+                                ditambah add-on dan naik ukuran dari sistem. Baru tampil setelah barang pemicunya
+                                ada di keranjang.
                             </p>
                         </div>
 
@@ -836,7 +836,7 @@ const doDelete = () => {
     <ConfirmDialog
         :show="!!deleteTarget"
         title="Hapus aturan ini?"
-        message="Kasir tidak akan melihat saran ini lagi. Kalau hanya ingin menghentikannya sementara, pakai Matikan — aturannya tetap tersimpan."
+        message="Kasir tidak akan melihat saran ini lagi. Kalau hanya ingin menghentikannya sementara, pakai Matikan. Aturannya tetap tersimpan."
         confirm-text="Hapus"
         variant="danger"
         @confirm="doDelete"

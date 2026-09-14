@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | DECISION | Promosi | Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal" |
 | 2026-09-15 | DECISION | Promosi | Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar |
 | 2026-09-15 | DECISION | Owner | Bagian Bawah Dashboard Owner: Kartu "Perlu Perhatian" Memakai Nama Sidebar, dan Baris Koreksi Offline Tidak Lagi Kosong |
 | 2026-09-14 | DECISION | Owner | Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok |
@@ -272,6 +273,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal"
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting halaman Aturan Saran Jual dan kalimat status dari `RuleOutcomeResolver`.
+  - **Tampil, bukan muncul.** Tab "Muncul di kasir", subjudul "tampil di kasir", status "Tampil · slot 1", dan detail "Muncul di kasir…" menyebut hal yang sama dengan dua kata. Sekarang "Tampil" di semua tempat, sama dengan Laporan Saran Jual. Panel "Tidak muncul sama sekali, dan kenapa" jadi "Tidak tampil di kasir", dan subjudul "{n} diam" jadi "{n} tidak tampil".
+  - **Istilah dari kode tidak lagi sampai ke pemilik.** "Jendela" (masa berlaku) jadi "tanggal", termasuk tombol "Ubah jendela" yang jadi "Ubah tanggal". "Tidak ikut perebutan" dengan detail "Lolos semua penjagaan…" jadi "Tidak bisa tampil" dengan detail yang langsung menyebut hal yang perlu diperiksa. "Pemicunya hilang" dan "Barangnya hilang" jadi "Pemicu dihapus" dan "Barang dihapus".
+  - **Pelaku yang benar.** "…jadi kasir tidak menawarkannya" jadi "…jadi tidak tampil di kasir", karena yang menyaring adalah sistem, bukan kasir.
+  - **Nama jenis sama dengan saklarnya.** Kalimat status menyebut jenis "Aturan yang Anda tulis sendiri", judul yang dilihat pemilik di Setelan → Cara Kerja Sistem tempat tombol "Nyalakan" mengarah. Sebelumnya "pilihan pemilik".
+  - **Formulir.** "Kapan saran ini muncul" (pilihannya barang, bukan waktu) jadi "Tampil saat barang ini masuk keranjang". "(tanpa pemicu)" dibuang dari opsinya. Checkbox "Aktif" jadi "Nyala", sama dengan tombol Nyalakan/Matikan. "Sampai dimatikan" dan "Selamanya" untuk keadaan yang sama jadi "tanpa batas".
+  - Tanda pisah dan kalimat penutup yang mengulang dibuang dari tooltip urutan, dialog hapus, keterangan panel pratinjau, dan "Kalah dari X".
+- **Alasan:** Halaman ini menjawab "kenapa aturan saya tidak tampil". Jawaban yang memakai kosakata mesin ("perebutan", "penjagaan", "jendela") memindahkan pertanyaannya, bukan menjawabnya.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/UpsellRules/Index.vue`: teks UI
+  - `app/Services/Upsell/RuleOutcomeResolver.php`: kalimat status dan detail
+  - `tests/Feature/Owner/UpsellRulesCopyTest.php`: penjaga baru
+- **Catatan:** Kalimat yang dikunci `RuleOutcomeStatusTest` ("Tampil · slot 1", "Kalah slot", "Diwakili saran lain", "naikkan urutannya", "satu slot kasir") tetap dimuat. Detail keadaan "Sudah kedaluwarsa" tidak disentuh karena sedang diubah bersama fitur batch stok.
 
 ### [DECISION] Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar
 - **Tanggal:** 2026-09-15

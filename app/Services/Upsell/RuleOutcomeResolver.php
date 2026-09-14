@@ -141,7 +141,7 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'type_unavailable',
                 'Jenis mati untuk semua toko',
-                'Jenis saran "pilihan pemilik" sedang dimatikan untuk seluruh toko, jadi tidak ada aturan yang muncul.',
+                'Jenis saran "Aturan yang Anda tulis sendiri" sedang dimatikan untuk seluruh toko, jadi tidak ada aturan yang tampil.',
                 self::TONE_QUIET,
                 // TANPA tombol perbaikan, dan itu disengaja ([BL-099]): tidak ada
                 // layar yang bisa dibuka owner untuk mengubahnya, dan menawarkan
@@ -152,8 +152,8 @@ class RuleOutcomeResolver
         if (! $tenant->upsellTypeEnabled(UpsellEvent::TYPE_MANUAL)) {
             return $this->dormant(
                 'type_disabled',
-                'Jenis Anda matikan',
-                'Anda mematikan jenis saran "pilihan pemilik" di Setelan, jadi tidak ada aturan yang muncul.',
+                'Jenis dimatikan',
+                'Anda mematikan jenis saran "Aturan yang Anda tulis sendiri" di Setelan, jadi tidak ada aturan yang tampil.',
                 self::TONE_BLOCKED,
                 fix: ['label' => 'Nyalakan', 'href' => route('owner.settings.operations.index', absolute: false)],
             );
@@ -165,11 +165,11 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'not_started',
                 'Belum mulai',
-                'Jendelanya baru mulai '.$this->longDate($rule->starts_on).'.',
+                'Mulai tampil '.$this->longDate($rule->starts_on).'.',
                 self::TONE_QUIET,
                 // Tanpa href: yang membuka formulir edit aturan ini adalah layar,
                 // bukan tautan — lihat pemakaiannya di Index.vue.
-                fix: ['label' => 'Ubah jendela', 'href' => null],
+                fix: ['label' => 'Ubah tanggal', 'href' => null],
             );
         }
 
@@ -177,9 +177,9 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'ended',
                 'Sudah berakhir',
-                'Jendelanya berakhir '.$this->longDate($rule->ends_on).'.',
+                'Berakhir '.$this->longDate($rule->ends_on).'.',
                 self::TONE_QUIET,
-                fix: ['label' => 'Ubah jendela', 'href' => null],
+                fix: ['label' => 'Ubah tanggal', 'href' => null],
             );
         }
 
@@ -213,14 +213,14 @@ class RuleOutcomeResolver
         $trigger = $rule->triggerVariant;
 
         if ($trigger === null || $trigger->product === null) {
-            return $this->dormant('trigger_missing', 'Pemicunya hilang', 'Barang pemicunya sudah dihapus, jadi aturan ini tidak bisa menyala.', self::TONE_BLOCKED);
+            return $this->dormant('trigger_missing', 'Pemicu dihapus', 'Barang pemicunya sudah dihapus, jadi aturan ini tidak bisa tampil.', self::TONE_BLOCKED);
         }
 
         if (! $trigger->product->is_active) {
             return $this->dormant(
                 'trigger_inactive',
                 'Pemicunya nonaktif',
-                'Produk pemicunya ('.$this->displayName($trigger).') sedang dinonaktifkan, jadi ia tidak bisa masuk keranjang.',
+                'Produk pemicunya ('.$this->displayName($trigger).') sedang dinonaktifkan, jadi tidak bisa masuk keranjang.',
                 self::TONE_BLOCKED,
                 fix: $this->productFix($trigger),
             );
@@ -244,14 +244,14 @@ class RuleOutcomeResolver
         $variant = $rule->suggestedVariant;
 
         if ($variant === null || $variant->product === null) {
-            return $this->dormant('variant_missing', 'Barangnya hilang', 'Barang yang disarankan sudah dihapus. Aturan ini perlu ditulis ulang atau dihapus.', self::TONE_BLOCKED);
+            return $this->dormant('variant_missing', 'Barang dihapus', 'Barang yang disarankan sudah dihapus. Aturan ini perlu ditulis ulang atau dihapus.', self::TONE_BLOCKED);
         }
 
         if (! $variant->product->is_active) {
             return $this->dormant(
                 'product_inactive',
                 'Produknya nonaktif',
-                'Produknya sedang dinonaktifkan, jadi ia tidak boleh ditawarkan.',
+                'Produknya sedang dinonaktifkan, jadi tidak tampil di kasir.',
                 self::TONE_BLOCKED,
                 fix: $this->productFix($variant),
             );
@@ -271,7 +271,7 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'out_of_stock',
                 'Stok habis',
-                'Stoknya nol, jadi kasir tidak menawarkannya.',
+                'Stoknya nol, jadi tidak tampil di kasir.',
                 self::TONE_BLOCKED,
                 fix: $this->productFix($variant),
             );
@@ -313,9 +313,9 @@ class RuleOutcomeResolver
                 return $this->dormant(
                     'represented',
                     'Diwakili saran lain',
-                    'Barang yang sama sudah diusulkan sebagai "'.$this->typeWord($occupant['type']).'"'
+                    'Barang ini sudah diusulkan sebagai "'.$this->typeWord($occupant['type']).'"'
                         .($occupant['slot'] !== null ? ' di slot '.$occupant['slot'] : ' tapi ikut tergeser')
-                        .'. Satu barang hanya boleh mengisi satu slot kasir, jadi aturan ini tidak menambah apa pun.',
+                        .'. Satu barang hanya mengisi satu slot kasir.',
                     self::TONE_QUIET,
                 );
             }
@@ -326,8 +326,8 @@ class RuleOutcomeResolver
             // menyarankan isi keranjang kepada kasir terbaca asal-asalan.
             return $this->dormant(
                 'not_ranked',
-                'Tidak ikut perebutan',
-                'Lolos semua penjagaan tapi tidak ikut perebutan slot — periksa apakah barang yang disarankan sama dengan pemicunya.',
+                'Tidak bisa tampil',
+                'Periksa apakah barang yang disarankan sama dengan pemicunya.',
                 self::TONE_BLOCKED,
             );
         }
@@ -337,8 +337,8 @@ class RuleOutcomeResolver
                 'state' => 'live',
                 'status' => 'Tampil · slot '.$place['slot'],
                 'detail' => $rule->trigger_variant_id === null
-                    ? 'Muncul di kasir pada setiap penjualan, di slot '.$place['slot'].'.'
-                    : 'Muncul di kasir begitu barang pemicunya masuk keranjang, di slot '.$place['slot'].'.',
+                    ? 'Tampil di kasir pada setiap penjualan, di slot '.$place['slot'].'.'
+                    : 'Tampil di kasir begitu barang pemicunya masuk keranjang, di slot '.$place['slot'].'.',
                 'tone' => self::TONE_LIVE,
                 'slot' => $place['slot'],
                 'appears' => true,
@@ -352,7 +352,7 @@ class RuleOutcomeResolver
             'Kalah slot',
             $place['lost_to'] === null
                 ? 'Tergeser batas slot kasir.'
-                : 'Kalah dari '.$place['lost_to'].' — naikkan urutannya untuk menukar posisi.',
+                : 'Kalah dari '.$place['lost_to'].'. Naikkan urutannya untuk bertukar posisi.',
             self::TONE_QUIET,
             // Tidak masuk daftar "tidak muncul sama sekali": aturan ini SUDAH
             // terlihat di daftar slot tab pratinjau, bertanda "Tergeser". Ia
