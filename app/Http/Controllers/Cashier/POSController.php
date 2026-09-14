@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Services\DiscountService;
+use App\Services\StockBatchService;
 use App\Services\TransactionService;
 use App\Services\Upsell\UpsellIndexBuilder;
 use Illuminate\Database\Eloquent\Collection;
@@ -30,6 +31,7 @@ class POSController extends Controller
         private TransactionService $transactionService,
         private UpsellIndexBuilder $upsellIndexBuilder,
         private DiscountService $discounts,
+        private StockBatchService $batches,
     ) {}
 
     public function index(): Response|RedirectResponse
@@ -139,7 +141,15 @@ class POSController extends Controller
         // terpanas aplikasi dan ia sudah berat tanpa N+1 tambahan.
         $rules = $this->discounts->rulesFor($tenant, $variants->pluck('id')->all());
 
+        // Unit yang sudah kedaluwarsa per varian, juga satu kueri ([BL-108]).
+        // Ikut ke klien — dan ikut snapshot katalog offline — supaya barang
+        // basi terlihat basi SEBELUM disentuh kasir, bukan baru ketahuan dari
+        // penolakan di langkah bayar, saat harganya sudah terlanjur disebut.
+        $expiredUnits = $this->batches->expiredUnitsFor($variants->pluck('id')->all());
+
         foreach ($variants as $variant) {
+            $variant->setAttribute('expired_stock', $expiredUnits->get($variant->id, 0));
+
             // `priceFromRules()`, BUKAN `priceFor()`: yang kedua membaca `null`
             // sebagai "aturannya belum dicari" dan mencarinya sendiri, jadi
             // setiap varian TANPA diskon — mayoritas katalog — akan menambah

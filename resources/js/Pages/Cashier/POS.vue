@@ -411,6 +411,91 @@ const getVariantStock = (variantId) => {
     return 0;
 };
 
+// --- Barang kedaluwarsa ([BL-108]) ---
+
+/**
+ * Unit yang sudah kedaluwarsa dari sebuah varian, dihitung server per batch.
+ * Snapshot katalog offline yang lebih tua dari kolom ini tidak punya angkanya:
+ * dianggap nol, dan server tetap menjaga penjualannya.
+ */
+const getVariantExpiredStock = (variantId) => {
+    for (const product of catalogProducts.value) {
+        const variant = (product.variants || []).find(v => v.id === variantId);
+        if (variant) return Number(variant.expired_stock ?? 0);
+    }
+    return 0;
+};
+
+/** Stok yang boleh dijual tanpa ditanya. */
+const getVariantFreshStock = (variantId) =>
+    Math.max(0, getVariantStock(variantId) - getVariantExpiredStock(variantId));
+
+/**
+ * Alasan melekat pada VARIAN di keranjang, bukan pada satu baris: server
+ * mengambil barang yang belum kedaluwarsa lebih dulu lintas baris, jadi baris
+ * mana yang kebagian barang basi bergantung pada urutannya. Semua baris varian
+ * itu membawa alasan yang sama.
+ */
+const expiredReasonFor = (variantId) => cart.value.find(
+    (line) => line.variant_id === variantId && line.expired_confirmation_reason,
+)?.expired_confirmation_reason ?? null;
+
+/** Qty varian baris ini di keranjang melebihi stok yang belum kedaluwarsa. */
+const lineSellsExpired = (item) =>
+    getCartQtyForVariant(item.variant_id) > getVariantFreshStock(item.variant_id);
+
+const pendingExpired = ref(null);
+const expiredReason = ref('');
+
+const expiredReasonValid = computed(() => expiredReason.value.trim().length > 0);
+
+/**
+ * Tanya dulu sebelum barang kedaluwarsa masuk keranjang.
+ *
+ * Ditanya SAAT DITAMBAHKAN, bukan saat bayar: kasir yang baru tahu di langkah
+ * terakhir sudah terlanjur menyebut barang dan harganya ke pelanggan. Server
+ * menegakkan aturan yang sama; ini supaya penolakannya tidak datang sebagai
+ * kejutan di akhir.
+ *
+ * @returns {boolean} true bila `proceed` langsung dijalankan tanpa bertanya
+ */
+const guardExpired = (variantId, name, variantQty, proceed) => {
+    const freshStock = getVariantFreshStock(variantId);
+    const knownReason = expiredReasonFor(variantId);
+
+    if (variantQty <= freshStock || knownReason) {
+        proceed(knownReason);
+
+        return true;
+    }
+
+    expiredReason.value = '';
+    pendingExpired.value = { variantId, name, freshStock, wanted: variantQty, proceed };
+
+    return false;
+};
+
+const cancelExpired = () => {
+    pendingExpired.value = null;
+    expiredReason.value = '';
+};
+
+const confirmExpired = () => {
+    if (!expiredReasonValid.value || !pendingExpired.value) return;
+
+    const { variantId, proceed } = pendingExpired.value;
+    const reason = expiredReason.value.trim();
+
+    cart.value.forEach((line) => {
+        if (line.variant_id === variantId) {
+            line.expired_confirmation_reason = reason;
+        }
+    });
+
+    cancelExpired();
+    proceed(reason);
+};
+
 const getCartQtyForVariant = (variantId) => {
     return cart.value
         .filter(c => c.variant_id === variantId)
@@ -422,13 +507,6 @@ const modifierSignature = (line) =>
     JSON.stringify((line.modifiers || []).map(m => m.id).sort());
 
 const addToCart = (item) => {
-    // item dengan catatan berbeda = baris terpisah
-    const existingIdx = cart.value.findIndex(c =>
-        c.variant_id === item.variant_id &&
-        modifierSignature(c) === modifierSignature(item) &&
-        (c.notes || '') === (item.notes || '')
-    );
-
     const stock = getVariantStock(item.variant_id);
     const currentCartQty = getCartQtyForVariant(item.variant_id);
     if (currentCartQty + item.qty > stock) {
@@ -436,11 +514,23 @@ const addToCart = (item) => {
         return;
     }
 
-    if (existingIdx >= 0) {
-        cart.value[existingIdx].qty += item.qty;
-    } else {
-        cart.value.push({ ...item, notes: item.notes || '' });
-    }
+    // Kalau barang kedaluwarsa perlu ditanya, barisnya baru masuk setelah
+    // kasir menulis alasan. Pemanggil yang menghitung panjang keranjang
+    // (saran jual) melihatnya belum bertambah, dan memang belum.
+    guardExpired(item.variant_id, item.variant_name, currentCartQty + item.qty, (reason) => {
+        // item dengan catatan berbeda = baris terpisah
+        const existingIdx = cart.value.findIndex(c =>
+            c.variant_id === item.variant_id &&
+            modifierSignature(c) === modifierSignature(item) &&
+            (c.notes || '') === (item.notes || '')
+        );
+
+        if (existingIdx >= 0) {
+            cart.value[existingIdx].qty += item.qty;
+        } else {
+            cart.value.push({ ...item, notes: item.notes || '', expired_confirmation_reason: reason });
+        }
+    });
 };
 
 const updateCartQty = (index, newQty) => {
@@ -452,7 +542,16 @@ const updateCartQty = (index, newQty) => {
         showFlash(`Stok tidak cukup. Tersedia: ${stock}`, 'error');
         return;
     }
-    cart.value[index].qty = newQty;
+
+    // Mengurangi tidak pernah ditanya: yang keluar dari keranjang tidak dijual.
+    if (newQty < item.qty) {
+        item.qty = newQty;
+        return;
+    }
+
+    guardExpired(item.variant_id, item.variant_name, otherCartQty + newQty, () => {
+        item.qty = newQty;
+    });
 };
 
 const updateCartNotes = (index, notes) => {
@@ -583,6 +682,12 @@ const applyCartEdit = (index, item) => {
         return;
     }
 
+    guardExpired(item.variant_id, item.variant_name, otherQty + qty, (reason) => {
+        commitCartEdit(index, current, item, qty, reason);
+    });
+};
+
+const commitCartEdit = (index, current, item, qty, reason) => {
     const variantChanged = current.variant_id !== item.variant_id;
 
     const updated = {
@@ -594,6 +699,8 @@ const applyCartEdit = (index, item) => {
         // Begitu variannya berganti, kesepakatan itu tidak lagi punya subjek.
         override_unit_price: variantChanged ? null : (current.override_unit_price ?? null),
         discount_reason: variantChanged ? null : (current.discount_reason ?? null),
+        // Alasan barang kedaluwarsa juga milik variannya ([BL-108]).
+        expired_confirmation_reason: variantChanged ? reason : (current.expired_confirmation_reason ?? reason),
     };
 
     // Hasil ubahan bisa jadi kembar persis dengan baris lain. Menyatukannya
@@ -991,6 +1098,9 @@ const cartToItems = () => cart.value.map(item => ({
     // alasannya — yang dikirim di sini hanya niatnya.
     override_unit_price: item.override_unit_price ?? null,
     discount_reason: item.discount_reason ?? null,
+    // Alasan menjual barang kedaluwarsa ([BL-108]). Server yang memutuskan
+    // apakah alasan ini dibutuhkan; yang dikirim di sini hanya jawabannya.
+    expired_confirmation_reason: item.expired_confirmation_reason ?? null,
 }));
 
 // --- Harga khusus di bawah lantai untung ([BL-018]) ---
@@ -1525,6 +1635,7 @@ onUnmounted(() => {
                             :can-set-special-price="isOwner"
                             :upsell-count="upsellCountForLine(item, idx)"
                             :upsell-active="activeUpsellLineIndex === idx"
+                            :sells-expired="lineSellsExpired(item)"
                             @update-qty="updateCartQty"
                             @update-notes="updateCartNotes"
                             @edit="requestEditCartItem"
@@ -1708,6 +1819,57 @@ onUnmounted(() => {
                             @click="applyOverride"
                         >
                             Terapkan
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Barang kedaluwarsa ([BL-108]). Keputusan pemilik: kasir boleh
+             menjualnya, tapi harus sadar dan menuliskan alasannya. Alasan itu
+             tercatat di baris penjualan dan dibaca pemilik di laporan. -->
+        <Teleport to="body">
+            <div v-if="pendingExpired" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-black/50" @click="cancelExpired" />
+                <div
+                    class="relative bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="expired-sale-title"
+                >
+                    <h3 id="expired-sale-title" class="text-lg font-semibold text-gray-900">Barang kedaluwarsa</h3>
+                    <p class="mt-1 text-sm text-gray-600 leading-relaxed">
+                        {{ pendingExpired.name }}: yang belum kedaluwarsa tinggal {{ pendingExpired.freshStock }},
+                        diminta {{ pendingExpired.wanted }}. Sisanya sudah lewat tanggal.
+                    </p>
+                    <p class="mt-2 text-xs text-gray-500 leading-relaxed">
+                        Jual hanya kalau pelanggan sudah diberi tahu. Alasannya tercatat atas nama Anda dan dibaca pemilik.
+                    </p>
+
+                    <div class="mt-4">
+                        <label for="expired-sale-reason" class="block text-sm font-medium text-gray-700 mb-1">Alasan *</label>
+                        <input
+                            id="expired-sale-reason"
+                            v-model="expiredReason"
+                            type="text"
+                            maxlength="200"
+                            placeholder="Contoh: pelanggan tetap minta, sudah diberi tahu"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
+                            @keydown.enter.prevent="confirmExpired"
+                        />
+                    </div>
+
+                    <div class="mt-5 flex gap-3">
+                        <button type="button" class="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50" @click="cancelExpired">
+                            Batal
+                        </button>
+                        <button
+                            type="button"
+                            :disabled="!expiredReasonValid"
+                            class="flex-1 py-2 bg-destructive text-destructive-foreground text-sm font-medium rounded-lg hover:bg-destructive/90 disabled:opacity-40"
+                            @click="confirmExpired"
+                        >
+                            Tetap jual
                         </button>
                     </div>
                 </div>

@@ -14,6 +14,7 @@ use App\Services\StockService;
 use App\Services\TransactionEditService;
 use App\Services\TransactionService;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\post;
@@ -192,6 +193,19 @@ test('penjualan offline barang basi dengan alasan tercatat atas nama kasirnya', 
     expect($transaction->needsReview())->toBeFalse()
         ->and($item->expired_sale_confirmed_by)->toBe($ctx['cashier']->id)
         ->and($item->expired_sale_reason)->toBe('Sudah diberi tahu');
+});
+
+test('katalog kasir menyebut unit yang sudah kedaluwarsa sebelum barangnya disentuh', function () {
+    $ctx = makeExpiredSaleContext();
+
+    actingAs($ctx['cashier'])
+        ->get('/cashier/pos')
+        ->assertInertia(fn (Assert $page) => $page
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('products.0.variants.0.stock', 10)
+                ->where('products.0.variants.0.expired_stock', 10)
+            )
+        );
 });
 
 test('edit transaksi tidak bisa menambah qty dari barang yang sudah basi', function () {

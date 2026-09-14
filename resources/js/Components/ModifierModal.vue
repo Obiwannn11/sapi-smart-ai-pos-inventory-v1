@@ -228,6 +228,12 @@ const close = () => {
                                             <span class="text-sm font-medium text-gray-800">{{ variant.name }}</span>
                                             <span v-if="variant.stock <= 0" class="ml-2 text-xs text-red-500 font-medium">Habis</span>
                                             <span v-else class="ml-2 text-xs text-gray-400">Stok: {{ variant.stock }}</span>
+                                            <span
+                                                v-if="variant.stock > 0 && Number(variant.expired_stock ?? 0) > 0"
+                                                class="ml-2 text-xs font-medium text-red-600"
+                                            >
+                                                {{ Number(variant.expired_stock) >= variant.stock ? 'Kedaluwarsa' : `${variant.expired_stock} kedaluwarsa` }}
+                                            </span>
                                         </div>
                                     </div>
                                     <span class="text-sm font-semibold text-gray-700">

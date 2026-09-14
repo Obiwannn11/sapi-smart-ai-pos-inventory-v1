@@ -30,6 +30,12 @@ const props = defineProps({
      * dengan menunjuk, bukan dengan memindahkan tombolnya ke sini.
      */
     upsellActive: { type: Boolean, default: false },
+    /**
+     * Qty varian ini di keranjang melebihi stok yang belum kedaluwarsa, jadi
+     * sebagian yang terjual adalah barang basi ([BL-108]). Dihitung POS, bukan
+     * di sini: baris tidak tahu isi baris lain dengan varian yang sama.
+     */
+    sellsExpired: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['updateQty', 'remove', 'updateNotes', 'edit', 'specialPrice', 'clearSpecialPrice']);
@@ -323,6 +329,19 @@ const subtotal = () => {
             >
                 Batalkan
             </button>
+        </div>
+
+        <!-- Barang kedaluwarsa yang sudah dikonfirmasi ([BL-108]). Alasannya
+             terbaca tanpa membuka apa pun, sama dengan harga khusus di atas:
+             inilah jejaknya di layar sebelum penjualan tersimpan. Tidak ada
+             tombol batal; kurangi qty atau hapus barisnya. -->
+        <div
+            v-if="sellsExpired && item.expired_confirmation_reason"
+            class="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1"
+        >
+            <span class="block truncate text-[11px] font-medium text-red-800">
+                Kedaluwarsa: {{ item.expired_confirmation_reason }}
+            </span>
         </div>
 
         <!-- Qty + Subtotal -->

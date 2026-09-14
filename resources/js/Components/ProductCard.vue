@@ -17,6 +17,16 @@ const hasStock = () => {
     return props.product.variants?.some(v => v.stock > 0);
 };
 
+// Unit yang sudah kedaluwarsa di seluruh varian ([BL-108]). Snapshot katalog
+// offline yang lebih tua dari kolom ini tidak punya angkanya: dianggap nol, dan
+// server tetap menjaga penjualannya.
+const expiredUnits = () => (props.product.variants || [])
+    .reduce((sum, v) => sum + Number(v.expired_stock ?? 0), 0);
+
+// Semua stok yang tersisa sudah kedaluwarsa, bukan hanya sebagian.
+const onlyExpiredLeft = () => hasStock()
+    && (props.product.variants || []).every(v => Number(v.stock) <= Number(v.expired_stock ?? 0));
+
 // Price range
 const priceRange = () => {
     const prices = (props.product.variants || []).map(v => Number(v.price));
@@ -47,6 +57,16 @@ const handleClick = () => {
         <span v-if="!hasStock()"
               class="absolute top-2 right-2 inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
             Habis
+        </span>
+
+        <!-- Barang kedaluwarsa terlihat SEBELUM disentuh ([BL-108]). Kartunya
+             tetap bisa ditekan: penjualannya tidak dilarang, hanya ditanya. -->
+        <span v-else-if="expiredUnits() > 0"
+              :class="[
+                  'absolute top-2 right-2 inline-flex px-2 py-0.5 rounded text-xs font-semibold',
+                  onlyExpiredLeft() ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800',
+              ]">
+            {{ onlyExpiredLeft() ? 'Kedaluwarsa' : `${expiredUnits()} kedaluwarsa` }}
         </span>
 
         <!-- Product Image -->
