@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-14 | DECISION | Owner | Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok |
 | 2026-09-14 | DECISION | Kasir | Teks Layar Kasir Dipadatkan: Satu Istilah per Hal, Tanpa Istilah Sistem, Tanpa Tanda Pisah |
 | 2026-09-13 | DECISION | Kasir | Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat |
 | 2026-09-12 | DECISION | Kasir | Strip Saran Jadi Satu Kartu Bergiliran yang Menunjuk Baris Asalnya — dan Penyebut Konversi Berhenti Menghitung yang Tak Pernah Tampil |
@@ -269,6 +270,22 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok
+- **Tanggal:** 2026-09-14
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Lanjutan audit antislop-copywriting, seksi pertama dashboard owner (kepala halaman sampai kartu Penyelamat Stok).
+  - Subjudul "Ringkasan bisnis Anda hari ini" (generik, dan tidak benar: separuh kartunya bulan ini) jadi "Penjualan hari ini dan bulan ini".
+  - Kalimat pilihan jalur harga dipadatkan dan tanda pisahnya dibuang. Kalimat penutup yang tidak menambah fakta dihapus ("jadi pindah jalur belum menguntungkan Anda", "tidak ada yang perlu diajukan"). "Paket berbayar penuh" disebut dengan nama jalurnya di kartu sebelahnya, "Harga Tetap".
+  - Penyelamat Stok: "modal sedang tertekan" jadi "modal Rp …", dan "saran diambil kasir" jadi "saran diterima pelanggan", sesuai arti tombol "Diterima" di kasir.
+- **Alasan:** Pemilik membuka dashboard untuk melihat angka. Kalimat yang lebih panjang dari angkanya membuat angka itu tenggelam.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/Dashboard.vue`: teks UI
+  - `tests/Feature/Owner/DashboardCopyTest.php`: penjaga baru
+- **Catatan:** Istilah "barang tertekan" dan "basi" sengaja tidak diganti karena dipakai juga di Laporan Saran Jual dan Aturan Saran Jual. Kalimat langganan versi panjang di `Billing/Show.vue` belum disentuh.
 
 ### [DECISION] Teks Layar Kasir Dipadatkan: Satu Istilah per Hal, Tanpa Istilah Sistem, Tanpa Tanda Pisah
 - **Tanggal:** 2026-09-14

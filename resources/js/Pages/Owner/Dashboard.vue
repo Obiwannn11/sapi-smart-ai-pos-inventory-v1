@@ -104,7 +104,7 @@ const rescueMonthCards = computed(() => {
             value: formatCurrency(rescued.amount),
             tone: 'text-success',
             note: rescued.shown > 0
-                ? `${rescued.accepted} dari ${rescued.shown} saran diambil kasir`
+                ? `${rescued.accepted} dari ${rescued.shown} saran diterima pelanggan`
                 : 'Belum ada saran barang tertekan bulan ini',
         },
         {
@@ -116,7 +116,7 @@ const rescueMonthCards = computed(() => {
                 ? `${spoiled.variants} varian, ${spoiled.units} pcs tercatat basi`
                 : startedOn === null
                     ? 'Belum ada barang berkedaluwarsa yang tercatat'
-                    : `Tidak ada yang basi sejak pencatatan mulai ${formatCalendarDate(startedOn)}`,
+                    : `Tidak ada yang basi sejak ${formatCalendarDate(startedOn)}`,
         },
     ];
 });
@@ -248,8 +248,8 @@ const trialChoiceNote = computed(() => {
     if (!choice) return null;
 
     return choice.first_invoice_issued
-        ? `Tagihan pertama sudah terbit pada ${formatCalendarDate(choice.first_invoice_at)}. Pindah jalur sekarang tetap bisa, tapi berlakunya pada tagihan berikutnya — bukan yang sedang berjalan.`
-        : `Masa coba berakhir ${formatCalendarDate(choice.trial_ends_at)}, dan tagihan pertama terbit ${formatCalendarDate(choice.first_invoice_at)}. Pilihan yang diambil sebelum tanggal itu langsung berlaku pada tagihan pertama.`;
+        ? `Tagihan pertama terbit ${formatCalendarDate(choice.first_invoice_at)}. Jalur yang dipilih sekarang berlaku mulai tagihan berikutnya.`
+        : `Masa coba berakhir ${formatCalendarDate(choice.trial_ends_at)}. Pilih sebelum ${formatCalendarDate(choice.first_invoice_at)} supaya berlaku di tagihan pertama.`;
 });
 
 /** Tarif perkiraan jalur Adaptif, atau null bila belum bisa dihitung. */
@@ -269,16 +269,16 @@ const adaptiveNote = computed(() => {
     // Nol penjualan BUKAN omzet nol. Membiarkannya jatuh ke kelompok termurah
     // akan menjanjikan tarif yang tidak seorang pun bisa penuhi janjinya.
     if (estimate.transaction_count === 0) {
-        return `Belum ada penjualan tercatat sepanjang ${month}, jadi tarifnya belum bisa diperkirakan. Jalurnya tetap terbuka untuk diajukan.`;
+        return `Belum ada penjualan di ${month}, jadi tarifnya belum bisa diperkirakan. Anda tetap bisa mengajukan.`;
     }
 
     if (estimate.price === null) {
-        return `Omzet Anda ${formatCurrency(estimate.revenue)} pada ${month}, tapi belum ada kelompok tarif yang cocok untuknya.`;
+        return `Omzet ${month}: ${formatCurrency(estimate.revenue)}. Belum ada kelompok tarif yang cocok.`;
     }
 
     return estimate.is_cheaper
-        ? `Perkiraan dari omzet ${formatCurrency(estimate.revenue)} pada ${month} — ${formatCurrency(estimate.current_price - estimate.price)} lebih murah, dengan syarat data omzet Anda dibuka kepada kami.`
-        : `Perkiraan dari omzet ${formatCurrency(estimate.revenue)} pada ${month} — tidak lebih murah daripada Harga Tetap, jadi pindah jalur belum menguntungkan Anda.`;
+        ? `Dari omzet ${month} (${formatCurrency(estimate.revenue)}): hemat ${formatCurrency(estimate.current_price - estimate.price)}. Syaratnya, data omzet dibagikan kepada kami.`
+        : `Dari omzet ${month} (${formatCurrency(estimate.revenue)}): tidak lebih murah daripada Harga Tetap.`;
 });
 
 /**
@@ -291,14 +291,14 @@ const adaptiveBlocked = computed(() => {
     if (!adaptive || adaptive.eligible) return null;
 
     if (adaptive.reason === 'above_ceiling') {
-        return `Omzet Anda ${formatCurrency(adaptive.revenue)} — di atas batas ${formatCurrency(adaptive.ceiling)} untuk keringanan. Jalur yang berlaku bagi Anda adalah paket berbayar penuh.`;
+        return `Omzet Anda ${formatCurrency(adaptive.revenue)}, di atas batas keringanan ${formatCurrency(adaptive.ceiling)}. Yang berlaku untuk Anda adalah Harga Tetap.`;
     }
 
     if (adaptive.reason === 'cooldown') {
         return `Perpindahan jalur berikutnya baru bisa diajukan mulai ${formatCalendarDate(adaptive.available_at)}.`;
     }
 
-    return 'Anda sudah berada di jalur Harga Adaptif — tidak ada yang perlu diajukan.';
+    return 'Anda sudah memakai Harga Adaptif.';
 });
 
 const invoiceStatusLabels = {
@@ -319,7 +319,7 @@ const invoiceStatusLabels = {
         <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-                <p class="text-sm text-gray-500 mt-1">Ringkasan bisnis Anda hari ini</p>
+                <p class="text-sm text-gray-500 mt-1">Penjualan hari ini dan bulan ini</p>
             </div>
 
             <!-- Ringkasan Langganan -->
@@ -370,7 +370,7 @@ const invoiceStatusLabels = {
                                 {{ formatCurrency(trialChoice.fixed.base_price) }}<span class="text-xs font-normal text-gray-500">/bulan</span>
                             </p>
                             <p class="mt-1 text-xs text-gray-500">
-                                Paket {{ trialChoice.fixed.name }}. Berlaku sendiri bila Anda tidak memilih apa pun, dan data penjualan Anda tetap tertutup.
+                                Paket {{ trialChoice.fixed.name }}. Dipakai otomatis bila Anda tidak memilih. Data penjualan tidak dibagikan.
                             </p>
                         </div>
 
@@ -580,7 +580,7 @@ const invoiceStatusLabels = {
                     <template v-else>
                         <p class="mt-2 text-sm text-gray-500">
                             <span class="font-semibold text-gray-900">{{ pressedToday.count }} barang</span>
-                            · {{ formatCurrency(pressedToday.value) }} modal sedang tertekan
+                            · modal {{ formatCurrency(pressedToday.value) }}
                         </p>
 
                         <ul class="mt-3 divide-y divide-gray-100">
