@@ -443,6 +443,18 @@ const formatDate = (date) => {
                                             </span>
                                             <span v-else class="text-gray-600">{{ formatDate(variant.expiry_date) }}</span>
                                             <p class="text-xs text-gray-400 mt-0.5">{{ expiryLabel(variant.expiry_date) }}</p>
+                                            <!-- Rincian per batch ([BL-111]). Tanggal di atas hanya
+                                                 yang paling awal; tanpa daftar ini pemilik tidak tahu
+                                                 berapa unit di belakangnya yang masih baik. -->
+                                            <ul v-if="variant.batches?.length > 1" class="mt-1.5 space-y-0.5 text-[11px] tabular-nums">
+                                                <li
+                                                    v-for="(batch, index) in variant.batches"
+                                                    :key="index"
+                                                    :class="isExpired(batch.expiry_date) ? 'text-destructive' : 'text-gray-500'"
+                                                >
+                                                    {{ batch.qty }} pcs · {{ batch.expiry_date ? formatDate(batch.expiry_date) : 'tanpa tanggal' }}
+                                                </li>
+                                            </ul>
                                         </template>
                                         <span v-else class="text-gray-300">—</span>
                                     </td>
@@ -513,6 +525,13 @@ const formatDate = (date) => {
 
                             <p v-if="variant.expiry_date" class="mt-2 text-xs" :class="isExpired(variant.expiry_date) ? 'text-destructive' : isNearExpiry(variant.expiry_date) ? 'text-warning-foreground' : 'text-gray-500'">
                                 Kedaluwarsa {{ formatDate(variant.expiry_date) }} · {{ expiryLabel(variant.expiry_date) }}
+                            </p>
+                            <p v-if="variant.batches?.length > 1" class="mt-1 text-[11px] text-gray-500 tabular-nums">
+                                <span
+                                    v-for="(batch, index) in variant.batches"
+                                    :key="index"
+                                    :class="isExpired(batch.expiry_date) ? 'text-destructive' : ''"
+                                >{{ index > 0 ? ' · ' : '' }}{{ batch.qty }} pcs {{ batch.expiry_date ? formatDate(batch.expiry_date) : 'tanpa tanggal' }}</span>
                             </p>
 
                             <div class="mt-3 flex items-center gap-2">
@@ -630,6 +649,7 @@ const formatDate = (date) => {
                             <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Kedaluwarsa</label>
                             <DatePicker v-model="restockForm.expiry_date" block clearable />
                             <p v-if="restockForm.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ restockForm.errors.expiry_date }}</p>
+                            <p v-else class="mt-1 text-xs text-gray-500">Disimpan sebagai batch baru. Stok lama tetap memakai tanggalnya sendiri.</p>
                         </div>
 
                         <!-- Notes -->

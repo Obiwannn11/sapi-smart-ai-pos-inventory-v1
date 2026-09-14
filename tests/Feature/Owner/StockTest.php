@@ -5,6 +5,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\StockService;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -379,5 +380,29 @@ test('the pressed bucket has its own summary count', function () {
         ->assertInertia(fn (Assert $page) => $page->loadDeferredProps('stock', fn (Assert $reload) => $reload
             ->where('summary.pressed', 1)
             ->where('summary.expired', 1)
+        ));
+});
+
+/**
+ * Rincian per batch ([BL-111]). Kolom kedaluwarsa hanya menyebut tanggal paling
+ * awal; tanpa daftar ini pemilik tidak tahu ada 10 unit segar di belakang 4 unit
+ * yang sudah basi.
+ */
+test('stock rows list every remaining batch in selling order', function () {
+    $variant = stockVariant($this->tenant, 'Roti Gandum', ['sku' => 'RG-1', 'stock' => 0]);
+
+    $stock = app(StockService::class);
+    $stock->restock($variant, 10, 'Kiriman baru', today()->addDays(5)->toDateString());
+    $stock->restock($variant, 4, 'Kiriman lama', today()->subDay()->toDateString());
+
+    $this->actingAs($this->owner)
+        ->get('/owner/stock?q=Roti+Gandum')
+        ->assertInertia(fn (Assert $page) => $page->loadDeferredProps('stock', fn (Assert $reload) => $reload
+            ->where('variants.data.0.stock', 14)
+            ->where('variants.data.0.expiry_date', today()->subDay()->toDateString())
+            ->where('variants.data.0.batches', [
+                ['expiry_date' => today()->subDay()->toDateString(), 'qty' => 4],
+                ['expiry_date' => today()->addDays(5)->toDateString(), 'qty' => 10],
+            ])
         ));
 });

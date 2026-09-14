@@ -340,7 +340,19 @@ class StockController extends Controller
     {
         $query = $this->applyStatus($this->baseQuery($filters), $filters['status'])
             ->select('id', 'product_id', 'name', 'sku', 'stock', 'expiry_date')
-            ->with(['product:id,name,category_id', 'product.category:id,name']);
+            ->with([
+                'product:id,name,category_id',
+                'product.category:id,name',
+                // Batch yang masih bersisa, urutan jualnya ([BL-111]). Tanpa
+                // ini kolom kedaluwarsa hanya menyebut tanggal paling awal, dan
+                // pemilik tidak bisa tahu bahwa di belakangnya ada 30 unit
+                // yang masih baik — atau sebaliknya.
+                'stockBatches' => fn ($batches) => $batches->remaining()
+                    ->select('id', 'product_variant_id', 'expiry_date', 'qty_remaining')
+                    ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END')
+                    ->orderBy('expiry_date')
+                    ->orderBy('id'),
+            ]);
 
         return $this->applySort($query, $filters['sort'], $filters['dir'])
             ->paginate($filters['per_page'])
@@ -351,6 +363,10 @@ class StockController extends Controller
                 'sku' => $variant->sku,
                 'stock' => $variant->stock,
                 'expiry_date' => $variant->expiry_date?->toDateString(),
+                'batches' => $variant->stockBatches->map(fn ($batch) => [
+                    'expiry_date' => $batch->expiry_date?->toDateString(),
+                    'qty' => $batch->qty_remaining,
+                ])->values()->all(),
                 'product_id' => $variant->product_id,
                 'product_name' => $variant->product->name,
                 'category_name' => $variant->product->category?->name,
