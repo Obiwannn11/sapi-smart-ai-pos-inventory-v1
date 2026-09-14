@@ -94,19 +94,30 @@ const c = severityClasses[props.severity] || severityClasses.info;
                     :key="item.id"
                     class="flex items-center justify-between bg-white/70 rounded-lg px-3 py-2 text-sm"
                 >
-                    <div>
-                        <span class="font-medium text-gray-800">{{ item.product_name }}</span>
-                        <span class="text-gray-400 mx-1">—</span>
-                        <span class="text-gray-600">{{ item.variant_name }}</span>
-                    </div>
-                    <div class="flex items-center gap-3 text-xs">
-                        <span class="font-medium" :class="item.stock <= 0 ? 'text-red-600' : 'text-amber-600'">
-                            Stok: {{ item.stock }}
-                        </span>
-                        <span v-if="item.expiry_date" class="text-gray-500">
-                            Exp: {{ item.expiry_date }}
-                        </span>
-                    </div>
+                    <!-- Kartu Koreksi Offline membawa transaksi, bukan varian:
+                         tanpa cabang ini barisnya tampil kosong dengan
+                         "Stok: undefined". -->
+                    <template v-if="item.code">
+                        <span class="font-medium text-gray-800">{{ item.code }}</span>
+                        <div class="flex items-center gap-3 text-xs text-gray-500">
+                            <span>{{ item.occurred_at }}</span>
+                            <span class="font-medium text-gray-700">Rp {{ Number(item.total_amount).toLocaleString('id-ID') }}</span>
+                        </div>
+                    </template>
+                    <template v-else>
+                        <div>
+                            <span class="font-medium text-gray-800">{{ item.product_name }}</span>
+                            <span class="text-gray-600"> - {{ item.variant_name }}</span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="font-medium" :class="item.stock <= 0 ? 'text-red-600' : 'text-amber-600'">
+                                Stok: {{ item.stock }}
+                            </span>
+                            <span v-if="item.expiry_date" class="text-gray-500">
+                                Kedaluwarsa {{ item.expiry_date }}
+                            </span>
+                        </div>
+                    </template>
                 </div>
             </div>
         </Transition>

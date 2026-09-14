@@ -530,8 +530,8 @@ const invoiceStatusLabels = {
              disengaja: lencana menjawab "apa keadaannya", kartu ini menjawab
              "apa yang harus saya kerjakan hari ini". Yang kedua lebih dulu.
 
-             Ia sengaja tumpang tindih sebagian dengan lencana "Mendekati
-             Expired" dan "Dead Stock" — bedanya ada di kolom terakhir, dan
+             Ia sengaja tumpang tindih sebagian dengan lencana "Hampir
+             Kedaluwarsa" dan "Dead Stock" — bedanya ada di kolom terakhir, dan
              itulah seluruh gunanya: barang tertekan yang belum punya potongan
              tetap disarankan kasir, tapi pada harga katalog. Kalau suatu hari
              pengulangannya terasa berisik, yang dicabut lencananya, bukan kartu
@@ -661,7 +661,7 @@ const invoiceStatusLabels = {
              ini, dan bukan angka pertama yang dicari owner saat membuka layar. -->
         <Deferred data="badges">
             <template #fallback>
-                <SkeletonPanel label="Memuat alert & notifikasi…">
+                <SkeletonPanel label="Memuat yang perlu perhatian…">
                     <SkeletonGrid :count="2" columns="grid-cols-1 md:grid-cols-2">
                         <SkeletonCard icon :lines="2" padding="p-4" />
                     </SkeletonGrid>
@@ -669,10 +669,7 @@ const invoiceStatusLabels = {
             </template>
 
         <div v-if="badges.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4">
-            <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-semibold text-gray-700">Alert & Notifikasi</h3>
-                <span class="text-xs text-gray-400">{{ badges.length }} kartu</span>
-            </div>
+            <h3 class="text-sm font-semibold text-gray-700">Perlu Perhatian</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
                 <BadgeCard
                     v-for="badge in badges"
@@ -692,7 +689,7 @@ const invoiceStatusLabels = {
              panel di bawahnya tidak melompat saat grafiknya jadi. -->
         <Deferred data="dailyTrend">
             <template #fallback>
-                <SkeletonPanel label="Memuat grafik 7 hari…">
+                <SkeletonPanel label="Memuat grafik omzet…">
                     <SkeletonChart :bars="7" height-class="h-64" />
                 </SkeletonPanel>
             </template>
@@ -748,7 +745,7 @@ const invoiceStatusLabels = {
                 </div>
             </div>
             <div v-else class="px-5 py-8 text-center text-sm text-gray-400">
-                Belum ada transaksi hari ini
+                Belum ada transaksi
             </div>
         </div>
         </Deferred>
@@ -765,19 +762,19 @@ const invoiceStatusLabels = {
                 <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Riwayat Transaksi</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Transaksi</p>
             </Link>
             <Link href="/owner/cash-drawers" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-primary/30 transition-all text-center group">
                 <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Riwayat Kas</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Sesi Kas</p>
             </Link>
             <Link href="/owner/stock" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-primary/30 transition-all text-center group">
                 <svg class="w-6 h-6 mx-auto text-primary mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                 </svg>
-                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Kelola Stok</p>
+                <p class="text-xs font-medium text-gray-700 group-hover:text-primary">Stok</p>
             </Link>
         </div>
     </div>

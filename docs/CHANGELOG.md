@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | DECISION | Owner | Bagian Bawah Dashboard Owner: Kartu "Perlu Perhatian" Memakai Nama Sidebar, dan Baris Koreksi Offline Tidak Lagi Kosong |
 | 2026-09-14 | DECISION | Owner | Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok |
 | 2026-09-14 | DECISION | Kasir | Teks Layar Kasir Dipadatkan: Satu Istilah per Hal, Tanpa Istilah Sistem, Tanpa Tanda Pisah |
 | 2026-09-13 | DECISION | Kasir | Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat |
@@ -270,6 +271,27 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Bagian Bawah Dashboard Owner: Kartu "Perlu Perhatian" Memakai Nama Sidebar, dan Baris Koreksi Offline Tidak Lagi Kosong
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Seksi kedua audit antislop-copywriting dashboard owner.
+  - Panel "Alert & Notifikasi" dengan penghitung "{n} kartu" jadi "Perlu Perhatian", tanpa penghitung.
+  - Judul kartu memakai satu istilah per kartu, dan nama yang sama dengan layar lain: "Sudah Expired" jadi "Kedaluwarsa", "Mendekati Expired" jadi "Hampir Kedaluwarsa" (label kartu status di halaman Stok ikut, dari "Dekat Expired"), dan "Perlu Koreksi (sync)" jadi "Koreksi Offline", sama dengan menunya di sidebar. "Dead Stock", "Stok Kritis", dan "Stok Habis" tetap.
+  - Pesan kartu tidak lagi mengulang angka yang sudah ada di chip, dan menyebut ambangnya ("varian dengan stok 5 atau kurang", "varian kedaluwarsa dalam 7 hari").
+  - **Bug:** baris kartu Koreksi Offline membawa `code`, `occurred_at`, `total_amount`, tapi `BadgeCard` hanya membaca `product_name`/`variant_name`/`stock`. Rinciannya tampil kosong dengan "Stok: undefined". Sekarang baris transaksi dirender sebagai kode, waktu, dan total.
+  - Grafik "Trend Pendapatan 7 Hari" jadi "Omzet 7 Hari Terakhir", sama dengan kata "Omzet" di kartu metrik di atasnya.
+  - Pesan kosong Transaksi Terbaru "Belum ada transaksi hari ini" salah, karena query-nya 5 transaksi selesai terakhir dari tanggal mana pun. Sekarang "Belum ada transaksi".
+  - Tautan cepat memakai nama sidebar: Transaksi, Sesi Kas, Stok.
+- **Alasan:** Nama yang berbeda untuk halaman yang sama membuat pemilik mengira itu dua hal. Angka yang ditulis dua kali menambah bacaan tanpa menambah informasi.
+- **File Terdampak:**
+  - `app/Services/BadgeHelperService.php`: judul dan pesan kartu
+  - `resources/js/Components/BadgeCard.vue`: baris transaksi, pemisah, label kedaluwarsa
+  - `resources/js/Components/DailyChart.vue`, `resources/js/Pages/Owner/Dashboard.vue`, `resources/js/Pages/Owner/Stock/Index.vue`: teks UI
+  - `tests/Feature/Owner/DashboardCopyTest.php`: penjaga diperluas
 
 ### [DECISION] Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok
 - **Tanggal:** 2026-09-14

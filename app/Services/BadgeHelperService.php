@@ -38,7 +38,7 @@ class BadgeHelperService
                 'severity' => 'warning',
                 'title' => 'Stok Kritis',
                 'count' => $lowStock->count(),
-                'message' => "{$lowStock->count()} varian mendekati habis",
+                'message' => 'varian dengan stok 5 atau kurang',
                 'items' => $lowStock->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,
@@ -60,7 +60,7 @@ class BadgeHelperService
                 'severity' => 'danger',
                 'title' => 'Stok Habis',
                 'count' => $outOfStock->count(),
-                'message' => "{$outOfStock->count()} varian kehabisan stok",
+                'message' => 'varian tidak bisa dijual',
                 'items' => $outOfStock->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,
@@ -86,7 +86,7 @@ class BadgeHelperService
                 'severity' => 'info',
                 'title' => 'Dead Stock',
                 'count' => $deadStock->count(),
-                'message' => "{$deadStock->count()} varian tidak terjual 30 hari terakhir",
+                'message' => 'varian tidak terjual 30 hari terakhir',
                 'items' => $deadStock->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,
@@ -96,7 +96,7 @@ class BadgeHelperService
             ];
         }
 
-        // --- Badge 4: Sudah Expired (expiry_date < hari ini) ---
+        // --- Badge 4: Kedaluwarsa (expiry_date < hari ini) ---
         // Kuerinya milik StockRescueService supaya daftar di kartu ini dan
         // angka rupiah di Laporan Saran Jual selalu menghitung barang yang sama
         // ([BL-105]).
@@ -113,11 +113,11 @@ class BadgeHelperService
             $badges[] = [
                 'type' => 'expired',
                 'severity' => 'danger',
-                'title' => 'Sudah Expired',
+                'title' => 'Kedaluwarsa',
                 'count' => $alreadyExpired->count(),
                 'value' => $expiredValue,
-                'message' => "{$alreadyExpired->count()} varian sudah kedaluwarsa · Rp "
-                    .number_format($expiredValue, 0, ',', '.').' modal mati di rak',
+                'message' => 'varian masih di rak · modal Rp '
+                    .number_format($expiredValue, 0, ',', '.').' mati',
                 'items' => $alreadyExpired->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,
@@ -128,7 +128,7 @@ class BadgeHelperService
             ];
         }
 
-        // --- Badge 5: Mendekati Expired (expiry_date dalam 7 hari ke depan) ---
+        // --- Badge 5: Hampir Kedaluwarsa (expiry_date dalam 7 hari ke depan) ---
         $nearExpiry = (clone $variantScope)
             ->whereNotNull('expiry_date')
             ->where('expiry_date', '>=', now()->startOfDay())
@@ -141,9 +141,9 @@ class BadgeHelperService
             $badges[] = [
                 'type' => 'near_expiry',
                 'severity' => 'warning',
-                'title' => 'Mendekati Expired',
+                'title' => 'Hampir Kedaluwarsa',
                 'count' => $nearExpiry->count(),
-                'message' => "{$nearExpiry->count()} varian mendekati kedaluwarsa",
+                'message' => 'varian kedaluwarsa dalam 7 hari',
                 'items' => $nearExpiry->map(fn ($v) => [
                     'id' => $v->id,
                     'product_name' => $v->product->name,
@@ -154,7 +154,7 @@ class BadgeHelperService
             ];
         }
 
-        // --- Badge 6: Perlu Koreksi (sync) ---
+        // --- Badge 6: Koreksi Offline (nama yang sama dengan menunya di sidebar) ---
         // Transaksi offline yang tersimpan dengan anomali: stok jadi minus, harga
         // berbeda dari katalog, atau produknya sudah dihapus. Penjualannya sah dan
         // tidak pernah ditolak — tapi angkanya perlu dirapikan owner.
@@ -167,9 +167,9 @@ class BadgeHelperService
             $badges[] = [
                 'type' => 'needs_review',
                 'severity' => 'warning',
-                'title' => 'Perlu Koreksi (sync)',
+                'title' => 'Koreksi Offline',
                 'count' => $needsReview->count(),
-                'message' => "{$needsReview->count()} transaksi offline perlu ditinjau",
+                'message' => 'transaksi offline perlu dicek',
                 'items' => $needsReview->map(fn ($t) => [
                     'id' => $t->id,
                     'code' => $t->code,

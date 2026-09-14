@@ -46,7 +46,7 @@ const chartData = computed(() => {
         labels,
         datasets: [
             {
-                label: 'Pendapatan',
+                label: 'Omzet',
                 data: props.data.map((d) => Number(d.revenue)),
                 backgroundColor: chartColors.value.primary,
                 borderColor: chartColors.value.brand,
@@ -101,12 +101,12 @@ const chartOptions = {
 
 <template>
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-        <h3 class="text-sm font-semibold text-gray-700 mb-4">Trend Pendapatan 7 Hari</h3>
+        <h3 class="text-sm font-semibold text-gray-700 mb-4">Omzet 7 Hari Terakhir</h3>
         <div v-if="data.length > 0" class="h-64">
             <Bar :data="chartData" :options="chartOptions" />
         </div>
         <div v-else class="h-64 flex items-center justify-center text-gray-400 text-sm">
-            Belum ada data transaksi
+            Belum ada penjualan 7 hari terakhir
         </div>
     </div>
 </template>

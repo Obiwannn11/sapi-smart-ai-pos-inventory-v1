@@ -41,8 +41,8 @@ class StockRescueService
      * Sinyal pagi: apa yang harus keluar hari ini, dan apakah mesinnya siap
      * membantu mengeluarkannya ([BL-105] butir 3).
      *
-     * **Kenapa ini bukan lencana ketujuh.** Dashboard sudah punya "Mendekati
-     * Expired" dan "Dead Stock", dan keduanya menjawab *apa keadaannya*. Yang
+     * **Kenapa ini bukan lencana ketujuh.** Dashboard sudah punya "Hampir
+     * Kedaluwarsa" dan "Dead Stock", dan keduanya menjawab *apa keadaannya*. Yang
      * tidak pernah dijawab siapa pun adalah *apakah ada yang akan
      * mengeluarkannya*: barang tertekan tanpa aturan diskon tetap disarankan
      * kasir, tapi pada HARGA KATALOG — saran yang sama, dengan peluang jauh
@@ -278,7 +278,7 @@ class StockRescueService
     /**
      * Varian yang sudah lewat tanggal kedaluwarsa dan stoknya belum habis.
      *
-     * Satu definisi untuk dua pembaca: Badge "Sudah Expired" di dashboard yang
+     * Satu definisi untuk dua pembaca: Badge "Kedaluwarsa" di dashboard yang
      * mendaftar barangnya, dan {@see self::spoiled()} yang menjumlahkan
      * rupiahnya. Dua definisi yang berselisih hanya akan terlihat sebagai
      * daftar berisi lima baris dengan nilai total milik enam barang, jauh

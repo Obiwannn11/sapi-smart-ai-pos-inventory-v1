@@ -148,7 +148,7 @@ const STATUS_CARDS = [
     { key: 'pressed', label: 'Penyelamat Stok', tone: 'warning' },
     { key: 'out', label: 'Stok Habis', tone: 'danger' },
     { key: 'low', label: 'Stok Kritis', tone: 'warning' },
-    { key: 'near_expiry', label: 'Dekat Expired', tone: 'warning' },
+    { key: 'near_expiry', label: 'Hampir Kedaluwarsa', tone: 'warning' },
     { key: 'expired', label: 'Kedaluwarsa', tone: 'danger' },
     { key: 'ok', label: 'Aman', tone: 'success' },
 ];
