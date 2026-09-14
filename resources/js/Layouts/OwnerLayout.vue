@@ -301,7 +301,7 @@ const { requestLogout } = useLogoutConfirm();
 
 const logout = () => requestLogout({
     title: 'Keluar dari akun?',
-    message: 'Sesi Anda di perangkat ini ditutup dan data offline yang tersimpan (halaman, katalog, harga) dibersihkan — mesin kasir dipakai bergantian. Penjualan offline yang belum terkirim tetap tersimpan dan baru dikirim setelah Anda masuk lagi.',
+    message: 'Katalog yang tersimpan di perangkat ini akan dihapus. Penjualan offline yang belum terkirim tetap aman dan terkirim setelah Anda login lagi.',
 });
 </script>
 

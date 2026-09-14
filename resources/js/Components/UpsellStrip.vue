@@ -77,7 +77,9 @@ const TONE = {
     pressed_stock: {
         ring: 'border-warning/30 bg-warning/5',
         chip: 'bg-warning/15 text-warning-foreground',
-        title: 'Dorong',
+        // Bukan "Dorong" seperti di halaman owner: itu niat toko, bukan
+        // sesuatu yang bisa diucapkan kasir ke pelanggan.
+        title: 'Segera jual',
     },
     upsize: {
         ring: 'border-success/30 bg-success/5',
@@ -268,7 +270,12 @@ const sourceLabel = computed(() => {
                     </div>
 
                     <p class="mt-1 break-words text-[15px] font-bold leading-tight text-foreground @2xl:hidden">{{ current.label }}</p>
-                    <p class="mt-0.5 break-words text-[11px] text-muted-foreground @2xl:truncate @2xl:text-xs">{{ current.note }}</p>
+                    <!-- Catatan yang cuma mengulang chip jenisnya ("Pilihan pemilik"
+                         dua kali) disembunyikan. -->
+                    <p
+                        v-if="current.note && current.note !== toneFor(current.type).title"
+                        class="mt-0.5 break-words text-[11px] text-muted-foreground @2xl:truncate @2xl:text-xs"
+                    >{{ current.note }}</p>
                 </div>
 
                 <!-- Tengah: harga, cukup besar untuk dibaca dari jarak meja -->
@@ -326,7 +333,7 @@ const sourceLabel = computed(() => {
                             class="text-[10px] font-medium text-muted-foreground transition hover:text-foreground"
                             @click="goTo(cursor + 1)"
                         >
-                            {{ cursor + 1 }} dari {{ visible.length }} · lewati dulu
+                            {{ cursor + 1 }} dari {{ visible.length }} · Berikutnya
                         </button>
                     </div>
                 </div>
@@ -359,7 +366,7 @@ const sourceLabel = computed(() => {
                     type="button"
                     :disabled="disabled"
                     class="shrink-0 rounded px-1.5 py-1 text-[11px] font-semibold text-success underline-offset-2 transition hover:underline disabled:opacity-40"
-                    title="Batalkan — barangnya dikeluarkan lagi dari keranjang"
+                    title="Batalkan dan keluarkan barangnya dari keranjang"
                     @click="emit('retract', suggestion)"
                 >
                     Batalkan

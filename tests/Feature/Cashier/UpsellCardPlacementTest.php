@@ -64,7 +64,7 @@ test('tombol bayar yang terkunci tetap menjelaskan dirinya tanpa kotak peringata
     expect($source)->not->toContain('rounded-lg border border-amber-200 bg-amber-50 px-3 py-2')
         // ...tapi penjelasannya tidak ([BL-025]): label pendek di tombolnya,
         // kalimat utuh di `title` dan untuk pembaca layar.
-        ->and($source)->toContain("{{ processing ? 'Memproses...' : (payButtonHint || 'BAYAR') }}")
+        ->and($source)->toContain("{{ processing ? 'Memproses...' : (payButtonHint || 'Bayar') }}")
         ->and($source)->toContain(':title="checkoutBlockedReason || undefined"')
         ->and($source)->toContain('<p v-if="payButtonHint" class="sr-only" role="status">{{ checkoutBlockedReason }}</p>');
 });

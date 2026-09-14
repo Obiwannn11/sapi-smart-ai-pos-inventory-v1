@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-14 | DECISION | Kasir | Teks Layar Kasir Dipadatkan: Satu Istilah per Hal, Tanpa Istilah Sistem, Tanpa Tanda Pisah |
 | 2026-09-13 | DECISION | Kasir | Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat |
 | 2026-09-12 | DECISION | Kasir | Strip Saran Jadi Satu Kartu Bergiliran yang Menunjuk Baris Asalnya — dan Penyebut Konversi Berhenti Menghitung yang Tak Pernah Tampil |
 | 2026-09-12 | ADDITION | Promosi | Data Peraga Sepuluh Keadaan Aturan Saran Jual, dan Aturan yang Kalah Dedup Disebut "Diwakili Saran Lain" |
@@ -268,6 +269,27 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Teks Layar Kasir Dipadatkan: Satu Istilah per Hal, Tanpa Istilah Sistem, Tanpa Tanda Pisah
+- **Tanggal:** 2026-09-14
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend | Controller
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit teks POS dengan skill antislop-copywriting, lalu perbaikan. Aturan yang dipakai:
+  - **Satu istilah per hal di layar yang sama.** Istilah Inggris yang umum di kasir tetap (POS, Upsell, Sync, Login, Void, Install). Yang diganti adalah campuran yang tidak konsisten: "Tambah ke Cart" di bawah kepala "Keranjang", "+ Split Pembayaran", dan flash "Open bill …" padahal tombol dan panelnya bernama "Tunda Bayar"/"Tagihan".
+  - **Istilah sistem tidak bocor ke kasir.** "ditolak server", "server menolak permintaan", "stok indikatif", "kas negatif", "perlu ditinjau" diganti dengan apa yang harus dilakukan kasir ("Beri tahu pemilik", "Stok bisa selisih", "hanya pemilik yang bisa melunasinya").
+  - **Kalimat dipadatkan.** Dialog logout (sebelumnya 3 klausa + pembenaran), keterangan Harga Khusus, konfirmasi Kosongkan, dan keterangan umur tagihan.
+  - **Tanpa tanda pisah, tanda seru, kapital penuh, dan emoji hiasan.** "BAYAR" jadi "Bayar", "Transaksi X berhasil!" jadi "Transaksi X tersimpan.", 📝 jadi "Catatan:".
+  - **Keadaan kosong katalog dibedakan:** hasil pencarian kosong, kategori kosong, dan katalog kosong kini punya kalimat masing-masing.
+  - Chip saran `pressed_stock` di kasir jadi "Segera jual" (halaman owner tetap "Dorong"), dan catatan saran yang sama persis dengan chip jenisnya tidak ditampilkan dua kali.
+- **Alasan:** Kasir membaca teks ini sambil melayani pelanggan. Istilah campuran dan istilah server menambah satu langkah menebak, dan kalimat panjang tidak dibaca sama sekali.
+- **File Terdampak:**
+  - `resources/js/Pages/Cashier/POS.vue`, `resources/js/Components/{PaymentModal,UpsellStrip,CartItem,ModifierModal,CashierTopbar}.vue`: teks UI
+  - `resources/js/Layouts/OwnerLayout.vue`, `resources/js/Pages/Cashier/CashDrawerSummary.vue`: pesan logout yang sama
+  - `app/Http/Controllers/Cashier/POSController.php`: pesan flash
+  - `tests/Feature/Cashier/CashierCopyTest.php`: penjaga baru; `UpsellCardPlacementTest`, `CartLineActionAffordanceTest`: string yang dikunci disesuaikan
+- **Catatan:** Fallback catatan server "Pilihan pemilik" sengaja tidak diubah, karena dikunci `ManualUpsellRuleTest` dan dipakai pratinjau owner. Pesan pengecualian di `TransactionService` (termasuk "kas negatif") belum disentuh.
 
 ### [DECISION] Kartu Saran Jual Pindah ke Dasar Kolom Katalog — Keranjang Kembali dari Satu Baris ke Hampir Empat
 - **Tanggal:** 2026-09-13

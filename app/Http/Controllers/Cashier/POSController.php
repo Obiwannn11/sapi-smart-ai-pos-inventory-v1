@@ -170,7 +170,7 @@ class POSController extends Controller
                 // penjadwal adalah aturan yang baru diketahui pengguna saat ia
                 // sudah merugikannya.
                 return back()->with('success', sprintf(
-                    'Open bill %s berhasil disimpan! Berlaku %d jam — lewat itu jadi kas negatif.',
+                    'Tagihan %s disimpan. Berlaku %d jam, lewat itu hanya pemilik yang bisa melunasinya.',
                     $transaction->code,
                     Transaction::OPEN_BILL_LIFETIME_HOURS,
                 ));
@@ -178,7 +178,7 @@ class POSController extends Controller
 
             $transaction->loadMissing('user:id,name');
 
-            return back()->with('success', "Transaksi {$transaction->code} berhasil!")
+            return back()->with('success', "Transaksi {$transaction->code} tersimpan.")
                 ->with('lastTransaction', $transaction->toArray());
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
@@ -265,7 +265,7 @@ class POSController extends Controller
 
             $transaction->loadMissing('user:id,name');
 
-            return back()->with('success', "Open bill {$transaction->code} berhasil dibayar!")
+            return back()->with('success', "Tagihan {$transaction->code} lunas.")
                 ->with('lastTransaction', $transaction->toArray());
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
@@ -406,7 +406,7 @@ class POSController extends Controller
         try {
             $this->transactionService->void($transaction);
 
-            return back()->with('success', "Transaksi {$transaction->code} berhasil di-void.");
+            return back()->with('success', "Transaksi {$transaction->code} di-void.");
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }

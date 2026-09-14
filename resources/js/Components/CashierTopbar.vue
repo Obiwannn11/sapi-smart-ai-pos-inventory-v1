@@ -170,7 +170,7 @@ const billExpiryLabel = (bill) => {
 
     const remainingMinutes = Math.round((new Date(bill.expires_at) - Date.now()) / 60000);
 
-    if (remainingMinutes <= 0) return 'habis masa tagih';
+    if (remainingMinutes <= 0) return 'kedaluwarsa';
     if (remainingMinutes < 60) return `sisa ${remainingMinutes} menit`;
 
     return `sisa ${Math.floor(remainingMinutes / 60)} jam`;
@@ -241,7 +241,7 @@ const { requestLogout } = useLogoutConfirm();
 
 const logout = () => requestLogout({
     title: 'Keluar dari kasir?',
-    message: 'Sesi Anda di perangkat ini ditutup dan data offline yang tersimpan (halaman, katalog, harga) dibersihkan — mesin kasir dipakai bergantian. Penjualan offline yang belum terkirim tetap tersimpan dan baru dikirim setelah Anda masuk lagi.',
+    message: 'Katalog yang tersimpan di perangkat ini akan dihapus. Penjualan offline yang belum terkirim tetap aman dan terkirim setelah Anda login lagi.',
 });
 </script>
 
@@ -361,7 +361,7 @@ const logout = () => requestLogout({
                             <!-- Kasir yang menekan "Tunda Bayar" berhak tahu
                                  tagihannya bertahan sampai kapan ([BL-031]). -->
                             <p class="mt-1 text-[10px] leading-snug text-amber-700">
-                                Berlaku 24 jam sejak pesanan dibuat. Lewat itu tagihan tercatat sebagai kas negatif dan hanya pemilik yang dapat membereskannya.
+                                Berlaku 24 jam sejak dibuat. Lewat itu, hanya pemilik yang bisa melunasinya.
                             </p>
                         </div>
 
@@ -379,7 +379,7 @@ const logout = () => requestLogout({
                                 <div class="mt-1.5 space-y-0.5 text-xs text-foreground/70">
                                     <p v-for="item in bill.items" :key="item.id" class="truncate">
                                         {{ item.qty }}× {{ item.variant_name }}
-                                        <span v-if="item.notes" class="italic text-amber-600"> — {{ item.notes }}</span>
+                                        <span v-if="item.notes" class="italic text-amber-600"> · {{ item.notes }}</span>
                                     </p>
                                 </div>
 

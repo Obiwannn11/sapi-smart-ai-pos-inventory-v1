@@ -295,13 +295,13 @@ const blockingReason = computed(() => {
         return `Lengkapi metode dan nominal pada Pembayaran ${emptyRowIndex.value + 1}.`;
     }
     if (nonCashOverpaid.value) {
-        return 'Nominal non-tunai melebihi total belanja — non-tunai tidak bisa dikembalikan.';
+        return 'Nominal non-tunai melebihi total. Kembalian hanya bisa dari tunai.';
     }
     if (shortfall.value > 0) {
         return `Masih kurang ${formatCurrency(shortfall.value)}.`;
     }
     if (uploadingProof.value) {
-        return 'Menunggu foto bukti bayar selesai diunggah.';
+        return 'Foto bukti bayar masih diunggah.';
     }
     if (missingProofIndex.value !== -1) {
         return `Foto bukti bayar wajib pada Pembayaran ${missingProofIndex.value + 1}.`;
@@ -619,7 +619,7 @@ const close = () => {
                             @click="addPaymentRow"
                             class="w-full py-2 border-2 border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition"
                         >
-                            + Split Pembayaran
+                            + Tambah Metode Bayar
                         </button>
 
                         <!-- Summary -->

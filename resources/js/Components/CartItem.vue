@@ -191,7 +191,7 @@ const subtotal = () => {
                             'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
                             upsellActive ? 'bg-primary/15 text-primary' : 'bg-gray-100 text-gray-500',
                         ]"
-                        :title="`${upsellCount} saran jual menunggu keputusan untuk baris ini`"
+                        :title="`${upsellCount} saran untuk item ini belum dijawab`"
                     >
                         {{ upsellCount }} saran
                     </span>
@@ -299,14 +299,14 @@ const subtotal = () => {
                 :value="item.notes || ''"
                 @input="onNotesChange"
                 type="text"
-                placeholder="Catatan: ekstra susu, tanpa gula, dll"
+                placeholder="Contoh: tanpa gula, ekstra susu"
                 class="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:ring-1 focus:ring-ring focus:border-ring bg-gray-50"
             />
         </div>
 
         <!-- Item notes display (if has notes but input hidden) -->
         <p v-if="!showNotes && item.notes" class="text-xs text-amber-600 mt-1 italic">
-            📝 {{ item.notes }}
+            Catatan: {{ item.notes }}
         </p>
 
         <!-- Harga khusus yang sedang berlaku: alasannya wajib terbaca tanpa
@@ -314,7 +314,7 @@ const subtotal = () => {
              sebelum struk dicetak. -->
         <div v-if="item.override_unit_price" class="mt-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
             <span class="min-w-0 flex-1 truncate text-[11px] font-medium text-amber-800">
-                Harga khusus — “{{ item.discount_reason }}”
+                Harga khusus: {{ item.discount_reason }}
             </span>
             <button
                 @click="clearSpecialPrice"

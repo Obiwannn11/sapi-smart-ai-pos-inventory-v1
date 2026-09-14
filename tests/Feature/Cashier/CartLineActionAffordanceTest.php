@@ -73,7 +73,7 @@ test('alasan harga khusus hanya memakan baris saat harganya memang berlaku', fun
     $source = cartItemSource();
 
     expect($source)->toContain('v-if="item.override_unit_price"')
-        ->and($source)->toContain('Harga khusus — “{{ item.discount_reason }}”')
+        ->and($source)->toContain('Harga khusus: {{ item.discount_reason }}')
         // Membatalkan tetap satu tombol betulan, bukan tulisan kelabu.
         ->and($source)->toContain('@click="clearSpecialPrice"');
 });

@@ -250,7 +250,7 @@ const close = () => {
                                 {{ group.name }}
                                 <span v-if="group.is_required" class="text-red-500">*</span>
                                 <span v-else class="text-xs text-gray-400 font-normal">(opsional)</span>
-                                <span v-if="group.is_multiple" class="text-xs text-gray-400 font-normal ml-1">— bisa pilih lebih dari 1</span>
+                                <span v-if="group.is_multiple" class="text-xs text-gray-400 font-normal ml-1">(boleh lebih dari 1)</span>
                             </h4>
                             <div class="space-y-2">
                                 <!-- Single select (radio) -->
@@ -328,7 +328,7 @@ const close = () => {
                                 :disabled="!isValid"
                                 class="flex-1 py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 transition disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                {{ isEditing ? 'Simpan Perubahan' : 'Tambah ke Cart' }}
+                                {{ isEditing ? 'Simpan Perubahan' : 'Tambah ke Keranjang' }}
                             </button>
                         </div>
                     </div>

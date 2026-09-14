@@ -249,16 +249,16 @@ const syncNow = async () => {
     }
 
     if (result.ok) {
-        showFlash(`${result.synced} transaksi offline tersinkron.`, 'success');
+        showFlash(`${result.synced} transaksi offline terkirim.`, 'success');
 
         return;
     }
 
     const reason = {
-        auth: 'Sesi berakhir — silakan login ulang untuk menyinkronkan.',
-        network: 'Sinkronisasi gagal: jaringan tidak stabil.',
-        server: 'Sinkronisasi gagal: server menolak permintaan.',
-    }[result.reason] ?? 'Sinkronisasi gagal.';
+        auth: 'Sesi habis. Login lagi supaya transaksi offline terkirim.',
+        network: 'Sync gagal: koneksi tidak stabil.',
+        server: 'Sync gagal. Coba lagi, atau beri tahu pemilik bila terus terjadi.',
+    }[result.reason] ?? 'Sync gagal.';
 
     showFlash(reason, 'error');
 };
@@ -896,7 +896,7 @@ const checkoutBlockedReason = computed(() => {
     if (upsellMandatory.value && upsellUnresolved.value.length > 0) {
         const labels = upsellUnresolved.value.map((s) => s.label).join(', ');
 
-        return `Selesaikan penawaran dulu: ${labels}. Tandai diterima atau ditolak pelanggan.`;
+        return `Jawab dulu saran untuk pelanggan: ${labels}.`;
     }
 
     return '';
@@ -1078,7 +1078,7 @@ const queueOfflineSale = async (payments) => {
 
     if (!stored) {
         showFlash(
-            'Gagal menyimpan transaksi offline di perangkat ini. Jangan tutup halaman — catat manual.',
+            'Transaksi gagal disimpan di perangkat ini. Jangan tutup halaman, catat penjualannya manual.',
             'error',
         );
 
@@ -1090,7 +1090,7 @@ const queueOfflineSale = async (payments) => {
     resetUpsell();
     resetOrderIdentity();
     checkoutUuid.value = null;
-    showFlash('Tersimpan offline. Akan tersinkron otomatis saat kembali online.', 'success');
+    showFlash('Tersimpan offline. Terkirim otomatis begitu online.', 'success');
 
     return true;
 };
@@ -1168,7 +1168,7 @@ const saveAsOpenBill = () => {
     // invisible to every other device until sync, so the safer answer is to say
     // no rather than lose track of an unpaid order.
     if (!isOnline.value) {
-        showFlash('Tunda Bayar tidak tersedia saat offline. Selesaikan pembayaran tunai.', 'error');
+        showFlash('Tunda Bayar butuh koneksi. Saat offline, terima tunai.', 'error');
 
         return;
     }
@@ -1322,11 +1322,11 @@ onUnmounted(() => {
                 <span class="text-xs font-semibold">Mode Offline</span>
                 <span class="text-amber-400 text-[10px] select-none">·</span>
                 <span class="text-xs">
-                    <template v-if="cachedAtLabel">Katalog per {{ cachedAtLabel }} — stok indikatif, hanya tunai.</template>
-                    <template v-else>Katalog tersimpan tidak ditemukan — data mungkin tidak lengkap.</template>
+                    <template v-if="cachedAtLabel">Katalog per {{ cachedAtLabel }}. Stok bisa selisih, hanya terima tunai.</template>
+                    <template v-else>Katalog belum tersimpan di perangkat ini. Produk bisa tidak lengkap.</template>
                 </span>
                 <span v-if="pendingCount > 0" class="ml-auto text-xs font-medium">
-                    {{ pendingCount }} transaksi menunggu sinkronisasi
+                    {{ pendingCount }} transaksi belum terkirim
                 </span>
             </div>
         </Transition>
@@ -1341,11 +1341,11 @@ onUnmounted(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             <span class="text-xs">
-                <template v-if="flushing">Menyinkronkan transaksi offline…</template>
+                <template v-if="flushing">Mengirim transaksi offline…</template>
                 <template v-else-if="failedCount > 0">
-                    {{ failedCount }} transaksi offline gagal tersinkron dan perlu ditinjau.
+                    {{ failedCount }} transaksi offline gagal terkirim. Beri tahu pemilik.
                 </template>
-                <template v-else>{{ pendingCount }} transaksi offline menunggu sinkronisasi.</template>
+                <template v-else>{{ pendingCount }} transaksi offline belum terkirim.</template>
             </span>
             <button
                 @click="syncNow"
@@ -1427,7 +1427,9 @@ onUnmounted(() => {
                         />
                     </div>
                     <div v-else class="flex items-center justify-center h-48 text-gray-400 text-sm">
-                        Produk tidak ditemukan
+                        <template v-if="searchQuery.trim()">Tidak ada produk untuk “{{ searchQuery.trim() }}”</template>
+                        <template v-else-if="selectedCategoryId">Belum ada produk di kategori ini</template>
+                        <template v-else>Belum ada produk</template>
                     </div>
                 </div>
 
@@ -1536,7 +1538,7 @@ onUnmounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
                         </svg>
                         <p class="text-sm">Keranjang kosong</p>
-                        <p class="text-xs mt-1">Pilih produk untuk memulai</p>
+                        <p class="text-xs mt-1">Ketuk produk untuk menambahkannya</p>
                     </div>
                 </div>
 
@@ -1599,7 +1601,7 @@ onUnmounted(() => {
                             @click="saveAsOpenBill"
                             :disabled="cart.length === 0 || processing"
                             class="flex-1 py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
-                            title="Simpan pesanan tanpa bayar — tagihan berlaku 24 jam"
+                            title="Simpan pesanan, bayar nanti. Tagihan berlaku 24 jam."
                         >
                             Tunda Bayar
                         </button>
@@ -1621,7 +1623,7 @@ onUnmounted(() => {
                             <svg v-if="!payButtonHint" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
-                            {{ processing ? 'Memproses...' : (payButtonHint || 'BAYAR') }}
+                            {{ processing ? 'Memproses...' : (payButtonHint || 'Bayar') }}
                         </button>
                     </div>
                 </div>
@@ -1650,7 +1652,7 @@ onUnmounted(() => {
         <ConfirmDialog
             :show="confirmingClear"
             title="Kosongkan keranjang?"
-            :message="`${cartItemCount} item akan dihapus dan pesanan harus disusun ulang dari awal.`"
+            :message="`${cartItemCount} item akan dihapus dari keranjang.`"
             confirm-text="Kosongkan"
             cancel-text="Batal"
             @confirm="clearCart"
@@ -1664,7 +1666,7 @@ onUnmounted(() => {
                 <div class="relative bg-white rounded-xl shadow-2xl max-w-sm w-full p-6">
                     <h3 class="text-lg font-semibold text-gray-900">Harga Khusus</h3>
                     <p class="mt-1 text-xs text-gray-500 leading-relaxed">
-                        Berlaku untuk penjualan ini saja. Harga dan alasannya ikut tercatat pada barisnya, dan muncul terpisah di laporan bila di bawah batas untung.
+                        Hanya untuk penjualan ini. Harga dan alasannya tercatat di laporan.
                     </p>
 
                     <div class="mt-4 space-y-3">
@@ -1691,7 +1693,7 @@ onUnmounted(() => {
                                 placeholder="Contoh: kemasan rusak, daripada dibuang"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-ring focus:border-ring"
                             />
-                            <p class="mt-1 text-xs text-gray-500">Wajib — tanpa alasan, penjualannya ditolak server.</p>
+                            <p class="mt-1 text-xs text-gray-500">Wajib diisi. Penjualan tidak bisa disimpan tanpa alasan.</p>
                         </div>
                     </div>
 
