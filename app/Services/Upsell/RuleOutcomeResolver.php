@@ -261,7 +261,7 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'expired',
                 'Sudah kedaluwarsa',
-                'Barangnya kedaluwarsa '.$this->longDate($variant->expiry_date).' dan tidak boleh dijual dalam bentuk apa pun.',
+                'Barangnya kedaluwarsa '.$this->longDate($variant->expiry_date).', jadi kasir tidak menawarkannya.',
                 self::TONE_BLOCKED,
                 fix: $this->productFix($variant),
             );

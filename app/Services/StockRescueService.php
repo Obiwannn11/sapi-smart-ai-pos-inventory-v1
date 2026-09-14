@@ -202,16 +202,15 @@ class StockRescueService
      */
     public function spoiled(Tenant $tenant): array
     {
-        $row = $this->expiredOnShelf($tenant)
-            ->selectRaw('COUNT(*) as variants')
-            ->selectRaw('COALESCE(SUM(stock), 0) as units')
-            ->selectRaw('COALESCE(SUM(stock * cost_price), 0) as amount')
-            ->first();
+        // Yang dihitung hanya unit di batch yang basi, bukan seluruh stok
+        // variannya ([BL-111]). Varian yang menyimpan 20 unit basi April dan 30
+        // unit segar Agustus kehilangan modal 20 unit, bukan 50.
+        $variants = $this->expiredOnShelf($tenant)->get();
 
         return [
-            'amount' => (float) ($row->amount ?? 0),
-            'variants' => (int) ($row->variants ?? 0),
-            'units' => (int) ($row->units ?? 0),
+            'amount' => (float) $variants->sum(fn (ProductVariant $variant) => (int) $variant->expired_units * (float) $variant->cost_price),
+            'variants' => $variants->count(),
+            'units' => (int) $variants->sum('expired_units'),
         ];
     }
 
@@ -276,13 +275,17 @@ class StockRescueService
     }
 
     /**
-     * Varian yang sudah lewat tanggal kedaluwarsa dan stoknya belum habis.
+     * Varian yang masih menyimpan batch yang sudah lewat tanggal kedaluwarsa.
      *
      * Satu definisi untuk dua pembaca: Badge "Kedaluwarsa" di dashboard yang
      * mendaftar barangnya, dan {@see self::spoiled()} yang menjumlahkan
      * rupiahnya. Dua definisi yang berselisih hanya akan terlihat sebagai
      * daftar berisi lima baris dengan nilai total milik enam barang, jauh
      * setelah penyebabnya dilupakan.
+     *
+     * Dibaca dari batch, bukan dari `product_variants.expiry_date` ([BL-111]).
+     * Setiap baris membawa `expired_units` (unit basi saja, bukan seluruh
+     * stok) dan `expired_since` (tanggal basi paling lama).
      *
      * `BusinessClock::today()` dan bukan `now()` mentah: batas harinya harus
      * hari toko, sama dengan seluruh laporan lain ([BL-082]).
@@ -291,10 +294,14 @@ class StockRescueService
      */
     public function expiredOnShelf(Tenant $tenant): Builder
     {
+        $today = BusinessClock::today();
+        $expired = fn (Builder $query) => $query->expiredOn($today);
+
         return ProductVariant::query()
             ->whereHas('product', fn ($query) => $query->where('tenant_id', $tenant->id))
-            ->whereNotNull('expiry_date')
-            ->whereDate('expiry_date', '<', BusinessClock::today())
-            ->where('stock', '>', 0);
+            ->whereHas('stockBatches', $expired)
+            ->where('stock', '>', 0)
+            ->withSum(['stockBatches as expired_units' => $expired], 'qty_remaining')
+            ->withMin(['stockBatches as expired_since' => $expired], 'expiry_date');
     }
 }

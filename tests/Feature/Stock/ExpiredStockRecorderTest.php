@@ -5,6 +5,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Services\ExpiredStockRecorder;
+use App\Services\StockService;
 
 use function Pest\Laravel\artisan;
 use function Pest\Laravel\assertDatabaseCount;
@@ -98,7 +99,10 @@ it('stamps again when a restock brings a new expiry date', function () {
     // Direstok, tanggal kedaluwarsanya baru. Menyaring per varian saja akan
     // membuat tiap varian hanya bisa basi sekali seumur hidupnya — dan barang
     // yang paling sering basi justru yang paling sering direstok.
-    $variant->update(['expiry_date' => '2026-09-05', 'stock' => 10]);
+    //
+    // Lewat StockService, bukan menulis kolomnya langsung: sejak [BL-111]
+    // tanggal kedaluwarsa hidup di batch, dan restock melahirkan batch baru.
+    app(StockService::class)->restock($variant, 10, 'Kiriman baru', '2026-09-05');
 
     expect($this->recorder->record('2026-09-06'))->toBe(1);
 

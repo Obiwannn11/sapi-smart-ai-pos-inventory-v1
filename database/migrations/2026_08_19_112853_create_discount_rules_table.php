@@ -41,9 +41,10 @@ return new class extends Migration
             // yang potongannya mendalam seiring waktu.
             //
             // `expired` TIDAK ADA di daftar ini, dan itu bukan kelalaian.
-            // Barang yang sudah kedaluwarsa tidak boleh dijual sama sekali —
-            // batas keamanan pangan, bukan pilihan bisnis. Ia dijaga di
-            // DiscountService, bukan diserahkan pada kedisiplinan kasir.
+            // Barang yang sudah kedaluwarsa tidak pernah didiskon, dan
+            // DiscountService yang menjaga HARGANYA. Penjualannya sendiri tidak
+            // dijaga di sana: kasir yang menjualnya wajib menulis alasan, dan
+            // gerbang itu ada di StockService::deduct() ([BL-108]).
             $table->enum('trigger', ['near_expiry', 'dead_stock', 'manual']);
 
             // Potongan awal, dalam persen harga katalog.

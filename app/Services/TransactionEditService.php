@@ -58,26 +58,25 @@ class TransactionEditService
                     continue;
                 }
 
-                if ($delta > 0) {
-                    // butuh stok tambahan → cek cukup (variant aktif saja)
-                    if (! $variant || $variant->trashed() || $variant->stock < $delta) {
-                        $name = $variant?->name ?? 'produk';
-                        $have = $variant?->stock ?? 0;
-                        throw new \Exception("Stok {$name} tidak cukup untuk edit. Tersedia: {$have}, butuh tambahan: {$delta}");
-                    }
-                    $variant->decrement('stock', $delta);
-                } else {
-                    // qty turun → kembalikan stok (variant trashed: skip increment fisik, tetap catat movement)
-                    if ($variant && ! $variant->trashed()) {
-                        $variant->increment('stock', abs($delta));
-                    }
+                if ($variant) {
+                    // Stok dan batchnya bergerak bersama ([BL-111]); qty yang
+                    // naik hanya boleh diambil dari barang yang belum basi.
+                    $this->stockService->applyEditDelta($variant, $delta, $transaction->id, $transaction->tenant_id);
+
+                    continue;
                 }
 
+                if ($delta > 0) {
+                    throw new \Exception("Stok produk tidak cukup untuk edit. Tersedia: 0, butuh tambahan: {$delta}");
+                }
+
+                // Varian yang sudah dihapus permanen: tidak ada stok untuk
+                // dikembalikan, tapi mutasinya tetap dicatat.
                 StockMovement::create([
                     'tenant_id' => $transaction->tenant_id,
                     'product_variant_id' => $variantId,
                     'type' => StockMovement::TYPE_EDIT,
-                    'qty' => -$delta, // penjualan naik → stok turun (qty negatif)
+                    'qty' => -$delta,
                     'notes' => "Edit transaksi #{$transaction->id}",
                     'reference_id' => $transaction->id,
                 ]);
@@ -96,9 +95,15 @@ class TransactionEditService
                 ->filter(fn ($item) => (float) $item->discount_amount > 0)
                 ->keyBy('product_variant_id');
 
+            // Jejak barang basi diselamatkan dengan alasan yang sama ([BL-108]):
+            // tanpa ini, mengoreksi qty sebuah penjualan croissant basi
+            // menghapus satu-satunya tanda bahwa ia pernah dijual dalam
+            // keadaan basi.
+            $expiredMemory = $this->expiredMemory($transaction, $oldQty, $newQty);
+
             $transaction->items()->each(fn ($i) => $i->modifiers()->delete());
             $transaction->items()->delete();
-            $baseAmount = $this->rebuildItems($transaction, $data['items'], $priceMemory);
+            $baseAmount = $this->rebuildItems($transaction, $data['items'], $priceMemory, $expiredMemory);
 
             // Pajak dihitung ulang dari konteks yang DIBEKUKAN pada transaksi
             // ini, bukan dari setelan tenant hari ini ([BL-065]). Mengoreksi
@@ -234,8 +239,9 @@ class TransactionEditService
      * @param  \Illuminate\Support\Collection<int, \App\Models\TransactionItem>  $priceMemory
      *                                                                                         Baris berdiskon SEBELUM edit, dipetakan per varian. Lihat alasannya di
      *                                                                                         pemanggilnya.
+     * @param  array<int, array{qty: int, expiry_date_at_sale: string|null, confirmed_by: int|null, reason: string|null}>  $expiredMemory
      */
-    private function rebuildItems(Transaction $transaction, array $items, $priceMemory = null): float
+    private function rebuildItems(Transaction $transaction, array $items, $priceMemory = null, array $expiredMemory = []): float
     {
         $total = 0;
         $priceMemory ??= collect();
@@ -244,6 +250,14 @@ class TransactionEditService
             $variant = ProductVariant::withTrashed()->findOrFail($line['variant_id']);
 
             $remembered = $priceMemory->get($variant->id);
+
+            // Jatah unit basi varian ini dibagikan ke baris-barisnya berurutan.
+            $expired = $expiredMemory[$variant->id] ?? null;
+            $expiredQty = min((int) $line['qty'], $expired['qty'] ?? 0);
+
+            if ($expiredQty > 0) {
+                $expiredMemory[$variant->id]['qty'] -= $expiredQty;
+            }
 
             // Harga yang diingat menang atas harga katalog. Yang TIDAK ikut
             // diingat: qty dan subtotal — keduanya memang sedang diedit.
@@ -277,6 +291,10 @@ class TransactionEditService
                 'cost_price_at_sale' => $remembered?->cost_price_at_sale,
                 'margin_floor_at_sale' => $remembered?->margin_floor_at_sale,
                 'below_floor_approved_by' => $remembered?->below_floor_approved_by,
+                'expired_qty' => $expiredQty,
+                'expiry_date_at_sale' => $expiredQty > 0 ? $expired['expiry_date_at_sale'] : null,
+                'expired_sale_confirmed_by' => $expiredQty > 0 ? $expired['confirmed_by'] : null,
+                'expired_sale_reason' => $expiredQty > 0 ? $expired['reason'] : null,
             ]);
             foreach ($resolved as $m) {
                 $txItem->modifiers()->create([
@@ -289,6 +307,45 @@ class TransactionEditService
         }
 
         return $total;
+    }
+
+    /**
+     * Unit basi per varian yang masih terjual SESUDAH edit ([BL-108]).
+     *
+     * Unit yang dikurangi sebuah edit kembali ke batch yang terakhir
+     * melepasnya, dan penjualan mengambil barang basi paling akhir — jadi
+     * yang kembali lebih dulu adalah unit basinya. Jatahnya menyusut sebesar
+     * qty yang dikembalikan, tidak pernah di bawah nol.
+     *
+     * @param  array<int, int>  $oldQty
+     * @param  array<int, int>  $newQty
+     * @return array<int, array{qty: int, expiry_date_at_sale: string|null, confirmed_by: int|null, reason: string|null}>
+     */
+    private function expiredMemory(Transaction $transaction, array $oldQty, array $newQty): array
+    {
+        $memory = [];
+
+        $expiredLines = $transaction->items
+            ->filter(fn ($item) => $item->soldExpired())
+            ->groupBy('product_variant_id');
+
+        foreach ($expiredLines as $variantId => $lines) {
+            $returned = max(0, ($oldQty[$variantId] ?? 0) - ($newQty[$variantId] ?? 0));
+            $qty = max(0, (int) $lines->sum('expired_qty') - $returned);
+
+            if ($qty === 0) {
+                continue;
+            }
+
+            $memory[$variantId] = [
+                'qty' => $qty,
+                'expiry_date_at_sale' => $lines->map(fn ($line) => $line->expiry_date_at_sale?->toDateString())->filter()->min(),
+                'confirmed_by' => $lines->first()->expired_sale_confirmed_by,
+                'reason' => $lines->first()->expired_sale_reason,
+            ];
+        }
+
+        return $memory;
     }
 
     /**

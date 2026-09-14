@@ -96,7 +96,7 @@ class BadgeHelperService
             ];
         }
 
-        // --- Badge 4: Kedaluwarsa (expiry_date < hari ini) ---
+        // --- Badge 4: Kedaluwarsa (batch yang lewat tanggal dan masih bersisa) ---
         // Kuerinya milik StockRescueService supaya daftar di kartu ini dan
         // angka rupiah di Laporan Saran Jual selalu menghitung barang yang sama
         // ([BL-105]).
@@ -108,7 +108,8 @@ class BadgeHelperService
             // Menghitung varian tidak pernah membuat siapa pun bertindak;
             // menyebut modal yang mati di dalamnya membuatnya bertindak. Nilai
             // pada `cost_price`, alasannya di StockRescueService::spoiled().
-            $expiredValue = $alreadyExpired->sum(fn ($v) => $v->stock * (float) $v->cost_price);
+            // Unit basinya saja, bukan seluruh stok varian ([BL-111]).
+            $expiredValue = $alreadyExpired->sum(fn ($v) => (int) $v->expired_units * (float) $v->cost_price);
 
             $badges[] = [
                 'type' => 'expired',
@@ -122,8 +123,8 @@ class BadgeHelperService
                     'id' => $v->id,
                     'product_name' => $v->product->name,
                     'variant_name' => $v->name,
-                    'stock' => $v->stock,
-                    'expiry_date' => $v->expiry_date->format('Y-m-d'),
+                    'stock' => (int) $v->expired_units,
+                    'expiry_date' => substr((string) $v->expired_since, 0, 10),
                 ])->toArray(),
             ];
         }

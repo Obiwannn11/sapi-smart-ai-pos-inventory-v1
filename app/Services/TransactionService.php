@@ -6,7 +6,6 @@ use App\Models\CashDrawer;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\ProductVariant;
-use App\Models\StockMovement;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\UpsellEvent;
@@ -321,7 +320,19 @@ class TransactionService
                     );
                 }
 
-                $this->stockService->deduct($variant, $item->qty, $transaction->id);
+                // Pelanggannya sudah membayar, jadi menolak di sini tidak
+                // menolong siapa pun. Barang basi hanya bisa terambil kalau stok
+                // yang baik habis di antara pesan dan bayar; kalau itu terjadi,
+                // barisnya menyebutnya TANPA nama pengonfirmasi, supaya owner
+                // menemukannya di laporan ([BL-108]).
+                $taken = $this->stockService->deduct($variant, $item->qty, $transaction->id, allowExpired: true);
+
+                if ($taken['expired_qty'] > 0) {
+                    $item->update([
+                        'expired_qty' => $taken['expired_qty'],
+                        'expiry_date_at_sale' => $taken['earliest_expired'],
+                    ]);
+                }
             }
 
             // 2. Simpan payment record (Xendit — semua payment method termasuk QRIS, transfer, e-wallet)
@@ -605,6 +616,20 @@ class TransactionService
                 );
             }
 
+            // Pesanan mandiri tidak punya kasir untuk ditanya, jadi barang yang
+            // sudah kedaluwarsa tidak pernah tersedia di sana — bukan "boleh
+            // dengan konfirmasi", karena tidak ada siapa pun yang bisa
+            // mengonfirmasinya ([BL-108]).
+            if (! $deductStock) {
+                $freshStock = $this->stockService->freshUnits($variant);
+
+                if ($freshStock < $item['qty']) {
+                    throw new \Exception(
+                        "Stok {$variant->name} tidak cukup. Tersedia: {$freshStock}, diminta: {$item['qty']}"
+                    );
+                }
+            }
+
             // Harga tetap datang dari SERVER, tidak pernah dari klien — yang
             // berubah sejak [BL-018] hanyalah bahwa "harga server" kini bisa
             // berarti harga berdiskon, bukan selalu harga katalog.
@@ -656,7 +681,32 @@ class TransactionService
 
             // Deduct stok hanya jika diminta (POS = ya, self-order = tidak)
             if ($deductStock) {
-                $this->stockService->deduct($variant, $item['qty'], $transaction->id);
+                // Gerbang barang basi berdiri DI SINI, di server ([BL-108]).
+                // Layar kasir menanyakannya lebih dulu, tapi penolakan yang
+                // hanya hidup di layar tidak berlaku bagi siapa pun yang
+                // mengirim request sendiri — pelajaran yang sudah dibayar
+                // [BL-022]. Keputusan pemilik 2026-09-15: kasir boleh
+                // mengonfirmasi, dengan alasan tertulis.
+                $expiredReason = trim((string) ($item['expired_confirmation_reason'] ?? ''));
+
+                $taken = $this->stockService->deduct(
+                    $variant,
+                    $item['qty'],
+                    $transaction->id,
+                    allowExpired: $expiredReason !== '',
+                );
+
+                // Alasan yang dikirim untuk baris yang ternyata tidak menyentuh
+                // barang basi tidak ditulis: kolom-kolom ini hanya boleh menyala
+                // pada penjualan yang benar-benar terjadi.
+                if ($taken['expired_qty'] > 0) {
+                    $txItem->update([
+                        'expired_qty' => $taken['expired_qty'],
+                        'expiry_date_at_sale' => $taken['earliest_expired'],
+                        'expired_sale_confirmed_by' => $user?->id,
+                        'expired_sale_reason' => $expiredReason,
+                    ]);
+                }
             }
         }
 
@@ -911,6 +961,7 @@ class TransactionService
                 $transaction,
                 $data['items'],
                 $tenantId,
+                $occurredAt,
             );
 
             // Pajak dihitung ulang di server dengan setelan tenant SEKARANG
@@ -978,7 +1029,7 @@ class TransactionService
      *
      * @return array{0: float, 1: bool} [totalAmount, needsReview]
      */
-    private function processOfflineItems(Transaction $transaction, array $items, int $tenantId): array
+    private function processOfflineItems(Transaction $transaction, array $items, int $tenantId, Carbon $occurredAt): array
     {
         $tenant = Tenant::find($tenantId);
 
@@ -1039,28 +1090,38 @@ class TransactionService
             }
 
             // Deduct OPTIMISTIK — sengaja tidak lewat StockService::deduct(), yang
-            // menolak saat stok tak cukup (WHERE stock >= qty). Di sini stok BOLEH
-            // minus: barangnya sudah keluar dari rak.
-            //
-            // Jangan pakai decrement() lalu baca $variant->stock: atribut in-memory
-            // diturunkan dari nilai yang model tahu sebelumnya, bukan hasil baca
-            // ulang DB, sehingga cek minus bisa meleset. Baris sudah di-lock, jadi
-            // hitung eksplisit dari nilai ter-lock.
-            $newStock = $variant->stock - $qty;
-            $variant->update(['stock' => $newStock]);
+            // menolak saat stok tak cukup (WHERE stock >= qty) dan saat barang
+            // basi belum dikonfirmasi. Di sini keduanya BOLEH: barangnya sudah
+            // keluar dari rak. "Basi" dinilai pada hari penjualannya TERJADI,
+            // bukan hari sinkronisasinya.
+            $taken = $this->stockService->deductOffline(
+                $variant,
+                $qty,
+                $transaction->id,
+                $tenantId,
+                $occurredAt->toDateString(),
+            );
 
-            if ($newStock < 0) {
+            if ($taken['went_negative']) {
                 $needsReview = true;
             }
 
-            StockMovement::create([
-                'tenant_id' => $tenantId,
-                'product_variant_id' => $variant->id,
-                'type' => StockMovement::TYPE_SALE,
-                'qty' => -$qty,
-                'notes' => "Penjualan offline (sync) #{$transaction->id}",
-                'reference_id' => $transaction->id,
-            ]);
+            // Barang basi yang terjual offline tetap dicatat apa adanya. Dengan
+            // alasan dari kasir, ia sama sahnya dengan penjualan online yang
+            // dikonfirmasi; tanpa alasan, ia sampai ke meja owner ([BL-108]).
+            $expiredReason = trim((string) ($line['expired_confirmation_reason'] ?? ''));
+            $expiredColumns = [];
+
+            if ($taken['expired_qty'] > 0) {
+                $expiredColumns = [
+                    'expired_qty' => $taken['expired_qty'],
+                    'expiry_date_at_sale' => $taken['earliest_expired'],
+                    'expired_sale_confirmed_by' => $expiredReason !== '' ? $transaction->user_id : null,
+                    'expired_sale_reason' => $expiredReason !== '' ? $expiredReason : null,
+                ];
+
+                $needsReview = $needsReview || $expiredReason === '';
+            }
 
             [$modifierTotal, $resolvedModifiers, $modifierNeedsReview] = $this->resolveOfflineModifiers(
                 $line['modifiers'] ?? [],
@@ -1078,6 +1139,7 @@ class TransactionService
                 'unit_price' => $unitPrice,
                 'subtotal' => $subtotal,
                 'notes' => $line['notes'] ?? null,
+                ...$expiredColumns,
             ]);
 
             foreach ($resolvedModifiers as $modifier) {

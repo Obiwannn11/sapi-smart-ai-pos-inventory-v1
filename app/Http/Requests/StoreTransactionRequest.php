@@ -60,6 +60,11 @@ class StoreTransactionRequest extends FormRequest
             'items.*.override_unit_price' => 'nullable|numeric|min:0',
             'items.*.discount_reason' => 'nullable|string|max:200',
 
+            // Alasan menjual barang yang sudah kedaluwarsa ([BL-108]). Wajib
+            // tidaknya diputuskan TransactionService, yang tahu batch mana yang
+            // akan terambil; di sini hanya bentuknya.
+            'items.*.expired_confirmation_reason' => 'nullable|string|max:200',
+
             // Payments (nullable for open bill)
             'payments' => 'nullable|array|min:1',
             'payments.*.payment_method_id' => [

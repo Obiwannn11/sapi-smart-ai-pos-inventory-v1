@@ -28,9 +28,11 @@ use Illuminate\Support\Collection;
  *      sia-sia.
  *
  *   3. BARANG KEDALUWARSA TIDAK DIDISKON, TITIK. Diskon hanya untuk yang
- *      MENDEKATI kedaluwarsa. Ini batas keamanan pangan, bukan pilihan
- *      bisnis, jadi ia dijaga di sini — bukan diserahkan pada kedisiplinan
- *      kasir atau pada owner yang menulis aturannya.
+ *      MENDEKATI kedaluwarsa, dan HARGA itu dijaga di sini — bukan diserahkan
+ *      pada owner yang menulis aturannya. Lingkupnya hanya harga: boleh
+ *      tidaknya barang basi DIJUAL bukan urusan kelas ini. Itu gerbang
+ *      konfirmasi di `StockService::deduct()`, yang menuntut alasan tertulis
+ *      dari kasir ([BL-108]).
  *
  *   4. LANTAINYA MILIK OWNER. `tenants.min_margin_percent`, bukan konstanta.
  *      Pedagang sayur dan kedai kopi tidak hidup dari persentase yang sama.

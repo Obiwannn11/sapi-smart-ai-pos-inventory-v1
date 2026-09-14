@@ -3,8 +3,7 @@
 namespace App\Services;
 
 use App\Models\ExpiredStockRecord;
-use App\Models\ProductVariant;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,6 +27,12 @@ use Illuminate\Support\Facades\DB;
  * setiap barang yang dibuang pagi harinya, diam-diam, dan angka kerugiannya
  * akan selalu terlalu kecil tanpa ada yang tahu.
  *
+ * **Yang dibaca adalah batch, bukan varian** ([BL-111]). Satu varian bisa
+ * menyimpan beberapa tanggal kedaluwarsa sekaligus, dan tiap tanggal yang
+ * lewat melahirkan barisnya sendiri dengan jumlah unit milik tanggal itu saja.
+ * Sebelum batch ada, varian dengan 20 unit basi April dan 30 unit segar Agustus
+ * tidak pernah tercatat basi sama sekali sampai Agustus — lalu tercatat 50.
+ *
  * **Yang TIDAK dilakukannya:** ia tidak menyentuh stok, tidak menonaktifkan
  * varian, dan tidak memberi tahu siapa pun. Ia hanya mencatat. Membuang barang
  * basi tetap keputusan pemilik, dan `[BL-105]` butir 3 yang akan memberitahunya.
@@ -35,17 +40,18 @@ use Illuminate\Support\Facades\DB;
 class ExpiredStockRecorder
 {
     /**
-     * Catat setiap varian yang basi dan belum punya barisnya.
+     * Catat setiap (varian, tanggal kedaluwarsa) yang basi dan belum punya barisnya.
      *
      * `$today` ada demi pengujian dan demi menjalankan ulang hari yang terlewat
      * ketika `schedule:run` mati semalam — bukan hiasan. Menjalankannya untuk
-     * hari kemarin tetap benar selama varian yang sama belum tercatat, karena
+     * hari kemarin tetap benar selama tanggal yang sama belum tercatat, karena
      * kuncinya `(varian, tanggal kedaluwarsa)`, bukan tanggal sapuan.
      *
-     * Perhatikan bahwa yang distempel adalah stok pada SAAT PENGAMATAN, bukan
-     * saat kedaluwarsa — dan untuk sapuan yang terlambat berhari-hari keduanya
-     * bisa berbeda. Itu ongkos yang diterima sadar: satu angka yang sedikit
-     * terlalu kecil masih jauh lebih baik daripada tidak ada angka sama sekali.
+     * Perhatikan bahwa yang distempel adalah sisa batch pada SAAT PENGAMATAN,
+     * bukan saat kedaluwarsa — dan untuk sapuan yang terlambat berhari-hari
+     * keduanya bisa berbeda. Itu ongkos yang diterima sadar: satu angka yang
+     * sedikit terlalu kecil masih jauh lebih baik daripada tidak ada angka sama
+     * sekali.
      *
      * @param  string|null  $today  Hari toko sebagai acuan; null = hari ini.
      * @return int Jumlah baris yang ditulis (atau akan ditulis, bila dry-run)
@@ -54,38 +60,33 @@ class ExpiredStockRecorder
     {
         $today ??= BusinessClock::today();
 
-        $query = $this->unrecordedExpired($today);
+        $groups = $this->unrecordedExpired($today);
 
         if ($dryRun) {
-            return $query->count();
+            return $groups->count();
         }
 
         $written = 0;
 
-        $query->chunkById(200, function ($variants) use ($today, &$written) {
-            $rows = [];
+        foreach ($groups->chunk(200) as $chunk) {
+            $rows = $chunk->map(function (object $group) use ($today) {
+                $qty = (int) $group->qty;
+                $costPrice = (float) $group->cost_price;
 
-            foreach ($variants as $variant) {
-                $costPrice = (float) $variant->cost_price;
-
-                $rows[] = [
-                    'tenant_id' => $variant->product->tenant_id,
-                    'product_variant_id' => $variant->id,
-                    'label' => $this->labelFor($variant),
-                    'expiry_date' => $variant->expiry_date->toDateString(),
+                return [
+                    'tenant_id' => $group->tenant_id,
+                    'product_variant_id' => $group->product_variant_id,
+                    'label' => $this->labelFor($group->product_name, $group->variant_name),
+                    'expiry_date' => $group->expiry_day,
                     'recorded_on' => $today,
-                    'qty' => $variant->stock,
+                    'qty' => $qty,
                     'cost_price' => $costPrice,
-                    'value' => $variant->stock * $costPrice,
+                    'value' => $qty * $costPrice,
                     'source' => ExpiredStockRecord::SOURCE_RECORDER,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
-            }
-
-            if ($rows === []) {
-                return;
-            }
+            })->values()->all();
 
             // insertOrIgnore, bukan insert: indeks unik `(varian, kedaluwarsa)`
             // adalah penjaga terakhir kalau dua sapuan berjalan bersamaan, dan
@@ -93,47 +94,67 @@ class ExpiredStockRecorder
             DB::transaction(function () use ($rows, &$written) {
                 $written += ExpiredStockRecord::insertOrIgnore($rows);
             });
-        });
+        }
 
         return $written;
     }
 
     /**
-     * Varian yang sudah lewat kedaluwarsanya, masih bersisa, dan belum tercatat.
+     * Sisa batch basi yang belum tercatat, dijumlahkan per (varian, tanggal).
      *
-     * `whereDoesntHave`-nya menyaring atas `(varian, tanggal kedaluwarsa)` dan
-     * bukan atas variannya saja — sebuah varian yang direstok dengan tanggal
-     * kedaluwarsa baru memang HARUS tercatat lagi ketika tanggal itu lewat.
-     * Menyaring per varian akan membuat tiap varian hanya bisa basi sekali
-     * seumur hidupnya, dan barang yang paling sering basi justru yang paling
-     * sering direstok.
+     * Dua batch dengan tanggal kedaluwarsa yang sama (dua kiriman berbeda hari
+     * dari satu produksi) jadi SATU baris: kuncinya `(varian, tanggal)`, sama
+     * dengan indeks unik tabelnya.
      *
-     * Tidak memakai `withoutGlobalScopes()` meski ini sapuan lintas tenant, dan
-     * itu disengaja: `ProductVariant` tidak punya `TenantScope` (tenantnya lewat
-     * `products`), sedangkan scope yang ADA di sana adalah SoftDeletes. Membuang
-     * seluruh scope berarti ikut menstempel varian yang sudah dihapus.
+     * Saringan "belum tercatat" juga atas `(varian, tanggal)`, bukan atas
+     * variannya saja — varian yang direstok dengan tanggal baru memang HARUS
+     * tercatat lagi ketika tanggal itu lewat. Dibandingkan lewat `DATE()` karena
+     * kolom tanggal di SQLite bisa tersimpan dengan atau tanpa jam.
      *
-     * @return Builder<ProductVariant>
+     * Varian dan produk yang sudah dihapus tidak ikut, persis perilaku sebelum
+     * batch ada.
+     *
+     * @return Collection<int, object>
      */
-    private function unrecordedExpired(string $today): Builder
+    private function unrecordedExpired(string $today): Collection
     {
-        return ProductVariant::query()
-            ->whereNotNull('expiry_date')
-            ->whereDate('expiry_date', '<', $today)
-            ->where('stock', '>', 0)
-            ->whereHas('product')
-            ->whereDoesntHave('expiredStockRecords', fn ($query) => $query
-                ->whereColumn('expired_stock_records.expiry_date', 'product_variants.expiry_date'))
-            ->with('product:id,name,tenant_id');
+        return DB::table('product_stock_batches')
+            ->join('product_variants', 'product_variants.id', '=', 'product_stock_batches.product_variant_id')
+            ->join('products', 'products.id', '=', 'product_variants.product_id')
+            ->whereNull('product_variants.deleted_at')
+            ->whereNull('products.deleted_at')
+            ->where('product_stock_batches.qty_remaining', '>', 0)
+            ->whereNotNull('product_stock_batches.expiry_date')
+            ->whereDate('product_stock_batches.expiry_date', '<', $today)
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')
+                ->from('expired_stock_records')
+                ->whereColumn('expired_stock_records.product_variant_id', 'product_stock_batches.product_variant_id')
+                ->whereRaw('DATE(expired_stock_records.expiry_date) = DATE(product_stock_batches.expiry_date)'))
+            ->groupBy(
+                'products.tenant_id',
+                'product_stock_batches.product_variant_id',
+                'products.name',
+                'product_variants.name',
+                'product_variants.cost_price',
+            )
+            ->groupByRaw('DATE(product_stock_batches.expiry_date)')
+            ->orderBy('product_stock_batches.product_variant_id')
+            ->get([
+                'products.tenant_id',
+                'product_stock_batches.product_variant_id',
+                'products.name as product_name',
+                'product_variants.name as variant_name',
+                'product_variants.cost_price',
+                DB::raw('DATE(product_stock_batches.expiry_date) as expiry_day'),
+                DB::raw('SUM(product_stock_batches.qty_remaining) as qty'),
+            ]);
     }
 
     /**
      * Nama yang dibaca pemilik, dirakit sama dengan strip saran jual.
      */
-    private function labelFor(ProductVariant $variant): string
+    private function labelFor(?string $productName, string $variantName): string
     {
-        $productName = $variant->product?->name;
-
-        return $productName === null ? $variant->name : $productName.' - '.$variant->name;
+        return $productName === null ? $variantName : $productName.' - '.$variantName;
     }
 }
