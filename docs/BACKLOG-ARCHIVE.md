@@ -10,6 +10,77 @@
 
 ## Daftar Entri
 
+### [BL-111] Stok Satu Varian Tidak Bisa Punya Lebih dari Satu Tanggal Kedaluwarsa — Restock Menimpa Batch Sebelumnya
+- **Ditemukan:** 2026-09-14, saat menjawab pertanyaan pemilik soal uji integrasi FEFO (barang datang bulan 1 vs bulan 5, tanggal kedaluwarsa beda, tapi terhitung satu produk)
+- **Sumber:** Pertanyaan pemilik langsung, diverifikasi terhadap kode sebelum jadi entri
+- **Status:** **Selesai 2026-09-15.** Tabel `product_stock_batches` + `stock_movement_batches`, FEFO di antara barang yang masih baik (bukan FEFO murni: yang basi hanya diambil dengan konfirmasi `[BL-108]`), dan `product_variants.expiry_date` jadi turunan. Dari dua bentuk di "Usulan Perbaikan", yang dipilih `stock` sebagai kolom yang tetap ditulis dan dijaga sama dengan jumlah batch, bukan kolom turunan murni: seluruh pembaca lama tetap membaca `stock` tanpa diubah. Uji celahnya ditulis ulang jadi `tests/Feature/Stock/StockBatchTest.php`, sesuai pesan yang ditinggalkannya.
+- **Prioritas:** Medium — belum ada laporan kerugian nyata (lihat `[BL-107]`: 41 dari 42 varian bahkan tidak punya `expiry_date` sama sekali, jadi kasusnya jarang tersentuh hari ini), tapi begitu restock rutin diisi tanggalnya, cacatnya pasti muncul.
+- **Area Terdampak:**
+  - `database/migrations/2026_03_06_000006_create_product_variants_table.php:11-22` — `stock` dan `expiry_date` adalah kolom TUNGGAL di `product_variants`, bukan baris per kedatangan barang
+  - `app/Services/StockService.php:60-68` (`restock()`) — komentarnya sendiri mengaku: `expiry_date` diisi ulang dengan "tanggal expiry batch terakhir", menimpa yang lama tanpa jejak
+  - `app/Services/StockService.php:15-37` (`deduct()`) — pengurangan stok saat checkout murni `stock = stock - qty`, tidak ada konsep "batch mana yang dikurangi duluan"
+  - `app/Services/Upsell/SellableVariantQuery.php:24-42` — kandidat "boleh dijual" dihitung dari satu `expiry_date` per varian, bukan dari batch yang belum kedaluwarsa
+- **Deskripsi:** Kalau satu varian menerima stok baru pada 2026-01-10 (kedaluwarsa 2026-04-10, qty 20) lalu menerima kiriman kedua pada 2026-05-10 (kedaluwarsa 2026-08-10, qty 30), sistem hari ini hanya menyimpan `stock = 50` dan `expiry_date = 2026-08-10` — tanggal kedaluwarsa batch pertama **hilang sepenuhnya**. Akibatnya:
+  1. Tidak ada cara membedakan 20 unit yang seharusnya sudah kedaluwarsa dari 30 unit yang masih baik, sampai keduanya dianggap kedaluwarsa bersamaan pada 2026-08-10 (salah — 20 unit itu sudah basi 30 hari sebelumnya) atau keduanya dianggap masih baik sampai 2026-08-10 (juga salah, dan ini yang benar-benar terjadi di kode saat ini).
+  2. Tidak ada logika FEFO (First-Expired-First-Out) maupun FIFO: `deduct()` tidak tahu — dan tidak bisa tahu, karena datanya tidak ada — batch mana yang harus dikurangi lebih dulu saat penjualan terjadi.
+  3. `ExpiredStockRecorder` (job harian) dan `SellableVariantQuery` ikut salah baca keadaan varian ini karena keduanya hanya melihat satu `expiry_date`.
+- **Usulan Perbaikan (arah, belum diputuskan pemilik):** tabel baru `product_stock_batches` (`product_variant_id`, `qty`, `qty_remaining`, `expiry_date`, `received_at`), `product_variants.stock` menjadi kolom turunan (sum `qty_remaining`) atau tetap kolom cache yang disinkronkan tiap mutasi batch. `StockService::restock()` menulis baris batch baru alih-alih menimpa; `StockService::deduct()` memilih batch dengan `expiry_date` paling dekat lebih dulu (FEFO — bukan FIFO, karena tujuannya mencegah barang basi di rak, bukan sekadar urutan masuk), lintas beberapa batch bila satu batch tidak cukup. Butuh migrasi backfill: setiap varian dengan stok/expiry hari ini menjadi satu baris batch awal.
+- **Hubungan dengan entri lain:** `[BL-108]` (barang SUDAH kedaluwarsa terjual tanpa peringatan) beririsan tapi berbeda masalah — BL-108 soal *sudah lewat tanggal dan tetap terjual*, entri ini soal *tidak bisa mewakili lebih dari satu tanggal kedaluwarsa per varian sama sekali*. Keduanya sebaiknya dikerjakan berurutan: gerbang konfirmasi BL-108 akan lebih akurat begitu ada tanggal kedaluwarsa per-batch, bukan satu tanggal gabungan. `[BL-107]` menjelaskan kenapa dampaknya belum terasa: mayoritas varian belum pernah diisi `expiry_date` sama sekali.
+- **Uji yang sudah ditulis untuk mendokumentasikan celah ini (2026-09-14):** `tests/Feature/Stock/StockBatchGapTest.php` — membuktikan restock kedua menimpa `expiry_date` batch pertama tanpa jejak, dan `deduct()` tidak membedakan asal batch saat mengurangi stok gabungan.
+
+### [BL-108] Barang Kedaluwarsa Terjual Tanpa Satu Pun Peringatan — dan Tiga Komentar Menjanjikan Penjagaan yang Tidak Pernah Ada
+- **Ditemukan:** 2026-09-08, saat uji jalur nyata dari POS (bukan dari membaca kode)
+- **Sumber:** Permintaan pemilik untuk membuat satu transaksi sungguhan dan memeriksa apakah seluruh datanya mendarat benar. Datanya mendarat benar; yang tidak benar adalah bahwa transaksinya boleh terjadi sama sekali.
+- **Status:** **Selesai 2026-09-15.** Pertanyaan terbuka "siapa yang boleh mengonfirmasi" dijawab pemilik: **kasir, dengan alasan wajib, dan pemilik meninjau sesudahnya** (preseden `[BL-087]`, bukan rekomendasi owner-only di bawah). Kelima butir dikerjakan: gerbang di `StockService::deduct()` termasuk jalur `commitOffline()` (tidak menolak, tapi jatuh ke `needs_review` bila tanpa alasan), penanda di katalog kasir, jejak di `transaction_items`, kartu "Terjual kedaluwarsa" + tabel peninjauan di Laporan Saran Jual, dan ketiga komentar diperbaiki di perubahan yang sama. Transaksi bukti `TRX-20260908-001` tetap tidak di-void.
+- **Prioritas:** High — ia batas keamanan pangan, dan ia merusak salah satu angka yang baru saja dibuat `[BL-105]`.
+- **Area Terdampak:**
+  - `app/Services/TransactionService.php:81` (`checkout()`) dan `:689` (`resolveItemPrice()`) — tempat gerbangnya harus berdiri, karena di sinilah harga sudah dihitung ulang di server
+  - `app/Services/TransactionService.php:852` (`commitOffline()`) — jalur kedua yang tidak boleh terlewat
+  - `app/Http/Controllers/Cashier/POSController.php` — katalog yang mengirim varian kedaluwarsa ke layar tanpa penanda
+  - `app/Services/Upsell/SellableVariantQuery.php:17-19` — komentar yang menjanjikan lebih dari yang ditegakkan
+  - `app/Services/DiscountService.php:31`, `:287` (`isDiscountable()`) — sda
+  - `database/migrations/2026_08_19_112853_create_discount_rules_table.php:44-46` — sda, dan yang paling keliru
+  - `app/Services/StockRescueService.php` (`spoiled()`) — angka yang jadi rusak akibatnya
+
+- **Deskripsi — direproduksi, bukan disimpulkan.**
+  Transaksi **`TRX-20260908-001`** (id 25113) dibuat lewat POS sungguhan sebagai Kasir Demo pada 2026-09-08. Salah satu barisnya: **`Croissant - Plain`, yang kedaluwarsa 2026-07-13 — 57 hari sebelumnya.** Ia muncul di grid katalog tanpa penanda apa pun, masuk keranjang dengan satu klik, dan terjual **pada harga katalog penuh** (Rp 25.000). Tidak ada peringatan, tidak ada konfirmasi, tidak ada jejak bahwa yang barusan dijual sudah basi hampir dua bulan.
+
+  Ironi kecil yang memperjelas keadaannya: ia terjual pada harga penuh **justru karena** `DiscountService::isDiscountable()` menolak mendiskon barang kedaluwarsa. Jadi satu-satunya perlakuan khusus yang barang basi terima hari ini adalah **dilarang murah** — bukan dilarang dijual.
+
+- **Tiga komentar yang menyatakan hal yang tidak pernah ditegakkan.** Ini bukan sekadar dokumentasi usang; ketiganya membuat pembaca berikutnya percaya penjagaannya sudah ada, dan karena itu tidak membangunnya.
+
+  1. `SellableVariantQuery.php:17-19` — *"Barang yang SUDAH kedaluwarsa tidak boleh jadi kandidat dalam bentuk apa pun. Itu bukan barang tertekan yang perlu didorong, itu barang yang **tidak boleh dijual** — batas keamanan pangan, bukan pilihan bisnis."* Kalimat pertamanya benar dan ditegakkan; klausa terakhirnya tidak pernah ditegakkan di mana pun.
+  2. `create_discount_rules_table.php:44-46` — *"Barang yang sudah kedaluwarsa tidak boleh dijual sama sekali — batas keamanan pangan, bukan pilihan bisnis. **Ia dijaga di DiscountService, bukan diserahkan pada kedisiplinan kasir.**"* Kalimat terakhir ini **terbalik dari kenyataannya**: ia justru sepenuhnya diserahkan pada kedisiplinan kasir. `DiscountService` hanya menjaga *harganya*, tidak pernah *penjualannya*.
+  3. `DiscountService.php:31` — kerangka "batas keamanan pangan" yang sama, dengan lingkup yang tidak pernah dinyatakan batasnya.
+
+- **Akibat pada angka `[BL-105]`, dan ini yang membuatnya mendesak.**
+  `StockRescueService::spoiled()` mengukur "modal barang kedaluwarsa yang masih di rak". Menjual barang basi **menurunkan** angka itu — pada uji di atas, Rp 180.000 → Rp 170.000. Artinya **angka yang seharusnya mengukur kerugian justru membaik ketika hal terburuk terjadi**, dan tidak ada apa pun di layar yang menjelaskan kenapa ia turun. Owner yang melihat "modal mati di rak" menyusut akan mengira barangnya dibuang atau terselamatkan; ia tidak akan pernah menduga barangnya dijual ke pelanggan.
+
+  Pencatat harian `expired_stock_records` **tidak menolong di sini** dan penting untuk tahu kenapa: ia menstempel varian saat *melewati* kedaluwarsa, sekali, dan tidak pernah menyentuh barisnya lagi. Barang yang kemudian terjual tetap tercatat sebagai basi dengan jumlah pada hari pengamatan. Jadi angka periodenya tidak ikut rusak — yang rusak hanya potret hari ini.
+
+- **Keputusan pemilik 2026-09-08:** dari tiga pilihan yang diajukan — (a) blokir total di katalog, (b) izinkan dengan konfirmasi eksplisit yang tercatat, (c) biarkan dan turunkan klaim komentarnya — pemilik memilih **(b)**.
+
+  Artinya: penjualannya **tidak dilarang**, tapi ia berhenti bisa terjadi tanpa disadari. Harus ada langkah sadar yang diambil manusia, dan langkah itu meninggalkan jejak yang bisa dibaca kemudian.
+
+- **Yang perlu dikerjakan, dan urutannya menentukan:**
+  1. **Gerbangnya di server, bukan di layar.** Penolakan sisi klien saja tidak berarti apa-apa — pelajaran yang sudah dibayar `[BL-022]`, saat checkout memvalidasi cukup-bayar memakai harga kiriman klien. Tempatnya `TransactionService::checkout()`, di jalur yang sama dengan `resolveItemPrice()` yang sudah menghitung ulang segalanya di server. **`commitOffline()` wajib ikut**, kalau tidak jalur offline jadi pintu belakang yang menganga.
+  2. **Penandanya di katalog POS.** Barang kedaluwarsa harus terlihat kedaluwarsa **sebelum** disentuh, bukan setelah dimasukkan keranjang. Kasir yang baru tahu di langkah terakhir sudah terlanjur mengucapkannya ke pelanggan.
+  3. **Konfirmasinya tercatat sebagai kolom snapshot di `transaction_items`**, mengikuti pola yang sudah ada di baris yang sama: `cost_price_at_sale`, `margin_floor_at_sale`, `below_floor_approved_by`. Minimal: siapa yang mengonfirmasi, dan tanggal kedaluwarsa barangnya **pada saat itu** — karena `product_variants.expiry_date` bisa berubah kemudian dan jejaknya harus bertahan sendiri.
+  4. **Angka `spoiled()` berhenti membaik diam-diam.** Begitu penjualannya tercatat, laporan wajib menyebutkan berapa yang keluar dalam keadaan kedaluwarsa. Bentuk paling murah: satu angka pendamping di bagian Penyelamat Stok. Yang terlarang adalah membiarkan "modal mati di rak" turun tanpa penjelasan.
+  5. **Ketiga komentar diperbaiki DI COMMIT YANG SAMA dengan gerbangnya**, tidak sebelum dan tidak sesudah. Memperbaikinya lebih dulu berarti menulis komentar tentang konfirmasi yang belum ada — menukar satu komentar bohong dengan komentar bohong yang lain.
+
+- **Satu pertanyaan yang sengaja ditinggalkan terbuka: siapa yang boleh mengonfirmasi.**
+  Dua preseden di basis kode ini menunjuk arah berlawanan, dan keduanya masuk akal:
+
+  | Preseden | Bentuknya | Kalau ditiru di sini |
+  |---|---|---|
+  | `[BL-018]` lantai untung | hanya **owner** yang boleh menembus, tercatat di `below_floor_approved_by` | paling aman; tapi kasir di antrean panjang tidak bisa memanggil owner |
+  | `[BL-087]` uang keluar laci | **kasir** boleh, wajib beralasan, owner meninjau sesudahnya | tidak menahan antrean; tapi barangnya sudah terlanjur keluar toko |
+
+  Bedanya nyata: uang yang salah keluar laci bisa dikembalikan, makanan basi yang sudah dimakan tidak bisa. **Rekomendasi saya: ikuti `[BL-018]`, owner-only** — justru karena ini satu-satunya batas di aplikasi ini yang taruhannya bukan uang. Tapi ia keputusan pemilik, bukan keputusan teknis, dan belum ditanyakan.
+
+- **Catatan untuk yang mengerjakan:** transaksi bukti `TRX-20260908-001` sengaja **tidak** di-void, supaya kasusnya masih bisa dilihat apa adanya di basis data pengembangan. Kalau ia mengganggu peragaan, void-nya aman — `[BL-092]` memastikan upsell di dalamnya berhenti terhitung berhasil.
+
 ### [BL-110] Nama Pembantu Uji Bersifat Global tapi Tidak Ada yang Menjaga Keunikannya — Bentrokan Berikutnya Mematikan `check:boot` Lagi
 - **Ditemukan:** 2026-09-12, saat `composer run check:boot` menolak jalan sebelum commit
 - **Sumber:** Buntut langsung dari bentrokan `posSource()` — lihat entri `CHANGELOG.md` 2026-09-12 "Dua Berkas Uji Menamai Pembantunya Sama"

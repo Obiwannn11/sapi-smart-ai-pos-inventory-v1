@@ -62,6 +62,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
 | 2026-09-15 | DECISION | Promosi | Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal" |
+| 2026-09-15 | SCHEMA | Stok | Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108) |
 | 2026-09-15 | DECISION | Promosi | Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar |
 | 2026-09-15 | DECISION | Owner | Bagian Bawah Dashboard Owner: Kartu "Perlu Perhatian" Memakai Nama Sidebar, dan Baris Koreksi Offline Tidak Lagi Kosong |
 | 2026-09-14 | DECISION | Owner | Teks Bagian Atas Dashboard Owner Dipadatkan: Langganan, Metrik, Penyelamat Stok |
@@ -293,6 +294,41 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `app/Services/Upsell/RuleOutcomeResolver.php`: kalimat status dan detail
   - `tests/Feature/Owner/UpsellRulesCopyTest.php`: penjaga baru
 - **Catatan:** Kalimat yang dikunci `RuleOutcomeStatusTest` ("Tampil · slot 1", "Kalah slot", "Diwakili saran lain", "naikkan urutannya", "satu slot kasir") tetap dimuat. Detail keadaan "Sudah kedaluwarsa" tidak disentuh karena sedang diubah bersama fitur batch stok.
+
+### [SCHEMA] Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Migration | Model | Controller | Service | Frontend
+- **Breaking Change:** Tidak. `product_variants.stock` dan `expiry_date` tetap ada dan tetap dibaca; `expiry_date` kini turunan.
+- **Deskripsi:**
+  Dua entri backlog dikerjakan berurutan seperti saran `[BL-111]`: batch dulu, lalu gerbang barang basi di atasnya.
+  - **Batch stok (`[BL-111]`).** Tabel baru `product_stock_batches` (satu baris per kedatangan barang: `qty_received`, `qty_remaining`, `expiry_date`) dan `stock_movement_batches` (batch mana yang disentuh tiap mutasi stok, bertanda). Restock melahirkan batch baru, tidak lagi menimpa tanggal lama. `product_variants.stock` tetap angka yang dibaca seluruh aplikasi; `StockBatchService` menjaga jumlah batch = `max(stock, 0)`, dan `expiry_date` varian ditulis ulang sebagai tanggal batch bersisa paling awal. Migrasi mengisi satu batch `opening` untuk tiap varian yang punya stok.
+  - **Urutan ambil: FEFO di antara barang yang masih baik, baru kemudian yang basi.** FEFO murni akan menjual batch yang sudah lewat tanggal lebih dulu, tepat barang yang tidak boleh keluar tanpa ditanya. Batch tanpa tanggal diambil paling akhir. Koreksi turun (membuang) mengambil yang basi lebih dulu; koreksi naik menumpang batch yang terakhir datang.
+  - **Void dan edit mengembalikan unit ke batch yang melepasnya** (terakhir diambil, pertama dikembalikan). Tanpa ini croissant basi yang di-void kembali sebagai stok tanpa tanggal, lalu bisa dijual lagi tanpa ditanya.
+  - **Penulis yang melewati `StockService`** (formulir varian, seeder yang menulis `stock` lewat query builder) disusulkan `reconcile()` sebelum dan sesudah setiap mutasi. Formulir varian memanggil `syncAfterDirectEdit()`: tanggal yang diubah diberikan ke batch yang tanggalnya sedang ditampilkan. Varian baru dengan stok awal langsung mendapat batch lewat hook `created`.
+  - **Gerbang barang basi (`[BL-108]`).** Keputusan pemilik 2026-09-08: izinkan dengan konfirmasi tercatat. Keputusan 2026-09-15, menjawab pertanyaan yang ditinggalkan terbuka: **kasir boleh mengonfirmasi dengan alasan wajib, dan pemilik meninjau sesudahnya** (preseden `[BL-087]`). Gerbangnya di server, `StockService::deduct()`: kekurangan barang baik yang harus ditutup barang basi DITOLAK kecuali barisnya membawa `expired_confirmation_reason`. Jejaknya di `transaction_items`: `expired_qty`, `expiry_date_at_sale`, `expired_sale_confirmed_by`, `expired_sale_reason`, dan ikut diselamatkan saat transaksi diedit.
+  - **Jalur lain.** `commitOffline()` tidak pernah menolak karena barangnya sudah keluar, tapi penjualan basi tanpa alasan jatuh ke `needs_review`. Pesanan mandiri tidak bisa memesan barang basi sama sekali, karena tidak ada kasir yang bisa ditanya; bila stok baik habis di antara pesan dan bayar, barisnya tercatat tanpa pengonfirmasi. Edit transaksi hanya boleh menambah qty dari barang yang belum basi.
+  - **Layar kasir.** Katalog membawa `expired_stock` per varian (ikut snapshot offline). Kartu produk dan pilihan varian menandai "Kedaluwarsa" atau "N kedaluwarsa" sebelum barangnya disentuh. Menambah qty melebihi stok yang belum basi membuka dialog "Barang kedaluwarsa" dengan alasan wajib; alasannya melekat pada varian di keranjang dan tampil di barisnya.
+  - **Angka yang berhenti membaik diam-diam (butir 4 `[BL-108]`).** Kartu ketiga "Terjual kedaluwarsa" di Penyelamat Stok (Laporan Saran Jual), mengikuti rentang tanggal, plus tabel peninjauan: waktu, barang, qty, tanggal basi, kasir, alasan. "Modal hangus", lencana Kedaluwarsa, dan pencatat `stock:record-expired` kini membaca batch: hanya unit basi yang dinilai, dan tiap tanggal yang lewat tercatat dengan unitnya sendiri.
+  - **Ketiga komentar yang menjanjikan penjagaan yang tidak ada diperbaiki di perubahan yang sama** (butir 5): `SellableVariantQuery`, aturan 3 `DiscountService`, dan migrasi `discount_rules`. Pesan status aturan saran "tidak boleh dijual dalam bentuk apa pun" jadi "kasir tidak menawarkannya".
+  - Halaman Stok merinci batch bila varian menyimpan lebih dari satu, dan formulir restock menyebut bahwa tanggalnya jadi batch baru.
+- **Alasan:** Satu kolom tanggal per varian tidak bisa mewakili dua kiriman, jadi FEFO, catatan barang basi yang benar, dan gerbang konfirmasi yang akurat semuanya mustahil sebelum batch ada. Gerbangnya menutup satu-satunya batas di aplikasi ini yang taruhannya bukan uang.
+- **File Terdampak:**
+  - `database/migrations/2026_09_15_021726_create_product_stock_batches_table.php`: dua tabel + backfill batch `opening`
+  - `database/migrations/2026_09_15_021727_add_expired_sale_columns_to_transaction_items_table.php`: empat kolom jejak
+  - `app/Models/ProductStockBatch.php`, `database/factories/ProductStockBatchFactory.php`: baru
+  - `app/Services/StockBatchService.php`: baru; aturan ambil, kembalikan, rekonsiliasi, tanggal turunan
+  - `app/Services/StockService.php`: semua mutasi menggerakkan batch; `deductOffline()`, `applyEditDelta()`, `freshUnits()` baru
+  - `app/Services/TransactionService.php`, `app/Services/TransactionEditService.php`: gerbang dan jejak di checkout, pesanan mandiri, offline, edit
+  - `app/Http/Requests/StoreTransactionRequest.php`, `app/Http/Requests/SyncOfflineTransactionsRequest.php`: `expired_confirmation_reason`
+  - `app/Models/ProductVariant.php`, `app/Models/TransactionItem.php`: relasi, hook `created`, kolom baru
+  - `app/Services/StockRescueService.php`, `app/Services/BadgeHelperService.php`, `app/Services/ExpiredStockRecorder.php`: membaca batch; `soldExpired()` baru
+  - `app/Http/Controllers/Cashier/POSController.php`, `app/Http/Controllers/Owner/StockController.php`, `app/Http/Controllers/Owner/ReportController.php`, `app/Http/Controllers/Owner/VariantController.php`
+  - `app/Services/Upsell/SellableVariantQuery.php`, `app/Services/DiscountService.php`, `app/Services/Upsell/RuleOutcomeResolver.php`, `database/migrations/2026_08_19_112853_create_discount_rules_table.php`: komentar dan pesan
+  - `resources/js/Pages/Cashier/POS.vue`, `resources/js/Components/CartItem.vue`, `resources/js/Components/ProductCard.vue`, `resources/js/Components/ModifierModal.vue`, `resources/js/Pages/Owner/Stock/Index.vue`, `resources/js/Pages/Owner/Reports/Upsell.vue`
+  - `tests/Feature/Stock/StockBatchTest.php` (ditulis ulang dari `StockBatchGapTest.php`, sesuai pesan di dalamnya), `tests/Feature/Cashier/ExpiredStockSaleTest.php` (ditulis ulang; uji yang dulu di-skip kini aktif), `tests/Feature/Stock/ExpiredStockRecorderTest.php` (restock lewat `StockService`)
+- **Catatan Migrasi:** Jalankan `php artisan migrate`. Backfill membuat satu batch per varian berstok dengan `expiry_date` yang ada; tanggal batch yang sudah tertimpa sebelum hari ini tidak bisa dipulihkan. Varian yang sekarang menyimpan barang basi (mis. `Croissant - Plain`) langsung meminta alasan di kasir.
+- **Keterbatasan yang diterima:** varian yang masih menyimpan satu batch basi dianggap basi oleh pembaca lama (potongan `near_expiry`, saran barang tertekan) sampai batch itu dibuang lewat koreksi turun, walau ada batch baik di belakangnya. Ini sengaja konservatif: barang yang raknya masih memuat barang basi tidak dipromosikan.
 
 ### [DECISION] Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar
 - **Tanggal:** 2026-09-15

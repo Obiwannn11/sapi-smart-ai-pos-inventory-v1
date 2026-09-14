@@ -863,6 +863,10 @@ class ReportController extends Controller
             'rescue' => [
                 'rescued' => $this->stockRescue->rescued($tenant, $from, $to),
                 'spoiled' => $this->stockRescue->spoiled($tenant),
+                // Pendamping `spoiled` ([BL-108]): barang basi yang keluar
+                // lewat penjualan. Berperiode seperti `rescued`, dan membawa
+                // daftar barisnya — di sinilah owner meninjau konfirmasi kasir.
+                'soldExpired' => $this->stockRescue->soldExpired($tenant, $from, $to),
             ],
 
             // Jenis yang saat ini tidak menghasilkan apa pun — entah dimatikan

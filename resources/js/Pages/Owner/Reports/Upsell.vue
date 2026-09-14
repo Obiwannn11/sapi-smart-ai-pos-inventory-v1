@@ -25,7 +25,11 @@ const props = defineProps({
     // Penyelamat Stok ([BL-105]).
     rescue: {
         type: Object,
-        default: () => ({ rescued: { amount: 0, accepted: 0, shown: 0 }, spoiled: { amount: 0, variants: 0, units: 0 } }),
+        default: () => ({
+            rescued: { amount: 0, accepted: 0, shown: 0 },
+            spoiled: { amount: 0, variants: 0, units: 0 },
+            soldExpired: { amount: 0, units: 0, lines: 0, unconfirmed: 0, items: [] },
+        }),
     },
 });
 
@@ -141,6 +145,20 @@ const applyFilter = () => {
  * yang dipajang berdampingan TANPA label pembeda adalah angka yang berbohong —
  * pembaca akan menghitung selisihnya, dan selisih itu tidak berarti apa-apa.
  */
+/**
+ * Barang kedaluwarsa yang keluar lewat penjualan ([BL-108]).
+ *
+ * Fallback kosong: halaman yang dimuat dari server sebelum kolom ini ada tidak
+ * boleh pecah hanya karena satu kunci belum dikirim.
+ */
+const soldExpired = computed(() => props.rescue.soldExpired
+    ?? { amount: 0, units: 0, lines: 0, unconfirmed: 0, items: [] });
+
+/** "2026-09-15" jadi "15 Sep 2026", tanpa bergeser zona waktu perangkat. */
+const formatDay = (value) => (value
+    ? new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '-');
+
 const rescueCards = computed(() => {
     const { rescued, spoiled } = props.rescue;
 
@@ -165,12 +183,27 @@ const rescueCards = computed(() => {
                 ? `Per hari ini: ${spoiled.variants} varian, ${spoiled.units} pcs kedaluwarsa`
                 : 'Tidak ada barang kedaluwarsa di rak',
         },
+        {
+            key: 'soldExpired',
+            title: 'Terjual kedaluwarsa',
+            value: formatCurrency(soldExpired.value.amount),
+            color: 'warning',
+            // Pendamping "Modal hangus" ([BL-108]). Tanpa kartu ini, angka di
+            // sebelahnya MEMBAIK tepat saat barang basi dijual, dan tidak ada
+            // yang menyebut ke mana unitnya pergi. Berperiode seperti kartu
+            // pertama, bukan potret hari ini.
+            subtitle: soldExpired.value.units > 0
+                ? `${soldExpired.value.units} pcs pada rentang ini${soldExpired.value.unconfirmed > 0 ? `, ${soldExpired.value.unconfirmed} baris tanpa konfirmasi` : ''}`
+                : 'Tidak ada barang kedaluwarsa terjual pada rentang ini',
+        },
     ];
 });
 
-/** Tenant yang tidak pernah mengisi tanggal kedaluwarsa tidak perlu melihat dua nol. */
+/** Tenant yang tidak pernah mengisi tanggal kedaluwarsa tidak perlu melihat tiga nol. */
 const showRescue = computed(
-    () => props.rescue.rescued.shown > 0 || props.rescue.spoiled.variants > 0,
+    () => props.rescue.rescued.shown > 0
+        || props.rescue.spoiled.variants > 0
+        || soldExpired.value.lines > 0,
 );
 </script>
 
@@ -206,7 +239,7 @@ const showRescue = computed(
                 </p>
             </div>
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <MetricCard
                     v-for="card in rescueCards"
                     :key="card.key"
@@ -216,6 +249,50 @@ const showRescue = computed(
                     icon="currency"
                     :color="card.color"
                 />
+            </div>
+
+            <!-- Tempat pemilik meninjau konfirmasi kasir ([BL-108]). Keputusan
+                 pemilik 2026-09-15: kasir boleh menjual barang kedaluwarsa
+                 dengan alasan, dan pemilik membaca alasannya sesudahnya. -->
+            <div v-if="soldExpired.items.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div class="px-5 py-3 border-b border-gray-100">
+                    <h3 class="text-sm font-semibold text-gray-800">Penjualan barang kedaluwarsa</h3>
+                    <p class="mt-0.5 text-xs text-gray-500">
+                        Kasir menulis alasan sebelum menjual. Baris tanpa nama kasir terjual saat offline tanpa alasan, atau lewat pesanan mandiri.
+                    </p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[640px] text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Waktu</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Barang</th>
+                                <th class="text-right py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kedaluwarsa</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kasir</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Alasan</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="item in soldExpired.items" :key="item.id">
+                                <td class="py-2.5 px-4 whitespace-nowrap">
+                                    <p class="text-gray-700 tabular-nums">{{ formatDay(item.sold_at) }} {{ item.sold_at?.slice(11, 16) }}</p>
+                                    <p class="text-xs text-gray-400 font-mono">{{ item.code }}</p>
+                                </td>
+                                <td class="py-2.5 px-4 text-gray-800">{{ item.label }}</td>
+                                <td class="py-2.5 px-4 text-right text-gray-800 tabular-nums">{{ item.qty }}</td>
+                                <td class="py-2.5 px-4 text-destructive tabular-nums whitespace-nowrap">{{ formatDay(item.expiry_date) }}</td>
+                                <td
+                                    class="py-2.5 px-4 whitespace-nowrap"
+                                    :class="item.confirmed_by ? 'text-gray-700' : 'font-medium text-warning-foreground'"
+                                >
+                                    {{ item.confirmed_by ?? 'Tanpa konfirmasi' }}
+                                </td>
+                                <td class="py-2.5 px-4 text-gray-600">{{ item.reason ?? '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
 

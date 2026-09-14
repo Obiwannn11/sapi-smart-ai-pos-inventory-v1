@@ -259,3 +259,25 @@ test('pesanan mandiri tidak bisa memesan barang yang sudah basi', function () {
         'items' => [expiredSaleLine($ctx['variant'])],
     ]))->toThrow(Exception::class, 'tidak cukup');
 });
+
+test('laporan saran jual menyebut barang basi yang terjual, siapa yang mengonfirmasi, dan alasannya', function () {
+    $ctx = makeExpiredSaleContext();
+
+    actingAs($ctx['cashier']);
+
+    post('/cashier/transactions', expiredSalePayload($ctx, reason: 'Sudah diberi tahu'))
+        ->assertSessionHas('success');
+
+    actingAs($ctx['owner'])
+        ->get('/owner/reports/upsell')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('rescue.soldExpired.units', 1)
+            ->where('rescue.soldExpired.amount', 15000)
+            ->where('rescue.soldExpired.unconfirmed', 0)
+            ->where('rescue.soldExpired.items.0.reason', 'Sudah diberi tahu')
+            ->where('rescue.soldExpired.items.0.confirmed_by', $ctx['cashier']->name)
+            // "Modal hangus" turun dari 10 ke 9 unit — dan kali ini layar
+            // menyebut ke mana unit yang hilang itu pergi.
+            ->where('rescue.spoiled.units', 9)
+        );
+});

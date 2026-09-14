@@ -6,9 +6,11 @@ use App\Models\ExpiredStockRecord;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Models\TransactionItem;
 use App\Models\UpsellEvent;
 use App\Services\Upsell\Strategies\PressedStockStrategy;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Dua angka yang menutup rantai barang tertekan ([BL-105]).
@@ -211,6 +213,87 @@ class StockRescueService
             'amount' => (float) $variants->sum(fn (ProductVariant $variant) => (int) $variant->expired_units * (float) $variant->cost_price),
             'variants' => $variants->count(),
             'units' => (int) $variants->sum('expired_units'),
+        ];
+    }
+
+    /**
+     * Barang basi yang keluar lewat PENJUALAN — pendamping {@see self::spoiled()}
+     * ([BL-108] butir 4).
+     *
+     * Tanpa angka ini, "modal hangus" MEMBAIK tepat ketika hal terburuk
+     * terjadi: menjual croissant basi menurunkan stok basi di rak, dan layar
+     * tidak menyebut ke mana perginya. Owner yang melihat angkanya menyusut
+     * akan mengira barangnya dibuang.
+     *
+     * Berperiode, mengikuti rentang tanggal laporan — berbeda dari `spoiled()`.
+     * Nilainya modal saat penjualan (`cost_price_at_sale`), jatuh ke harga
+     * modal varian hari ini untuk baris offline yang tidak membekukannya.
+     *
+     * Daftar barisnya ikut dikirim karena inilah tempat owner MENINJAU
+     * konfirmasi kasir (keputusan pemilik 2026-09-15, preseden `[BL-087]`):
+     * siapa, kapan, barang apa, dan alasannya. `unconfirmed` menghitung baris
+     * yang terjual basi tanpa nama pengonfirmasi — penjualan offline tanpa
+     * alasan dan pesanan mandiri — yang paling perlu dilihat.
+     *
+     * Transaksi yang di-void tidak ikut: unitnya sudah kembali ke batch basinya.
+     *
+     * @return array{amount: float, units: int, lines: int, unconfirmed: int, items: list<array<string, mixed>>}
+     */
+    public function soldExpired(Tenant $tenant, string $from, string $to, int $limit = 20): array
+    {
+        $effectiveDate = Transaction::effectiveDateSql();
+
+        $lines = fn () => TransactionItem::query()
+            ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+            ->leftJoin('product_variants', 'product_variants.id', '=', 'transaction_items.product_variant_id')
+            ->where('transactions.tenant_id', $tenant->id)
+            ->where('transactions.status', '!=', Transaction::STATUS_VOIDED)
+            ->where('transaction_items.expired_qty', '>', 0)
+            ->whereRaw("DATE({$effectiveDate}) >= ?", [$from])
+            ->whereRaw("DATE({$effectiveDate}) <= ?", [$to]);
+
+        $row = $lines()
+            ->selectRaw('COUNT(*) as line_count')
+            ->selectRaw('COALESCE(SUM(transaction_items.expired_qty), 0) as units')
+            ->selectRaw('COALESCE(SUM(transaction_items.expired_qty * COALESCE(transaction_items.cost_price_at_sale, product_variants.cost_price, 0)), 0) as amount')
+            ->selectRaw('SUM(CASE WHEN transaction_items.expired_sale_confirmed_by IS NULL THEN 1 ELSE 0 END) as unconfirmed')
+            ->toBase()
+            ->first();
+
+        $items = $lines()
+            ->leftJoin('users', 'users.id', '=', 'transaction_items.expired_sale_confirmed_by')
+            ->orderByRaw("{$effectiveDate} desc")
+            ->orderByDesc('transaction_items.id')
+            ->limit($limit)
+            ->toBase()
+            ->get([
+                'transaction_items.id',
+                'transactions.code',
+                DB::raw("{$effectiveDate} as sold_at"),
+                'transaction_items.variant_name',
+                'transaction_items.expired_qty',
+                'transaction_items.expiry_date_at_sale',
+                'transaction_items.expired_sale_reason',
+                'users.name as confirmed_by_name',
+            ])
+            ->map(fn (object $item) => [
+                'id' => (int) $item->id,
+                'code' => $item->code,
+                'sold_at' => substr((string) $item->sold_at, 0, 16),
+                'label' => $item->variant_name,
+                'qty' => (int) $item->expired_qty,
+                'expiry_date' => $item->expiry_date_at_sale === null ? null : substr((string) $item->expiry_date_at_sale, 0, 10),
+                'reason' => $item->expired_sale_reason,
+                'confirmed_by' => $item->confirmed_by_name,
+            ])
+            ->all();
+
+        return [
+            'amount' => (float) ($row->amount ?? 0),
+            'units' => (int) ($row->units ?? 0),
+            'lines' => (int) ($row->line_count ?? 0),
+            'unconfirmed' => (int) ($row->unconfirmed ?? 0),
+            'items' => $items,
         ];
     }
 
