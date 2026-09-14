@@ -2,16 +2,17 @@
 
 Berkas ini adalah panduan operasional untuk **menjalankan dan mendemokan** SAPI: apa produknya, kredensial akun, isi data contoh, urutan alur demo, dan batasan yang perlu diketahui sebelum bicara di depan penonton. Untuk penjelasan arsitektur yang lebih dalam, lihat [README.md](README.md).
 
-Kalau Anda hanya punya waktu untuk satu bagian, baca [§1](#1-sapi-dalam-satu-halaman). Bagian itu sengaja ditulis lengkap sendiri — fitur utama, keunggulan, dan batasnya — supaya tidak perlu melompat ke mana-mana untuk bisa menjelaskan produk ini kepada orang lain.
+Kalau Anda hanya punya waktu untuk satu bagian, baca [§1](#1-sapi-dalam-satu-halaman). Kalau Anda sudah pernah memakai versi panduan sebelumnya (1 Agustus), baca [§0](#0-yang-berubah-sejak-1-agustus--bahan-bicara) lebih dulu, lalu **daftar periksa di [§5](#5-menyiapkan--menyegarkan-data-demo)** — data demo hari ini punya beberapa jebakan yang tidak ada sebulan lalu.
 
 > **Peringatan:** semua kredensial di berkas ini adalah **kredensial lingkungan lokal/demo**. Jangan pernah dipakai di server sungguhan. `PlatformUserSeeder` sendiri akan menolak berjalan dengan kata sandi bawaan di luar `local`/`testing` — lihat [§8](#8-batasan-yang-perlu-diketahui-sebelum-demo).
 
-**Terakhir diperbarui:** 2026-08-01.
+**Terakhir diperbarui:** 2026-09-15 (sebelumnya 2026-08-01).
 
 ---
 
 ## Daftar Isi
 
+0. [Yang Berubah Sejak 1 Agustus — Bahan Bicara](#0-yang-berubah-sejak-1-agustus--bahan-bicara)
 1. [SAPI dalam Satu Halaman](#1-sapi-dalam-satu-halaman)
 2. [Dua Lapis Autentikasi](#2-dua-lapis-autentikasi)
 3. [Kredensial Demo](#3-kredensial-demo)
@@ -24,6 +25,71 @@ Kalau Anda hanya punya waktu untuk satu bagian, baca [§1](#1-sapi-dalam-satu-ha
 
 ---
 
+## 0. Yang Berubah Sejak 1 Agustus — Bahan Bicara
+
+Enam minggu, sekitar 110 entri changelog. Tidak semuanya layak disebut di depan penonton — sebagian besar perbaikan angka, teks, dan performa. Di bawah ini hanya yang **terlihat di layar** atau **mengubah jawaban atas pertanyaan penonton**, dikelompokkan menurut siapa yang merasakannya. Kolom kanan adalah satu kalimat yang bisa langsung diucapkan.
+
+### Kasir
+
+| Yang berubah | Kalimat untuk penonton |
+|---|---|
+| **Saran jual jadi satu kartu bergiliran di dasar kolom katalog**, menunjuk baris keranjang asalnya ("Dari Espresso - Double"). Yang terlanjur diterima bisa **Batalkan**. Mode wajib mengunci tombol Bayar dengan tulisan "Jawab N saran dulu". | "Kasir menawarkan satu hal pada satu waktu, dan keranjangnya tidak pernah tertutup tawaran." |
+| **Baris keranjang bisa diubah** (varian & modifier tercentang duluan), hapus dan Kosongkan selalu minta konfirmasi. Tombol dibesarkan untuk layar sentuh, label muncul lewat tekan-tahan. | "Pelanggan berubah pikiran soal ukuran? Ubah barisnya, tidak perlu pesan ulang." |
+| **Nominal tunai tidak terisi sendiri** — kasir mengetik uang yang diterima, atau menekan "Uang Pas" setelah menghitungnya. Tombol uang cepat berwarna seperti lembar rupiah. | "Angka pas baru muncul setelah uangnya benar-benar di tangan." |
+| **Foto bukti QRIS/transfer** (bisa diwajibkan per toko), termasuk saat mengedit transaksi. | "Setiap pembayaran non-tunai punya fotonya sendiri." |
+| **Pajak (exclusive/inclusive) dan biaya layanan** masuk keranjang, struk, dan laporan. | "Struknya bisa dijumlahkan ulang pelanggan: subtotal, biaya layanan, pajak, total." |
+| **Tunda Bayar berumur 24 jam**; lewat itu jadi **kas negatif** yang hanya owner bisa bereskan. | "Tagihan terbuka tidak bisa menggantung selamanya." |
+| **Sesi kas "buta"**: angka seharusnya di laci tersembunyi sampai kasir menghitung; membukanya tercatat. Tutup kas punya halaman sendiri. Sesi berumur 24 jam dan ditutup sistem bila lewat. | "Kasir menghitung dulu, baru melihat jawabannya — dan owner tahu kalau ada yang mengintip." |
+| **Catat Uang Keluar / Setoran Masuk** dengan alasan wajib dan foto struk opsional; di atas Rp50.000 menunggu persetujuan owner. | "Beli galon dari laci? Tercatat, bukan jadi selisih misterius di akhir shift." |
+| Tombol **layar penuh**, **logo usaha** di topbar & struk, keluar selalu ditanya dulu. | — |
+| **Barang kedaluwarsa** diberi lencana di kartu produk, dan menjualnya menuntut alasan tertulis (baru 2026-09-15, lihat catatan di bawah). | "Barang basi tidak terjual diam-diam." |
+
+### Pemilik usaha
+
+| Yang berubah | Kalimat untuk penonton |
+|---|---|
+| **Beranda menjawab dua periode** — omzet & transaksi hari ini dan bulan ini, keempat kartunya bisa ditekan menuju laporannya. Rekap metode bayar punya sakelar Hari Ini / Bulan Ini. | "Setiap angka di beranda bisa ditanya 'dari mana?'." |
+| **Penyelamat Stok**: kartu yang menyebut barang tertekan (hampir kedaluwarsa atau tak laku sebulan), modal yang tertahan, dan berapa yang **belum punya potongan otomatis**. Tab Bulan Ini menyebut omzet dari barang tertekan dan **modal hangus**. | "Aplikasi tidak cuma bilang barangnya hampir basi — ia bilang berapa rupiahnya dan apakah sudah ada yang mendorongnya keluar." |
+| **Aturan Diskon** (baru): potongan otomatis yang makin dalam mendekati kedaluwarsa, dengan **lantai untung** dari harga modal. Hanya owner yang boleh menembusnya dari kasir, dengan alasan. | "Diskon tidak bisa menjual rugi tanpa ada manusia yang memutuskannya." |
+| **Aturan Saran Jual** (baru): owner menulis targetnya sendiri ("beli nasi goreng, tawarkan teh"), dengan tab **Muncul di kasir hari ini** yang menyebut slot mana yang terisi dan kenapa sebuah aturan tidak tampil. | "Owner bisa melihat persis apa yang akan muncul di layar kasir sebelum kasirnya melihat." |
+| **Laporan Saran Jual** jadi corong tiga tahap: Tampil → Dijawab kasir → Diterima, dipisah Otomatis vs Aturan Anda. | — |
+| **Laporan Bulanan** (baru): dua angka, garis tren, rincian per tanggal, unduhan CSV. Produk terlaris kini dikelompokkan per produk (dulu tiga produk berbeda bisa bergabung jadi satu baris "Hot"). | — |
+| **Stok** jadi satu baris per varian, disaring dan dipaginasi di server, dengan kartu status yang bisa ditekan (Habis, Kritis, Hampir Kedaluwarsa, Kedaluwarsa, Penyelamat Stok, …). Katalog Produk bisa dicari. | — |
+| **Pengaturan pecah jadi tiga halaman**: Profil & Merek (termasuk logo), **Cara Kerja Sistem**, Integrasi & Kredensial. | — |
+| **Analisis AI** diminta menunjuk angka, bukan menasihati; nama varian di hasilnya bisa diklik; sisa kuota terlihat di halaman yang membelanjakannya. | "Hasil AI-nya menyebut barang dan angka milik toko ini, dan barangnya bisa diklik." |
+| **Staf** menjawab "orang ini bisa buka apa saja" dengan lencana modul. | — |
+| **Semua jam mengikuti jam toko (WITA)** — "hari ini" tidak lagi bergeser 8 jam. | — |
+
+### Langganan & penagihan
+
+| Yang berubah | Kalimat untuk penonton |
+|---|---|
+| **Masa gratis 2 bulan**, lalu tenant dipindah ke **Paid 1** (Rp100.000). Pilihan jalur disodorkan H-14, tagihan pertama terbit H-7. Halaman `/register` menyebut semuanya sebelum orang mendaftar. | "Tidak ada kejutan: lama gratisnya, paket sesudahnya, dan tanggal tagihannya tertulis sebelum tombol Daftar." |
+| **Harga Adaptif = diskon dari Paid 1** menurut omzet bulan sebelumnya (90/75/50/25%), tertutup di atas Rp50 juta/bulan. Pengajuannya punya halaman sendiri dan dinilai seketika. | "Warung kecil membayar Rp10.000; begitu omzetnya di atas Rp50 juta, keringanannya selesai." |
+| **Masa tenggang bertingkat**: hari 1–14 pemberitahuan halus, 15–19 peringatan mengganggu, 20–30 **hanya layar POS** yang dikunci — laporan dan ekspor tetap terbuka. | "Kasir tidak dimatikan di hari pertama telat bayar; warung yang tak bisa berjualan tak bisa membayar." |
+| **Bayar tagihan dalam satu modal** (pilih kanal + kata sandi owner) lewat gateway tiruan, atau halaman instruksi bayar yang lunas sendiri setelah beberapa detik. Keduanya melewati webhook bertanda tangan yang sama dengan penyedia sungguhan nanti. | "Begini rasanya membayar. Uang sungguhannya menunggu penyedia pembayaran." |
+| **Kursi tambahan & blok kuota AI** jadi komponen bulanan yang bisa dibeli dan dilepas; kursi yang dibeli di tengah periode ditagih per hari. | — |
+| **Tenant yang ditangguhkan punya jalan pulang**: satu tombol yang menerbitkan satu tagihan pemulihan. | — |
+| Halaman `/langganan` jadi tiga tab: **Ringkasan · Tagihan · Kapasitas**. | — |
+
+### Pemilik layanan (konsol platform)
+
+| Yang berubah | Kalimat untuk penonton |
+|---|---|
+| **2FA (TOTP) untuk akun platform**, dengan delapan kode pemulihan, di menu Keamanan Akun. | "Kata sandi yang benar saja tidak cukup untuk masuk ke data semua klien." |
+| **Kuota AI jadi kebijakan berjangka** (termasuk promo bertanggal), dengan tombol mengembalikan jatah hari ini — pemakaian hanya terlihat sebagai angka gabungan, bukan per tenant. | — |
+| **Pindah paket** dari rincian tenant (wajib beralasan); nominal tagihan manual yang menyimpang dari aturan **wajib beralasan dan alasannya dibaca tenant**. | "Setiap angka yang ditagihkan di luar aturan punya alasan yang dibaca kliennya." |
+| **Membuka kunci pajak** tenant: operator membuka kuncinya selama 7 hari, sekali pakai, beralasan, tercatat `sensitive` — tapi tidak pernah mengubah setelan pajaknya sendiri. | "Penyedia layanan boleh membuka pintu, pemilik toko yang memutuskan." |
+| Paket tujuan setelah masa gratis dan paket penampung Adaptif ditunjuk dari halaman **Aturan Harga**, tanpa deploy. | — |
+
+### Halaman publik
+
+`/harga` (baru) membacakan kedua jalur tarif dari data yang berlaku. Landing ditulis ulang dari kapabilitas yang nyata: testimoni dan paket karangan dicabut, bagian "Bagaimana Harga Anda Dihitung" dan tangkapan layar asli ditambahkan. Pendaftaran menanyakan **cara berjualan** (warung/kafe menetap, gerai acara & bazar, toko retail, jasa) dan menyalakan **paket setelan awal** yang terlihat dan bisa diubah sebelum menekan Daftar.
+
+> **Catatan status 2026-09-15:** batch stok per tanggal kedaluwarsa (FEFO) dan gerbang penjualan barang kedaluwarsa (`[BL-111]`, `[BL-108]`) sudah tercatat di changelog hari ini, tetapi **saat panduan ini ditulis kodenya belum di-commit**. Pastikan perubahan itu sudah masuk dan `php artisan migrate` sudah dijalankan sebelum memperagakannya; kalau belum, lewati bagian itu.
+
+---
+
 ## 1. SAPI dalam Satu Halaman
 
 **SAPI adalah aplikasi kasir dan stok multi-tenant untuk UMKM, dijual sebagai layanan berlangganan.** Satu pemasangan melayani banyak usaha sekaligus; tiap usaha hanya melihat datanya sendiri. Ada tiga jenis pengguna, dan masing-masing punya aplikasinya sendiri: **kasir** yang berjualan, **pemilik usaha** yang mengelola dan membaca laporan, dan **pemilik layanan (SaaS)** yang mengelola seluruh klien dari konsol terpisah.
@@ -32,29 +98,30 @@ Kalau Anda hanya punya waktu untuk satu bagian, baca [§1](#1-sapi-dalam-satu-ha
 
 | Untuk | Yang bisa dilakukan |
 |---|---|
-| **Kasir** | POS berkategori dengan varian & modifier · pembayaran tunai/QRIS/transfer, termasuk **split bill** · **tagihan terbuka (open bill)** yang tinggal di topbar dan bisa dilunasi dari halaman kasir mana pun · **identitas pesanan** (nama pelanggan / nomor meja / kode panggil otomatis, satu mode dipilih owner) · struk layar & **cetak thermal ESC/POS** · **sesi kas** buka–tutup dua langkah dengan selisih · **penjualan offline (PWA)** yang tersinkron saat jaringan kembali · **papan antrian dapur** untuk outlet ber-dapur · **saran jual** yang muncul di layar saat pelanggan masih berdiri di depan meja |
-| **Pemilik usaha** | Dashboard omzet, tren, produk terlaris, dan ringkasan langganan · katalog produk–varian–kategori–modifier · **stok**: restock, penyesuaian, riwayat per varian, mutasi, badge stok menipis / mendekati kedaluwarsa / tak bergerak · laporan harian, laporan saran jual, riwayat transaksi, rekap kas · **edit & void transaksi** dengan stok terkoreksi dan jejak audit · **staf & role modul (RBAC)** · **Analisis AI** atas datanya sendiri · **token MCP** untuk menyambungkan AI client miliknya sendiri · pengaturan mode & fitur outlet · halaman langganan & tagihan |
-| **Pemilik layanan (SaaS)** | Konsol terpisah di `/platform`: daftar klien dengan **rincian bertab** (Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet) · langganan & tagihan menyatu, verifikasi/tolak bukti bayar, atur batas pengguna beralasan · **paket** dan **aturan harga berkriteria** yang bisa diubah tanpa deploy · data omzet klien jalur Harga Adaptif · **jejak audit** · akun staf platform dengan modul terbatas |
-| **Sistem lain** | API self-order (`POST /api/v1/orders`) untuk n8n/Telegram/QR meja · webhook Xendit · API mobile v1 lengkap (login, produk, transaksi, sesi kas) · **MCP server** read-only untuk AI client pemilik toko |
+| **Kasir** | POS berkategori dengan varian & modifier · **baris keranjang bisa diubah** · pembayaran tunai/QRIS/transfer, termasuk **split bill** dan **foto bukti non-tunai** · **pajak & biaya layanan** · **Tunda Bayar** yang tinggal di topbar dan berumur 24 jam · **identitas pesanan** (nama pelanggan / nomor meja / kode panggil) · struk layar & **cetak thermal ESC/POS** dengan logo usaha · **sesi kas buta** dengan catatan uang keluar/masuk laci · **penjualan offline (PWA)** · **papan antrian dapur** · **saran jual** satu kartu bergiliran · peringatan barang kedaluwarsa |
+| **Pemilik usaha** | Beranda dua periode dengan **Penyelamat Stok** · katalog produk–varian–kategori–modifier yang bisa dicari · **stok** per varian dengan kartu status, restock, penyesuaian, riwayat, mutasi · **Aturan Diskon** dengan lantai untung · **Aturan Saran Jual** dan laporannya · laporan harian & **bulanan** (CSV) · riwayat transaksi, sesi kas, persetujuan uang keluar, pembereskan kas negatif · **edit & void transaksi** · **staf & role modul (RBAC)** · **Analisis AI** · **token MCP** · pengaturan tiga halaman (merek, cara kerja sistem, integrasi) · halaman langganan & tagihan |
+| **Pemilik layanan (SaaS)** | Konsol terpisah di `/platform` dengan **2FA**: daftar klien dengan **rincian bertab** (Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet) · pindah paket & terbitkan tagihan beralasan · buka kunci pajak · **paket** dan **aturan harga berkriteria** yang bisa diubah tanpa deploy · **kebijakan kuota AI** · **jejak audit** · akun staf platform dengan modul terbatas |
+| **Sistem lain** | API self-order (`POST /api/v1/orders`) untuk n8n/Telegram/QR meja · webhook pembayaran (gateway tiruan hari ini) · webhook Xendit · API mobile v1 (login, produk, transaksi, sesi kas) · **MCP server** read-only untuk AI client pemilik toko |
 
-### Enam hal yang membedakannya
+### Tujuh hal yang membedakannya
 
-1. **Konsol SaaS-nya dirancang untuk tidak melihat terlalu banyak.** Daftar klien menampilkan **kelompok omzet, bukan angka rupiah persis**. Angka persis punya halamannya sendiri, hanya untuk klien yang sudah menyetujui jalur Harga Adaptif, dan **setiap kunjungan ke sana tercatat sebagai kejadian `sensitive` tanpa deduplikasi**. Ini keputusan produk, bukan keterbatasan teknis — dan paling meyakinkan bila diperagakan langsung (lihat Babak 4).
-2. **Gerbangnya di server, bukan di menu.** Modul yang dicabut dari sebuah role bukan cuma hilang dari navigasi; mengetik URL-nya langsung tetap ditolak. Hal yang sama berlaku untuk kapabilitas outlet dan keadaan langganan — dan gerbangnya terpasang di **setiap** pintu: web, API self-order, job antrean, dan MCP.
-3. **Harga bisa berubah tanpa deploy.** Aturan harga berupa baris berkriteria (`dimensi` + `operator` + `nilai`), bukan kolom tetap. Empat dimensi tersedia: omzet bulanan, jumlah transaksi/bulan, pengguna aktif, dan tipe usaha. Kategori harga baru cukup ditulis dari panel. Tiap tagihan **membekukan konteks harganya**, jadi tagihan lama tetap bisa dijelaskan setelah aturannya diganti.
-4. **Kasirnya tetap hidup saat jaringan mati.** Katalog, modifier, dan indeks saran jual ikut ter-snapshot ke perangkat; penjualan masuk ke outbox lalu tersinkron dengan penjaga idempotensi (`client_uuid`) dan halaman **Koreksi Offline** untuk yang butuh keputusan manusia.
-5. **AI-nya membaca data usaha itu sendiri, dua arah.** Owner bisa meminta analisis di dalam aplikasi (dijalankan sebagai job, berkuota harian), **atau** menerbitkan token MCP dan menyambungkan Claude Desktop miliknya sendiri ke datanya — memakai kuota AI miliknya, bukan kuota aplikasi.
-6. **Sinyal stok berubah jadi penjualan.** Barang yang mendekati kedaluwarsa atau tak bergerak sebulan tidak berhenti sebagai badge di dashboard owner: ia muncul sebagai saran jual di layar kasir, bersama saran add-on dan naik-ukuran. Nasib tiap saran dicatat, dan laporannya memisahkan **conversion rate** dari **offer rate** supaya angkanya tidak bisa dikelabui.
+1. **Konsol SaaS-nya dirancang untuk tidak melihat terlalu banyak.** Daftar klien menampilkan **kelompok omzet, bukan angka rupiah persis**. Angka persis punya halamannya sendiri, hanya untuk klien yang menyetujui jalur Harga Adaptif, dan **setiap kunjungan ke sana tercatat sebagai kejadian `sensitive` tanpa deduplikasi**. Pemakaian kuota AI pun hanya terlihat sebagai angka gabungan. Diperagakan di Babak 5.
+2. **Gerbangnya di server, bukan di menu.** Modul yang dicabut dari sebuah role bukan cuma hilang dari navigasi; mengetik URL-nya langsung tetap ditolak. Hal yang sama berlaku untuk kapabilitas outlet dan keadaan langganan — di web, API self-order, job antrean, dan MCP.
+3. **Harga bisa berubah tanpa deploy, dan tiap tagihan bisa dijelaskan.** Aturan harga berupa baris berkriteria; tiap tagihan **membekukan konteks harganya** berikut rinciannya (paket, kursi, kuota AI, prorata). Nominal yang menyimpang dari aturan wajib beralasan, dan alasannya dibaca tenant.
+4. **Kasirnya tetap hidup saat jaringan mati — dan saat telat bayar.** Katalog dan indeks saran jual ter-snapshot ke perangkat, antrean penjualan offline tersinkron lewat Background Sync. Masa tenggang baru mengunci layar POS di hari ke-20, bukan hari pertama.
+5. **AI-nya membaca data usaha itu sendiri, dua arah.** Owner meminta analisis di dalam aplikasi (job antrean, berkuota), **atau** menyambungkan Claude Desktop miliknya lewat token MCP — memakai kuota AI miliknya sendiri.
+6. **Sinyal stok berubah jadi rupiah dan penjualan.** Barang yang hampir kedaluwarsa atau tak bergerak sebulan diberi potongan otomatis (dengan lantai untung), didorong lewat saran di layar kasir, dan hasilnya dihitung — omzet dari barang tertekan dan modal yang hangus.
+7. **Uang laci bisa dipertanggungjawabkan.** Kasir menghitung sebelum melihat angka seharusnya, uang yang keluar di tengah shift tercatat beralasan, dan tagihan terbuka yang terlupa berubah jadi kas negatif alih-alih menghilang.
 
 ### Model langganan, singkatnya
 
-Masa coba **30 hari** → `grace` **hanya-baca 30 hari** → `suspended`. Di keadaan `grace` halaman tetap terbuka dan data lama tetap bisa diunduh; hanya permintaan yang **mengubah** data yang ditolak. Halaman `/langganan` dan logout **selalu** terbuka — menutup jalan keluar berarti tenant tak akan pernah bisa keluar, termasuk dengan membayar.
+Masa gratis **2 bulan** di paket Free → dipindah ke **Paid 1** → prabayar bulanan. Telat bayar masuk **tenggang 30 hari bertingkat** (halus → intensif → POS terkunci mulai hari ke-20) → `suspended`. Membaca data lama **tidak pernah** dicabut di tahap mana pun. Halaman `/langganan` dan logout **selalu** terbuka.
 
-Dua jalur harga: **Harga Tetap** (tarif paket, tidak perlu membuka data penjualan) dan **Harga Adaptif** (tarif mengikuti kelompok omzet, dan karena itu menuntut persetujuan berversi untuk membuka angkanya). Perpindahan jalur dibatasi minimum tiga bulan sekali, persetujuannya bisa dicabut kapan saja, dan retensi data omzetnya 24 bulan.
+Dua jalur harga: **Harga Tetap** (tarif paket, tidak membuka data penjualan) dan **Harga Adaptif** (diskon dari Paid 1 menurut omzet bulan sebelumnya, menuntut persetujuan berversi). Rincian di [§6](#6-kondisi-langganan--penagihan).
 
 ### Yang sudah jadi vs yang belum
 
-**Sudah jadi dan bisa diperagakan:** semua yang tertulis di tabel di atas. **Belum ada:** 2FA akun platform, penagihan otomatis di akhir masa coba (tagihan masih diterbitkan pemilik SaaS dari panel), payment gateway sungguhan, dan BYOK (kunci AI milik owner sendiri). Rinciannya di [§8](#8-batasan-yang-perlu-diketahui-sebelum-demo) — bacalah sebelum menjanjikan apa pun.
+**Sudah jadi dan bisa diperagakan:** semua yang tertulis di tabel di atas. **Belum ada:** payment gateway dengan uang sungguhan, printer Bluetooth (butuh lapisan native), multi-cabang, restock dari foto struk, dan bundling berdiskon. Rinciannya di [§8](#8-batasan-yang-perlu-diketahui-sebelum-demo) — bacalah sebelum menjanjikan apa pun.
 
 ---
 
@@ -65,11 +132,15 @@ Sistem ini punya **dua tabel pengguna yang benar-benar terpisah**, bukan satu ta
 | Lapis | Tabel | Halaman masuk | Untuk siapa |
 |---|---|---|---|
 | **Tenant** | `users` | `/login` | Pemilik usaha & stafnya — POS, produk, stok, laporan, AI |
-| **Platform** | `platform_users` | `/platform/login` | Pemilik SaaS — kelola klien, langganan, tagihan, paket & aturan harga, audit |
+| **Platform** | `platform_users` | `/platform/login` | Pemilik SaaS — kelola klien, langganan, tagihan, paket & aturan harga, kuota AI, audit |
 
-Akun platform **sengaja tidak punya `tenant_id`** dan tidak memakai spatie/permission; izinnya dikelola lewat tabel tersendiri `platform_user_modules`. Konsekuensi praktisnya saat demo: **jangan mencoba masuk `/platform` dengan `owner@sapi.test`** — tidak akan bisa, dan itu memang desainnya. Sebaliknya, tamu yang sesinya habis di area `/platform` diarahkan ke `platform.login`, bukan ke halaman masuk tenant.
+Akun platform **sengaja tidak punya `tenant_id`** dan tidak memakai spatie/permission; izinnya dikelola lewat tabel `platform_user_modules`. **Jangan mencoba masuk `/platform` dengan `owner@sapi.test`** — tidak akan bisa, dan itu memang desainnya.
 
-Satu cacat pengalihan yang masih terbuka menyangkut arah sebaliknya — lihat `[BL-043]` di [§8](#satu-cacat-pengalihan-yang-bisa-muncul-saat-demo). Pakailah jendela peramban bersih untuk masuk ke `/platform`.
+**Cacat pengalihan `[BL-043]` sudah diperbaiki (2026-08-05).** Akun platform yang membuka `/platform/login` dengan sesi masih hidup kini mendarat di `/platform`, dan sisa `url.intended` dari area tenant tidak lagi membajak login platform. Jendela peramban terpisah tetap disarankan — bukan karena bug, melainkan karena Anda akan masuk sebagai tenant dan platform bergantian.
+
+**2FA platform:** akun yang sudah mendaftarkan authenticator masuk dalam **dua langkah** (kata sandi → kode 6 digit atau kode pemulihan). Pendaftarannya dari menu **Keamanan Akun**. Akun demo `platform@sapi.test` **belum** mendaftarkannya — lihat peringatan di [§3](#3-kredensial-demo).
+
+Setiap tombol keluar — di kasir, owner, platform — sekarang meminta konfirmasi lebih dulu.
 
 ---
 
@@ -81,11 +152,11 @@ Semua kata sandi di bawah: **`password`**
 
 | Email | Kata sandi | Keterangan |
 |---|---|---|
-| `platform@sapi.test` | `password` | `is_owner = true` → akses penuh semua modul platform |
+| `platform@sapi.test` | `password` | `is_owner = true` → akses penuh; **2FA belum aktif** |
 
-Akun ini dibuat oleh `PlatformUserSeeder`, yang **tidak dipanggil dari `DatabaseSeeder`** — harus dijalankan tersendiri (lihat [§5](#5-menyiapkan--menyegarkan-data-demo)).
+Akun ini dibuat oleh `PlatformUserSeeder`, yang **tidak dipanggil dari `DatabaseSeeder`**. Kredensialnya bisa dialihkan lewat `.env`: `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, `PLATFORM_ADMIN_NAME`.
 
-Kredensialnya bisa dialihkan lewat `.env`: `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, `PLATFORM_ADMIN_NAME`.
+> **Sebelum memperagakan 2FA:** mengaktifkannya di akun ini membuat setiap login berikutnya menuntut kode dari authenticator. Kalau ingin memperagakannya, lakukan pada **akun staf platform** yang dibuat saat demo, atau simpan delapan kode pemulihannya di tempat yang bisa Anda buka di depan penonton.
 
 ### Tenant 1 — Kopi Nusantara (`kopi-nusantara`)
 
@@ -93,12 +164,10 @@ Kredensialnya bisa dialihkan lewat `.env`: `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADM
 |---|---|---|---|
 | `owner@sapi.test` | `password` | owner | semua (owner tidak dibatasi modul) |
 | `kasir@sapi.test` | `password` | cashier | **"Kasir + Gudang"** → `pos`, `cash_drawer`, `stock` |
-| `kasir2@sapi.test` | `password` | cashier | **"Kasir"** → `pos`, `cash_drawer` |
 | `gudang@sapi.test` | ⚠️ tidak diketahui | cashier | "Kasir + Gudang" |
+| `kasir2@sapi.test` | `password` | cashier | **"Kasir"** → `pos`, `cash_drawer` — **⚠️ tidak ada di basis data saat ini** |
 
-`kasir2@sapi.test` ditambahkan ke `DatabaseSeeder` pada 2026-08-01 — ia **hanya muncul setelah `migrate:fresh --seed`**, bukan dari menjalankan ulang seeder di atas basis data yang sudah terisi. Ia sengaja ada: dua kasir dengan role berbeda membuat pembatasan modul terlihat, dan membuat sesi kas per-orang punya arti.
-
-`gudang@sapi.test` dibuat manual lewat UI **Staf** pada 2026-07-21, bukan dari seeder — kata sandinya tidak ada di kode mana pun. Kalau perlu dipakai demo, setel dulu:
+`kasir2@sapi.test` ada di `DatabaseSeeder` tapi **hanya lahir setelah `migrate:fresh --seed`**, dan basis data lokal per 2026-09-15 belum pernah di-reset sejak itu. `gudang@sapi.test` dibuat manual lewat UI Staf, jadi kata sandinya tidak ada di kode mana pun. Kalau perlu dipakai (misalnya untuk Babak 4), setel dulu:
 
 ```bash
 php artisan tinker --execute 'App\Models\User::withoutGlobalScopes()->where("email","gudang@sapi.test")->first()->update(["password"=>bcrypt("password")]);'
@@ -111,36 +180,54 @@ php artisan tinker --execute 'App\Models\User::withoutGlobalScopes()->where("ema
 | `owner@kopistory.test` | `password` | owner |
 | `kasir@kopistory.test` | `password` | cashier |
 
+### Tenant 3 — Squid Coffee & Eatery (`squid-coffee`) — baru
+
+| Email | Kata sandi | Peran | Role RBAC |
+|---|---|---|---|
+| `owner@squid.id` | `password` | owner | semua |
+| `kasir@squid.id` | `password` | cashier | **"Kasir"** → `pos`, `cash_drawer`, `stock` |
+
+> **Nama dan alamatnya milik kafe sungguhan di Makassar; menu, harga, dan seluruh angka penjualannya rekonstruksi seeder.** Jangan memperkenalkannya sebagai klien atau sebagai data milik usaha itu. Sebut "tenant uji bergaya kafe 24 jam".
+
 ---
 
 ## 4. Isi Data Tiap Tenant
 
-Angka di bawah adalah keadaan per **2026-08-01**, setelah penyegaran data.
+Angka di bawah adalah keadaan basis data lokal per **2026-09-15**.
 
-| | **Kopi Nusantara** (t1) | **Kopi Story** (t2) |
-|---|---|---|
-| Karakter | Sampel kecil, untuk uji fitur | Studi kasus realistis (gaya kedai kopi susu kekinian) |
-| Seeder | `DatabaseSeeder` + `DemoTransactionSeeder` | `CafeStudyCaseSeeder` |
-| Produk / varian | 4 / 6 | 20 / 36 |
-| Kategori | Kopi, Non-Kopi, Makanan | Kopi Susu, Coffee, Non-Coffee, Tea, Pastry & Snack |
-| Transaksi | ±3.360 (sejak 12 Apr 2026) | ±4.475 (sejak 1 Jan 2026) |
-| Metode bayar | Cash, QRIS, Transfer BCA | Cash, QRIS, Debit Card |
-| Modifier | Temperature (wajib), Sugar Level, Add-ons | Sugar Level, Add-ons (+Boba) |
-| Sesi kas | 1 sesi (masih terbuka — lihat catatan) | 213 sesi harian, lengkap dengan selisih |
-| Role RBAC kustom | ✅ "Kasir + Gudang" & "Kasir" | — |
-| Staf | 3–4 (tergantung apakah sudah `migrate:fresh`) | 2 (owner + kasir) |
-| Mode identitas pesanan | `table` (nomor meja) | `none` |
-| Jalur harga | **Harga Adaptif** (`subsidized`), sudah menyetujui dokumennya | **Harga Tetap** (`normal`) |
+| | **Kopi Nusantara** (t1) | **Kopi Story** (t2) | **Squid Coffee** (t5) |
+|---|---|---|---|
+| Karakter | Sampel kecil + data peraga | Studi kasus 8 bulan, kedai kopi susu | Kafe 24 jam ramai, 2 bulan |
+| Seeder | `DatabaseSeeder` + `DemoTransactionSeeder` + `UpsellRuleShowcaseSeeder` | `CafeStudyCaseSeeder` | `SquidCoffeeSeeder` |
+| Produk | 7 (4 asli + 3 produk peraga `DEMO-UPSELL-`) | 20 / 36 varian | 36 / 53 varian |
+| Transaksi | ±4.030 (12 Apr – 14 Sep 2026) | ±5.190 (1 Jan – **4 Sep** 2026) | ±1.880 (15 Jul – 14 Sep 2026), omzet ±Rp50 jt lalu ±Rp70 jt per bulan |
+| Aturan saran jual | 14 (13 aturan peraga) | — | 8 aturan owner sejak 1 Agu |
+| Aturan diskon | 1 | — | — |
+| Staf | 3 (owner, kasir, gudang) | 2 | 2 |
+| Cara berjualan (`selling_style`) | — | — | Warung / kafe menetap |
+| Identitas pesanan | **nama pelanggan** | tidak dipakai | nama pelanggan |
+| Antrian dapur | mati | mati | **menyala** |
+| Saran jual wajib dijawab | **menyala** | mati | mati |
+| Foto bukti non-tunai | **wajib** | mati | mati |
+| Pajak / biaya layanan | mati / mati | mati / mati | mati / mati |
+| Laci kas terbuka | ⚠️ sejak 20 Agu (`kasir@sapi.test`) | — | ⚠️ sejak 14 Sep 00:00 (`kasir@squid.id`) |
+| Paket & jalur | Paid 1 · **Harga Adaptif** · 6 kursi · lunas s.d. 24 Okt | Paid 1 · Harga Tetap · 6 kursi · ⚠️ periode **berakhir 24 Agu** | Paid 1 · Harga Tetap · 3 kursi · 15 Sep – 15 Okt |
 
-**Rekomendasi: pakai Kopi Story sebagai panggung utama.** Datanya membentang 7 bulan, omzet harian ditarget Rp1–2 juta (akhir pekan lebih tinggi), jam sibuk dimodelkan dengan bobot per jam, restock bulanan tercatat sebagai `StockMovement`, dan sesi kas hariannya sengaja disebar tiga kasus — **pas (±55%), minus (±23%), plus (±22%)** — supaya demo rekonsiliasi kas punya bahan nyata.
+Kalau belum pernah dilihat: identitas pesanan Kopi Nusantara kini **nama pelanggan**, bukan nomor meja seperti di panduan lama.
 
-Pakai **Kopi Nusantara** untuk demo RBAC, identitas pesanan (mode nomor meja sudah menyala), dan jalur **Harga Adaptif** di halaman langganan.
+### Tenant mana untuk babak mana
 
-Tiga catatan kecil yang mudah mengejutkan:
+- **Kopi Story** tetap panggung terbaik untuk **laporan jangka panjang dan rekap kas**: tujuh bulan lebih data, 213+ sesi kas harian dengan selisih pas/minus/plus. Tapi datanya berhenti 4 September dan periode langganannya sudah lewat — **tambal dulu datanya dan jauhi halaman `/langganan`-nya** (lihat [§5](#5-menyiapkan--menyegarkan-data-demo)).
+- **Squid Coffee** untuk **layar kasir yang ramai dan Penyelamat Stok**: katalog 53 varian, aturan saran jual milik owner, antrian dapur menyala, dan omzet yang cukup besar untuk memperlihatkan **plafon Harga Adaptif** (Rp50 juta) di halaman pengajuannya.
+- **Kopi Nusantara** untuk **RBAC, pengaturan, Aturan Saran Jual, dan Harga Adaptif yang sudah berjalan**. Aturan peraganya memunculkan kesepuluh keadaan di tab "Muncul di kasir hari ini" sekaligus.
 
-- **Kopi Nusantara punya satu sesi kas yang masih terbuka sejak 2026-07-27.** Riwayat transaksi kasir dibatasi ke sesi yang sedang berjalan, jadi kasir yang masuk akan melihat riwayat sejak tanggal itu dan angka rekonsiliasinya melebar. Tutup dulu sesi itu sebelum demo, atau pakai Kopi Story untuk babak kasir.
-- **Dua hari di Kopi Nusantara isinya tipis** — 27 Juli (1 transaksi) dan 30 Juli (3 transaksi). Itu transaksi asli hasil uji coba lewat UI, dan seeder sengaja tidak menyentuh hari yang sudah ada isinya (lihat [§5](#5-menyiapkan--menyegarkan-data-demo)). Di grafik 7 hari terakhir keduanya tampak sebagai lekukan. Bila mengganggu, hapus transaksi kedua hari itu lalu jalankan ulang seeder-nya.
-- **Croissant Plain di Kopi Nusantara** diberi `expiry_date` H+3 dari waktu seed, aslinya untuk memperlihatkan badge *near-expiry*. Kalau seed sudah lama, tanggal itu terlewat dan badge-nya tampil sebagai **kedaluwarsa**, bukan "mendekati".
+### Catatan yang mudah mengejutkan
+
+- **Produk peraga di Kopi Nusantara terlihat di grid kasir.** Dua dari tiga produk `DEMO-UPSELL-` tampil di katalog POS — satu berlencana "Habis", satu sudah kedaluwarsa. Mereka tidak pernah disarankan ke pelanggan, tapi penonton bisa bertanya. Cabut sebelum babak kasir kalau babak itu memakai Kopi Nusantara (perintahnya di §5).
+- **Saran jual wajib + foto bukti wajib menyala di Kopi Nusantara.** Tombol Bayar terkunci sampai semua saran dijawab, dan pembayaran QRIS/transfer menuntut foto. Keduanya bagus diperagakan dengan sengaja, dan menjengkelkan bila tidak disadari. Laptop tanpa kamera: matikan foto bukti di **Cara Kerja Sistem**.
+- **Squid Coffee tidak punya penjualan hari ini** — seedernya berhenti di 14 September dan tidak bisa dijalankan ulang. Kartu "Hari Ini" di berandanya kosong sampai Anda berjualan lewat kasir.
+- **Hampir semua varian tidak punya tanggal kedaluwarsa.** Penyelamat Stok karena itu lebih banyak berisi barang tak laku sebulan daripada barang hampir basi. Itu cermin batasan `[BL-107]`, bukan data yang rusak.
+- **Modal hangus bulanan baru tercatat sejak 8 September 2026** (`stock:record-expired`), dan kartunya menyebut tanggal itu terus terang.
 
 ---
 
@@ -152,17 +239,39 @@ Tiga catatan kecil yang mudah mengejutkan:
 composer run dev
 ```
 
-Perintah ini menyalakan tiga proses sekaligus: `artisan serve`, `queue:listen`, dan `npm run dev`.
+Perintah ini menyalakan tiga proses sekaligus: `artisan serve`, `queue:listen`, dan `npm run dev`. **Penjadwal (`schedule:run`) tidak ikut** — dan untuk basis data lokal hari ini itu justru aman, lihat daftar periksa.
 
-**Antrean wajib hidup.** Analisis AI berjalan sebagai job (`RunAiAnalysisJob`); tanpa worker, hasil analisis tidak akan pernah muncul dan demo tampak menggantung. Kalau `.env` baru diubah, **worker harus di-restart** — proses lama masih memegang konfigurasi lama.
+**Antrean wajib hidup.** Analisis AI berjalan sebagai job (`RunAiAnalysisJob`); tanpa worker, hasil analisis tidak akan pernah muncul. Kalau `.env` baru diubah, **worker harus di-restart**.
 
-Port di-pin **8001** lewat `.claude/launch.json`. Ini disengaja: `artisan serve` membaca `SERVER_PORT` dan akan kembali ke 8000 kalau dibiarkan otomatis, lalu bentrok dengan proyek lain di mesin yang sama.
+Port di-pin **8001** lewat `.claude/launch.json` supaya tidak bentrok dengan proyek lain di port 8000.
+
+Aplikasi berjalan di **WITA** (`APP_TIMEZONE=Asia/Makassar`): "hari ini" di beranda, laporan, dan sesi kas dihitung dengan jam toko.
+
+### Daftar periksa sebelum demo (basis data lokal saat ini)
+
+1. **Migrasi.** Jalankan `php artisan migrate` bila ada migrasi baru — batch stok 2026-09-15 menambah dua tabel/kolom.
+2. **Tambal data sampai hari ini** untuk Kopi Story dan Kopi Nusantara (perintah di bawah). Kopi Story kosong sejak 4 September.
+3. **Tutup laci kas yang basi** di Kopi Nusantara (sejak 20 Agu) dan Squid Coffee (sejak 14 Sep). Paling cepat lewat perintah yang memang dijadwalkan untuk itu — ia menandai sesinya "Ditutup sistem" tanpa mengarang hitungan fisik:
+
+   ```bash
+   php artisan cash-drawers:expire
+   ```
+
+4. **Jangan menjalankan `schedule:run` atau `subscriptions:advance-lifecycle` di basis data ini tanpa sengaja.** Periode Kopi Story berakhir 24 Agustus dan statusnya masih `active` hanya karena siklus hidupnya belum pernah dijalankan sejak itu. Menurut `config/subscription.php` dan `Tenant::graceDay()`, begitu ia dipindah ke `grace`, hitungan tenggangnya dimulai dari 25 Agustus — hari ke-22 per 15 September, yaitu tahap **POS terkunci**. Kalau ingin memperagakan tangga tenggang, lakukan setelah reset bersih atau pada tenant lain.
+5. **Cabut produk peraga** bila babak kasir memakai Kopi Nusantara:
+
+   ```bash
+   PERAGA=bersih php artisan db:seed --class=UpsellRuleShowcaseSeeder --no-interaction
+   ```
+
+   Di PowerShell: `$env:PERAGA='bersih'; php artisan db:seed --class=UpsellRuleShowcaseSeeder --no-interaction`. Menjalankannya tanpa `PERAGA` memasang peraganya kembali.
+6. **Periksa kamera** atau matikan foto bukti di Kopi Nusantara (Cara Kerja Sistem).
+7. **Kuota AI:** ketiga tenant di Paid 1 = **15 analisis/hari**. Jangan habiskan saat gladi bersih.
+8. **2FA platform:** putuskan dulu apakah akan diperagakan dan dengan akun apa ([§3](#3-kredensial-demo)).
 
 ### Menyegarkan data agar sampai hari ini
 
-Ini langkah yang **paling mudah terlupakan dan paling terlihat**. Kedua seeder transaksi menyemai sampai `now()` pada saat dijalankan. Kalau seed terakhir sudah berminggu-minggu lalu, kartu "Omzet Hari Ini", "7 Hari Terakhir", dan sesi kas hari ini akan **kosong** — tepat di halaman pertama yang dilihat penonton.
-
-Sejak **2026-08-01** kedua seeder transaksi **hanya mengisi hari yang benar-benar kosong**. Menjalankannya ulang menjelang demo menambal jarak sejak seed terakhir tanpa menggandakan omzet, dan tanpa membuang transaksi yang baru saja Anda buat lewat UI. Jadi cukup dua perintah ini, kapan pun, sesering apa pun:
+Kedua seeder transaksi berikut **hanya mengisi hari yang belum punya penjualan selesai** (`completed`) — hari yang cuma berisi tagihan terbuka ikut ditambal sejak 2026-08-20. Aman dijalankan kapan pun, sesering apa pun:
 
 ```bash
 php artisan db:seed --class=DemoTransactionSeeder --no-interaction
@@ -172,9 +281,9 @@ php artisan db:seed --class=DemoTransactionSeeder --no-interaction
 php artisan db:seed --class=CafeStudyCaseSeeder --no-interaction
 ```
 
-Keduanya melaporkan berapa hari diisi dan berapa dilewati. `CafeStudyCaseSeeder` juga menambahkan restock bulanan hanya untuk bulan yang belum punya restock, dan membuat sesi kas hanya untuk hari yang penjualannya baru saja ia buat — hari yang sudah berisi tidak disentuh, supaya angka kasnya tetap cocok dengan penjualan tunai yang sudah tercatat di sana.
+`SquidCoffeeSeeder` **tidak** bisa dipakai menambal: ia menolak berjalan bila tenant `squid-coffee` sudah ada, dan hari penjualan terakhirnya dipatok 14 September 2026.
 
-> Konsekuensi yang perlu diketahui: hari yang isinya **tipis** (misalnya satu transaksi hasil uji coba) tetap dianggap terisi dan tidak ditambal. Untuk data yang benar-benar rapi, jalurnya reset bersih di bawah.
+> Hari yang isinya **tipis** (misalnya satu transaksi hasil uji coba) tetap dianggap terisi dan tidak ditambal. Untuk data yang benar-benar rapi, jalurnya reset bersih di bawah.
 
 ### Reset bersih total
 
@@ -182,133 +291,181 @@ Keduanya melaporkan berapa hari diisi dan berapa dilewati. `CafeStudyCaseSeeder`
 php artisan migrate:fresh --seed && php artisan db:seed --class=PlatformUserSeeder && php artisan db:seed --class=CafeStudyCaseSeeder && php artisan db:seed --class=DemoTransactionSeeder
 ```
 
-Urutannya penting, dan `migrate:fresh` bukan pilihan gaya:
+Opsional sesudahnya: `SquidCoffeeSeeder` (tenant ketiga) dan `UpsellRuleShowcaseSeeder` (aturan peraga, dipasang ke tenant pertama kecuali `PERAGA_TENANT=<slug>` disetel).
 
-- `DatabaseSeeder` memakai `Tenant::create()`, bukan `firstOrCreate` — **tidak idempotent**. Menjalankannya di atas database yang sudah terisi akan gagal karena slug duplikat. Ini juga satu-satunya jalan mendapatkan `kasir2@sapi.test`.
-- `PlatformUserSeeder` tidak ikut terpanggil oleh `--seed`; harus disebut sendiri.
-- `DemoTransactionSeeder` bergantung pada produk & metode bayar milik `kopi-nusantara`, jadi harus setelah `DatabaseSeeder`.
+Urutannya penting:
+
+- `DatabaseSeeder` memakai `Tenant::create()` — **tidak idempotent**. Ini juga satu-satunya jalan mendapatkan `kasir2@sapi.test`. Tenantnya dimulai lewat `startTrial()` (masa gratis) dengan 5 kursi, jadi keadaan langganannya **tidak sama** dengan basis data lokal hari ini.
+- `PlatformUserSeeder` tidak ikut terpanggil oleh `--seed`.
+- `DemoTransactionSeeder` dan `UpsellRuleShowcaseSeeder` bergantung pada data `kopi-nusantara`, jadi harus setelah `DatabaseSeeder`.
 
 ### Ringkasan seeder
 
 | Seeder | Isi | Aman dijalankan ulang? |
 |---|---|---|
 | `PermissionCatalogSeeder` | 7 permission modul tenant (global) | ✅ |
-| `DatabaseSeeder` | Tenant Kopi Nusantara + owner + 2 kasir + menu + modifier + metode bayar + dua role contoh | ❌ gagal, harus `migrate:fresh` |
+| `DatabaseSeeder` | Kopi Nusantara + owner + 2 kasir + menu + modifier + metode bayar + dua role contoh | ❌ gagal, harus `migrate:fresh` |
 | `DemoTransactionSeeder` | Sampai 90 hari transaksi untuk Kopi Nusantara | ✅ hanya mengisi hari kosong |
-| `CafeStudyCaseSeeder` | Tenant Kopi Story lengkap: menu, transaksi sejak 1 Jan 2026, restock bulanan, sesi kas harian | ✅ hanya mengisi hari & bulan kosong |
+| `CafeStudyCaseSeeder` | Kopi Story: menu, transaksi sejak 1 Jan 2026, restock bulanan, sesi kas harian | ✅ hanya mengisi hari & bulan kosong |
+| `SquidCoffeeSeeder` | Squid Coffee: 36 produk/53 varian, 8 aturan saran jual, transaksi 15 Jul – 14 Sep 2026, stok diturunkan dari volume jual | ❌ menolak bila tenantnya sudah ada |
+| `UpsellRuleShowcaseSeeder` | Aturan & produk peraga untuk sepuluh keadaan halaman Aturan Saran Jual (`PERAGA=bersih` mencabutnya) | ✅ mencabut yang lama dulu |
 | `PlatformUserSeeder` | Akun pemilik platform | ✅ |
-| `ProductionSeeder` | Tenant "default" + akun admin dari `ADMIN_EMAIL`/`ADMIN_INITIAL_PASSWORD` — **untuk produksi, bukan demo** | ✅ |
+| `ProductionSeeder` | Tenant "default" + admin dari `ADMIN_EMAIL`/`ADMIN_INITIAL_PASSWORD` — **untuk produksi, bukan demo** | ✅ |
 
 ---
 
 ## 6. Kondisi Langganan & Penagihan
 
-Kedua tenant demo berada di plan **"Dasar"** dengan `trial_ends_at = null`. Yang terakhir disengaja — demo dianggap sudah berlangganan supaya tidak kedaluwarsa sebulan setelah seed dijalankan dan merusak demo di kemudian hari.
+Hampir seluruh bagian ini berubah sejak 1 Agustus. Panduan lama menyebut plan "Dasar" Rp0 dan tabel `invoices` kosong — keduanya sudah tidak berlaku.
 
-| | Kopi Nusantara | Kopi Story |
-|---|---|---|
-| Jalur harga | **Harga Adaptif** (`subsidized`), persetujuan v1 aktif | **Harga Tetap** (`normal`) |
-| Batas pengguna (`seats`) | 4 | 2 |
-| Periode berjalan | 24 Jul – 24 Agu 2026 | 24 Jul – 24 Agu 2026 |
+### Paket yang berlaku
 
-Plan "Dasar" bawaan bernilai `base_price = 0`, `included_seats = 1`, `extra_seat_price = 0`. Akibatnya **semua tagihan Rp0 dan tabel `invoices` kosong**. Paket **Premium 1/2/3** sudah punya angka nyata (Rp100k/150k/200k, seat tambahan Rp15.000/12.500/10.000), tapi belum ada jalur yang memindahkan tenant ke sana — itu `[BL-046]`. Kalau demo perlu memperagakan alur tagihan dan verifikasi bukti bayar, isi dulu harga paketnya dari `/platform/pricing-rules` (bagian **Paket**), lalu terbitkan tagihan dari tab **Tagihan** pada rincian tenant.
+| Paket | Harga/bulan | Kursi termasuk | Kursi tambahan | Analisis AI/hari |
+|---|---|---|---|---|
+| **Free** (masa gratis) | Rp0 | 2 | Rp20.000 | 5 |
+| **Paid 1** | Rp100.000 | 3 | Rp15.000 | 15 |
+| **Paid 2** | Rp150.000 | 5 | Rp12.500 | 30 |
+| **Paid 3** | Rp200.000 | 10 | Rp10.000 | 60 |
 
-**Aturan harga jalur Harga Adaptif** sudah terisi empat kelompok, semuanya berdimensi omzet bulanan:
+**Kuota AI tambahan:** satu blok = +5 analisis/hari, **Rp15.000/bulan**, seragam antar paket, paling banyak 20 blok. Belum ada kebijakan promo kuota yang aktif.
 
-| Label | Rentang omzet bulanan | Harga |
-|---|---|---|
-| A | Rp0 – 2 juta | Rp10.000 |
-| B | Rp2 – 5 juta | Rp25.000 |
-| C | Rp5 – 15 juta | Rp50.000 |
-| D | di atas Rp15 juta | Rp100.000 |
+**Kursi tambahan ditagih karena dibeli, bukan karena dipakai**, bulanan, dan bisa dilepas (pelepasan berlaku satu periode penuh ke depan). Kursi yang dibeli di tengah periode ditagih per hari sebagai komponen tagihan berikutnya.
 
-Aturan ini **berkriteria**, bukan kolom tetap: satu aturan bisa punya banyak syarat (`dimensi` + `operator` + `nilai`) dan sebuah `priority`. Selain omzet bulanan, tersedia dimensi **jumlah transaksi/bulan**, **pengguna aktif**, dan **tipe usaha**. Kelompok harga baru cukup ditulis dari panel — tanpa migration, tanpa deploy.
+### Siklus hidup
 
-Kopi Nusantara **sudah berada di jalur Harga Adaptif dan sudah menyetujui dokumennya**, tapi tabel `tenant_monthly_metrics` masih kosong karena job bulanan (`subscriptions:compute-revenue`, tanggal 1 pukul 04:00) belum pernah berjalan untuknya. Untuk mengisi metriknya sebelum demo:
-
-```bash
-php artisan subscriptions:compute-revenue
+```
+trial (Free, 2 bulan) ──H-14: pilihan jalur──H-7: pindah ke Paid 1 + tagihan terbit──> active
+active ──periode lewat tanpa bayar──> grace (30 hari) ──> suspended
 ```
 
-Halaman `/langganan` milik tenant jalur Harga Tetap juga menampilkan **perkiraan tarif adaptif** — omzet bulan lalu miliknya sendiri, kelompok tarif yang ia masuki, dan perbandingan "tarif sekarang → perkiraan adaptif". Perkiraan itu dihitung saat itu juga dan **tidak pernah disimpan**: tidak ada baris `tenant_monthly_metrics` yang lahir karena pemilik toko membuka halamannya sendiri.
+| Tahap tenggang | Hari | Yang terjadi |
+|---|---|---|
+| Halus | 1–14 | Pita pemberitahuan di shell owner **dan** kasir |
+| Intensif | 15–19 | Modal peringatan (padam bila instruksi bayar sudah terbit, tapi hitungan harinya jalan terus) |
+| Terkunci | 20–30 | **Layar POS** diganti halaman kunci di URL aslinya; laporan, riwayat, stok, dan ekspor tetap terbuka |
+| `suspended` | > 30 | Sidebar owner mati selain **Langganan & Tagihan**; tombol **aktifkan kembali** menerbitkan satu tagihan pemulihan |
+
+Model **prabayar**: tarif periode P dihitung dari omzet bulan sebelum P. Tagihan periode berikutnya terbit sendiri **7 hari** sebelum periode berjalan habis (tenant Adaptif berjangkar tanggal 1–7 menunggu ringkasan omzet bulannya lebih dulu). Tanggal tagih berjangkar pada tanggal daftar; bulan pendek hanya menjepit sementara.
+
+### Harga Adaptif
+
+Diskon dari Paid 1 menurut omzet bulan sebelumnya:
+
+| Kelas | Omzet bulanan | Tarif | Diskon |
+|---|---|---|---|
+| A | Rp0 – 2 juta | Rp10.000 | 90% |
+| B | Rp2 – 5 juta | Rp25.000 | 75% |
+| C | Rp5 – 15 juta | Rp50.000 | 50% |
+| D | Rp15 – 50 juta | **Rp75.000** (revisi 7 Agu; dulu Rp100.000 = diskon 0%) | 25% |
+| — | di atas Rp50 juta | tidak berhak Adaptif → Paid 1 harga penuh | — |
+
+- **Pengajuan punya halaman** (`/langganan/harga-adaptif`) dan dinilai seketika: layak / sudah aktif / masa jeda / di atas plafon. Persetujuan diberikan saat mengajukan, jadi omzet baru diukur setelah tenant memintanya.
+- Tenant Adaptif yang omzetnya melewati plafon diberi tahu dulu, dipindah di akhir periode.
+- Kursi tidak didiskon: tenant Adaptif di Paid 1 tetap membayar Rp15.000/kursi.
+- Tenant Harga Tetap melihat **kelasnya sendiri** di `/langganan`, dengan pernyataan bahwa kelas itu ditentukan tanpa melihat penjualannya.
+
+### Membayar
+
+Driver pembayaran hari ini adalah **`fake`** (gateway tiruan). Ada dua cara memperagakan pembayaran, keduanya melunasi lewat **webhook bertanda tangan HMAC** yang sama dengan penyedia sungguhan nanti:
+
+1. **Modal satu langkah** di tab **Tagihan** `/langganan`: pilih kanal, ketik **kata sandi owner** sebagai ganti aplikasi bank, ±2,4 detik proses, lunas. Paling cocok untuk ruang rapat.
+2. **Halaman instruksi bayar** (`/langganan/tagihan/{invoice}/bayar`): nomor VA / QR terbit, "Memeriksa pembayaran…", lalu lunas sendiri setelah **8 detik** (`PAYMENT_FAKE_AUTO_SETTLE_SECONDS`).
+
+Jalur lama — unggah bukti transfer lalu diverifikasi manual dari konsol platform — tetap ada. Tombol "Simulasikan pembayaran" sudah **dicabut**. Driver tiruan menolak di-resolve di produksi.
+
+### Keadaan ketiga tenant saat ini
+
+| | Kopi Nusantara | Kopi Story | Squid Coffee |
+|---|---|---|---|
+| Paket · jalur | Paid 1 · Harga Adaptif | Paid 1 · Harga Tetap | Paid 1 · Harga Tetap |
+| Kursi | 6 (3 termasuk + 3 dibeli) | 6 (3 termasuk + 3 dibeli) | 3 |
+| Periode berjalan | 24 Sep – 24 Okt 2026 | 24 Jul – 24 Agu 2026 ⚠️ | 15 Sep – 15 Okt 2026 |
+| Tagihan | 3, semuanya lunas | 1 (Rp0, peninggalan lama) | — |
+
+Untuk memperagakan **tagihan terbuka dan pembayaran**, jalur paling bersih: dari konsol platform, tab **Tagihan** pada rincian Squid Coffee atau Kopi Nusantara, terbitkan satu tagihan (nominal yang menyimpang dari aturan akan meminta alasan), lalu bayar dari sisi owner.
 
 ### Aturan yang mengikat dan sebaiknya disebutkan saat demo
 
-- **Seat = pengguna aktif**, tetapi tagihan mengikuti `seat_high_water` (puncak dalam periode). Menonaktifkan staf di akhir bulan tidak menghemat biaya — ini disengaja. Konsekuensi yang belum terselesaikan: kursi **tidak pernah bisa turun** (`[BL-049]`).
-- **Siklus hidup:** trial 30 hari → `grace` **hanya-baca** 30 hari → `suspended` (angkanya di `config/subscription.php`). Saat `suspended`, seluruh item sidebar owner selain **Langganan & Tagihan** dirender mati, dan pintasan Kasir di topbar disembunyikan — navigasinya jujur mengaku terkunci, bukan menyembunyikan diri.
-- **Daftar tenant di panel platform menampilkan kelompok omzet, bukan angka rupiah persis.** Angka persis hanya ada di tab **Omzet** pada rincian tenant, dan setiap kunjungan tercatat sebagai kejadian `sensitive` tanpa deduplikasi. Membuka rincian tenant sendiri tercatat sebagai kejadian **rutin** (terdeduplikasi).
+- **Daftar tenant di panel platform menampilkan kelompok omzet, bukan angka rupiah persis.** Angka persis hanya di tab **Omzet**, dan setiap kunjungan tercatat `sensitive` tanpa deduplikasi. Membuka rincian tenant tercatat sebagai kejadian **rutin**.
 - **Mencabut persetujuan Harga Adaptif** menghapus metrik seketika, tapi tarifnya tetap berlaku sampai akhir periode.
-- **Pindah jalur harga** dibatasi minimum tiga bulan sekali.
-- **Retensi data omzet** 24 bulan.
-- **Tab Kapabilitas di panel platform hanya membaca.** Pemilik SaaS bisa *mengetahui* fitur apa yang menyala di sebuah outlet, tapi tidak bisa menyalakan atau mematikannya — cara kerja usaha orang bukan milik penyedia layanannya. Begitu pula jenis usaha: editornya ada di Owner → Pengaturan, panel platform hanya membacanya.
-
-### Perhatian saat demo
-
-Kopi Nusantara punya **`seats = 4`**. Menambah staf di luar batas itu akan memicu alur upgrade seat — yang hari ini menerbitkan tagihan **Rp 0** dan tetap meminta bukti transfernya (`[BL-049]`). Itu bisa jadi bahan cerita yang jujur soal "harga belum ditetapkan", atau kejutan yang tidak enak. Tentukan dulu apakah Anda sengaja.
+- **Pindah jalur harga** minimum tiga bulan sekali. **Retensi data omzet** 24 bulan.
+- **Tab Kapabilitas di panel platform hanya membaca.** Pemilik SaaS bisa *mengetahui* fitur apa yang menyala, tidak bisa mengubahnya. Satu-satunya pengecualian yang disengaja adalah **membuka kunci pajak** — dan itu membuka kuncinya, bukan menulis setelannya.
+- **Pindah paket dan tagihan manual yang menyimpang wajib beralasan**, tercatat di jejak audit, dan alasan tagihan dibaca tenant.
 
 ---
 
 ## 7. Alur Demo yang Disarankan
 
-Urutan ini bergerak dari yang paling konkret ke yang paling abstrak, dan tidak pernah memerlukan mundur untuk menyiapkan data. Totalnya sekitar 25 menit.
+Urutan ini bergerak dari yang paling konkret ke yang paling abstrak. Totalnya sekitar 35 menit; Babak 0 dan bahan tambahan boleh dilewati.
 
-### Babak 1 — Kasir (7 menit) · `kasir@kopistory.test`
+### Babak 0 — Sebelum mendaftar (2 menit, opsional) · tanpa login
 
-1. Masuk sebagai kasir → langsung diminta **buka sesi kas** (kas awal Rp500.000).
-2. Buka **POS**: pilih produk berkategori, pilih varian, terapkan modifier (Sugar Level, Add-ons berbayar seperti Extra Shot/Boba).
-3. **Saran jual** muncul di strip atas keranjang — add-on yang paling sering menyertai item, barang tertekan (mendekati kedaluwarsa / tak bergerak sebulan), dan tawaran naik ukuran. Tunjukkan bahwa "Diterima" langsung memasukkan barangnya ke keranjang, dan × berarti **ditolak pelanggan**, bukan sekadar menutup.
-4. Bayar tunai → perlihatkan perhitungan kembalian; ulangi dengan QRIS; lalu satu transaksi **split bill** dua metode.
-5. Buat satu **tagihan terbuka**, lalu lunasi lewat **tombol ber-badge di topbar** — tekankan bahwa daftarnya ikut ke halaman kasir mana pun, tidak lagi terkubur di dalam keranjang.
-6. **Edit transaksi** yang sudah selesai → tunjukkan stok ikut terkoreksi dan perubahannya tercatat.
-7. **Tutup kas** dua langkah: ringkasan sistem lebih dulu, baru konfirmasi hitungan fisik. Masukkan angka yang sengaja berbeda untuk memperlihatkan selisih.
+1. **Landing** → bagian "Bagaimana Harga Anda Dihitung", lalu **`/harga`**: kedua jalur tarif dibaca langsung dari aturan yang berlaku.
+2. **`/register`**: tunjukkan bahwa masa gratis 2 bulan, paket sesudahnya, dan tanggal tagihan pertama tertulis sebelum tombol Daftar. Pilih cara berjualan **Gerai acara & bazar** dan perlihatkan paket setelannya berubah (kode panggil otomatis, antrian dapur menyala) — terlihat dan bisa diubah. **Jangan menekan Daftar** kecuali pengirim surel sudah disiapkan ([§8](#surel-tidak-benar-benar-terkirim)).
 
-### Babak 2 — Mode & Fitur Outlet (3 menit) · `owner@sapi.test`
+### Babak 1 — Kasir (8 menit) · `kasir@kopistory.test` atau `kasir@squid.id`
 
-Bagian ini singkat tapi menjelaskan banyak: satu aplikasi, banyak bentuk usaha.
+1. Masuk → **buka sesi kas** (kas awal Rp500.000). Tekan tombol **layar penuh** di topbar.
+2. **POS**: pilih produk, varian, modifier. Masukkan dua barang, lalu **Ubah** salah satu baris (ganti ukuran) — tunjukkan pilihannya sudah tercentang dan jumlahnya tidak kembali ke 1.
+3. **Kartu saran jual** muncul di dasar kolom katalog dan menyalakan baris keranjang asalnya. Tekan **Diterima**, lalu **Batalkan** untuk menunjukkan keranjang kembali seperti semula; tolak saran berikutnya. Tekankan: "Ditolak" berarti pelanggan menolak, dan laporannya membedakan itu dari saran yang tidak pernah dijawab.
+4. **Bayar tunai**: kotak nominalnya kosong. Ketik uang yang diterima (atau tekan **Uang Pas** setelah menghitung), tunjukkan kembalian. Ulangi dengan QRIS, lalu satu transaksi **split bill** tunai + QRIS — sisa non-tunai jatuh sendiri.
+5. **Tunda Bayar** satu pesanan, lalu lunasi lewat tombol **Tagihan Terbuka** di topbar. Sebutkan umurnya 24 jam, setelah itu jadi kas negatif yang hanya owner bisa bereskan.
+6. **Edit transaksi** yang sudah selesai → stok ikut terkoreksi.
+7. **Kas** → **Catat Uang Keluar** Rp20.000 ("beli es batu", langsung berlaku), lalu Rp75.000 (tertahan: di atas ambang Rp50.000, menunggu persetujuan owner).
+8. **Tutup Kas**: masukkan hitungan fisik **tanpa** melihat angka seharusnya. Sebutkan bahwa tombol "Tampilkan uang seharusnya" ada, tapi setiap penekanannya dibaca owner. Masukkan angka yang sengaja berbeda untuk memperlihatkan selisih.
 
-1. **Pengaturan → Mode & Fitur Outlet.** Tunjukkan tiga kapabilitas per outlet: **papan antrian dapur**, **self-order**, dan **AI**. Nyalakan papan antrian.
-2. Tunjukkan **identitas pesanan**: satu mode dipilih owner — tidak dipakai / nama pelanggan / nomor meja / kode panggil otomatis. Kopi Nusantara memakai **nomor meja**; ganti ke **kode panggil**, lalu buat satu transaksi di POS dan perlihatkan nomornya tercetak di struk dan muncul di **papan `/cashier/queue`**.
-3. Sebutkan bahwa **saran jual bisa diwajibkan** — tiap saran harus dijawab sebelum tombol BAYAR hidup — dan bahwa laporannya sengaja punya dua angka (`conversion_rate` dan `offer_rate`) supaya menyalakan mode wajib tidak bisa memoles statistiknya sendiri.
+### Babak 2 — Cara Kerja Sistem (4 menit) · `owner@sapi.test`
 
-### Babak 3 — Pemilik Usaha (7 menit) · `owner@kopistory.test`
+Satu aplikasi, banyak bentuk usaha.
 
-1. **Dashboard** — omzet, transaksi, produk terlaris, tren, plus **ringkasan langganan** dengan tagihan terbuka. (Pastikan data sudah disegarkan; lihat [§5](#5-menyiapkan--menyegarkan-data-demo).)
-2. **Laporan Harian** dengan filter tanggal, dan **Rekap Kas** — di sini 213 sesi Kopi Story terbayar: pas, minus, dan plus lengkap dengan catatan alasannya.
-3. **Saran Jual** (`/owner/reports/upsell`) — konversi per jenis saran.
-4. **Stok** — restock, penyesuaian, riwayat per varian, dan mutasi stok. Tunjukkan bahwa restock bulanan Januari–hari ini semuanya terekam.
-5. **Analisis AI** — kirim satu analisis, tunjukkan job diproses lalu hasilnya muncul. Batas **5 analisis/hari per tenant** (bawaan platform; paket berbayar bisa menaikkannya).
-6. **Pengaturan → Token MCP** — jelaskan bahwa owner bisa menyambungkan Claude Desktop ke data bisnisnya sendiri, dan itu memakai kuota AI *milik owner*, bukan kuota aplikasi.
-7. **Langganan & Tagihan** — halaman ini kini memakai cangkang yang sama seperti halaman owner lainnya, dengan warna per jalur harga (Masa Coba ungu, Harga Tetap biru, Harga Adaptif hijau) dan jejak persetujuan yang menyebut versi, tanggal, serta nama penyetujunya.
+1. **Pengaturan → Cara Kerja Sistem → Paket Setelan Awal**: pilih paket lain dan tunjukkan layar memperlihatkan selisihnya sebelum diterapkan. Tidak ada yang diterapkan tanpa diminta.
+2. **Mode & Fitur Outlet**: antrian dapur, pesan mandiri, analisis AI, foto bukti pembayaran. Nyalakan antrian dapur, ganti identitas pesanan ke **kode panggil**, buat satu transaksi di POS, dan tunjukkan nomornya di struk dan di **papan `/cashier/queue`**.
+3. **Saran jual wajib dijawab** (menyala di Kopi Nusantara) dan **Jenis Saran Jual**: empat saklar per jenis. Sebutkan bahwa saklar darurat global milik pemilik SaaS selalu menang.
+4. **Batas Untung Minimum** (10%) dan **Batas Uang Keluar Tanpa Persetujuan** (Rp50.000) — dua angka yang dipakai Aturan Diskon dan laci kas.
+5. **Pajak & Biaya Layanan**: tunjukkan pilihan exclusive/inclusive dan pembagiannya di struk. **Hati-hati menyalakan pajak di tenant demo**: sebagian setelannya terkunci setelah dipakai dan hanya bisa dibuka lewat operator platform (Babak 5). Tarif tetap bisa diubah.
+6. **Profil & Merek**: unggah logo → sidebar owner, topbar kasir, dan kepala struk berganti sekaligus.
+
+### Babak 3 — Pemilik Usaha (10 menit) · `owner@squid.id` atau `owner@kopistory.test`
+
+1. **Beranda** — omzet & transaksi hari ini dan bulan ini; tekan salah satu kartu untuk mendarat di laporannya. Sakelar Hari Ini / Bulan Ini pada rekap metode bayar.
+2. **Penyelamat Stok** di beranda — barang tertekan, modal yang tertahan, dan **berapa yang belum punya potongan otomatis**. Tab **Bulan Ini**: omzet dari barang tertekan dan modal hangus. Tekan "Lihat di Stok" → daftar yang sama persis di halaman Stok.
+3. **Aturan Diskon** — satu aturan potongan hampir kedaluwarsa; tunjukkan lantai untung di pratinjau dan chip "Tertahan lantai".
+4. **Aturan Saran Jual** — tulis aturan "beli X, tawarkan Y", simpan, dan halaman melompat ke tab **Muncul di kasir hari ini**. (Di Kopi Nusantara, kolom "Di kasir hari ini" memperlihatkan kesepuluh keadaan: tampil di slot, tergeser, stok habis, kedaluwarsa, diwakili saran lain, dan seterusnya.)
+5. **Saran Jual** (laporan) — corong Tampil → Dijawab kasir → Diterima, dipisah Otomatis vs Aturan Anda.
+6. **Laporan Bulanan** — garis tren sebulan, tekan satu tanggal untuk rinciannya, unduh CSV. **Laporan Harian** dan **Rekap Kas** Kopi Story: sesi pas, minus, plus lengkap dengan alasannya.
+7. **Sesi Kas** — setujui uang keluar Rp75.000 dari Babak 1, tunjukkan kolom **Angka Dibuka** dan label "Ditutup sistem". **Transaksi** — pembereskan kas negatif: catat pelunasan terlambat, atau hapuskan (hanya jalan kedua yang mengembalikan stok).
+8. **AI Analysis** — meter kuota di atas tombol; kirim satu analisis dan tunjukkan hasilnya menyebut angka milik toko ini, dengan nama varian yang bisa diklik.
+9. **Integrasi & Kredensial → Akses MCP** — owner bisa menyambungkan Claude Desktop ke datanya sendiri, dengan kuota AI miliknya.
+10. **Langganan & Tagihan** — tiga tab. Di Kopi Nusantara: jalur Harga Adaptif dengan jejak persetujuannya. Di Squid Coffee: buka **Harga Adaptif** dan tunjukkan penilaian seketika terhadap plafon Rp50 juta. Tab **Kapasitas**: beli dan lepas kursi atau blok kuota AI. Bila ada tagihan terbuka, bayar lewat modal kata sandi.
 
 ### Babak 4 — RBAC (3 menit) · `owner@sapi.test` (Kopi Nusantara)
 
-1. **Role & Modul** — tunjukkan "Kasir + Gudang" (`pos`, `cash_drawer`, `stock`) berdampingan dengan "Kasir" (`pos`, `cash_drawer`).
-2. Masuk sebagai `kasir2@sapi.test` di jendela lain → menu **Stok hilang dari navigasi**, dan mengetik `/owner/stock` langsung tetap **ditolak**. Poin pentingnya: gerbangnya di server, bukan cuma menyembunyikan menu.
+1. **Role** — "Kasir + Gudang" (`pos`, `cash_drawer`, `stock`) berdampingan dengan "Kasir" (`pos`, `cash_drawer`). **Staf** — lencana modul menjawab "orang ini bisa buka apa saja"; baris owner menyatakan aksesnya tidak berasal dari role.
+2. Karena `kasir2@sapi.test` tidak ada di basis data saat ini, **tetapkan role "Kasir" ke `gudang@sapi.test`** dari halaman Staf (setel kata sandinya dulu, [§3](#3-kredensial-demo)).
+3. Masuk sebagai `gudang@sapi.test` di jendela lain → menu **Stok hilang**, dan mengetik `/owner/stock` langsung tetap **ditolak**. Gerbangnya di server.
 
-> `kasir2@sapi.test` hanya ada setelah `migrate:fresh --seed` ([§3](#3-kredensial-demo)). Tanpa itu, tetapkan role "Kasir" ke `gudang@sapi.test` dari halaman **Staf** lebih dulu — hasilnya sama, cuma perlu satu langkah persiapan.
+> Peragakan dengan modul `stock`, jangan dengan mencabut `pos`. Rute kasir sengaja tidak digerbang per modul — lihat [§8](#satu-lubang-rbac-yang-sengaja-dibiarkan).
 
-> Perhatikan arahnya: peragakan dengan modul `stock`, jangan dengan mencabut `pos`. Rute kasir sengaja tidak digerbang per modul — lihat [§8](#satu-lubang-rbac-yang-sengaja-dibiarkan).
+### Babak 5 — Platform Console (8 menit) · `platform@sapi.test`
 
-### Babak 5 — Platform Console (7 menit) · `platform@sapi.test`
-
-Gunakan **jendela peramban yang bersih** (lihat `[BL-043]` di §8).
-
-1. **Dashboard** platform, lalu **Daftar Tenant** — daftarnya kini benar-benar daftar: nama, pemilik, status, dan tombol **Lihat detail**.
-2. **Rincian tenant** — lima tab: **Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet**. Tekankan bahwa tab Kapabilitas **hanya membaca**.
-3. **Langganan & Tagihan** — keadaan tiap tenant, seat, periode; ubah batas pengguna dan tunjukkan bahwa **alasannya wajib diisi**.
-4. **Paket & Aturan Harga** — empat kelompok A–D berdimensi omzet, plus paket Dasar/Premium dengan batas per paket. Terbitkan satu aturan baru dengan tanggal berlaku ke depan untuk memperlihatkan bahwa harga bisa berubah tanpa deploy.
-5. **Omzet** — buka tab Omzet satu tenant, lalu segera pindah ke **Log Audit** dan tunjukkan kunjungan tadi sudah tercatat sebagai `sensitive`, sementara membuka rincian tenant hanya tercatat sebagai kejadian rutin. **Ini demo paling meyakinkan di babak ini.**
-6. **Kelola Akun Platform** — buat staf platform yang hanya diberi modul `tenants`, masuk sebagai dia, tunjukkan menu lain menghilang. Tunjukkan juga bahwa **manajemen akun platform sendiri tidak ada di daftar modul yang bisa diberikan** — dijaga penanda `is_owner`, supaya staf platform tak bisa mencentangkan modul sensitif untuk dirinya sendiri.
+1. **Keamanan Akun** — tunjukkan pendaftaran authenticator dan delapan kode pemulihan. Aktifkan hanya bila sudah diputuskan di [§3](#3-kredensial-demo).
+2. **Daftar Tenant** → **rincian** — lima tab: **Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet**. Kapabilitas hanya membaca, dan di sana pula keadaan pajak toko beserta tombol **buka kunci** (alasan minimal 10 karakter, jendela 7 hari, sekali pakai, tercatat `sensitive`).
+3. **Tab Langganan** — pindahkan tenant ke Paid 2, alasan wajib. **Tab Tagihan** — terbitkan tagihan dengan nominal yang menyimpang dari aturan: alasannya ditanya, dan tenant membacanya di `/langganan`.
+4. **Aturan Harga** — tangga A–D (D kini Rp75.000, plafon Rp50 juta), paket Free/Paid 1–3 berikut batas kursi & AI, serta penunjukan **paket tujuan setelah masa gratis**. Terbitkan satu revisi dengan tanggal berlaku ke depan: harga berubah tanpa deploy.
+5. **Kuota AI** — kebijakan berjangka dengan tanggal akhir (promo), angka pemakaian yang hanya gabungan, dan tombol mengembalikan jatah hari ini yang berdiri terpisah dengan konfirmasinya sendiri.
+6. **Omzet** — buka tab Omzet satu tenant, lalu segera ke **Jejak Audit**: kunjungan tadi tercatat `sensitive`, membuka rincian hanya kejadian rutin. **Demo paling meyakinkan di babak ini.**
+7. **Akun Platform** — buat staf yang hanya diberi modul `tenants`, masuk sebagai dia, tunjukkan menu lain menghilang — dan bahwa manajemen akun platform tidak ada di daftar modul yang bisa diberikan.
 
 ### Babak 6 — Isolasi Tenant (2 menit, penutup)
 
-Masuk sebagai `owner@sapi.test` dan `owner@kopistory.test` bersebelahan: produk, transaksi, laporan, semuanya terpisah total. Sebutkan bahwa isolasi ini dijaga oleh berkas uji tersendiri (`tests/Feature/TenantIsolation`, `PlatformIsolationTest`), bukan hanya oleh kedisiplinan menulis query.
+Masuk sebagai `owner@sapi.test` dan `owner@kopistory.test` bersebelahan: produk, transaksi, laporan, logo, semuanya terpisah total. Isolasi ini dijaga berkas uji tersendiri (`tests/Feature/TenantIsolation`, `PlatformIsolationTest`), bukan hanya kedisiplinan menulis query.
 
 ### Bahan tambahan bila ada waktu
 
-- **`/dokumentasi`** — hub dokumentasi publik dua jalur: **Panduan Penggunaan** (untuk pemilik usaha & kasir) dan **Dokumentasi Developer**. Bagus untuk ditinggalkan sebagai tautan setelah demo.
-- **`/api-docs`** — referensi API mobile.
-- **Penjualan offline (PWA)** — matikan jaringan di DevTools, buat transaksi, nyalakan lagi, tunjukkan sinkronisasinya dan halaman **Koreksi Offline** milik owner.
+- **Penjualan offline (PWA)** — matikan jaringan di DevTools, buat transaksi, tutup tab POS, nyalakan jaringan: antrean terkirim lewat Background Sync (Chrome). Tunjukkan halaman **Koreksi Offline** milik owner.
+- **Barang kedaluwarsa** (bila perubahan 2026-09-15 sudah masuk) — restock dengan dua tanggal berbeda, jual melebihi stok yang masih baik, dan tunjukkan dialog alasan wajib di kasir serta tabel "Terjual kedaluwarsa" di laporan.
+- **Papan antrian dapur Squid Coffee** — sudah menyala, cukup buat pesanan dari kasirnya.
+- **`/dokumentasi`** — hub dokumentasi dua jalur (Panduan Penggunaan & Dokumentasi Developer). **`/api-docs`** — referensi API mobile.
 
 ---
 
@@ -316,85 +473,113 @@ Masuk sebagai `owner@sapi.test` dan `owner@kopistory.test` bersebelahan: produk,
 
 Daftar ini ada supaya Anda tidak dikejutkan di depan penonton, dan supaya jawaban Anda jujur kalau ditanya.
 
-### Satu cacat pengalihan yang bisa muncul saat demo
+### Sudah tidak berlaku sejak panduan lama
 
-`[BL-043]` — **akun platform yang sesinya masih hidup lalu membuka `/platform/login` akan mendarat di landing publik `/`**, bukan di `/platform`. Terbukti langsung di peramban 2026-08-01. Gejala kedua yang bersyarat: bila peramban itu sebelumnya pernah menyentuh area tenant dalam keadaan keluar, login platform bisa berakhir di halaman masuk **tenant** — login-nya berhasil dan tercatat di audit, tapi layarnya salah.
-
-**Penangkalnya saat demo: pakai jendela peramban bersih (atau penyamaran) untuk masuk ke `/platform`, dan jangan menekan Back ke halaman login setelah masuk.**
+Supaya tidak ada yang mengulang kalimat lama: **2FA platform sudah ada** (`[BL-013]`), **cacat pengalihan `[BL-043]` sudah diperbaiki**, **tagihan periode terbit otomatis** (`[BL-044]`), **pita langganan tampil di shell owner dan kasir** (`[BL-045]`), **tenant bisa dipindah paket** (`[BL-046]`), **tarif paket sudah nyata** (bukan Rp0), dan **kursi yang dibeli bisa dilepas**.
 
 ### Surel tidak benar-benar terkirim
 
 `MAIL_MAILER=log`. Akun demo sudah `email_verified_at` terisi jadi bisa langsung masuk. Tapi:
 
-- **Mendaftar akun baru saat demo** → tautan verifikasi hanya muncul di `storage/logs/laravel.log`, harus digali manual.
-- **Kedua alur reset kata sandi** (tenant dan platform) tidak berfungsi hidup.
-
-Kalau demo perlu menyentuh salah satu alur ini, siapkan pengirim surel sungguhan lebih dulu.
+- **Mendaftar akun baru saat demo** → tautan verifikasi hanya muncul di `storage/logs/laravel.log`.
+- **Kedua alur reset kata sandi** (tenant dan platform) dan **peringatan login gagal** tidak terkirim hidup.
 
 ### Belum terpasang
 
 | Hal | Status | ID backlog |
 |---|---|---|
-| Penagihan otomatis di akhir masa coba | Siklus hidup langganan **berpindah keadaan** (trial → grace → suspended) tapi **tidak pernah menerbitkan tagihan**. Satu-satunya cara tagihan bulanan lahir hari ini adalah pemilik SaaS mengetiknya dari panel. | `[BL-044]` |
-| Tarif paket "Dasar" | `base_price = 0` — semua tagihan Rp0 dan `invoices` kosong. Premium sudah punya angka tapi belum ada jalur pindah paket ke sana. | `[BL-041]`, `[BL-046]` |
-| Payment gateway | Belum ada. Alurnya: tenant unggah bukti transfer → pemilik SaaS verifikasi manual. Membayar belum memulihkan akses dengan sendirinya. | `[BL-045]` |
-| Pita peringatan langganan di luar dashboard | Keadaan `grace`/`suspended` sudah ditegakkan di server, tapi peringatannya hanya di kartu dashboard owner. Kasir yang membuka POS tidak melihat apa-apa sampai simpanannya ditolak. | `[BL-045]` |
-| 2FA akun platform | Belum ada. Sudah ada rate limit login, jejak audit, dan pemulihan kata sandi yang tidak membocorkan keberadaan akun — tapi tetap satu faktor. | `[BL-013]` |
-| BYOK (owner memakai kunci AI sendiri) | Kolomnya sudah ada (`tenants.ai_provider`, `ai_api_key`, `ai_model`) tapi alurnya ditunda; kedua tenant memakai kunci bersama aplikasi. | — |
-| Printer Bluetooth & jaminan transaksi offline penuh | Menabrak batas PWA, butuh lapisan native Android. | `[BL-016]` |
-| Kursi bisa turun | `seat_high_water` hanya naik. Satu kasir yang pernah dipekerjakan sebulan terus menaikkan tarif jalur Adaptif selamanya. | `[BL-049]` |
+| Payment gateway dengan uang sungguhan | Hanya gateway tiruan (`PAYMENT_DRIVER=fake`) dan unggah bukti transfer manual. Integrasi Sumopod **terblokir: akunnya belum ada**. | `[BL-060]` |
+| Printer Bluetooth | Menabrak batas PWA, butuh lapisan native Android. Cetak ESC/POS lewat jalur yang ada tetap jalan. | `[BL-016]` |
+| Jaminan offline penuh | Background Sync dan penyimpanan persisten sudah dipasang **untuk Chrome Android**; di luar itu masih "sebisanya". | `[BL-016]` |
+| Multi-cabang | Satu tenant = satu outlet di seluruh basis kode; sengaja ditahan. | `[BL-068]` |
+| Restock dari foto struk | Belum ada — dan karena itu hampir semua varian tidak punya tanggal kedaluwarsa. | `[BL-107]`, `[BL-106]` |
+| Bundling berdiskon | Belum ada wujudnya; menunggu keputusan bentuk. | `[BL-103]` |
+| Konektor data lewat URL (non-MCP) | Ditahan atas permintaan pemilik. | `[BL-102]` |
+| Gerai acara & tagihan terbuka | Paket "Gerai acara & bazar" tetap bisa membuka Tunda Bayar yang hampir pasti jadi kas negatif. | `[BL-104]` |
+| Rekonsiliasi kas per laci | Tahap A dan Tahap B langkah 1 selesai (tiap penjualan membawa lacinya); langkah 2 ditunda. | `[BL-028]` |
+| Studi kasus demo kedua (bazar/non-kafe) | Belum ada; semua tenant demo adalah kafe. | `[BL-036]` |
+| Berkas tenant di object storage | Masih di disk server. | `[BL-076]` |
+| Kunci AI milik owner (BYOK) | Kolomnya ada di **Integrasi & Kredensial** dan meter kuota mengenalinya, tapi belum pernah diuji hidup dengan kunci sungguhan; ketiga tenant memakai kunci bersama aplikasi. | — |
 
-**Papan antrian dapur SUDAH ADA** sejak 2026-07-29 (`/cashier/queue`) — catatan lama yang mengatakan "tidak ada halamannya" sudah tidak berlaku. Yang perlu diingat: papannya **mati secara bawaan** dan dinyalakan per outlet dari Pengaturan, dan **tidak aktif saat perangkat offline** — penjualan hasil sinkronisasi tidak menyusul masuk papan. Itu batas yang diputuskan sadar, bukan bug.
+### Sisa kecil yang bisa terlihat
+
+- **"Pendapatan per Metode Pembayaran" di layar tutup kas kasir masih bruto** — kembalian belum dikurangkan, berbeda dari beranda dan laporan yang sudah dibetulkan (`[BL-109]`). Angka "seharusnya di laci" di sebelahnya tetap benar.
+- **Laporan Bulanan belum menampilkan biaya layanan** walau datanya sudah dikirim (`[BL-097]`).
+- **Pembatas geser antara keranjang dan panel belum bisa digerakkan dengan papan tik.**
+
+**Papan antrian dapur SUDAH ADA** sejak 2026-07-29 (`/cashier/queue`). Ia **mati secara bawaan** (kecuali paket setelan yang menyalakannya) dan **tidak aktif saat perangkat offline** — penjualan hasil sinkronisasi tidak menyusul masuk papan. Itu keputusan, bukan bug.
 
 ### Satu lubang RBAC yang sengaja dibiarkan
 
-Rute kasir (`/cashier/*`) **tidak** digerbang per modul — hanya `role:cashier,owner`. Akibatnya kasir yang rolenya hanya berisi `stock` tetap bisa mengetik `/cashier/pos` di peramban dan berjualan.
+Rute kasir (`/cashier/*`) **tidak** digerbang per modul — hanya `role:cashier,owner`. Kasir yang rolenya hanya berisi `stock` tetap bisa mengetik `/cashier/pos` dan berjualan.
 
-Ini keputusan, bukan kelalaian: `pos` dan `cash_drawer` diperlakukan sebagai **penanda menu**, bukan gerbang rute, dan menutupnya akan mengubah perilaku staf yang sudah ada — termasuk staf yang dibuat lewat pilihan "Tanpa role (POS saja)" di form tambah staf.
+Ini keputusan: `pos` dan `cash_drawer` diperlakukan sebagai **penanda menu**, bukan gerbang rute, dan menutupnya akan mengubah perilaku staf yang sudah ada — termasuk staf "Tanpa role (POS saja)".
 
-Konsekuensi untuk demo: **peragakan RBAC dengan modul `stock`, jangan dengan mencabut `pos`.** Modul `stock`, `products`, `reports`, `payment_methods`, dan `ai_analysis` benar-benar digerbang di server — mengakses URL-nya langsung akan ditolak, bukan hanya menunya hilang. Arah sebaliknya tidak akan meyakinkan siapa pun yang mencoba mengetik URL.
+Konsekuensi untuk demo: **peragakan RBAC dengan modul `stock`, jangan dengan mencabut `pos`.** Modul `stock`, `products`, `reports`, `payment_methods`, dan `ai_analysis` benar-benar digerbang di server. Halaman owner-only (Aturan Saran Jual, Aturan Diskon, Koreksi Offline, Staf, Role, ketiga halaman Pengaturan) tidak bisa dibuka staf sama sekali.
 
-### Penjadwal harus hidup
+### Penjadwal
 
-Kalau demo menyentuh siklus hidup langganan, perhitungan omzet, pemangkasan log audit, atau peringatan login gagal, `schedule:run` harus aktif. Jadwalnya: `platform:prune-audit-logs` (03:10 harian), `subscriptions:advance-lifecycle` (03:30 harian), `platform:alert-failed-logins` (tiap jam), `subscriptions:compute-revenue` (tanggal 1, 04:00), `subscriptions:prune-metrics` (tanggal 1, 04:30).
+Tanpa `schedule:run`, hal-hal berikut **tidak terjadi sendiri**: laci kas yang lewat 24 jam tidak ditutup sistem, Tunda Bayar yang lewat 24 jam tidak jadi kas negatif, barang basi tidak tercatat, tagihan tidak terbit, dan tenant tidak berpindah keadaan. Untuk demo, jalankan perintah satuannya dengan sengaja alih-alih menyalakan penjadwal — dan ingat peringatan Kopi Story di [§5](#5-menyiapkan--menyegarkan-data-demo).
+
+| Perintah | Jadwal |
+|---|---|
+| `stock:record-expired` | harian 00:05 |
+| `subscriptions:compute-revenue` | tanggal 1, 02:40 |
+| `platform:prune-audit-logs` | harian 03:10 |
+| `subscriptions:advance-lifecycle` | harian 03:30 (wajib sesudah `compute-revenue`) |
+| `payment-proofs:prune-unclaimed` | harian 03:50 |
+| `subscriptions:prune-metrics` | tanggal 1, 04:30 |
+| `open-bills:expire` | tiap jam |
+| `cash-drawers:expire` | tiap jam, menit ke-5 |
+| `platform:alert-failed-logins` | tiap jam |
 
 ### Kunci AI
 
-`AI_FREE_TIER_KEY` sudah terisi di `.env` dengan provider **SumoPod**, batas **5 analisis per hari per tenant** (bawaan platform di `config/ai.php`; paket berbayar bisa menaikkannya lewat `plans.limits.ai_daily`). Kalau kuota harian sudah terpakai saat mencoba-coba sebelum demo, analisis akan ditolak — jangan menghabiskannya saat gladi bersih.
+`AI_FREE_TIER_KEY` terisi di `.env` dengan provider **SumoPod** (`gpt-4o-mini`). Batas harian kini **mengikuti paket** (Free 5, Paid 1 15, Paid 2 30, Paid 3 60) ditambah blok yang dibeli dan promo yang sedang berlaku; bawaan platform di `config/ai.php` hanya dipakai bila paket tidak menyetelnya. Hanya analisis yang **berhasil** yang memotong kuota, dan jatah tidak menumpuk ke hari berikutnya.
 
 ---
 
 ## 9. Peta Halaman Lengkap
 
-### Pemilik Usaha — `/owner/*`
+### Pemilik Usaha — `/owner/*` (urutan sidebar)
 
-Dashboard · Kategori · Produk (+ varian) · Stok (restock, penyesuaian, riwayat per varian, mutasi) · Modifier · Laporan Harian · **Saran Jual** · Transaksi (+ detail, void) · Sesi Kas · **Koreksi Offline** · Metode Pembayaran · **Analisis AI** · Staf · **Role & Modul (RBAC)** · Profil Usaha (mode & fitur outlet, identitas pesanan, jenis usaha, token MCP) · Langganan & Tagihan
+- **Beranda** · **Antrian Dapur** (bila menyala)
+- **Atur Menu:** Kategori · Produk (pencarian, + varian) · Stok (kartu status, restock, penyesuaian, riwayat per varian, mutasi) · Modifier
+- **Penjualan & Promosi:** Saran Jual (laporan) · Aturan Saran Jual · Aturan Diskon
+- **Keuangan:** Laporan Harian · Laporan Bulanan (+ CSV) · Transaksi (+ detail, void, kas negatif) · Sesi Kas (+ persetujuan uang keluar) · Koreksi Offline · Pembayaran · AI Analysis
+- **Tim & Akses:** Staf · Role
+- **Pengaturan:** Profil & Merek (nama, alamat, telepon, jenis usaha, logo) · Cara Kerja Sistem (paket setelan awal, mode & fitur outlet, batas untung minimum, batas uang keluar, aturan kerja kasir, jenis saran jual, pajak, biaya layanan) · Integrasi & Kredensial (AI, token MCP) · Langganan & Tagihan
+
+Identitas akun, **Buka Kasir**, dan **Keluar** ada di dropdown avatar topbar.
 
 ### Kasir — `/cashier/*`
 
-POS (+ saran jual, identitas pesanan, split bill) · **Antrian Dapur** (bila kapabilitasnya menyala) · Riwayat Transaksi · Edit Transaksi · Tagihan Terbuka (di topbar, berikut pelunasannya) · Sinkronisasi Offline (PWA) · Sesi Kas (buka, tutup, ringkasan)
+POS (saran jual, identitas pesanan, split bill, foto bukti, harga khusus owner) · **Antrian Dapur** (bila menyala) · Riwayat Transaksi (+ Tagihan Terbuka) · Edit Transaksi · Tunda Bayar / Tagihan Terbuka (topbar) · Kas (buka sesi, catat uang keluar / setoran masuk) · Tutup Kas (halaman sendiri) · Rekap Kas · Sinkronisasi Offline (PWA)
 
 ### Langganan Tenant — `/langganan`
 
-Status langganan & jalur harga · Perkiraan tarif adaptif · Tambah pengguna · Unggah bukti bayar · Persetujuan jalur harga (`/langganan/persetujuan`) · Cabut persetujuan Harga Adaptif
+Tab **Ringkasan** (paket, isi paket, kelas harga / Harga Adaptif) · **Tagihan** (bayar lewat modal, unggah bukti) · **Kapasitas** (kursi & kuota AI, owner saja) · Pengajuan Harga Adaptif (`/langganan/harga-adaptif`) · Persetujuan (`/langganan/persetujuan`) · Instruksi bayar (`/langganan/tagihan/{invoice}/bayar`, `/langganan/pembayaran/{attempt}`) · Aktifkan kembali (saat `suspended`)
 
-### Platform Console — `/platform`
+### Platform Console — `/platform` (urutan sidebar)
 
-Dashboard · Daftar Tenant → **rincian bertab** (Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet) · Langganan & Tagihan · Paket & Aturan Harga · Log Audit · Kelola Akun Platform
+- **Beranda**
+- **Klien:** Daftar Tenant → rincian bertab (Ikhtisar · Langganan · Tagihan · Kapabilitas + kunci pajak · Omzet)
+- **Komersial:** Langganan & Tagihan · Aturan Harga (paket, tangga, paket tujuan) · Kuota AI
+- **Sistem:** Jejak Audit · Akun Platform · Keamanan Akun (2FA)
 
-**Modul platform yang bisa diberikan ke staf:** `tenants`, `subscriptions`, `payments`, `pricing_rules` (sensitif), `revenue_data` (sensitif), `audit_logs` (sensitif).
+**Modul platform yang bisa diberikan ke staf:** `tenants`, `subscriptions`, `payments`, `pricing_rules` (sensitif), `revenue_data` (sensitif), `audit_logs` (sensitif), `ai_quota` (sensitif). Keamanan Akun tidak bermodul — setiap akun platform bisa mengamankan akunnya sendiri.
 
 **Modul tenant (RBAC untuk staf):** `pos`, `cash_drawer`, `products`, `stock`, `reports`, `payment_methods` (sensitif), `ai_analysis` (sensitif).
 
-**Kapabilitas per outlet:** `kitchen_queue`, `self_order`, `ai`.
+**Setelan outlet di paket setelan awal:** antrian dapur, pesan mandiri, analisis AI, foto bukti pembayaran, saran jual wajib dijawab, identitas pesanan. **Cara berjualan:** warung/kafe menetap, gerai acara & bazar, toko retail, jasa, belum yakin.
 
 ### Publik
 
-`/` landing page · `/dokumentasi` hub dokumentasi dua jalur · `/api-docs` referensi API mobile · `/up` health check
+`/` landing · `/harga` tarif kedua jalur · `/register` · `/dokumentasi` hub dua jalur · `/api-docs` referensi API mobile · `/up` health check
 
 ### Antarmuka non-web
 
-API self-order (`POST /api/v1/orders`, `POST /api/v1/upsell/suggestions`, `PATCH /api/v1/orders/{transaction}/fulfillment`) · API mobile v1 (`/api/v1/mobile/*`) · webhook Xendit · MCP server (token diterbitkan owner dari Pengaturan)
+API self-order (`POST /api/v1/orders`, `POST /api/v1/upsell/suggestions`, `PATCH /api/v1/orders/{transaction}/fulfillment`) · API mobile v1 (`/api/v1/mobile/*`) · webhook pembayaran (gateway tiruan) · webhook Xendit · MCP server (token dari Integrasi & Kredensial)
 
 ---
 
