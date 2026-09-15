@@ -94,6 +94,7 @@ class UpsizeVariantStrategy implements SuggestionStrategy
                     suggestedVariantId: $step->id,
                     suggestedVariantName: $this->displayName($step),
                     suggestedVariantPrice: $stepPrice,
+                    regularPrice: (float) $step->price,
                 ),
             ];
         }

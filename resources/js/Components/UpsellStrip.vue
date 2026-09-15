@@ -194,6 +194,17 @@ const sourceLabel = computed(() => {
 
     return triggerId ? (props.sourceNames[triggerId] ?? null) : null;
 });
+
+/**
+ * Harga normal dicoret hanya untuk saran yang MENAMBAH barang. Pada naik ukuran
+ * angka di kartu adalah selisih, dan harga varian yang dicoret di sebelahnya
+ * mengundang kasir membacakan dua angka yang tidak bisa dibandingkan.
+ */
+const showRegularPrice = computed(() =>
+    current.value?.discounted === true
+    && current.value.type !== 'upsize'
+    && Number(current.value.suggested_variant_regular_price) > 0
+);
 </script>
 
 <template>
@@ -257,6 +268,16 @@ const sourceLabel = computed(() => {
                         >
                             {{ toneFor(current.type).title }}
                         </span>
+                        <!-- "Lagi diskon" adalah kalimat termudah yang bisa diucapkan
+                             kasir, dan server mendahulukan saran berdiskon
+                             (`Suggestion::rankScore()`). Tanpa tanda ini kasir tidak
+                             tahu kenapa kartu ini yang muncul duluan. -->
+                        <span
+                            v-if="current.discounted"
+                            class="shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-destructive"
+                        >
+                            Diskon
+                        </span>
                         <!-- Nama sebaris dengan jenisnya hanya di tata letak
                              mendatar; di wadah sempit ia turun ke barisnya
                              sendiri supaya nama panjang tidak terpotong. -->
@@ -267,6 +288,7 @@ const sourceLabel = computed(() => {
                             v-if="Number(current.extra_amount) > 0"
                             class="ml-auto shrink-0 text-xs font-bold text-primary @2xl:hidden"
                         >
+                            <span v-if="showRegularPrice" class="mr-1 font-normal text-muted-foreground line-through">{{ formatCurrency(current.suggested_variant_regular_price) }}</span>
                             +{{ formatCurrency(current.extra_amount) }}
                         </span>
                     </div>
@@ -285,6 +307,7 @@ const sourceLabel = computed(() => {
                     v-if="Number(current.extra_amount) > 0"
                     class="hidden shrink-0 text-lg font-bold tabular-nums text-primary @2xl:block"
                 >
+                    <span v-if="showRegularPrice" class="mr-1.5 text-sm font-normal text-muted-foreground line-through">{{ formatCurrency(current.suggested_variant_regular_price) }}</span>
                     +{{ formatCurrency(current.extra_amount) }}
                 </span>
 

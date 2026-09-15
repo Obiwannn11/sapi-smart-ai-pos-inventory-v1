@@ -55,7 +55,7 @@ class UpsellIndexBuilder
         $byVariant = [];
 
         foreach ($this->triggeredSuggestions($tenant, $sellable) as $variantId => $suggestions) {
-            usort($suggestions, fn (Suggestion $a, Suggestion $b) => $b->score <=> $a->score);
+            usort($suggestions, fn (Suggestion $a, Suggestion $b) => $b->rankScore() <=> $a->rankScore());
 
             $byVariant[$variantId] = array_map(
                 fn (Suggestion $suggestion) => $suggestion->toArray(),

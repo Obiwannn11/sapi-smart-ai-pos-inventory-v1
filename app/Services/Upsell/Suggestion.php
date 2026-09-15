@@ -15,6 +15,34 @@ use Illuminate\Contracts\Support\Arrayable;
  */
 final class Suggestion implements Arrayable
 {
+    /**
+     * Saran berdiskon didahulukan, tapi hanya DI DALAM kelompoknya sendiri.
+     *
+     * Pelanggan lebih mudah mengiyakan barang yang sedang dipotong harganya, dan
+     * sejak jatah tawaran per transaksi benar-benar membatasi jumlah tawaran,
+     * slot yang sedikit itu sebaiknya diisi yang paling mungkin diterima.
+     *
+     * Dua kelompok, dua besaran, karena rentang skornya berbeda:
+     *
+     *   - Mesin (0–100): +200. Saran mesin berdiskon (200–300) melampaui semua
+     *     saran mesin tanpa diskon, dan tetap jauh di bawah lantai aturan owner.
+     *   - Aturan owner (1000 + prioritas 0–999): +1000. Aturan berdiskon
+     *     melampaui semua aturan tanpa diskon; di antara sesamanya, prioritas
+     *     owner tetap yang menentukan.
+     *
+     * Satu besaran untuk keduanya tidak bisa: +1000 pada saran mesin menembus
+     * lantai aturan owner, dan janji `ManualRuleStrategy` — saran yang dipasang
+     * owner tidak tergeser mesin — ingkar diam-diam.
+     */
+    private const DISCOUNT_BOOST_MACHINE = 200.0;
+
+    private const DISCOUNT_BOOST_MANUAL = 1000.0;
+
+    /**
+     * @param  float  $score  skor DASAR dari strategi; urutan yang dipakai adalah `rankScore()`
+     * @param  ?float  $regularPrice  harga KATALOG varian yang disarankan, pembanding
+     *                                `suggestedVariantPrice` untuk tahu apakah ia sedang berdiskon
+     */
     public function __construct(
         public readonly string $type,
         public readonly string $reason,
@@ -27,6 +55,7 @@ final class Suggestion implements Arrayable
         public readonly ?int $suggestedModifierId = null,
         public readonly ?string $suggestedVariantName = null,
         public readonly ?float $suggestedVariantPrice = null,
+        public readonly ?float $regularPrice = null,
     ) {}
 
     /**
@@ -69,6 +98,36 @@ final class Suggestion implements Arrayable
     }
 
     /**
+     * Varian yang disarankan sedang dijual di bawah harga katalognya.
+     *
+     * Add-on selalu false: potongan dinamis melekat pada varian, bukan modifier.
+     */
+    public function isDiscounted(): bool
+    {
+        return $this->suggestedVariantPrice !== null
+            && $this->regularPrice !== null
+            && $this->suggestedVariantPrice < $this->regularPrice;
+    }
+
+    /**
+     * Skor yang dipakai MENGURUTKAN — skor dasar ditambah prioritas diskon.
+     *
+     * Semua jalur yang berebut slot memakai angka ini, lewat `score` di
+     * `toArray()`: kasir, pratinjau owner, dan self-order. Satu tempat menghitung,
+     * supaya ketiganya tidak pernah berselisih soal saran mana yang didahulukan.
+     */
+    public function rankScore(): float
+    {
+        if (! $this->isDiscounted()) {
+            return $this->score;
+        }
+
+        return $this->score + ($this->type === UpsellEvent::TYPE_MANUAL
+            ? self::DISCOUNT_BOOST_MANUAL
+            : self::DISCOUNT_BOOST_MACHINE);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toArray(): array
@@ -80,13 +139,17 @@ final class Suggestion implements Arrayable
             'label' => $this->label,
             'note' => $this->note,
             'extra_amount' => round($this->extraAmount, 2),
-            'score' => round($this->score, 2),
+            'score' => round($this->rankScore(), 2),
+            'discounted' => $this->isDiscounted(),
             'trigger_variant_id' => $this->triggerVariantId,
             'suggested_variant_id' => $this->suggestedVariantId,
             'suggested_modifier_id' => $this->suggestedModifierId,
             'suggested_variant_name' => $this->suggestedVariantName,
             'suggested_variant_price' => $this->suggestedVariantPrice !== null
                 ? round($this->suggestedVariantPrice, 2)
+                : null,
+            'suggested_variant_regular_price' => $this->regularPrice !== null
+                ? round($this->regularPrice, 2)
                 : null,
         ];
     }

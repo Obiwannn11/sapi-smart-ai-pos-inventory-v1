@@ -104,10 +104,13 @@ class PressedStockStrategy implements CartLevelStrategy
                 suggestedVariantId: $variant->id,
                 suggestedVariantName: $this->displayName($variant),
                 suggestedVariantPrice: $price,
+                regularPrice: (float) $variant->price,
             );
         }
 
-        usort($suggestions, fn (Suggestion $a, Suggestion $b) => $b->score <=> $a->score);
+        // `rankScore()`, bukan `score`: barang tertekan yang sedang berdiskon
+        // tidak boleh terpotong batas kandidat sebelum sempat didahulukan.
+        usort($suggestions, fn (Suggestion $a, Suggestion $b) => $b->rankScore() <=> $a->rankScore());
 
         return array_slice($suggestions, 0, $limit);
     }

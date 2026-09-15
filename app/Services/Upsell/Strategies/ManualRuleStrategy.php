@@ -157,6 +157,7 @@ class ManualRuleStrategy implements CartLevelStrategy, SuggestionStrategy
             suggestedVariantId: $suggested->id,
             suggestedVariantName: $name,
             suggestedVariantPrice: $price,
+            regularPrice: (float) $suggested->price,
         );
     }
 

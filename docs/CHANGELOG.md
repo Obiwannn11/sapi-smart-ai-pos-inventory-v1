@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-16 | DECISION | Kasir | Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin |
 | 2026-09-15 | HOTFIX | Kasir | Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab |
 | 2026-09-15 | ADDITION | Stok | Riwayat Stok Menyebut Batch yang Disentuh Tiap Mutasi |
 | 2026-09-15 | DECISION | Stok | Formulir Edit Varian Berhenti Menulis Stok dan Tanggal Kedaluwarsa — Keduanya Hanya Berubah Lewat Halaman Stok |
@@ -284,6 +285,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase — keputusan pemilik (opsi A) sesudah jatah tawaran per transaksi benar-benar membatasi jumlah tawaran (lihat `[HOTFIX] Saran Jual Berhenti Beranak-Pinak …`).
+- **Dampak:** Service (`Upsell\Suggestion`, tiga strategi varian, `UpsellIndexBuilder`), Frontend (`UpsellStrip.vue`), test.
+- **Breaking Change:** Tidak. Payload saran mendapat dua kolom baru, `discounted` dan `suggested_variant_regular_price`; `score` kini sudah memuat prioritas diskon. Pembaca `score` hanya mengurutkan, jadi yang bergeser hanya urutannya.
+- **Deskripsi:** Pemilik meminta batas upsell dan diskon saling tahu supaya tidak memberatkan pembeli dan kasir. Tiga opsi ditawarkan: (A) jatah tetap, tawaran berdiskon didahulukan; (B) upsell dan promo berbagi satu jatah; (C) tawaran berdiskon tidak memakan jatah. **Pemilik memilih A.** Jumlah tawaran tidak bertambah; yang berubah hanya saran mana yang mengisi slotnya.
+- **Aturannya (`Suggestion::rankScore()`):**
+  - Saran disebut berdiskon bila harga efektif varian yang disarankan di bawah harga katalognya. Add-on tidak pernah berdiskon, karena potongan dinamis melekat pada varian.
+  - **Saran mesin** (skor 0–100; add-on maksimal 70, barang tertekan maksimal 100): +200. Yang berdiskon (200–300) melampaui semua saran mesin tanpa diskon, dan tetap di bawah lantai aturan owner (1000).
+  - **Aturan owner** (1000 + prioritas 0–999): +1000. Aturan berdiskon melampaui semua aturan tanpa diskon, **termasuk yang prioritasnya lebih tinggi**; di antara sesama aturan berdiskon, prioritas owner tetap menentukan.
+  - Satu besaran untuk keduanya tidak bisa: +1000 pada saran mesin menembus lantai aturan owner, janji `ManualRuleStrategy` yang tidak boleh diingkari diam-diam.
+- **Kenapa di `score`, bukan pembanding baru:** kasir (`useUpsell.js`), pratinjau owner, dan self-order sama-sama mengurutkan dengan `score`. Menghitungnya sekali di server membuat ketiganya sepakat tanpa logika urutan kembar. `PressedStockStrategy` dan `UpsellIndexBuilder::build()` ikut memakai `rankScore()` saat memotong kandidat, supaya barang berdiskon tidak terbuang sebelum sempat didahulukan.
+- **Kartu kasir:** label **Diskon** di samping jenis saran, dan harga normal dicoret untuk saran yang menambah barang. Naik ukuran tidak diberi coretan, karena angkanya selisih, bukan harga barang.
+- **File Terdampak:**
+  - `app/Services/Upsell/Suggestion.php` — `regularPrice`, `isDiscounted()`, `rankScore()`, dua kolom payload baru
+  - `app/Services/Upsell/Strategies/ManualRuleStrategy.php`, `PressedStockStrategy.php`, `UpsizeVariantStrategy.php` — mengirim harga katalog
+  - `app/Services/Upsell/UpsellIndexBuilder.php` — pemotongan per pemicu memakai `rankScore()`
+  - `resources/js/Components/UpsellStrip.vue` — label Diskon dan harga coret
+  - `tests/Feature/Upsell/UpsellDiscountedPriceTest.php` — tiga test urutan baru; test tangga ukuran kini mengharapkan skor 240, bukan 40
+
+---
 
 ### [HOTFIX] Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab
 - **Tanggal:** 2026-09-15
