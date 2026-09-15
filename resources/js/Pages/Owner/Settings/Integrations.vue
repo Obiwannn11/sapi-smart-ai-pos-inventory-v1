@@ -6,6 +6,10 @@ import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import Button from '@/Components/Button.vue';
+import Modal from '@/Components/Modal.vue';
+import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import Checkbox from '@/Components/Checkbox.vue';
+import { formatBusinessDate, formatBusinessDateTime } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -16,6 +20,9 @@ const props = defineProps({
     // keputusan BYOK, jadi ia dibedah, bukan cuma diringkas satu baris.
     aiQuota: Object,
     mcp: Object,
+    // Link konektor [BL-102]: endpoint, pilihan masa berlaku, dan link aktif.
+    // Rahasianya tidak pernah ikut di sini, hanya di flash sesaat setelah dibuat.
+    connector: Object,
 });
 
 // Label penyedia ditulis sekali di sini supaya kolomnya bisa memakai
@@ -61,6 +68,82 @@ const generateMcpToken = () => {
 const revokeMcpToken = () => {
     if (!confirm('Cabut token MCP? AI client yang memakainya akan langsung kehilangan akses.')) return;
     router.delete('/owner/settings/integrations/mcp-token', { preserveScroll: true });
+};
+
+// --- Link data untuk AI tanpa pemasangan ([BL-102]) ---
+const connectorLink = computed(() => page.props.flash?.connectorLink);
+
+const formatLinkDate = (value) =>
+    formatBusinessDate(value, { day: 'numeric', month: 'short', year: 'numeric' });
+
+const formatLinkDateTime = (value) =>
+    formatBusinessDateTime(value, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+const expiryAfter = (days) => formatLinkDate(Date.now() + days * 86400000);
+
+const showLinkDialog = ref(false);
+
+const linkForm = useForm({
+    label: '',
+    lifetime_days: 30,
+    acknowledged: false,
+});
+
+// Keputusan pemilik 2026-09-15: yang dicentang owner adalah tanggal
+// sungguhan, bukan "7 atau 30 hari". Kalimatnya ikut berubah saat pilihannya
+// berubah.
+const linkExpiryPreview = computed(() => expiryAfter(linkForm.lifetime_days));
+
+const openLinkDialog = () => {
+    linkForm.reset();
+    linkForm.clearErrors();
+    showLinkDialog.value = true;
+};
+
+const createLink = () => {
+    linkForm.post('/owner/settings/integrations/connector-links', {
+        preserveScroll: true,
+        onSuccess: () => {
+            showLinkDialog.value = false;
+            linkForm.reset();
+        },
+    });
+};
+
+// Prompt bawaan. Pembacanya AI pengguna, bukan owner. Keputusan pemilik
+// 2026-09-15: dikirim sebagai SATU pesan tanpa pertanyaan, dan ditutup tes baca
+// (nama usaha + produk) supaya owner tahu link benar-benar terbuka sebelum
+// bertanya di pesan kedua. Kalimat "jangan menebak" yang membuat tes itu
+// berarti: AI yang gagal membuka link bisa saja mengarang jawaban meyakinkan.
+// Masih draf sampai diuji dengan link sungguhan di Claude, ChatGPT, dan Gemini.
+const connectorPrompt = computed(() => {
+    if (!connectorLink.value) {
+        return '';
+    }
+
+    return [
+        'Bantu saya menganalisis toko saya. Data penjualan, profit, produk terlaris, dan menu toko saya ada di link ini:',
+        connectorLink.value.url,
+        '',
+        'Buka link itu dulu, lalu pakai hanya isinya untuk menjawab semua pertanyaan saya di chat ini. Kalau datanya tidak cukup untuk menjawab, katakan terus terang. Jangan tampilkan ulang link ini di jawaban.',
+        '',
+        'Untuk memastikan link sudah terbaca, balas pesan ini dengan:',
+        '1. Nama usaha saya yang tercatat di data itu.',
+        '2. Daftar produk yang saya jual.',
+        '',
+        'Kalau link gagal dibuka, katakan bahwa link gagal dibuka. Jangan menebak nama usaha atau produknya.',
+        '',
+        'Setelah itu, katakan bahwa kamu siap menerima pertanyaan. Pertanyaan pertama akan saya kirim di pesan berikutnya.',
+    ].join('\n');
+});
+
+const linkToRevoke = ref(null);
+
+const revokeLink = () => {
+    router.delete(`/owner/settings/integrations/connector-links/${linkToRevoke.value.id}`, {
+        preserveScroll: true,
+        onFinish: () => (linkToRevoke.value = null),
+    });
 };
 </script>
 
@@ -220,5 +303,167 @@ const revokeMcpToken = () => {
                 </div>
             </div>
         </div>
+
+        <!-- Link data untuk AI tanpa pemasangan ([BL-102]) -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+            <h2 class="text-base font-semibold text-gray-900">Link Data untuk AI</h2>
+            <p class="text-xs text-gray-500 mt-0.5 mb-4">
+                Tempel satu link dan prompt ke ChatGPT, Claude, atau Gemini. AI itu membaca penjualan, profit, dan menu toko Anda,
+                lalu menjawab pertanyaan Anda. Tidak perlu memasang apa pun.
+            </p>
+
+            <!-- Bahaya disebut sebelum tombolnya, bukan sesudah link jadi. -->
+            <div class="mb-4 flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                </svg>
+                <span>
+                    Link ini adalah kunci. Siapa pun yang memegangnya bisa melihat data toko Anda sampai link mati, termasuk orang
+                    yang bisa membuka riwayat chat tempat link ditempel. Untuk pemakaian rutin, <strong>Akses MCP</strong> di atas lebih aman.
+                </span>
+            </div>
+
+            <!-- Link baru (tampil sekali) -->
+            <div v-if="connectorLink" class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-3">
+                <p class="text-xs font-medium text-amber-800">
+                    Link “{{ connectorLink.label }}” dibuat. Salin sekarang, link tidak akan ditampilkan lagi.
+                </p>
+                <p class="text-xs text-amber-800 mt-0.5 mb-2">
+                    Kirim sebagai satu pesan. Kalau AI menyebut nama usaha dan produk Anda dengan benar, ajukan pertanyaan di pesan berikutnya.
+                </p>
+                <textarea
+                    :value="connectorPrompt"
+                    readonly
+                    rows="12"
+                    aria-label="Prompt dan link untuk ditempel ke AI"
+                    class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-xs text-gray-800 font-mono resize-none"
+                />
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <Button @click="copy(connectorPrompt, 'connector-prompt')">
+                        {{ copied === 'connector-prompt' ? 'Tersalin!' : `Salin prompt + link (berlaku sampai ${formatLinkDate(connectorLink.expires_at)})` }}
+                    </Button>
+                    <Button variant="secondary" @click="copy(connectorLink.url, 'connector-url')">
+                        {{ copied === 'connector-url' ? 'Tersalin!' : 'Salin link saja' }}
+                    </Button>
+                </div>
+            </div>
+
+            <!-- Link aktif -->
+            <div class="mb-4">
+                <p class="text-sm font-medium text-gray-700 mb-2">Link aktif</p>
+                <ul v-if="connector.links.length" class="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                    <li
+                        v-for="link in connector.links"
+                        :key="link.id"
+                        class="flex items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-gray-900 truncate">{{ link.label }}</p>
+                            <p class="text-xs text-gray-500">
+                                Berlaku sampai {{ formatLinkDate(link.expires_at) }}
+                                <span aria-hidden="true">·</span>
+                                <!-- Pemakaian yang tidak dikenali owner adalah peringatan
+                                     yang paling mungkin ia baca. -->
+                                {{ link.last_used_at ? `terakhir dibuka ${formatLinkDateTime(link.last_used_at)}` : 'belum pernah dibuka' }}
+                            </p>
+                        </div>
+                        <Button variant="destructiveSoft" size="sm" class="shrink-0" @click="linkToRevoke = link">
+                            Cabut
+                        </Button>
+                    </li>
+                </ul>
+                <p v-else class="text-xs text-gray-400">Belum ada link aktif.</p>
+            </div>
+
+            <div class="flex justify-end">
+                <Button @click="openLinkDialog">Buat Link</Button>
+            </div>
+        </div>
+
+        <!-- Tidak ada tombol "Salin URL" langsung: link hanya lahir dari dialog
+             yang meminta masa berlaku dan persetujuan bertanggal. -->
+        <Modal
+            :show="showLinkDialog"
+            title="Buat link data untuk AI"
+            description="Link hanya tampil sekali setelah dibuat."
+            @close="showLinkDialog = false"
+        >
+            <form id="connector-link-form" class="space-y-4" @submit.prevent="createLink">
+                <div>
+                    <label for="connector-link-label" class="block text-sm font-medium text-gray-700 mb-1">Nama link</label>
+                    <input
+                        id="connector-link-label"
+                        v-model="linkForm.label"
+                        type="text"
+                        maxlength="40"
+                        placeholder="Contoh: ChatGPT"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        :class="{ 'border-destructive/50': linkForm.errors.label }"
+                    />
+                    <p v-if="linkForm.errors.label" class="mt-1 text-xs text-destructive">{{ linkForm.errors.label }}</p>
+                    <p v-else class="mt-1 text-xs text-gray-400">Supaya Anda tahu link mana yang perlu dicabut nanti.</p>
+                </div>
+
+                <fieldset>
+                    <legend class="block text-sm font-medium text-gray-700 mb-1">Masa berlaku</legend>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label
+                            v-for="days in connector.lifetimes"
+                            :key="days"
+                            class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                            :class="linkForm.lifetime_days === days
+                                ? 'border-primary bg-primary/10'
+                                : 'border-gray-200 hover:bg-gray-50'"
+                        >
+                            <input
+                                v-model="linkForm.lifetime_days"
+                                type="radio"
+                                name="connector-lifetime"
+                                :value="days"
+                                class="mt-0.5 h-4 w-4 shrink-0"
+                            />
+                            <span class="min-w-0">
+                                <span class="block text-sm font-medium text-gray-900">{{ days }} hari</span>
+                                <span class="block text-xs text-gray-500 mt-0.5">sampai {{ expiryAfter(days) }}</span>
+                            </span>
+                        </label>
+                    </div>
+                    <p v-if="linkForm.errors.lifetime_days" class="mt-1 text-xs text-destructive">{{ linkForm.errors.lifetime_days }}</p>
+                </fieldset>
+
+                <div>
+                    <Checkbox v-model="linkForm.acknowledged" variant="card" align="start">
+                        <span class="block text-sm text-gray-700">
+                            Siapa pun yang memegang link ini bisa melihat penjualan dan profit toko saya sampai
+                            <strong>{{ linkExpiryPreview }}</strong>.
+                        </span>
+                    </Checkbox>
+                    <p v-if="linkForm.errors.acknowledged" class="mt-1 text-xs text-destructive">{{ linkForm.errors.acknowledged }}</p>
+                </div>
+            </form>
+
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <Button variant="secondary" @click="showLinkDialog = false">Batal</Button>
+                    <Button
+                        type="submit"
+                        form="connector-link-form"
+                        :disabled="!linkForm.acknowledged"
+                        :loading="linkForm.processing"
+                    >
+                        Buat Link
+                    </Button>
+                </div>
+            </template>
+        </Modal>
+
+        <ConfirmDialog
+            :show="linkToRevoke !== null"
+            title="Cabut link?"
+            :message="linkToRevoke ? `AI yang memakai link “${linkToRevoke.label}” langsung tidak bisa membaca data toko lagi.` : ''"
+            confirm-text="Cabut"
+            @confirm="revokeLink"
+            @cancel="linkToRevoke = null"
+        />
     </div>
 </template>

@@ -136,6 +136,9 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
                 'lastTransaction' => fn () => $request->session()->get('lastTransaction'),
                 'mcpToken' => fn () => $request->session()->get('mcpToken'),
+                // Link konektor [BL-102]: URL utuhnya berisi token, jadi sama
+                // seperti mcpToken hanya menyeberang sekali.
+                'connectorLink' => fn () => $request->session()->get('connectorLink'),
                 // Faktor kedua platform ([BL-013]). Lewat flash, BUKAN prop
                 // halaman: rahasia TOTP dan kode pemulihan hanya boleh
                 // menyeberang sekali, pada respons yang menerbitkannya. Prop

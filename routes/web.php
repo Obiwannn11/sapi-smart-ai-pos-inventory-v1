@@ -370,6 +370,12 @@ Route::middleware(['auth', 'tenant', 'role:owner'])
             ->name('settings.integrations.mcp-token.generate');
         Route::delete('settings/integrations/mcp-token', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'revokeMcpToken'])
             ->name('settings.integrations.mcp-token.revoke');
+        // Link konektor data untuk AI tanpa pemasangan ([BL-102]).
+        Route::post('settings/integrations/connector-links', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'generateConnectorLink'])
+            ->name('settings.integrations.connector-links.store');
+        Route::delete('settings/integrations/connector-links/{token}', [\App\Http\Controllers\Owner\Settings\IntegrationController::class, 'revokeConnectorLink'])
+            ->whereNumber('token')
+            ->name('settings.integrations.connector-links.destroy');
     });
 
 // --- Cashier Routes (owner juga bisa akses) ---

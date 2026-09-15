@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | ADDITION | Owner | Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1) |
 | 2026-09-15 | HOTFIX | API | Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112) |
 | 2026-09-15 | DECISION | Promosi | Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal" |
 | 2026-09-15 | SCHEMA | Stok | Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108) |
@@ -275,6 +276,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Controller | Routes | Middleware | Frontend | Tests
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Tahap pertama `[BL-102]`: pengelolaan link di Setelan → Integrasi & Kredensial, mengikuti keputusan pemilik 2026-09-15.
+  - **Link adalah token Sanctum ber-ability `connector:read`** dengan `expires_at` 7 atau 30 hari. Nama token jadi label; `mcp-client` dan `mobile-app` ditolak karena kode lain mencabut token berdasarkan nama itu.
+  - **Tidak ada tombol salin langsung.** Link lahir dari dialog: nama, masa berlaku, dan centang kalimat bertanggal ("…sampai 22 Sep 2026") yang tanggalnya ikut pilihan masa berlaku. Server ikut menuntut `acknowledged`, supaya centang di dialog bukan satu-satunya pagar.
+  - **URL tampil sekali** lewat flash `connectorLink`, dengan `|` pada token di-encode `%7C`. Panel yang sama memuat prompt bawaan dan tombol "Salin prompt + link (berlaku sampai …)".
+  - **Prompt bawaan dikirim sebagai satu pesan tanpa pertanyaan** dan ditutup tes baca: AI menyebut nama usaha dan daftar produk, lalu menyatakan siap; pertanyaan owner menyusul di pesan kedua. AI yang gagal membuka link diminta mengatakannya, bukan menebak.
+  - **Daftar link aktif** menampilkan label, tanggal mati, dan waktu terakhir dibuka. Cabut lewat konfirmasi; rute cabut hanya menghapus token ber-`connector:read` milik owner yang sedang masuk.
+- **Alasan:** Jalur tanpa pemasangan untuk owner yang tidak akan pernah memakai MCP, dengan bahaya yang disampaikan lewat langkah, bukan hanya lewat kalimat (lihat `[BL-102]`).
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/Settings/IntegrationController.php`: prop `connector`, `generateConnectorLink()`, `revokeConnectorLink()`
+  - `app/Http/Middleware/HandleInertiaRequests.php`: flash `connectorLink`
+  - `routes/web.php`: dua rute `connector-links`
+  - `resources/js/Pages/Owner/Settings/Integrations.vue`: kartu, dialog, panel sekali tampil, konfirmasi cabut
+  - `tests/Feature/Owner/SettingsConnectorLinkTest.php`: baru
+- **Catatan:**
+  - **Link yang disalin masih menjawab 404.** Endpoint `/api/v1/connector/summary` adalah tahap berikutnya; tahap ini tidak untuk di-deploy sendirian.
+  - Link dikenali lewat `in_array`, bukan `$token->can()`: token login mobile ber-`*` juga lolos `can('connector:read')`.
+  - Diverifikasi di Browser pane: buat, panel sekali tampil, cabut, dan lebar 375 px tanpa scroll mendatar. Satu `ERR_NAME_NOT_RESOLVED` di console sudah ada sebelum kartu disentuh dan tidak ada request eksternal yang tercatat dari halaman ini; sumbernya belum ditelusuri.
 
 ### [HOTFIX] Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112)
 - **Tanggal:** 2026-09-15
