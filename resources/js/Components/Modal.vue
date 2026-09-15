@@ -9,6 +9,10 @@ const props = defineProps({
     description: { type: String, default: '' },
     maxWidth: { type: String, default: 'max-w-md' }, // max-w-sm | max-w-md | max-w-lg | max-w-2xl ...
     closeOnBackdrop: { type: Boolean, default: true },
+    // Guard di handler `@close` milik pemanggil tidak cukup untuk modal yang
+    // hanya boleh ditutup lewat tombolnya sendiri: Esc memancarkan `close` yang
+    // sama dengan tombol silang, jadi begitu guard-nya terbuka Esc ikut menutup.
+    closeOnEscape: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['close']);
@@ -24,7 +28,7 @@ const onBackdrop = () => {
 };
 
 const onKeydown = (e) => {
-    if (e.key === 'Escape' && props.show) {
+    if (e.key === 'Escape' && props.show && props.closeOnEscape) {
         close();
     }
 };

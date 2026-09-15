@@ -30,7 +30,9 @@ test('owner can create a connector link that is flashed once', function (int $da
     ])
         ->assertRedirect()
         ->assertSessionHasNoErrors()
-        ->assertSessionHas('connectorLink');
+        ->assertSessionHas('connectorLink')
+        // Toast sukses akan menumpuk di atas modal link dan tombol silangnya.
+        ->assertSessionMissing('success');
 
     $token = $this->owner->tokens()->sole();
 

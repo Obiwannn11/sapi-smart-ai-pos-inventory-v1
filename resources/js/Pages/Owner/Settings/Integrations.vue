@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useForm, usePage, router, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import AiQuotaMeter from '@/Components/AiQuotaMeter.vue';
@@ -72,6 +72,87 @@ const revokeMcpToken = () => {
 
 // --- Link data untuk AI tanpa pemasangan ([BL-102]) ---
 const connectorLink = computed(() => page.props.flash?.connectorLink);
+
+// Link hanya menyeberang sekali lewat flash, jadi modalnya tidak boleh tertutup
+// tanpa sengaja: klik di luar dan Esc diabaikan, dan Tutup/X baru berlaku
+// setelah link benar-benar tersalin. Menutupnya sebelum menyalin berarti link
+// yang tidak pernah bisa dipakai, dan owner harus mencabut lalu membuat ulang.
+const linkModalOpen = ref(false);
+const hasCopiedLink = ref(false);
+const showCopyFirstHint = ref(false);
+const copyFailed = ref(false);
+const linkPromptField = ref(null);
+
+watch(connectorLink, (link) => {
+    if (!link) {
+        return;
+    }
+
+    linkModalOpen.value = true;
+    hasCopiedLink.value = false;
+    showCopyFirstHint.value = false;
+    copyFailed.value = false;
+}, { immediate: true });
+
+const markLinkCopied = () => {
+    hasCopiedLink.value = true;
+    copyFailed.value = false;
+    showCopyFirstHint.value = false;
+};
+
+// Blok teks yang gagal disalin di kotak prompt, supaya owner tinggal menyalin
+// manual tanpa harus mencari link di tengah prompt.
+const selectInLinkPromptField = (text) => {
+    const field = linkPromptField.value;
+
+    if (!field) {
+        return;
+    }
+
+    const start = field.value.indexOf(text);
+
+    field.focus();
+    field.setSelectionRange(Math.max(start, 0), start >= 0 ? start + text.length : field.value.length);
+};
+
+// Tombol salin baru dihitung kalau clipboard benar-benar menerima teksnya.
+// Clipboard bisa menolak (izin, tab tidak fokus, halaman bukan HTTPS), dan
+// menandai "sudah menyalin" pada kegagalan akan membuka Tutup untuk link yang
+// tidak pernah tersalin.
+const copyFromLinkModal = async (text, label) => {
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch {
+        copyFailed.value = true;
+        selectInLinkPromptField(text);
+
+        return;
+    }
+
+    copied.value = label;
+    setTimeout(() => (copied.value = ''), 1500);
+    markLinkCopied();
+};
+
+// Salin manual dari kotak prompt juga dihitung. Tanpa jalan ini, owner yang
+// browsernya selalu menolak clipboard tidak akan pernah bisa menutup modal.
+const onManualCopy = () => {
+    const field = linkPromptField.value;
+
+    if (field && field.selectionStart !== field.selectionEnd) {
+        markLinkCopied();
+    }
+};
+
+const requestCloseLinkModal = () => {
+    if (!hasCopiedLink.value) {
+        showCopyFirstHint.value = true;
+
+        return;
+    }
+
+    linkModalOpen.value = false;
+};
 
 const formatLinkDate = (value) =>
     formatBusinessDate(value, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -323,31 +404,6 @@ const revokeLink = () => {
                 </span>
             </div>
 
-            <!-- Link baru (tampil sekali) -->
-            <div v-if="connectorLink" class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-3">
-                <p class="text-xs font-medium text-amber-800">
-                    Link “{{ connectorLink.label }}” dibuat. Salin sekarang, link tidak akan ditampilkan lagi.
-                </p>
-                <p class="text-xs text-amber-800 mt-0.5 mb-2">
-                    Kirim sebagai satu pesan. Kalau AI menyebut nama usaha dan produk Anda dengan benar, ajukan pertanyaan di pesan berikutnya.
-                </p>
-                <textarea
-                    :value="connectorPrompt"
-                    readonly
-                    rows="12"
-                    aria-label="Prompt dan link untuk ditempel ke AI"
-                    class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-xs text-gray-800 font-mono resize-none"
-                />
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <Button @click="copy(connectorPrompt, 'connector-prompt')">
-                        {{ copied === 'connector-prompt' ? 'Tersalin!' : `Salin prompt + link (berlaku sampai ${formatLinkDate(connectorLink.expires_at)})` }}
-                    </Button>
-                    <Button variant="secondary" @click="copy(connectorLink.url, 'connector-url')">
-                        {{ copied === 'connector-url' ? 'Tersalin!' : 'Salin link saja' }}
-                    </Button>
-                </div>
-            </div>
-
             <!-- Link aktif -->
             <div class="mb-4">
                 <p class="text-sm font-medium text-gray-700 mb-2">Link aktif</p>
@@ -457,6 +513,82 @@ const revokeLink = () => {
             </template>
         </Modal>
 
+        <!-- Link baru, tampil sekali. Tidak tertutup lewat klik di luar atau Esc;
+             Tutup dan X baru berlaku setelah link disalin. -->
+        <Modal
+            v-if="connectorLink"
+            :show="linkModalOpen"
+            :title="`Link “${connectorLink.label}” siap dipakai`"
+            description="Salin sekarang. Setelah jendela ini ditutup, link tidak bisa ditampilkan lagi."
+            max-width="max-w-lg"
+            :close-on-backdrop="false"
+            :close-on-escape="false"
+            @close="requestCloseLinkModal"
+        >
+            <p class="text-sm text-gray-600 mb-3">
+                Kirim sebagai satu pesan ke AI. Kalau AI menyebut nama usaha dan produk Anda dengan benar,
+                ajukan pertanyaan di pesan berikutnya.
+            </p>
+            <textarea
+                ref="linkPromptField"
+                :value="connectorPrompt"
+                readonly
+                rows="12"
+                aria-label="Prompt dan link untuk ditempel ke AI"
+                class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-800 font-mono resize-none"
+                @copy="onManualCopy"
+            />
+            <!-- Saat owner mencoba menutup sebelum menyalin, kedua tombol
+                 "bernapas" supaya petunjuk di bawah menunjuk ke jalan keluarnya. -->
+            <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                    block
+                    :class="{ 'copy-nudge': showCopyFirstHint }"
+                    @click="copyFromLinkModal(connectorPrompt, 'connector-prompt')"
+                >
+                    {{ copied === 'connector-prompt' ? 'Tersalin!' : 'Salin prompt + link' }}
+                </Button>
+                <Button
+                    block
+                    :variant="showCopyFirstHint ? 'soft' : 'secondary'"
+                    :class="{ 'copy-nudge': showCopyFirstHint }"
+                    @click="copyFromLinkModal(connectorLink.url, 'connector-url')"
+                >
+                    {{ copied === 'connector-url' ? 'Tersalin!' : 'Salin link saja' }}
+                </Button>
+            </div>
+            <p class="mt-2 text-xs text-gray-500 text-center">
+                Link berlaku sampai {{ formatLinkDate(connectorLink.expires_at) }}.
+            </p>
+            <p v-if="copyFailed" role="alert" class="mt-2 text-xs text-destructive">
+                Browser tidak mengizinkan penyalinan otomatis. Teksnya sudah dipilih di kotak di atas: salin manual dengan Ctrl+C,
+                atau tekan lama lalu pilih Salin.
+            </p>
+
+            <template #footer>
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                    <p
+                        v-if="showCopyFirstHint"
+                        id="connector-copy-first-hint"
+                        role="alert"
+                        class="flex gap-2 text-xs text-amber-800 sm:mr-auto"
+                    >
+                        <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                        </svg>
+                        <span>Salin prompt atau link dulu. Setelah ditutup, link ini tidak bisa ditampilkan lagi.</span>
+                    </p>
+                    <Button
+                        variant="secondary"
+                        :aria-describedby="showCopyFirstHint ? 'connector-copy-first-hint' : undefined"
+                        @click="requestCloseLinkModal"
+                    >
+                        Tutup
+                    </Button>
+                </div>
+            </template>
+        </Modal>
+
         <ConfirmDialog
             :show="linkToRevoke !== null"
             title="Cabut link?"
@@ -467,3 +599,30 @@ const revokeLink = () => {
         />
     </div>
 </template>
+
+<style scoped>
+/* Cincin yang mengembang lalu memudar, dengan sedikit "tarikan napas" pada
+   tombol. Warnanya diturunkan dari token primary supaya ikut tema panel. */
+@keyframes copy-nudge-breathe {
+    0%,
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 45%, transparent);
+    }
+    50% {
+        transform: scale(1.03);
+        box-shadow: 0 0 0 8px color-mix(in oklab, var(--primary) 0%, transparent);
+    }
+}
+
+.copy-nudge {
+    animation: copy-nudge-breathe 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .copy-nudge {
+        animation: none;
+        box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 40%, transparent);
+    }
+}
+</style>

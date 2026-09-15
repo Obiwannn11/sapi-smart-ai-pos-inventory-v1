@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | DECISION | Owner | Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102) |
 | 2026-09-15 | ADDITION | API | Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2) |
 | 2026-09-15 | ADDITION | Owner | Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1) |
 | 2026-09-15 | HOTFIX | API | Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112) |
@@ -277,6 +278,30 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend | Controller | Tests
+- **Breaking Change:** Tidak. `Modal` mendapat prop `closeOnEscape` bernilai bawaan `true`, jadi pemakainya yang lain tidak berubah.
+- **Deskripsi:**
+  Permintaan pemilik: link beserta kredensialnya hanya tampil sekali, jadi tidak boleh hilang karena tertutup tanpa sengaja.
+  - **Modal, bukan panel di kartu.** Memakai `Modal`, `Button`, dan tombol silang bawaannya. Klik di luar dan Esc diabaikan (`close-on-backdrop` dan prop baru `close-on-escape` sama-sama `false`); tombol Tutup dan X memanggil handler yang sama.
+  - **Tutup dan X baru berlaku setelah link tersalin.** Sebelum itu keduanya menampilkan peringatan "Salin prompt atau link dulu…" (`role="alert"`), dan tombol salin berdenyut (`copy-nudge`, tanpa gerak bila `prefers-reduced-motion`).
+  - **Penyalinan diperiksa.** Tombol salin baru dihitung bila `navigator.clipboard.writeText` berhasil. Kalau ditolak, teksnya diblok di kotak prompt disertai pesan untuk menyalin manual, dan salin manual dari kotak itu (event `copy` dengan teks terpilih) juga dihitung, supaya browser yang selalu menolak clipboard tidak mengunci modal selamanya.
+  - **Tanggal mati pindah ke kalimat di bawah tombol.** Label tombol jadi "Salin prompt + link".
+  - **Toast sukses saat link dibuat dihapus.** Toast itu muncul di atas modal, menutupi judulnya, dan tombol silangnya jatuh tepat di atas tombol silang modal.
+- **Alasan:** Link hanya menyeberang sekali lewat flash. Modal yang tertutup sebelum link disalin berarti link yang tidak pernah bisa dipakai, dan owner harus mencabut lalu membuat ulang.
+- **File Terdampak:**
+  - `resources/js/Components/Modal.vue`: prop `closeOnEscape`
+  - `resources/js/Pages/Owner/Settings/Integrations.vue`: modal link, pemeriksaan clipboard, salin manual, animasi tombol salin
+  - `app/Http/Controllers/Owner/Settings/IntegrationController.php`: tanpa flash `success` saat link dibuat
+  - `tests/Feature/Owner/SettingsConnectorLinkTest.php`: memastikan flash `success` tidak dikirim
+- **Catatan:**
+  - **Proyek ini tidak punya test JS.** Perilaku modal diverifikasi di Browser pane: klik di luar dan Esc sebelum dan sesudah menyalin, Tutup dan X sebelum menyalin, salin yang ditolak (tab latar belakang memang menolak clipboard), salin manual, salin yang berhasil (`writeText` diganti fungsi yang selalu berhasil, karena tab latar belakang tidak bisa menyalin sungguhan), dan dialog Buat Link yang tetap tertutup dengan Esc.
+  - **Tab latar belakang menyesatkan untuk animasi keluar:** `requestAnimationFrame` berhenti, sehingga modal yang sudah ditutup tertinggal di DOM sampai frame dirender. Hasil tertutup baru terbaca setelah screenshot memaksa render.
+  - Tata letak tombol grid dan animasi `copy-nudge` ditulis di luar sesi yang menulis entri ini; pemilik menyetujuinya ikut di commit yang sama.
+  - `TapTooltip` tidak dipakai untuk peringatan karena ia hanya muncul lewat hover, fokus, atau tekan lama, bukan saat tombol ditekan.
 
 ### [ADDITION] Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2)
 - **Tanggal:** 2026-09-15

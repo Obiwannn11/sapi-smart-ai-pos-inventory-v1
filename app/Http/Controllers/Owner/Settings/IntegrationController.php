@@ -136,6 +136,11 @@ class IntegrationController extends Controller
     /**
      * Terbitkan satu link konektor. URL utuhnya hanya di-flash sekali, sama
      * seperti token MCP: yang tersimpan di basis data hanya hash-nya.
+     *
+     * Sengaja tanpa flash `success`. Link tampil di modal yang hanya bisa
+     * ditutup lewat tombolnya sendiri, dan toast sukses muncul DI ATAS modal
+     * itu: menutupi judulnya, dan tombol silang toast jatuh tepat di atas
+     * tombol silang modal. Isinya pun sama dengan keterangan modal.
      */
     public function generateConnectorLink(Request $request): RedirectResponse
     {
@@ -166,8 +171,7 @@ class IntegrationController extends Controller
                 // AI yang mengubah atau memotong karakter itu belum diuji.
                 'url' => url(self::CONNECTOR_PATH).'?token='.rawurlencode($plainTextToken),
                 'expires_at' => $expiresAt->toIso8601String(),
-            ])
-            ->with('success', 'Link dibuat. Salin sekarang, link tidak akan ditampilkan lagi.');
+            ]);
     }
 
     public function revokeConnectorLink(Request $request, int $token): RedirectResponse
