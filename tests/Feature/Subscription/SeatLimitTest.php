@@ -157,7 +157,7 @@ test('token mobile milik staf nonaktif dicabut saat dipakai', function () {
         'is_active' => false,
     ]);
 
-    Sanctum::actingAs($kasir);
+    Sanctum::actingAs($kasir, ['mobile:use']);
 
     $this->getJson('/api/v1/mobile/products')->assertStatus(403);
 });

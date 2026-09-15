@@ -105,34 +105,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
-### [BL-112] Ability Token Sanctum Tidak Pernah Ditegakkan — Token MCP "Read-Only" Bisa Membatalkan Transaksi
-- **Ditemukan:** 2026-09-15
-- **Sumber:** memeriksa kode untuk keputusan `[BL-102]` (konektor data lewat URL)
-- **Status:** Open
-- **Prioritas:** High — celahnya terbuka hari ini dan tidak menunggu fitur apa pun
-- **Area Terdampak:**
-  - `app/Http/Controllers/Owner/Settings/IntegrationController.php:85` — `createToken('mcp-client', ['mcp:use'])`; satu-satunya tempat sebuah ability ditulis
-  - `app/Http/Controllers/Api/V1/Mobile/MobileAuthController.php:41` — `createToken('mobile-app')` tanpa ability, jadi `['*']`
-  - `routes/api.php:36-92` — tidak ada satu pun grup `auth:sanctum` yang memasang `abilities:`/`ability:`, dan tidak ada `tokenCan()` di `app/`
-  - `routes/ai.php:18-19` — `/mcp/business` pun tidak memeriksa `mcp:use`
-  - `bootstrap/app.php` — alias middleware `abilities`/`ability` milik Sanctum belum didaftarkan
-- **Deskripsi:**
-  Token `mcp-client` dibuat dengan ability `mcp:use` dan diperlakukan sebagai akses hanya-baca (`SapiBusinessServer`, `docs/phases-2/PHASE-AI-4_MCP-Server.md`). Tapi Sanctum hanya **mencatat** ability; yang menegakkannya adalah middleware `abilities:`/`ability:` atau `tokenCan()`, dan keduanya tidak dipakai di mana pun. Akibatnya token itu diterima setiap rute `auth:sanctum`. Karena pemiliknya owner, yang terbuka antara lain:
-  - `POST /api/v1/mobile/transactions/{transaction}/void` (owner-only, `routes/api.php:92`) — membatalkan transaksi
-  - `POST /api/v1/mobile/cash-drawer/open` dan `/close` — membuka dan menutup sesi kas
-  - `POST /api/v1/mobile/transactions` dan `/{transaction}/pay` — membuat dan melunasi transaksi
-  - `POST /api/v1/orders` bila `self_order` aktif
-
-  Umur tokennya 365 hari (`SANCTUM_TOKEN_EXPIRY=525600`). Owner menempelkannya ke konfigurasi klien AI dengan anggapan "hanya bisa membaca" — anggapan yang ditulis aplikasi ini sendiri.
-
-  **Belum direproduksi secara langsung** — disimpulkan dari rute, middleware, dan tidak adanya pemeriksaan ability. Tes pertama untuk entri ini sebaiknya justru reproduksinya: token MCP dipakai memanggil satu rute mobile yang menulis, dan hari ini diharapkan lolos.
-- **Usulan Perbaikan:**
-  1. Daftarkan alias `abilities`/`ability` Sanctum (`CheckAbilities`, `CheckForAnyAbility`) di `bootstrap/app.php`.
-  2. Pasang `ability:mcp:use` di `/mcp/business`, dan beri grup `api/v1/mobile/*` ability sendiri (mis. `mobile:use`) yang ikut ditulis di `MobileAuthController::login()`.
-  3. Token `mobile-app` yang sudah beredar ber-ability `*`, dan `*` lolos semua pemeriksaan ability — jadi penegakan ini **tidak** mengeluarkan kasir yang sedang login, dan token `mcp-client` (yang hanya punya `mcp:use`) langsung tertolak di rute mobile. Arah sebaliknya (token mobile lama diterima di `/mcp/business`) tetap terbuka sampai token itu diganti; itu tidak berbahaya karena MCP hanya-baca.
-  4. Telusuri asal token self-order/n8n untuk `api/v1/orders` — tidak ada `createToken()` lain di `app/`, jadi token itu dibuat di luar kode aplikasi. Pastikan ability-nya diketahui sebelum memasang `ability:` di grup itu, supaya integrasi yang berjalan tidak mati.
-  5. Tes: token MCP ditolak (403) di rute mobile yang menulis; token mobile tetap diterima; token MCP tetap diterima di `/mcp/business`.
-
 ### [BL-107] Foto Struk Belum Bisa Jadi Restock — dan Karena Itu 41 dari 42 Varian Tidak Punya Tanggal Kedaluwarsa
 - **Ditemukan:** 2026-09-08
 - **Sumber:** Pertanyaan pemilik — *"bisa edit dan nambah dengan note otomatis dari ai … jadi foto struk, melalui vn, dll di dashboard owner"*. Angkanya ditemukan saat memeriksa apakah permintaan itu masuk akal, dan ternyata ia menjawab pertanyaan lain yang lebih mendesak.
@@ -280,7 +252,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-102] Konektor Data Lewat URL — Jalur Non-MCP untuk Pemula, dengan Kredensial yang Menumpang di Query String
 - **Ditemukan:** 2026-09-05 (permintaan pemilik, belum diputuskan)
 - **Sumber:** "selain MCP, itu ada konektor langsung via fetch, karena kredensialnya itu langsung di params url, cocok untuk pemula dan sisa copy url dan prompt bawaan untuk petunjuk ke AI pengguna, jadi nanti AI pengguna tahu untuk fetch website datanya — dan beri tahu kalau ini cukup bahaya"
-- **Status:** Open — **bentuknya diputuskan pemilik 2026-09-15** (lihat blok "Keputusan pemilik 2026-09-15" di akhir entri), belum dikerjakan. Tidak bergantung pada `[BL-112]` karena kredensialnya sengaja bukan token Sanctum, tapi `[BL-112]` lebih mendesak: celahnya sudah terbuka hari ini
+- **Status:** Open — **bentuknya diputuskan pemilik 2026-09-15** (lihat blok "Keputusan pemilik 2026-09-15" di akhir entri), belum dikerjakan. `[BL-112]` sudah ditutup 2026-09-15, dan penutupannya melemahkan alasan butir 1 — lihat catatan sesudah blok keputusan
 - **Prioritas:** Low — keputusan bentuk yang dulu membuatnya High sudah diambil; tidak ada yang rusak hari ini
 - **Area Terdampak (kalau kelak dikerjakan):**
   - `routes/ai.php:18-19` — `Mcp::web('/mcp/business')` di balik `auth:sanctum` + `tenant.api` + `feature.api:ai` + `role:owner` + `throttle:mcp`; jalur baru harus menjawab gerbang yang sama, bukan melewatinya
@@ -307,6 +279,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   2. **Masa berlaku: wajib, owner memilih 7 atau 30 hari, default 30.** Tidak ada pilihan "sampai dicabut". Memperpanjang berarti membuat link baru — link lama tidak diperpanjang, supaya salinan yang sudah tersebar tetap mati pada tanggalnya.
   3. **Isi: satu paket tetap tanpa parameter.** Hari ini, 7 hari, 30 hari, bulan berjalan vs bulan lalu, produk terlaris, profit, dan menu — disusun dari layanan yang sama dengan tool MCP (`AiContextService`, `ProfitService`, `ProductCatalogService`), supaya angkanya tidak bisa berbeda dari jawaban MCP. Alasan tanpa parameter adalah batas klien, bukan kesederhanaan — lihat butir berikutnya.
   4. **Penyampaian bahaya: dialog + centang + riwayat pakai.** Tidak ada tombol "Salin URL" langsung. Membuat link membuka dialog: pilih masa berlaku, lalu centang kalimat konkret bertanggal ("Siapa pun yang memegang link ini bisa melihat penjualan dan profit toko saya sampai 15 Okt 2026"). URL tampil **sekali**, seperti token MCP. Daftar link aktif menampilkan label, tanggal mati, dan "terakhir dipakai".
+- **Catatan 2026-09-15 sesudah `[BL-112]` ditutup — tempat penyimpanan di butir 1 perlu dikonfirmasi ulang pemilik.** Alasan utama "bukan token Sanctum" adalah bahwa token Sanctum diterima semua rute `auth:sanctum`. Itu tidak lagi benar: setiap rute bertoken kini menuntut ability, dan dijaga test yang menyisir seluruh rute. Token Sanctum ber-ability sempit (mis. `connector:read`) akan tertolak di rute lain, dan `personal_access_tokens` sudah punya `name`, `abilities`, `last_used_at`, dan `expires_at` — hampir seluruh kebutuhan butir 1 dan 2. Yang tetap berbeda: Sanctum membaca token dari header, bukan dari query string, jadi rute konektor tetap butuh middleware sendiri untuk menukar link menjadi user. Bentuk yang diputuskan (link terpisah, bisa banyak, berumur, dicabut satu-satu) tidak terpengaruh; yang terbuka hanya **di tabel mana ia disimpan**.
 - **Batas klien yang sudah diperiksa** (dokumentasi *web fetch tool* Claude API, `platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool`, dibaca 2026-09-15):
   - Claude hanya boleh mengambil URL yang sudah muncul di percakapan — pesan pengguna, atau hasil fetch/search sebelumnya. URL yang disusunnya sendiri ditolak (`url_not_in_prior_context`). Inilah alasan butir 3: AI tidak bisa mengganti `?from=` sendiri.
   - URL maksimal **250 karakter** (`url_too_long`) — domain, path, dan token harus muat.
@@ -716,6 +689,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-112` | Ability token Sanctum tidak pernah ditegakkan — token MCP "read-only" bisa membatalkan transaksi | 2026-09-15 (ability per permukaan `self-order:use`/`mobile:use`/`mcp:use`, penolakan berkode `token_ability_missing`, penjaga rute; token `*` yang beredar tetap lolos, token login mobile sengaja belum dipersempit) | `[HOTFIX] Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112)` |
 | `BL-111` | Stok satu varian tidak bisa punya lebih dari satu tanggal kedaluwarsa — restock menimpa batch sebelumnya | 2026-09-15 (tabel batch + FEFO di antara barang yang masih baik; `stock` tetap kolom yang dibaca, dijaga sama dengan jumlah batch; void dan edit mengembalikan unit ke batch asalnya) | `[SCHEMA] Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108)` |
 | `BL-108` | Barang kedaluwarsa terjual tanpa satu pun peringatan — dan tiga komentar menjanjikan penjagaan yang tidak pernah ada | 2026-09-15 (pertanyaan terbuka dijawab pemilik: kasir boleh mengonfirmasi dengan alasan wajib, pemilik meninjau di Laporan Saran Jual. Gerbang di server termasuk jalur offline; ketiga komentar diperbaiki di perubahan yang sama) | `[SCHEMA] Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108)` |
 | `BL-110` | Nama pembantu uji bersifat global tapi tidak ada yang menjaga keunikannya — bentrokan berikutnya mematikan `check:boot` lagi | 2026-09-12 (penjaganya jadi perintah Artisan, bukan tes: bentrokan mematikan pelari uji pada tahap pemuatan, jadi tes penjaga ikut mati bersama yang dijaganya — dibuktikan dengan menanam bentrokannya. Dipasang sebagai langkah pertama `check:boot`) | `[ADDITION] Penjaga Bentrokan Nama Pembantu Uji Jadi Perintah Artisan — Karena Sebuah Tes Tidak Bisa Menjaganya (BL-110)` |

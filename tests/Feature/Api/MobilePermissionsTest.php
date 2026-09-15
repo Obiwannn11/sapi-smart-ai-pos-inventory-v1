@@ -106,7 +106,7 @@ test('profil tenant ikut mengembalikan izin', function () {
     ['cashier' => $cashier] = mobileRbacContext();
     grantModules($cashier, 'Kasir', ['pos']);
 
-    Sanctum::actingAs($cashier);
+    Sanctum::actingAs($cashier, ['mobile:use']);
 
     $this->getJson('/api/v1/mobile/tenant/profile')
         ->assertStatus(200)
@@ -117,7 +117,7 @@ test('perubahan role terlihat tanpa perlu login ulang', function () {
     ['cashier' => $cashier] = mobileRbacContext();
     grantModules($cashier, 'Kasir', ['pos']);
 
-    Sanctum::actingAs($cashier);
+    Sanctum::actingAs($cashier, ['mobile:use']);
     $this->getJson('/api/v1/mobile/tenant/profile')->assertJsonPath('permissions', ['pos']);
 
     // Owner mencabut modul saat kasir masih memegang tokennya. Token mobile
@@ -192,7 +192,7 @@ test('owner lolos gerbang modul api tanpa perlu di-grant', function () {
 test('endpoint POS mobile tetap terbuka untuk kasir tanpa role, sama seperti web', function () {
     ['cashier' => $cashier] = mobileRbacContext();
 
-    Sanctum::actingAs($cashier);
+    Sanctum::actingAs($cashier, ['mobile:use']);
 
     // Keputusan 2026-07-25: modul `pos`/`cash_drawer` adalah penanda menu, bukan
     // gerbang rute — di web maupun mobile. Menggerbang di sini akan mengunci staf

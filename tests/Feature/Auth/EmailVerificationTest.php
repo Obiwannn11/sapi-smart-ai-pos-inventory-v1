@@ -122,7 +122,7 @@ test('api menolak dengan json, bukan pengalihan', function () {
     signUp();
     $user = User::where('email', 'budi@example.com')->firstOrFail();
 
-    Laravel\Sanctum\Sanctum::actingAs($user);
+    Laravel\Sanctum\Sanctum::actingAs($user, ['mobile:use']);
 
     $this->getJson('/api/v1/mobile/products')
         ->assertStatus(403)

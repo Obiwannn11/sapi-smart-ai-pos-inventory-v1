@@ -56,7 +56,7 @@ function mobileTaxedSale(string $mode, float $rate = 11): array
 test('struk mobile membawa subtotal dan pajak di mode exclusive', function () {
     ['cashier' => $cashier, 'transaction' => $transaction] = mobileTaxedSale(Tenant::TAX_MODE_EXCLUSIVE);
 
-    Sanctum::actingAs($cashier);
+    Sanctum::actingAs($cashier, ['mobile:use']);
 
     getJson("/api/v1/mobile/transactions/{$transaction->id}/receipt")
         ->assertOk()
@@ -70,7 +70,7 @@ test('struk mobile membawa subtotal dan pajak di mode exclusive', function () {
 test('struk mobile mode inclusive tidak bisa direkonstruksi dari baris item', function () {
     ['cashier' => $cashier, 'transaction' => $transaction] = mobileTaxedSale(Tenant::TAX_MODE_INCLUSIVE);
 
-    Sanctum::actingAs($cashier);
+    Sanctum::actingAs($cashier, ['mobile:use']);
 
     $response = getJson("/api/v1/mobile/transactions/{$transaction->id}/receipt")->assertOk();
 
@@ -107,7 +107,7 @@ test('struk mobile tenant tanpa pajak tidak membawa konteks', function () {
         'payments' => [['payment_method_id' => $cash->id, 'amount' => 10000]],
     ]);
 
-    Sanctum::actingAs($cashier);
+    Sanctum::actingAs($cashier, ['mobile:use']);
 
     getJson("/api/v1/mobile/transactions/{$transaction->id}/receipt")
         ->assertOk()

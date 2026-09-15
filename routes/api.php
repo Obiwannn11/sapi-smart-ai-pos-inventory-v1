@@ -27,13 +27,19 @@ Route::post('/xendit/webhook', [XenditWebhookController::class, 'handle']);
 // ─────────────────────────────────────────────────────────────────
 Route::prefix('v1')->group(function () {
 
+    // Setiap grup bertoken menyebut ability permukaannya tepat sesudah
+    // `auth:sanctum` ([BL-112]). Tanpa itu token apa pun yang sah diterima di
+    // semua rute — token MCP yang hanya-baca pernah bisa mem-void transaksi.
+    // Token login mobile dibuat tanpa daftar ability, jadi `*`, dan tetap lolos;
+    // yang tertolak adalah token yang lingkupnya memang dibuat sempit.
+
     // --- Self Order / n8n (Sanctum) ---
     // 'subscription' dipasang sebagai alias, BUKAN grup 'tenant.api': gerbang
     // langganan wajib berlaku di sini — pesanan lewat n8n/Telegram adalah
     // layanan baru, persis yang ditahan saat 'grace'/'suspended' — sementara
     // EnsureEmailVerified yang ikut di grup itu tidak masuk akal untuk token
     // mesin. Lihat [BL-020].
-    Route::middleware(['auth:sanctum', 'subscription'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:self-order:use', 'subscription'])->group(function () {
         // Katalog sengaja di LUAR gerbang fitur: katalog bukan pemesanan, dan
         // endpoint yang sama dipakai jalur mobile.
         Route::get('/products', [ApiProductController::class, 'index']);
@@ -55,7 +61,7 @@ Route::prefix('v1')->group(function () {
     // menyandera data pelanggan bukan alat penagihan yang sah. Menutupnya akan
     // membuat dapur berhenti di tengah antrean pada hari langganan lewat jatuh
     // tempo. Kebijakan antrean seutuhnya diputuskan di [BL-019].
-    Route::middleware(['auth:sanctum', 'feature.api:self_order'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:self-order:use', 'feature.api:self_order'])->group(function () {
         Route::patch('/orders/{transaction}/fulfillment', [ApiOrderController::class, 'updateFulfillment']);
     });
 
@@ -69,7 +75,7 @@ Route::prefix('v1')->group(function () {
         ->middleware('throttle:mobile-login');
 
     // Protected: auth + tenant
-    Route::middleware(['auth:sanctum', 'tenant.api'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api'])->group(function () {
         Route::post('/mobile/logout', [MobileAuthController::class, 'logout']);
         Route::get('/mobile/tenant/profile', [MobileTenantController::class, 'profile']);
         Route::get('/mobile/products', [ApiProductController::class, 'index']);
@@ -79,7 +85,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Kasir + Owner: operasi kas & transaksi
-    Route::middleware(['auth:sanctum', 'tenant.api', 'role:cashier,owner'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api', 'role:cashier,owner'])->group(function () {
         Route::post('/mobile/cash-drawer/open', [MobileCashDrawerController::class, 'open']);
         Route::post('/mobile/cash-drawer/close', [MobileCashDrawerController::class, 'close']);
         Route::get('/mobile/cash-drawer/{cashDrawer}/summary', [MobileCashDrawerController::class, 'summary']);
@@ -88,7 +94,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Owner only: void transaksi
-    Route::middleware(['auth:sanctum', 'tenant.api', 'role:owner'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api', 'role:owner'])->group(function () {
         Route::post('/mobile/transactions/{transaction}/void', [MobileTransactionController::class, 'void']);
     });
 

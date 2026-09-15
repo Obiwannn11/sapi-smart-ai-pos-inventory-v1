@@ -74,7 +74,7 @@ test('flag satu tenant tidak memengaruhi tenant lain', function () {
 test('self order yang dimatikan menolak pesanan dengan json berkode', function () {
     ['owner' => $owner] = makeFlagContext(['self_order_enabled' => false]);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['self-order:use']);
 
     // Kode yang stabil, bukan kalimatnya: n8n mencocokkan kode.
     $this->postJson('/api/v1/orders', [])
@@ -86,7 +86,7 @@ test('self order yang dimatikan menolak pesanan dengan json berkode', function (
 test('self order yang hidup meneruskan pesanan ke validasi', function () {
     ['owner' => $owner] = makeFlagContext(['self_order_enabled' => true]);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['self-order:use']);
 
     // 422 dari validasi controller — gerbangnya dilewati, bukan menutup.
     $this->postJson('/api/v1/orders', [])->assertStatus(422);
@@ -95,7 +95,7 @@ test('self order yang hidup meneruskan pesanan ke validasi', function () {
 test('saran upsell ikut tertutup saat self order mati', function () {
     ['owner' => $owner] = makeFlagContext(['self_order_enabled' => false]);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['self-order:use']);
 
     // Ia hanya berguna untuk permukaan self-order, dan tetap membocorkan
     // barang mana yang sedang tertekan stoknya kalau dibiarkan terbuka.
@@ -110,7 +110,7 @@ test('katalog tetap terbuka meski self order mati', function () {
     $product = Product::factory()->create(['tenant_id' => $tenant->id]);
     ProductVariant::factory()->create(['product_id' => $product->id]);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['self-order:use']);
 
     // Katalog bukan pemesanan, dan endpoint yang sama dipakai jalur mobile.
     $this->getJson('/api/v1/products')->assertStatus(200);
@@ -126,7 +126,7 @@ test('memajukan pesanan ikut tertutup saat self order mati', function () {
         'user_id' => $owner->id,
     ]);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['self-order:use']);
 
     $this->patchJson("/api/v1/orders/{$transaction->id}/fulfillment")
         ->assertStatus(403)
@@ -217,7 +217,7 @@ test('flag mati mengalahkan kuota yang masih tersedia', function () {
 test('mcp ditolak saat ai dimatikan untuk tenant itu', function () {
     ['owner' => $owner] = makeFlagContext(['ai_enabled' => false]);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['mcp:use']);
 
     // Sebelum hari ini satu-satunya cara menghentikan akses MCP adalah
     // mencabut tokennya. Sekarang ada saklarnya.

@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | HOTFIX | API | Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112) |
 | 2026-09-15 | DECISION | Promosi | Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal" |
 | 2026-09-15 | SCHEMA | Stok | Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108) |
 | 2026-09-15 | DECISION | Promosi | Laporan Saran Jual Memakai Satu Kata per Tahap, dan Pemilik Melihat "Barang Tertekan" serta "Modal Hangus" di Semua Layar |
@@ -274,6 +275,29 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [HOTFIX] Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Routes | Middleware | Tests
+- **Breaking Change:** Tidak untuk token yang beredar di kode ini. Token login mobile dibuat tanpa daftar ability, jadi `*`, dan tetap lolos di mana pun. Yang tertolak hanya token berlingkup sempit di luar permukaannya — hari ini hanya `mcp-client`. **Satu hal di luar jangkauan repo:** token n8n tidak dibuat oleh kode aplikasi, jadi ability-nya tidak bisa dipastikan dari sini (lihat Catatan).
+- **Deskripsi:**
+  Sanctum hanya mencatat ability pada token; yang memeriksanya adalah middleware `ability:`/`abilities:` atau `tokenCan()`, dan tidak satu pun dipakai. Token `mcp-client` (`['mcp:use']`) karena itu diterima di semua rute `auth:sanctum`. **Direproduksi sebelum diperbaiki:** token MCP milik owner memanggil `POST /api/v1/mobile/transactions/{id}/void` dan mendapat **200**. Enam rute lain yang diuji (buat transaksi, buka laci kas, katalog mobile, pesanan self-order, katalog self-order, memajukan pesanan) juga meloloskannya.
+  - **Satu ability per permukaan**, dipasang tepat sesudah `auth:sanctum`: `self-order:use` (grup self-order dan fulfillment), `mobile:use` (tiga grup mobile), `mcp:use` (`/mcp/business`).
+  - **Penolakan berkode:** `{"success": false, "code": "token_ability_missing"}` dengan status 403, sejajar dengan `feature_disabled`. Rute yang sama punya gerbang lain yang juga menjawab 403, jadi tanpa kode n8n, aplikasi kasir, maupun test tidak bisa tahu gerbang mana yang menolak.
+  - **Penjaga:** test yang menyisir seluruh rute dan gagal bila ada rute `auth:sanctum` tanpa `ability:`/`abilities:`, sekaligus gagal bila tidak menemukan rute sama sekali.
+- **Alasan:** Token MCP ditempel ke konfigurasi klien AI dengan anggapan hanya-baca — anggapan yang ditulis aplikasi ini sendiri — dan berumur 365 hari.
+- **File Terdampak:**
+  - `bootstrap/app.php`: alias `abilities`/`ability`, render `token_ability_missing`
+  - `routes/api.php`: `ability:self-order:use` di dua grup, `ability:mobile:use` di tiga grup
+  - `routes/ai.php`: `ability:mcp:use`
+  - `tests/Feature/Api/TokenAbilityTest.php`: reproduksi, token lama tetap diterima, pemisahan antarpermukaan, penjaga (baru)
+  - `MobilePermissionsTest`, `MobileReceiptTaxTest`, `FeatureGatingTest`, `PaymentMethodRecapTest`, `EmailVerificationTest`, `SeatLimitTest`, `SelfOrderSubscriptionGateTest`, `SubscriptionLifecycleTest`, `UpsellEventTest`: `Sanctum::actingAs` kini menyebut ability rutenya
+- **Catatan:**
+  - **Callback render sengaja menangkap `AccessDeniedHttpException`, bukan `MissingAbilityException`.** `Handler::render()` menjalankan `prepareException()` sebelum callback dicocokkan, dan saat itu setiap `AuthorizationException` sudah jadi `AccessDeniedHttpException` dengan exception aslinya sebagai `previous`. Callback bertipe `MissingAbilityException` dicoba lebih dulu: middleware-nya menolak dengan benar, tapi `code` pulang `null`.
+  - **Sembilan berkas test lama tidak sekadar disesuaikan.** `Sanctum::actingAs($user)` tanpa ability membuat `tokenCan()` selalu false. Dibiarkan, test yang mengharapkan 403 dari gerbang langganan, fitur, atau verifikasi surel akan tetap hijau karena ditolak ability — lulus dengan alasan yang salah — sementara test yang mengharapkan 422 akan merah. `UpsellEventTest` sebelumnya masuk lewat `actingAs($cashier, 'sanctum')` tanpa token sama sekali, yang kini dijawab 401.
+  - **Sengaja belum dikerjakan:** `MobileAuthController::login()` tetap membuat token `*`, padahal usulan butir 2 di entri backlog menyarankan `mobile:use`. Aplikasi kasir ada di luar repo ini dan rute yang dipanggilnya belum diperiksa, sehingga token yang dipersempit bisa mematikan kasir di rute yang tak terduga. Arah sebaliknya (token `*` diterima di `/mcp/business`) karena itu masih terbuka; tidak berbahaya karena MCP hanya-baca.
+  - **Periksa di produksi sebelum deploy:** `SELECT name, abilities FROM personal_access_tokens`. Token n8n yang dibuat dengan daftar ability sendiri (bukan `*`) akan tertolak di self-order sesudah perubahan ini. Basis data lokal tidak punya satu token pun untuk dicocokkan.
 
 ### [DECISION] Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal"
 - **Tanggal:** 2026-09-15

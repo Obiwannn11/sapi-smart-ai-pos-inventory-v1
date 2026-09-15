@@ -10,6 +10,34 @@
 
 ## Daftar Entri
 
+### [BL-112] Ability Token Sanctum Tidak Pernah Ditegakkan — Token MCP "Read-Only" Bisa Membatalkan Transaksi
+- **Ditemukan:** 2026-09-15
+- **Sumber:** memeriksa kode untuk keputusan `[BL-102]` (konektor data lewat URL)
+- **Status:** **Selesai 2026-09-15** — lihat `[HOTFIX] Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112)`. **Direproduksi lebih dulu:** token MCP milik owner mendapat 200 dari endpoint void, dan lolos di enam rute lain yang diuji. Dari "Usulan Perbaikan": butir 1, 3, dan 5 dikerjakan penuh; butir 2 separuh — `ability:` dipasang di rute, tapi `MobileAuthController::login()` tetap membuat token `*` karena rute yang dipanggil aplikasi kasir belum diperiksa; butir 4 **tidak terjawab** — asal token n8n tetap tidak diketahui, dan grup self-order tetap diberi `ability:` dengan anggapan token itu dibuat tanpa daftar ability (`*`). Anggapan itu harus dicek di produksi sebelum deploy (kueri ada di entri CHANGELOG). Bentuk respons ditambah di luar usulan: kode `token_ability_missing`, plus test penjaga yang menyisir seluruh rute.
+- **Prioritas:** High — celahnya terbuka hari ini dan tidak menunggu fitur apa pun
+- **Area Terdampak:**
+  - `app/Http/Controllers/Owner/Settings/IntegrationController.php:85` — `createToken('mcp-client', ['mcp:use'])`; satu-satunya tempat sebuah ability ditulis
+  - `app/Http/Controllers/Api/V1/Mobile/MobileAuthController.php:41` — `createToken('mobile-app')` tanpa ability, jadi `['*']`
+  - `routes/api.php:36-92` — tidak ada satu pun grup `auth:sanctum` yang memasang `abilities:`/`ability:`, dan tidak ada `tokenCan()` di `app/`
+  - `routes/ai.php:18-19` — `/mcp/business` pun tidak memeriksa `mcp:use`
+  - `bootstrap/app.php` — alias middleware `abilities`/`ability` milik Sanctum belum didaftarkan
+- **Deskripsi:**
+  Token `mcp-client` dibuat dengan ability `mcp:use` dan diperlakukan sebagai akses hanya-baca (`SapiBusinessServer`, `docs/phases-2/PHASE-AI-4_MCP-Server.md`). Tapi Sanctum hanya **mencatat** ability; yang menegakkannya adalah middleware `abilities:`/`ability:` atau `tokenCan()`, dan keduanya tidak dipakai di mana pun. Akibatnya token itu diterima setiap rute `auth:sanctum`. Karena pemiliknya owner, yang terbuka antara lain:
+  - `POST /api/v1/mobile/transactions/{transaction}/void` (owner-only, `routes/api.php:92`) — membatalkan transaksi
+  - `POST /api/v1/mobile/cash-drawer/open` dan `/close` — membuka dan menutup sesi kas
+  - `POST /api/v1/mobile/transactions` dan `/{transaction}/pay` — membuat dan melunasi transaksi
+  - `POST /api/v1/orders` bila `self_order` aktif
+
+  Umur tokennya 365 hari (`SANCTUM_TOKEN_EXPIRY=525600`). Owner menempelkannya ke konfigurasi klien AI dengan anggapan "hanya bisa membaca" — anggapan yang ditulis aplikasi ini sendiri.
+
+  **Belum direproduksi secara langsung** — disimpulkan dari rute, middleware, dan tidak adanya pemeriksaan ability. Tes pertama untuk entri ini sebaiknya justru reproduksinya: token MCP dipakai memanggil satu rute mobile yang menulis, dan hari ini diharapkan lolos.
+- **Usulan Perbaikan:**
+  1. Daftarkan alias `abilities`/`ability` Sanctum (`CheckAbilities`, `CheckForAnyAbility`) di `bootstrap/app.php`.
+  2. Pasang `ability:mcp:use` di `/mcp/business`, dan beri grup `api/v1/mobile/*` ability sendiri (mis. `mobile:use`) yang ikut ditulis di `MobileAuthController::login()`.
+  3. Token `mobile-app` yang sudah beredar ber-ability `*`, dan `*` lolos semua pemeriksaan ability — jadi penegakan ini **tidak** mengeluarkan kasir yang sedang login, dan token `mcp-client` (yang hanya punya `mcp:use`) langsung tertolak di rute mobile. Arah sebaliknya (token mobile lama diterima di `/mcp/business`) tetap terbuka sampai token itu diganti; itu tidak berbahaya karena MCP hanya-baca.
+  4. Telusuri asal token self-order/n8n untuk `api/v1/orders` — tidak ada `createToken()` lain di `app/`, jadi token itu dibuat di luar kode aplikasi. Pastikan ability-nya diketahui sebelum memasang `ability:` di grup itu, supaya integrasi yang berjalan tidak mati.
+  5. Tes: token MCP ditolak (403) di rute mobile yang menulis; token mobile tetap diterima; token MCP tetap diterima di `/mcp/business`.
+
 ### [BL-111] Stok Satu Varian Tidak Bisa Punya Lebih dari Satu Tanggal Kedaluwarsa — Restock Menimpa Batch Sebelumnya
 - **Ditemukan:** 2026-09-14, saat menjawab pertanyaan pemilik soal uji integrasi FEFO (barang datang bulan 1 vs bulan 5, tanggal kedaluwarsa beda, tapi terhitung satu produk)
 - **Sumber:** Pertanyaan pemilik langsung, diverifikasi terhadap kode sebelum jadi entri

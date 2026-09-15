@@ -256,7 +256,9 @@ test('endpoint saran self order mengembalikan kandidat untuk keranjang', functio
         'expiry_date' => now()->addDay()->toDateString(),
     ]);
 
-    actingAs($this->cashier, 'sanctum');
+    // Lewat token, bukan guard: middleware ability menolak pengguna yang
+    // masuk ke guard sanctum tanpa token sama sekali ([BL-112]).
+    Laravel\Sanctum\Sanctum::actingAs($this->cashier, ['self-order:use']);
 
     $response = $this->postJson('/api/v1/upsell/suggestions', [
         'variant_ids' => [$this->variant->id],

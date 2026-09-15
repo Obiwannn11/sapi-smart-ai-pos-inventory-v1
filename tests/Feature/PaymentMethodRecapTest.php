@@ -151,7 +151,7 @@ test('mobile drawer summary reports the same net figure its close() already used
 
     cashSale($this->tenant, $this->owner, total: 39000, tendered: 89000);
 
-    Sanctum::actingAs($this->owner);
+    Sanctum::actingAs($this->owner, ['mobile:use']);
 
     $this->getJson("/api/v1/mobile/cash-drawer/{$drawer->id}/summary")
         ->assertOk()

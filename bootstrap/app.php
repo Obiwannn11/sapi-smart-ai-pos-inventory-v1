@@ -71,6 +71,11 @@ return Application::configure(basePath: dirname(__DIR__))
             // Settings, "tidak punya izin" mengarahkannya ke halaman Role.
             'feature' => \App\Http\Middleware\EnsureTenantFeature::class,
             'feature.api' => \App\Http\Middleware\EnsureTenantFeatureApi::class,
+            // Ability token Sanctum ([BL-112]). Sanctum hanya MENCATAT ability
+            // pada token; tanpa alias ini tidak ada yang memeriksanya, dan token
+            // apa pun yang sah diterima di seluruh rute `auth:sanctum`.
+            'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
+            'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
         ]);
 
         // Webhook penyedia pembayaran datang dari mesin di luar sana: tidak ada
@@ -114,6 +119,27 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Token yang sah tapi dipakai di luar permukaannya ([BL-112]). Bentuknya
+        // mengikuti EnsureTenantFeatureApi: `code` yang stabil, karena rute yang
+        // sama punya gerbang lain yang juga menjawab 403, dan n8n maupun aplikasi
+        // kasir mencocokkan kode, bukan kalimat.
+        // Yang ditangkap AccessDeniedHttpException, bukan MissingAbilityException:
+        // Handler::render() mengubah setiap AuthorizationException menjadi
+        // AccessDeniedHttpException SEBELUM callback dicocokkan, dan exception
+        // aslinya tinggal sebagai `previous`. Callback bertipe exception asli
+        // tidak pernah terpanggil — sudah dicoba.
+        $exceptions->render(function (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $exception): ?\Illuminate\Http\JsonResponse {
+            if (! $exception->getPrevious() instanceof \Laravel\Sanctum\Exceptions\MissingAbilityException) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'code' => 'token_ability_missing',
+                'message' => 'Token ini tidak berlaku untuk endpoint ini.',
+            ], 403);
+        });
+
         // Render a branded Inertia error page for 400/500 responses in
         // production. Admins (owners) and cashier staff get their own page so
         // the primary action returns them to the right place.

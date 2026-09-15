@@ -61,7 +61,7 @@ function makeSelfOrderContext(string $status, int $graceDay = 1): array
 test('pesanan self-order ditolak saat tenant ditangguhkan', function () {
     ['machine' => $machine] = makeSelfOrderContext(Tenant::STATUS_SUSPENDED);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // Tenant yang ditangguhkan tidak boleh menerima pesanan lewat pintu mana pun.
     $this->postJson('/api/v1/orders', [])->assertStatus(403);
@@ -73,7 +73,7 @@ test('pesanan self-order ditolak begitu tenggat mengunci', function () {
         graceDay: SubscriptionService::graceLockFromDay(),
     );
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // Tahap `locked` berarti hanya-baca: data lama tetap terbuka, transaksi
     // baru tidak.
@@ -83,7 +83,7 @@ test('pesanan self-order ditolak begitu tenggat mengunci', function () {
 test('pesanan self-order masih diterima di hari-hari awal tenggat', function () {
     ['machine' => $machine] = makeSelfOrderContext(Tenant::STATUS_GRACE, graceDay: 1);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // 422 dari validasi, bukan 403 — pintunya terbuka. Inilah inti `[BL-054]`
     // pada permukaan self-order: warung yang tidak bisa menerima pesanan tidak
@@ -94,7 +94,7 @@ test('pesanan self-order masih diterima di hari-hari awal tenggat', function () 
 test('katalog self-order tertutup saat tenant ditangguhkan', function () {
     ['machine' => $machine] = makeSelfOrderContext(Tenant::STATUS_SUSPENDED);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     $this->getJson('/api/v1/products')->assertStatus(403);
 });
@@ -107,7 +107,7 @@ test('katalog self-order tetap terbaca saat masa tenggang', function () {
     $product = Product::factory()->create(['tenant_id' => $tenant->id]);
     ProductVariant::factory()->create(['product_id' => $product->id]);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // Membaca katalog adalah method aman — `grace` tidak menutupnya.
     $this->getJson('/api/v1/products')->assertStatus(200);
@@ -116,7 +116,7 @@ test('katalog self-order tetap terbaca saat masa tenggang', function () {
 test('tenant aktif tetap bisa mengirim pesanan self-order', function () {
     ['machine' => $machine] = makeSelfOrderContext(Tenant::STATUS_ACTIVE);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // 422 dari validasi, bukan 403: yang diuji di sini justru bahwa gerbangnya
     // TIDAK ikut menutup tenant yang langganannya berlaku.
@@ -132,7 +132,7 @@ test('token mesin tidak dituntut verifikasi surel', function () {
     // tenant yang surelnya belum terverifikasi.
     $machine->forceFill(['email_verified_at' => null])->save();
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     $this->postJson('/api/v1/orders', [])->assertStatus(422);
 });
@@ -147,7 +147,7 @@ test('memajukan pesanan tetap bisa saat masa tenggang', function () {
         'user_id' => $machine->id,
     ]);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // Pesanan ini uangnya sudah diterima. Menutupnya berarti dapur berhenti di
     // tengah antrean pada hari langganan lewat jatuh tempo — dan middleware-nya
@@ -166,7 +166,7 @@ test('memajukan pesanan tetap bisa saat tenant ditangguhkan', function () {
         'user_id' => $machine->id,
     ]);
 
-    Sanctum::actingAs($machine);
+    Sanctum::actingAs($machine, ['self-order:use']);
 
     // Alasannya sama: kewajiban yang sudah dibayar tetap harus bisa
     // diselesaikan, sekalipun tidak ada pesanan baru yang boleh masuk.

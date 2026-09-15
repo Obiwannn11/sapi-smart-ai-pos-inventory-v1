@@ -124,7 +124,7 @@ test('api mengembalikan 403 json saat tenggat mengunci, bukan pengalihan', funct
         -SubscriptionService::graceLockFromDay(),
     );
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['mobile:use']);
 
     // Konsumennya aplikasi, jadi jawabannya harus JSON — pengalihan ke halaman
     // langganan tidak berarti apa pun di sana.
@@ -136,7 +136,7 @@ test('api mengembalikan 403 json saat tenggat mengunci, bukan pengalihan', funct
 test('api tetap boleh membaca saat masa tenggang', function () {
     ['owner' => $owner] = makeBillingContext(Tenant::STATUS_GRACE, -1);
 
-    Sanctum::actingAs($owner);
+    Sanctum::actingAs($owner, ['mobile:use']);
 
     $this->getJson('/api/v1/mobile/products')->assertStatus(200);
 });
