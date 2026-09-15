@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\ApiOrderController;
 use App\Http\Controllers\Api\V1\ApiProductController;
 use App\Http\Controllers\Api\V1\ApiUpsellController;
+use App\Http\Controllers\Api\V1\ConnectorSummaryController;
 use App\Http\Controllers\Api\V1\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\V1\Mobile\MobileCashDrawerController;
 use App\Http\Controllers\Api\V1\Mobile\MobileTenantController;
@@ -97,5 +98,14 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api', 'role:owner'])->group(function () {
         Route::post('/mobile/transactions/{transaction}/void', [MobileTransactionController::class, 'void']);
     });
+
+    // ─── Link data untuk AI ([BL-102]) ────────────────────────────
+
+    // Tokennya datang dari `?token=`, bukan header (lihat AppServiceProvider).
+    // `connector.text` sengaja paling luar: ia yang membuat penolakan gerbang
+    // di dalamnya terbaca AI sebagai penolakan, bukan halaman login. Sisanya
+    // gerbang yang sama dengan /mcp/business.
+    Route::middleware(['connector.text', 'auth:sanctum', 'ability:connector:read', 'tenant.api', 'feature.api:ai', 'role:owner', 'throttle:connector'])
+        ->get('/connector/summary', ConnectorSummaryController::class);
 
 });

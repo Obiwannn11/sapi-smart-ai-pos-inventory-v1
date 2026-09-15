@@ -76,7 +76,19 @@ return Application::configure(basePath: dirname(__DIR__))
             // apa pun yang sah diterima di seluruh rute `auth:sanctum`.
             'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
             'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
+            'connector.text' => \App\Http\Middleware\ConnectorPlainTextResponses::class,
         ]);
+
+        // Laravel mengurutkan ulang middleware yang ada di daftar prioritasnya:
+        // Authenticate dan throttle dipindah ke depan middleware lain di rute,
+        // sehingga link kedaluwarsa akan ditolak SEBELUM `connector.text`
+        // sempat mengubah penolakannya jadi teks — dan AI membacakan halaman
+        // login. Didaftarkan di depan Authenticate supaya ia tetap paling luar
+        // ([BL-102]). Hanya berpengaruh pada rute yang memasangnya.
+        $middleware->prependToPriorityList(
+            before: \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
+            prepend: \App\Http\Middleware\ConnectorPlainTextResponses::class,
+        );
 
         // Webhook penyedia pembayaran datang dari mesin di luar sana: tidak ada
         // sesi, jadi tidak ada token CSRF yang bisa dikirim. Penggantinya bukan

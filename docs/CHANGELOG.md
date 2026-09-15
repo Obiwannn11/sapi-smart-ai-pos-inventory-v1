@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | ADDITION | API | Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2) |
 | 2026-09-15 | ADDITION | Owner | Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1) |
 | 2026-09-15 | HOTFIX | API | Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112) |
 | 2026-09-15 | DECISION | Promosi | Aturan Saran Jual: "Tampil" di Mana-mana, Kalimat Status Tanpa Istilah Mesin, dan "Jendela" Jadi "Tanggal" |
@@ -276,6 +277,34 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Controller | Middleware | Routes | Tests
+- **Breaking Change:** Tidak. Callback pengambilan token Sanctum kini terpasang untuk seluruh aplikasi, tapi hanya membaca `?token=` di `api/v1/connector/*`; setiap rute lain tetap membaca header `Authorization`, dan test token yang sudah ada tetap hijau.
+- **Deskripsi:**
+  `GET /api/v1/connector/summary?token=…` mengembalikan paket yang diputuskan pemilik untuk `[BL-102]`: satu paket tetap, tanpa parameter.
+  - **Isi:** nama usaha; tabel lima periode (hari ini, 7 hari, 30 hari, bulan berjalan sampai hari ini, bulan lalu sebulan penuh) berisi omzet, jumlah transaksi, rata-rata per transaksi, dan laba kotor; profit 30 hari; 10 produk terlaris; laba per produk dengan batas yang sama seperti AI Analysis; menu aktif per kategori dengan harga dan stok (paling banyak 100 produk, sisanya disebut jumlahnya). Angkanya dari `AiContextService`, `ProfitService`, dan `ProductCatalogService`, sama dengan tool MCP.
+  - **Teks, bukan JSON:** `text/plain` berisi Markdown. Pengambil halaman AI (dokumentasi web fetch Claude) menerima teks, HTML, dan PDF; JSON belum tentu. Label periode menyebut rentangnya sendiri supaya bulan berjalan tidak dibandingkan mentah dengan bulan lalu yang penuh.
+  - **Token dari query string** lewat `Sanctum::getAccessTokenFromRequestUsing()`. Masa berlaku dan `last_used_at` tetap ditangani Sanctum, jadi link yang dicabut atau kedaluwarsa langsung tertolak dan halaman Integrasi mencatat kapan link terakhir dibuka.
+  - **Gerbangnya sama dengan `/mcp/business`:** `auth:sanctum`, `ability:connector:read`, `tenant.api`, `feature.api:ai`, `role:owner`, ditambah `throttle:connector` (30 per menit).
+  - **Penolakan jadi kalimat:** `ConnectorPlainTextResponses` meminta JSON dari gerbang di dalamnya, lalu mengubah jawaban yang tidak sukses menjadi teks. Link tidak berlaku dijawab "Link ini tidak berlaku: sudah dicabut, sudah lewat masa berlakunya, atau tidak tersalin utuh…"; penolakan lain membawa pesan gerbangnya. Semua jawaban membawa `Cache-Control: no-store`, `X-Robots-Tag: noindex`, dan `Referrer-Policy: no-referrer`.
+- **Alasan:** Link dari tahap 1 mengarah ke sini, dan prompt bawaan meminta AI menyebut nama usaha serta produk atau mengaku link gagal dibuka. Keduanya hanya mungkin kalau isi maupun penolakannya terbaca oleh AI, bukan dialihkan ke halaman masuk atau halaman tagihan yang akan dibacakan seolah data toko.
+- **File Terdampak:**
+  - `app/Services/ConnectorSummaryService.php`: penyusun paket Markdown (baru)
+  - `app/Http/Controllers/Api/V1/ConnectorSummaryController.php`: baru
+  - `app/Http/Middleware/ConnectorPlainTextResponses.php`: baru
+  - `app/Providers/AppServiceProvider.php`: limiter `connector`, callback token Sanctum
+  - `bootstrap/app.php`: alias `connector.text`, pendaftaran di daftar prioritas middleware
+  - `routes/api.php`: rute `connector/summary`
+  - `tests/Feature/Api/ConnectorSummaryTest.php`: baru
+- **Catatan:**
+  - **`connector.text` didaftarkan di depan Authenticate lewat `prependToPriorityList`.** Laravel memindahkan middleware yang ada di daftar prioritasnya (Authenticate, throttle) ke depan middleware lain di rute, sehingga tanpa itu penolakan autentikasi terjadi sebelum middleware teks berjalan. Kesimpulan ini dari membaca cara pengurutannya; yang dibuktikan hanyalah bahwa DENGAN pendaftaran itu jawabannya teks 401, lewat test dan `curl` ke server lokal. Versi tanpa pendaftaran tidak dicoba.
+  - **Isolasi tenant bertumpu pada `TenantScope`, yang hanya menyaring saat `auth()->check()`.** `Authenticate` memanggil `shouldUse('sanctum')`, dan test memastikan data tenant lain tidak ikut di paket.
+  - **Diuji ujung ke ujung di server lokal:** link dibuat dari halaman Integrasi, dibuka tanpa cookie seperti pengambil halaman AI (200, teks, `X-RateLimit-Limit: 30`), halaman Integrasi mencatat "terakhir dibuka", lalu link dicabut dan URL yang sama langsung dijawab 401.
+  - **Belum diuji di Claude, ChatGPT, dan Gemini:** layanan AI tidak menjangkau `localhost`, jadi uji prompt menunggu deploy.
+  - **Laba kotor data demo Kopi Nusantara dan Kopi Story terbaca minus** karena seeder demonya tidak mengisi `subtotal_amount` — `[BL-113]`. Bukan dari endpoint ini; angka yang sama muncul di AI Analysis dan MCP. Squid Coffee & Eatery utuh.
 
 ### [ADDITION] Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1)
 - **Tanggal:** 2026-09-15

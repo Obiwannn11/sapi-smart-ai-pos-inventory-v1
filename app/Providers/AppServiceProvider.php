@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -39,6 +40,25 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('mcp', function (Request $request) {
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('connector', function (Request $request) {
+            return Limit::perMinute(30)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Link data untuk AI membawa tokennya di `?token=` ([BL-102]): pengambil
+        // halaman AI hanya bisa membuka URL, tidak bisa memasang header. Callback
+        // ini MENGGANTIKAN cara Sanctum membaca token untuk seluruh aplikasi, jadi
+        // query string hanya dibaca di rute konektor, dan setiap rute lain tetap
+        // memakai header Authorization.
+        Sanctum::getAccessTokenFromRequestUsing(function (Request $request): ?string {
+            if (! $request->is('api/v1/connector/*')) {
+                return $request->bearerToken();
+            }
+
+            $token = $request->query('token');
+
+            return is_string($token) ? $token : null;
         });
 
         // --- Gerbang laju endpoint login (BL-007) ---------------------------
