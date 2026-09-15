@@ -183,9 +183,27 @@ const restockForm = useForm({
 });
 
 const adjustForm = useForm({
-    qty: '',
+    // Arah dan jumlah dipisah ([BL-111]): satu kolom bertanda "+/-" tidak
+    // punya tempat untuk menanyakan batch mana yang bergerak.
+    direction: 'decrease',
+    amount: '',
+    // 'auto' | id batch (angka) | 'new'
+    target: 'auto',
+    expiry_date: '',
+    no_expiry: false,
     notes: '',
 });
+
+const ADJUST_DIRECTIONS = [
+    { value: 'decrease', label: 'Kurangi' },
+    { value: 'increase', label: 'Tambah' },
+];
+
+const ADJUST_TARGET = 'flex items-start gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer transition-colors';
+
+const ADJUST_TARGET_ON = 'border-primary bg-primary/5';
+
+const ADJUST_TARGET_OFF = 'border-gray-200 hover:bg-gray-50';
 
 const openRestock = (variant) => {
     selectedVariant.value = variant;
@@ -231,10 +249,113 @@ const closeAdjust = () => {
 };
 
 const submitAdjust = () => {
-    adjustForm.post(`/owner/stock/${selectedVariant.value.id}/adjust`, {
-        preserveScroll: true,
-        onSuccess: () => closeAdjust(),
-    });
+    adjustForm
+        .transform((data) => {
+            const amount = Math.abs(parseInt(data.amount, 10) || 0);
+            const newBatch = data.direction === 'increase' && data.target === 'new';
+
+            return {
+                qty: data.direction === 'decrease' ? -amount : amount,
+                notes: data.notes,
+                batch_id: typeof data.target === 'number' ? data.target : null,
+                new_batch: newBatch,
+                expiry_date: newBatch && !data.no_expiry ? data.expiry_date : null,
+                no_expiry: newBatch && data.no_expiry,
+            };
+        })
+        .post(`/owner/stock/${selectedVariant.value.id}/adjust`, {
+            preserveScroll: true,
+            onSuccess: () => closeAdjust(),
+        });
+};
+
+const adjustAmount = computed(() => Math.abs(parseInt(adjustForm.amount, 10) || 0));
+
+/** Aturan tanggal batch baru sama dengan restock. */
+const adjustNeedsDate = computed(() => Boolean(selectedVariant.value?.tracks_expiry) && !adjustForm.no_expiry);
+
+// "Batch baru" hanya ada untuk koreksi naik.
+watch(() => adjustForm.direction, (direction) => {
+    if (direction === 'decrease' && adjustForm.target === 'new') adjustForm.target = 'auto';
+});
+
+watch(() => adjustForm.no_expiry, (declared) => {
+    if (declared) adjustForm.expiry_date = '';
+});
+
+const batchLabel = (batch) => (batch.expiry_date ? formatDate(batch.expiry_date) : 'tanpa tanggal');
+
+/**
+ * Urutan koreksi turun otomatis, cermin `StockBatchService::take(expiredFirst: true)`:
+ * yang kedaluwarsa dulu, lalu yang paling cepat basi, yang tanpa tanggal paling
+ * akhir. Batch dari server sudah urut tanggal; yang dipindah hanya yang basi.
+ */
+const discardOrder = (batches) => [
+    ...batches.filter((batch) => isExpired(batch.expiry_date)),
+    ...batches.filter((batch) => !isExpired(batch.expiry_date)),
+];
+
+/**
+ * Apa yang akan terjadi pada batch, dibaca SEBELUM disimpan. Aturan otomatisnya
+ * dulu tersembunyi: koreksi turun diam-diam mengambil batch basi lebih dulu.
+ *
+ * @returns {{ text: string, error: boolean } | null}
+ */
+const adjustPreview = computed(() => {
+    const variant = selectedVariant.value;
+    const amount = adjustAmount.value;
+
+    if (!variant || amount === 0) return null;
+
+    const batches = variant.batches ?? [];
+    const chosen = typeof adjustForm.target === 'number'
+        ? batches.find((batch) => batch.id === adjustForm.target)
+        : null;
+
+    if (adjustForm.direction === 'increase') {
+        if (adjustForm.target === 'new') {
+            return { text: `Menambah ${amount} pcs sebagai batch baru.`, error: false };
+        }
+
+        return chosen
+            ? { text: `Menambah ${amount} pcs ke batch ${batchLabel(chosen)} (${chosen.qty} → ${chosen.qty + amount}).`, error: false }
+            : { text: `Menambah ${amount} pcs ke batch yang terakhir datang.`, error: false };
+    }
+
+    if (chosen) {
+        return amount > chosen.qty
+            ? { text: `Batch ${batchLabel(chosen)} hanya tersisa ${chosen.qty}.`, error: true }
+            : { text: `Mengurangi ${amount} pcs dari batch ${batchLabel(chosen)} (${chosen.qty} → ${chosen.qty - amount}).`, error: false };
+    }
+
+    if (amount > variant.stock) {
+        return { text: `Stok hanya ${variant.stock}.`, error: true };
+    }
+
+    let left = amount;
+    const parts = [];
+
+    for (const batch of discardOrder(batches)) {
+        if (left <= 0) break;
+
+        const taken = Math.min(left, batch.qty);
+        parts.push(`${taken} pcs dari ${batchLabel(batch)}${isExpired(batch.expiry_date) ? ' (kedaluwarsa)' : ''}`);
+        left -= taken;
+    }
+
+    return { text: parts.length ? `Mengurangi ${parts.join(', ')}.` : `Mengurangi ${amount} pcs.`, error: false };
+});
+
+/** "Buang yang kedaluwarsa": koreksi turun sebesar unit basi, urutan otomatis. */
+const discardExpired = () => {
+    const units = selectedVariant.value?.expired_units ?? 0;
+
+    if (units <= 0) return;
+
+    adjustForm.direction = 'decrease';
+    adjustForm.amount = String(units);
+    adjustForm.target = 'auto';
+    adjustForm.notes = 'Dibuang: kedaluwarsa';
 };
 
 // --- Helper ---
@@ -755,23 +876,134 @@ const formatDate = (date) => {
                         <span class="text-gray-400">(Stok saat ini: {{ selectedVariant?.stock }})</span>
                     </p>
 
+                    <!-- Barang basi yang masih tercatat di rak ([BL-111]). Selama
+                         batchnya belum dibuang, variannya tidak mendapat potongan
+                         hampir-kedaluwarsa dan tidak ditawarkan kasir; tombol ini
+                         jalan pendek untuk membuangnya. -->
+                    <div
+                        v-if="selectedVariant?.expired_units > 0"
+                        class="-mt-3 mb-5 flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2"
+                    >
+                        <p class="text-xs text-destructive">
+                            {{ selectedVariant.expired_units }} pcs sudah kedaluwarsa sejak {{ formatDate(selectedVariant.expired_since) }}.
+                        </p>
+                        <button
+                            type="button"
+                            class="shrink-0 rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                            @click="discardExpired"
+                        >
+                            Buang yang kedaluwarsa
+                        </button>
+                    </div>
+
                     <form class="space-y-4" @submit.prevent="submitAdjust">
-                        <!-- Qty -->
+                        <!-- Arah koreksi -->
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Jumlah Adjustment <span class="text-red-500">*</span>
+                            <span class="block text-sm font-medium text-gray-700 mb-1">Jenis koreksi</span>
+                            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Jenis koreksi">
+                                <button
+                                    v-for="option in ADJUST_DIRECTIONS"
+                                    :key="option.value"
+                                    type="button"
+                                    role="radio"
+                                    :aria-checked="adjustForm.direction === option.value"
+                                    :class="[
+                                        'px-3 py-2 text-sm font-medium rounded-lg border transition-colors',
+                                        adjustForm.direction === option.value
+                                            ? 'border-warning bg-warning/10 text-warning-foreground'
+                                            : 'border-gray-300 text-gray-600 hover:bg-gray-50',
+                                    ]"
+                                    @click="adjustForm.direction = option.value"
+                                >
+                                    {{ option.label }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Jumlah -->
+                        <div>
+                            <label for="adjust-amount" class="block text-sm font-medium text-gray-700 mb-1">
+                                Jumlah <span class="text-red-500">*</span>
                             </label>
                             <input
-                                v-model="adjustForm.qty"
+                                id="adjust-amount"
+                                v-model="adjustForm.amount"
                                 type="number"
-                                placeholder="Positif (+) atau negatif (-)"
+                                min="1"
+                                inputmode="numeric"
+                                placeholder="Masukkan jumlah"
                                 autofocus
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
                                 :class="{ 'border-red-300': adjustForm.errors.qty }"
                             />
                             <p v-if="adjustForm.errors.qty" class="mt-1 text-xs text-red-600">{{ adjustForm.errors.qty }}</p>
-                            <p class="mt-1 text-xs text-gray-400">Masukkan angka positif untuk menambah, negatif untuk mengurangi</p>
                         </div>
+
+                        <!-- Batch sasaran ([BL-111]). "Otomatis" adalah aturan lama,
+                             kini tertulis; batch lain dipilih saat pemilik tahu
+                             barang mana yang bergerak. -->
+                        <div>
+                            <span class="block text-sm font-medium text-gray-700 mb-1">
+                                {{ adjustForm.direction === 'decrease' ? 'Kurangi dari' : 'Tambahkan ke' }}
+                            </span>
+                            <div class="max-h-48 space-y-1.5 overflow-y-auto">
+                                <label :class="[ADJUST_TARGET, adjustForm.target === 'auto' ? ADJUST_TARGET_ON : ADJUST_TARGET_OFF]">
+                                    <input v-model="adjustForm.target" type="radio" value="auto" class="mt-0.5 text-primary focus:ring-ring" />
+                                    <span class="min-w-0">
+                                        <span class="block font-medium text-gray-800">Otomatis</span>
+                                        <span class="block text-xs text-gray-500">
+                                            {{ adjustForm.direction === 'decrease' ? 'Yang kedaluwarsa dulu, lalu yang paling cepat basi' : 'Batch yang terakhir datang' }}
+                                        </span>
+                                    </span>
+                                </label>
+                                <label
+                                    v-for="batch in selectedVariant?.batches ?? []"
+                                    :key="batch.id"
+                                    :class="[ADJUST_TARGET, adjustForm.target === batch.id ? ADJUST_TARGET_ON : ADJUST_TARGET_OFF]"
+                                >
+                                    <input v-model="adjustForm.target" type="radio" :value="batch.id" class="mt-0.5 text-primary focus:ring-ring" />
+                                    <span class="flex min-w-0 flex-1 justify-between gap-3">
+                                        <span :class="isExpired(batch.expiry_date) ? 'text-destructive' : 'text-gray-800'">
+                                            {{ batchLabel(batch) }}<template v-if="isExpired(batch.expiry_date)"> · kedaluwarsa</template>
+                                        </span>
+                                        <span class="shrink-0 tabular-nums text-gray-500">sisa {{ batch.qty }}</span>
+                                    </span>
+                                </label>
+                                <label
+                                    v-if="adjustForm.direction === 'increase'"
+                                    :class="[ADJUST_TARGET, adjustForm.target === 'new' ? ADJUST_TARGET_ON : ADJUST_TARGET_OFF]"
+                                >
+                                    <input v-model="adjustForm.target" type="radio" value="new" class="mt-0.5 text-primary focus:ring-ring" />
+                                    <span class="font-medium text-gray-800">Batch baru</span>
+                                </label>
+                            </div>
+                            <p v-if="adjustForm.errors.batch_id" class="mt-1 text-xs text-red-600">{{ adjustForm.errors.batch_id }}</p>
+                        </div>
+
+                        <!-- Tanggal batch baru: aturan yang sama dengan restock. -->
+                        <div v-if="adjustForm.direction === 'increase' && adjustForm.target === 'new'">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Tanggal Kedaluwarsa <span v-if="adjustNeedsDate" class="text-red-500">*</span>
+                            </label>
+                            <DatePicker v-if="!adjustForm.no_expiry" v-model="adjustForm.expiry_date" block clearable />
+                            <Checkbox
+                                v-if="selectedVariant?.tracks_expiry"
+                                v-model="adjustForm.no_expiry"
+                                label="Batch ini tidak punya tanggal kedaluwarsa"
+                                class="mt-2"
+                            />
+                            <p v-if="adjustForm.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ adjustForm.errors.expiry_date }}</p>
+                        </div>
+
+                        <!-- Pratinjau -->
+                        <p
+                            v-if="adjustPreview"
+                            role="status"
+                            class="rounded-lg px-3 py-2 text-xs"
+                            :class="adjustPreview.error ? 'bg-destructive/5 text-destructive' : 'bg-gray-50 text-gray-600'"
+                        >
+                            {{ adjustPreview.text }}
+                        </p>
 
                         <!-- Notes (wajib) -->
                         <div>
@@ -781,7 +1013,7 @@ const formatDate = (date) => {
                             <textarea
                                 v-model="adjustForm.notes"
                                 rows="2"
-                                placeholder="Contoh: Bahan expired dibuang, audit fisik, dll"
+                                :placeholder="adjustForm.direction === 'decrease' ? 'Contoh: dibuang karena kedaluwarsa, rusak, hitung ulang' : 'Contoh: hitung ulang, retur dari pelanggan'"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent resize-none"
                                 :class="{ 'border-red-300': adjustForm.errors.notes }"
                             />
@@ -799,7 +1031,7 @@ const formatDate = (date) => {
                             </button>
                             <button
                                 type="submit"
-                                :disabled="adjustForm.processing"
+                                :disabled="adjustForm.processing || adjustAmount === 0 || adjustPreview?.error"
                                 class="px-4 py-2 text-sm font-medium text-warning-foreground bg-warning rounded-lg hover:bg-warning/90 disabled:opacity-50 transition-colors"
                             >
                                 {{ adjustForm.processing ? 'Menyimpan...' : 'Simpan Adjustment' }}

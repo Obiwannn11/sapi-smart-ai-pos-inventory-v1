@@ -219,6 +219,55 @@ class StockBatchService
     }
 
     /**
+     * Ambil `$qty` unit dari SATU batch yang dipilih pemilik.
+     *
+     * Koreksi yang tahu barang mana yang berkurang — dua croissant segar jatuh
+     * sementara batch basi masih di rak — tidak boleh diserahkan pada urutan
+     * otomatis, yang mengambil yang basi lebih dulu dan membuat catatan barang
+     * basi salah.
+     *
+     * @throws \Exception bila batch itu tidak menyimpan cukup unit
+     */
+    public function takeFromBatch(ProductVariant $variant, int $batchId, int $qty, ?StockMovement $movement = null): void
+    {
+        $batch = ProductStockBatch::where('product_variant_id', $variant->id)
+            ->lockForUpdate()
+            ->findOrFail($batchId);
+
+        if ($batch->qty_remaining < $qty) {
+            throw new \Exception("Batch {$this->batchLabel($batch)} hanya tersisa {$batch->qty_remaining}, tidak bisa dikurangi {$qty}.");
+        }
+
+        $batch->qty_remaining -= $qty;
+        $batch->save();
+
+        $this->link($movement, $batch, -$qty);
+    }
+
+    /**
+     * Tambahkan `$qty` unit ke SATU batch yang dipilih pemilik.
+     */
+    public function putInto(ProductVariant $variant, int $batchId, int $qty, ?StockMovement $movement = null): void
+    {
+        $batch = ProductStockBatch::where('product_variant_id', $variant->id)
+            ->lockForUpdate()
+            ->findOrFail($batchId);
+
+        $batch->qty_remaining += $qty;
+        $batch->save();
+
+        $this->link($movement, $batch, $qty);
+    }
+
+    /**
+     * Nama batch yang dibaca pemilik: tanggal kedaluwarsanya.
+     */
+    public function batchLabel(ProductStockBatch $batch): string
+    {
+        return $batch->expiry_date?->translatedFormat('j M Y') ?? 'tanpa tanggal';
+    }
+
+    /**
      * Koreksi naik: unitnya ditumpangkan ke batch yang paling akhir datang.
      *
      * Barang yang "ternyata masih ada" saat dihitung hampir selalu sisa

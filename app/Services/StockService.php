@@ -240,12 +240,24 @@ class StockService
     /**
      * Adjustment — koreksi stok manual (bisa positif atau negatif).
      *
-     * Koreksi turun mengambil barang BASI lebih dulu: alasan paling umum
-     * stok dikurangi manual adalah membuang barang yang sudah lewat tanggal.
+     * Tanpa batch sasaran, koreksi turun mengambil barang BASI lebih dulu
+     * (alasan paling umum stok dikurangi manual adalah membuang barang yang
+     * sudah lewat tanggal), dan koreksi naik menumpang batch yang terakhir
+     * datang. Pemilik yang tahu barang mana yang bergerak memilih batchnya
+     * sendiri, atau — untuk koreksi naik — membuat batch baru bertanggal.
+     *
+     * @param  int|null  $batchId  batch varian ini yang dikurangi atau ditambah
+     * @param  bool  $newBatch  koreksi naik jadi batch baru, dengan `$expiryDate`
      */
-    public function adjust(ProductVariant $variant, int $qty, ?string $notes = null): void
-    {
-        DB::transaction(function () use ($variant, $qty, $notes) {
+    public function adjust(
+        ProductVariant $variant,
+        int $qty,
+        ?string $notes = null,
+        ?int $batchId = null,
+        bool $newBatch = false,
+        ?string $expiryDate = null,
+    ): void {
+        DB::transaction(function () use ($variant, $qty, $notes, $batchId, $newBatch, $expiryDate) {
             // Lock row to prevent race condition
             $variant = ProductVariant::lockForUpdate()->find($variant->id);
 
@@ -271,8 +283,14 @@ class StockService
                 'notes' => $notes ?? 'Adjustment manual',
             ]);
 
-            if ($qty > 0) {
+            if ($qty > 0 && $newBatch) {
+                $this->batches->receive($variant, $qty, $expiryDate, ProductStockBatch::SOURCE_ADJUSTMENT, $movement);
+            } elseif ($qty > 0 && $batchId !== null) {
+                $this->batches->putInto($variant, $batchId, $qty, $movement);
+            } elseif ($qty > 0) {
                 $this->batches->putBack($variant, $qty, $movement);
+            } elseif ($batchId !== null) {
+                $this->batches->takeFromBatch($variant, $batchId, abs($qty), $movement);
             } else {
                 $this->batches->take($variant, abs($qty), $movement, allowExpired: true, expiredFirst: true);
             }

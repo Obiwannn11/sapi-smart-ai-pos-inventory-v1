@@ -400,9 +400,10 @@ test('stock rows list every remaining batch in selling order', function () {
         ->assertInertia(fn (Assert $page) => $page->loadDeferredProps('stock', fn (Assert $reload) => $reload
             ->where('variants.data.0.stock', 14)
             ->where('variants.data.0.expiry_date', today()->subDay()->toDateString())
-            ->where('variants.data.0.batches', [
-                ['expiry_date' => today()->subDay()->toDateString(), 'qty' => 4],
-                ['expiry_date' => today()->addDays(5)->toDateString(), 'qty' => 10],
-            ])
+            ->count('variants.data.0.batches', 2)
+            ->where('variants.data.0.batches.0.expiry_date', today()->subDay()->toDateString())
+            ->where('variants.data.0.batches.0.qty', 4)
+            ->where('variants.data.0.batches.1.expiry_date', today()->addDays(5)->toDateString())
+            ->where('variants.data.0.batches.1.qty', 10)
         ));
 });

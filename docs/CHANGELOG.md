@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | ADDITION | Stok | Adjustment Stok Memilih Batch Sasaran, Menampilkan Pratinjau, dan Membuang Barang Kedaluwarsa Sekali Tekan |
 | 2026-09-15 | ADDITION | Stok | Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada |
 | 2026-09-15 | ADDITION | Kas | Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2) |
 | 2026-09-15 | DECISION | Owner | Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102) |
@@ -280,6 +281,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Adjustment Stok Memilih Batch Sasaran, Menampilkan Pratinjau, dan Membuang Barang Kedaluwarsa Sekali Tekan
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Controller | Frontend
+- **Breaking Change:** Tidak. Tanpa batch sasaran, aturan lamanya tetap berlaku.
+- **Deskripsi:**
+  Uji layar sesudah `[BL-111]` menemukan aturan batch yang tersembunyi di modal Adjust: koreksi turun selalu mengambil batch basi lebih dulu, koreksi naik selalu masuk ke batch yang terakhir datang, dan layar tidak menyebut satu pun. Dua croissant segar yang jatuh, sementara batch basi masih di rak, tercatat mengurangi batch basi.
+  - Modal Adjust memisah koreksi jadi **Kurangi/Tambah** dan jumlah, lalu mendaftar batch varian sebagai sasaran. "Otomatis" adalah aturan lama yang kini tertulis.
+  - Koreksi turun bisa mengambil dari satu batch pilihan (`StockBatchService::takeFromBatch()`), dan ditolak bila melebihi isi batch itu.
+  - Koreksi naik bisa masuk ke batch pilihan (`putInto()`) atau jadi **batch baru**, dengan aturan tanggal yang sama dengan restock: varian yang pernah bertanggal menuntut tanggal atau pernyataan "tidak bertanggal".
+  - **Pratinjau** menyebut batch mana yang bergerak sebelum disimpan, misalnya "Mengurangi 4 pcs dari 9 Sep 2026 (kedaluwarsa), 1 pcs dari 18 Sep 2026". Tombol Simpan mati bila jumlahnya melebihi batch atau stok.
+  - **"Buang yang kedaluwarsa"** muncul bila varian menyimpan batch basi. Tombol ini mengisi koreksi turun sebesar unit basi dengan alasan "Dibuang: kedaluwarsa". Baris stok membawa `expired_units` dan `expired_since` (definisi yang sama dengan lencana Kedaluwarsa) serta `id` tiap batch.
+  - `AdjustStockRequest` hanya menerima batch milik varian yang dikoreksi, dan menolak batch baru untuk koreksi turun.
+- **Alasan:** Selama batch basi belum dibuang, variannya tidak mendapat potongan hampir-kedaluwarsa dan tidak ditawarkan kasir. Membuangnya harus mudah, dan koreksi lain tidak boleh diam-diam merusak catatan barang basi.
+- **File Terdampak:**
+  - `app/Services/StockBatchService.php`: `takeFromBatch()`, `putInto()`, `batchLabel()`
+  - `app/Services/StockService.php`: `adjust()` menerima batch sasaran atau batch baru
+  - `app/Http/Requests/AdjustStockRequest.php`: `batch_id`, `new_batch`, `expiry_date`, `no_expiry`
+  - `app/Http/Controllers/Owner/StockController.php`: meneruskan sasaran; `expired_units`, `expired_since`, dan `id` batch per baris
+  - `resources/js/Pages/Owner/Stock/Index.vue`: modal Adjust
+  - `tests/Feature/Owner/StockAdjustBatchTest.php`: baru; `tests/Feature/Owner/StockTest.php`: batch per baris kini membawa `id`
 
 ### [ADDITION] Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada
 - **Tanggal:** 2026-09-15

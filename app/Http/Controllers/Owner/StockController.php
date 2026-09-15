@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
+use App\Services\BusinessClock;
 use App\Services\StockService;
 use App\Services\Upsell\Strategies\PressedStockStrategy;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -130,6 +131,9 @@ class StockController extends Controller
                 variant: $variant,
                 qty: $request->validated('qty'),
                 notes: $request->validated('notes'),
+                batchId: $request->filled('batch_id') ? (int) $request->validated('batch_id') : null,
+                newBatch: $request->boolean('new_batch'),
+                expiryDate: $request->boolean('no_expiry') ? null : $request->validated('expiry_date'),
             );
 
             $direction = $request->qty > 0 ? "+{$request->qty}" : "{$request->qty}";
@@ -340,6 +344,8 @@ class StockController extends Controller
      */
     private function paginateVariants(array $filters): LengthAwarePaginator
     {
+        $today = BusinessClock::today();
+
         $query = $this->applyStatus($this->baseQuery($filters), $filters['status'])
             ->select('id', 'product_id', 'name', 'sku', 'stock', 'expiry_date')
             ->with([
@@ -358,7 +364,12 @@ class StockController extends Controller
             // Kembaran kueri `StockBatchService::tracksExpiry()` untuk satu
             // halaman sekaligus: formulir restock menuntut tanggal pada varian
             // yang pernah bertanggal, termasuk yang batch bertanggalnya sudah habis.
-            ->withExists(['stockBatches as has_dated_batch' => fn ($batches) => $batches->whereNotNull('expiry_date')]);
+            ->withExists(['stockBatches as has_dated_batch' => fn ($batches) => $batches->whereNotNull('expiry_date')])
+            // Unit basi per baris, untuk tombol "Buang yang kedaluwarsa" di modal
+            // Adjust. Definisinya sama dengan lencana Kedaluwarsa dan "modal
+            // hangus" (`StockRescueService::expiredOnShelf()`).
+            ->withSum(['stockBatches as expired_units' => fn ($batches) => $batches->expiredOn($today)], 'qty_remaining')
+            ->withMin(['stockBatches as expired_since' => fn ($batches) => $batches->expiredOn($today)], 'expiry_date');
 
         return $this->applySort($query, $filters['sort'], $filters['dir'])
             ->paginate($filters['per_page'])
@@ -371,9 +382,13 @@ class StockController extends Controller
                 'expiry_date' => $variant->expiry_date?->toDateString(),
                 'tracks_expiry' => $variant->expiry_date !== null || (bool) $variant->has_dated_batch,
                 'batches' => $variant->stockBatches->map(fn ($batch) => [
+                    // Id ikut karena modal Adjust memilih batch sasarannya.
+                    'id' => $batch->id,
                     'expiry_date' => $batch->expiry_date?->toDateString(),
                     'qty' => $batch->qty_remaining,
                 ])->values()->all(),
+                'expired_units' => (int) $variant->expired_units,
+                'expired_since' => $variant->expired_since === null ? null : substr((string) $variant->expired_since, 0, 10),
                 'product_id' => $variant->product_id,
                 'product_name' => $variant->product->name,
                 'category_name' => $variant->product->category?->name,
