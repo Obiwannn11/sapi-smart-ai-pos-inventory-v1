@@ -6,6 +6,7 @@ use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class StockMovement extends Model
 {
@@ -42,5 +43,16 @@ class StockMovement extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class, 'reference_id');
+    }
+
+    /**
+     * Batch yang disentuh mutasi ini ([BL-111]). `pivot->qty` bertanda, searah
+     * dengan `qty` mutasinya: negatif diambil dari batch itu, positif masuk ke
+     * batch itu.
+     */
+    public function batches(): BelongsToMany
+    {
+        return $this->belongsToMany(ProductStockBatch::class, 'stock_movement_batches', 'stock_movement_id', 'product_stock_batch_id')
+            ->withPivot('qty');
     }
 }

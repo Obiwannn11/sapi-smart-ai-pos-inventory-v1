@@ -159,8 +159,10 @@ class StockController extends Controller
             // dibaca, dan tidak dipakai untuk apa pun di kepala halaman.
             'variant' => $variant,
             'movements' => Inertia::defer(fn () => StockMovement::where('product_variant_id', $variant->id)
+                ->with(['batches' => fn ($batches) => $batches->select('product_stock_batches.id', 'product_stock_batches.expiry_date')])
                 ->latest('created_at')
-                ->paginate(50)),
+                ->paginate(50)
+                ->through(fn (StockMovement $movement) => $this->movementRow($movement))),
         ]);
     }
 
@@ -169,7 +171,10 @@ class StockController extends Controller
      */
     public function movements(Request $request): Response
     {
-        $query = StockMovement::with(['variant.product:id,name']);
+        $query = StockMovement::with([
+            'variant.product:id,name',
+            'batches' => fn ($batches) => $batches->select('product_stock_batches.id', 'product_stock_batches.expiry_date'),
+        ]);
 
         // Filter by type
         if ($request->filled('type')) {
@@ -193,7 +198,10 @@ class StockController extends Controller
             // Ditunda ([BL-037]): daftar mutasi bisa panjang dan tiap barisnya
             // menarik varian beserta produknya. Daftar produk untuk penyaring
             // tetap eager supaya filternya bisa dipakai sambil menunggu.
-            'movements' => Inertia::defer(fn () => $query->latest('created_at')->paginate(50)->withQueryString()),
+            'movements' => Inertia::defer(fn () => $query->latest('created_at')
+                ->paginate(50)
+                ->withQueryString()
+                ->through(fn (StockMovement $movement) => $this->movementRow($movement))),
             'products' => Product::select('id', 'name')->get(),
             'filters' => $request->only(['type', 'date_from', 'date_to', 'product_id']),
         ]);
@@ -412,6 +420,38 @@ class StockController extends Controller
         }
 
         return $counts;
+    }
+
+    /**
+     * Satu baris riwayat mutasi, dengan batch yang disentuhnya ([BL-111]).
+     *
+     * Bentuknya ditulis sendiri, bukan `toArray()` model: relasi batch
+     * membawa pivot dan cap waktu tanggal yang tidak berguna bagi layar, dan
+     * yang dibutuhkan riwayat hanyalah "berapa, dari batch bertanggal apa".
+     * Mutasi dari sebelum batch ada membawa daftar kosong.
+     *
+     * @return array<string, mixed>
+     */
+    private function movementRow(StockMovement $movement): array
+    {
+        $variant = $movement->relationLoaded('variant') ? $movement->variant : null;
+
+        return [
+            'id' => $movement->id,
+            'created_at' => $movement->created_at,
+            'type' => $movement->type,
+            'qty' => $movement->qty,
+            'notes' => $movement->notes,
+            'reference_id' => $movement->reference_id,
+            'variant' => $variant === null ? null : [
+                'name' => $variant->name,
+                'product' => ['name' => $variant->product?->name],
+            ],
+            'batches' => $movement->batches->map(fn ($batch) => [
+                'expiry_date' => $batch->expiry_date?->toDateString(),
+                'qty' => (int) $batch->pivot->qty,
+            ])->values()->all(),
+        ];
     }
 
     private function authorizeVariant(ProductVariant $variant): void

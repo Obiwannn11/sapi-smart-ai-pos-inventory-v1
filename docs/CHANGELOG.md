@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | ADDITION | Stok | Riwayat Stok Menyebut Batch yang Disentuh Tiap Mutasi |
 | 2026-09-15 | DECISION | Stok | Formulir Edit Varian Berhenti Menulis Stok dan Tanggal Kedaluwarsa — Keduanya Hanya Berubah Lewat Halaman Stok |
 | 2026-09-15 | ADDITION | Stok | Adjustment Stok Memilih Batch Sasaran, Menampilkan Pratinjau, dan Membuang Barang Kedaluwarsa Sekali Tekan |
 | 2026-09-15 | ADDITION | Stok | Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada |
@@ -282,6 +283,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Riwayat Stok Menyebut Batch yang Disentuh Tiap Mutasi
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Model | Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Sejak `[BL-111]`, `stock_movement_batches` mencatat batch mana yang disentuh setiap mutasi stok, tapi tidak ada satu layar pun yang membacanya. Baris "-7 Penjualan" di riwayat tidak bisa menjawab apakah yang terjual croissant 18 Sep atau yang sudah basi.
+  - `StockMovement::batches()` baru: relasi ke batch lewat `stock_movement_batches`, dengan `qty` bertanda di pivot.
+  - Halaman Riwayat per varian dan Semua Pergerakan Stok mendapat kolom **Batch**, misalnya "-5 · 18 Sep 2026" dan "-2 · 25 Sep 2026" untuk satu penjualan yang melintasi dua batch. Mutasi dari sebelum batch ada menampilkan "-".
+  - `StockController::movementRow()` merakit baris riwayat dengan bentuk tetap, bukan `toArray()` model, supaya pivot dan cap waktu tanggal tidak ikut terkirim.
+  - Jenis `void` dan `edit` akhirnya punya label ("Void", "Edit transaksi") dan pilihan penyaringnya sendiri. Sebelumnya keduanya tampil sebagai kata mentah.
+- **Alasan:** Catatan batch yang tidak terbaca tidak menolong siapa pun saat pemilik mencari tahu ke mana barang basinya pergi.
+- **File Terdampak:**
+  - `app/Models/StockMovement.php`: relasi `batches()`
+  - `app/Http/Controllers/Owner/StockController.php`: `history()` dan `movements()` memuat batch; `movementRow()`
+  - `resources/js/Pages/Owner/Stock/History.vue`, `resources/js/Pages/Owner/Stock/Movements.vue`: kolom Batch, label void dan edit
+  - `tests/Feature/Owner/StockHistoryBatchTest.php`: baru
 
 ### [DECISION] Formulir Edit Varian Berhenti Menulis Stok dan Tanggal Kedaluwarsa — Keduanya Hanya Berubah Lewat Halaman Stok
 - **Tanggal:** 2026-09-15

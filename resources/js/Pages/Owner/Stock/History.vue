@@ -22,11 +22,18 @@ const formatDate = (date) => {
     });
 };
 
+/** Tanggal kedaluwarsa batch: "2026-09-18" jadi "18 Sep 2026", tanpa bergeser zona. */
+const formatDay = (value) => new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', {
+    day: 'numeric', month: 'short', year: 'numeric',
+});
+
 const typeLabel = (type) => {
     const labels = {
         sale: 'Penjualan',
         restock: 'Restock',
         adjustment: 'Adjustment',
+        void: 'Void',
+        edit: 'Edit transaksi',
     };
     return labels[type] || type;
 };
@@ -36,6 +43,8 @@ const typeBadgeClass = (type) => {
         sale: 'bg-primary/10 text-primary',
         restock: 'bg-success/10 text-success',
         adjustment: 'bg-warning/10 text-warning-foreground',
+        void: 'bg-gray-100 text-gray-700',
+        edit: 'bg-gray-100 text-gray-700',
     };
     return classes[type] || 'bg-gray-100 text-gray-800';
 };
@@ -76,7 +85,7 @@ const qtyClass = (qty) => {
         <Deferred data="movements">
             <template #fallback>
                 <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                    <SkeletonTable :rows="8" :columns="5" label="Memuat riwayat stok varian ini…" />
+                    <SkeletonTable :rows="8" :columns="6" label="Memuat riwayat stok varian ini…" />
                 </div>
             </template>
 
@@ -87,6 +96,7 @@ const qtyClass = (qty) => {
                         <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Waktu</th>
                         <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipe</th>
                         <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Batch</th>
                         <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Catatan</th>
                         <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Referensi</th>
                     </tr>
@@ -102,6 +112,19 @@ const qtyClass = (qty) => {
                         <td class="px-5 py-3 text-center">
                             <span class="text-sm font-semibold" :class="qtyClass(movement.qty)">
                                 {{ formatQty(movement.qty) }}
+                            </span>
+                        </td>
+                        <!-- Batch yang disentuh mutasi ini ([BL-111]). Kosong untuk
+                             mutasi dari sebelum stok disimpan per batch. -->
+                        <td class="px-5 py-3 text-xs text-gray-600">
+                            <span v-if="!movement.batches?.length" class="text-gray-300">-</span>
+                            <span
+                                v-for="(part, index) in movement.batches"
+                                :key="index"
+                                class="block whitespace-nowrap tabular-nums"
+                            >
+                                <span class="font-semibold" :class="qtyClass(part.qty)">{{ formatQty(part.qty) }}</span>
+                                · {{ part.expiry_date ? formatDay(part.expiry_date) : 'tanpa tanggal' }}
                             </span>
                         </td>
                         <td class="px-5 py-3 text-sm text-gray-600 max-w-xs truncate">{{ movement.notes || '-' }}</td>
