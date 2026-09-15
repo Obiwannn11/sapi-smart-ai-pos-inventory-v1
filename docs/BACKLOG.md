@@ -52,7 +52,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 
 ## Daftar Isu (Open / In Progress)
 
-> **Catatan pemilik 2026-07-31** — `[BL-021]`–`[BL-028]` berasal dari satu daftar catatan yang sama dan sudah diverifikasi terhadap kode. Tiga di antaranya (`[BL-021]`, `[BL-022]`, `[BL-028]`) menyangkut **angka uang yang tercatat salah**, jadi didahulukan; sisanya UX. Urutan pengerjaan yang disarankan: ~~`[BL-028]` Tahap A~~ → ~~`[BL-021]`+`[BL-022]`~~ → ~~`[BL-027]`~~ → ~~`[BL-023]`~~ → ~~`[BL-025]`~~ → ~~`[BL-026]`~~ (selesai 2026-08-01), dengan `[BL-024]` menunggu perincian dari pemilik dan `[BL-028]` Tahap B ditunda sampai ada kasir kedua. **Dari jalur ini tinggal `[BL-024]` dan `[BL-028]` Tahap B yang terbuka**, dan keduanya menunggu sesuatu — bukan menunggu giliran.
+> **Catatan pemilik 2026-07-31** — `[BL-021]`–`[BL-028]` berasal dari satu daftar catatan yang sama dan sudah diverifikasi terhadap kode. Tiga di antaranya (`[BL-021]`, `[BL-022]`, `[BL-028]`) menyangkut **angka uang yang tercatat salah**, jadi didahulukan; sisanya UX. Urutan pengerjaan yang disarankan: ~~`[BL-028]` Tahap A~~ → ~~`[BL-021]`+`[BL-022]`~~ → ~~`[BL-027]`~~ → ~~`[BL-023]`~~ → ~~`[BL-025]`~~ → ~~`[BL-026]`~~ (selesai 2026-08-01), dengan `[BL-024]` menunggu perincian dari pemilik dan `[BL-028]` Tahap B ditunda sampai ada kasir kedua. **Dari jalur ini tinggal `[BL-024]` yang terbuka**, dan ia menunggu perincian — bukan menunggu giliran. `[BL-028]` Tahap B selesai 2026-09-15.
 
 > **Catatan pemilik 2026-07-31 (kedua)** — `[BL-032]`–`[BL-041]` berasal dari catatan review demo "SAPI — ASpire" dan sudah **diverifikasi terhadap kode**; tiap entri menyebut berkas dan barisnya. Dua hal dari catatan itu sengaja TIDAK jadi entri karena ternyata sudah benar: (1) pemisahan login platform vs login tenant sudah utuh — guard `platform` sendiri (`config/auth.php:50`), broker reset kata sandi sendiri (`config/auth.php:120`), dan `redirectGuestsTo` yang memilah tujuan berdasarkan prefiks URL (`bootstrap/app.php:80`); (2) "kelas harga sesuai omzet" sudah ada mesinnya (`pricing_rules` + bracket A–D), yang belum ada hanya angkanya — itu masuk `[BL-041]`.
 
@@ -508,55 +508,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Usulan Perbaikan:**
   Seeder studi kasus kedua dengan pola yang sama seperti `CafeStudyCaseSeeder` (tenant + owner + kasir + katalog + modifier + transaksi contoh): katalog ±8 produk gorengan/ayam, satu grup modifier saus wajib pilih satu, antrian dapur menyala, dan begitu `[BL-035]` mendarat, paket setelan "Gerai Acara & Bazar" diterapkan. Berguna sekaligus sebagai bahan tangkapan layar baru untuk `[BL-032]`.
 
-### [BL-028] Rekonsiliasi Kas Tidak Memperhitungkan Penjualan Tunai, dan Angka Server Tidak Per-Laci
-- **Ditemukan:** 2026-07-31
-- **Sumber:** Catatan pemilik — "review dan mau diperbaiki konsep kas uang dalam menu kasir, bukan dari uang modal, tapi dari uang dari bertipe cash yang diterima harusnya include juga"
-- **Status:** In Progress — **Tahap A selesai 2026-07-31**, **Tahap B langkah 1 selesai 2026-09-06** (keduanya di `CHANGELOG.md`); yang tersisa hanya Tahap B langkah 2, dan ia masih ditunda
-- **Prioritas:** High — angka yang dipakai kasir untuk mempertanggungjawabkan uang fisik salah, dan salahnya sebesar seluruh penjualan tunai shift itu
-- **Area Terdampak:**
-  - `resources/js/Pages/Cashier/CashDrawer.vue:19` — `selisih = closingAmount − opening_amount`
-  - `resources/js/Pages/Cashier/CashDrawer.vue:235-260` — ringkasan tutup kas hanya menampilkan "Modal awal" dan "Uang fisik aktual"
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:82` — `expectedCashFromPayments` di-scope ke `tenant_id`, **bukan** ke laci/kasir
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:87` & `:95` — jendela waktu memakai `created_at`, bukan tanggal efektif penjualan
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:93` — `totalChangeGiven` punya masalah scope yang sama
-  - `app/Http/Controllers/Cashier/CashDrawerController.php:129-145` — `summary()` mengulang pola query yang sama, jadi cacatnya ikut tersalin
-  - `app/Models/Transaction.php:151` — `scopeWhereEffectiveBetween()` sudah ada tapi belum dipakai di sini
-  - `database/migrations/..._create_transactions_table.php` — tidak ada kolom `cash_drawer_id` (lihat Tahap B — **bukan** prasyarat)
-- **Deskripsi — tiga cacat, hanya yang pertama terlihat dari layar:**
-  1. **Lapis UI (yang dilaporkan).** Ringkasan sebelum tutup kas menghitung selisih hanya dari modal awal. Kasir yang membuka kas Rp 200.000 lalu menjual Rp 500.000 tunai akan melihat **"Selisih +500.000"** seolah lacinya kelebihan uang setengah juta. Angka penjualan tunai tidak muncul di mana pun sebelum tombol tutup ditekan.
-  2. **Scope per-laci.** `close()` sebenarnya sudah memakai rumus yang benar — `modal + tunai masuk − kembalian` — tapi query-nya menyaring `tenant_id` dan rentang waktu saja. **Dua kasir yang shift bersamaan akan sama-sama menghitung seluruh uang tunai toko sebagai milik lacinya.**
-  3. **Jendela waktu memakai `created_at`, bukan tanggal efektif.** Penjualan offline yang tersinkron belakangan ber-`created_at` waktu sync, sehingga uang yang masuk laci kemarin dihitung ke laci hari ini. Pelajaran ini **sudah tertulis** di `TransactionService.php:28-33` untuk papan antrian ("`now()` saat sync akan melemparkannya ke dasar papan") tapi belum diterapkan ke rekonsiliasi kas. `[BL-016]` akan memperbesar justru jalur ini.
-- **Dugaan Penyebab:** rentang waktu dipakai sebagai pengganti kepemilikan laci. Itu cukup selama hanya ada satu kasir per outlet — asumsi yang tidak pernah ditulis, dan patah begitu staf kedua ditambahkan lewat modul Staff yang sudah ada.
-- **Keadaan data per 2026-07-31 (dasar pemecahan tahap di bawah):** 207 sesi kas / 2 tenant / 2 kasir — **1 kasir per tenant**, sehingga **0 sesi tumpang-tindih** dan **0 transaksi yang jatuh ke laci kasir lain**. Cacat #2 masih **laten**: belum merusak angka mana pun, tapi aktif begitu kasir kedua ditambahkan. Cacat #3 juga belum menggigit (**0 transaksi** ber-`occurred_at` beda tanggal dari `created_at`). Cacat #1 sebaliknya dialami **setiap kali salah satu dari 207 sesi ditutup**.
-- **Diperiksa ulang 2026-09-06 — tidak satu pun pemicu Tahap B menyala:** 248 sesi, **masih 1 kasir per tenant**, **0 sesi tumpang-tindih**, maks **1 sesi per hari per user**, **0 sesi tertutup paksa** (`closed_by_system`), **0 transaksi** ber-`occurred_at` beda tanggal, dan **0 transaksi** tenant aktif yang jatuh di luar sesi mana pun. Angka-angka inilah yang membuat langkah 2 tetap ditunda; jangan diambil dari ingatan saat memutuskannya lagi, jalankan ulang querinya.
-
-#### Tahap A — SELESAI 2026-07-31 (tanpa migrasi)
-> **Koreksi terhadap catatan awal entri ini:** `cash_drawer_id` sempat ditulis sebagai "prasyarat". Itu keliru. `transactions.user_id` sudah ada, dan penyaring `transactions.user_id = drawer.user_id` + jendela sesi sudah memisahkan laci dengan benar — termasuk saat kasir kedua masuk. Query verifikasi atas 207 sesi menghasilkan angka identik dengan data sekarang. Jadi seluruh Tahap A berjalan **tanpa migrasi, tanpa backfill, tanpa risiko data**.
-
-1. **Satu sumber perhitungan.** Pindahkan rumus ke service tersendiri (mis. `CashDrawerReconciliation`) yang dipakai **bersama** oleh preview di UI, `close()`, dan `summary()`. Preview yang menghitung sendiri adalah cara termudah membuat dua angka berbeda untuk hal yang sama.
-2. **Ganti scope `tenant_id` → `user_id` + jendela sesi.** Memperbaiki cacat #2 selagi masih laten.
-3. **Ganti `created_at` → `Transaction::scopeWhereEffectiveBetween()`.** Memperbaiki cacat #3; scope-nya sudah ada dan sudah teruji dipakai di tempat lain, jadi ini penggantian pemanggilan, bukan logika baru.
-4. **Tampilkan rinciannya sebelum kasir menekan tutup:** modal awal + tunai diterima − kembalian diberikan = **seharusnya di laci**, baru dibandingkan dengan uang fisik. Non-tunai ditampilkan terpisah dan **ditandai jelas "tidak masuk laci"** — supaya kasir tidak mencari uang QRIS di dalam laci.
-5. **Test:** dua kasir dengan sesi tumpang-tindih (menjaga #2 tidak kembali), dan satu penjualan ber-`occurred_at` sebelum sesi dibuka (menjaga #3).
-
-#### Tahap B langkah 1 — SELESAI 2026-09-06: kolom ada dan terisi maju, tanpa backfill
-1. `transactions.cash_drawer_id` (nullable, `nullOnDelete`, indeks `[cash_drawer_id, status]`). Diisi saat kejadiannya, bukan disimpulkan saat dibaca. Kebijakan lengkap tiap jalur ada di `TransactionService::drawerReceiving()`.
-2. **Tidak ada backfill, dan tidak ada perubahan jalur baca.** Baris lama tetap `null`, rekonsiliasi tetap memakai `user_id` + jendela tanggal efektif. Ini yang membuat keberatan pemilik tetap dihormati: yang ditolak adalah backfill-nya, bukan kolomnya.
-3. **Akibatnya `null` berarti dua hal** sampai langkah 2 — "lahir sebelum kolomnya ada" dan "memang tidak jatuh ke laci mana pun" (pelunasan terlambat oleh pemilik, self-order lewat webhook, penjualan saat tak ada sesi terbuka). Tidak bisa dibedakan dari nilainya, hanya dari umur barisnya.
-4. Penjualan offline memakai `CashDrawer::coveringAt()` — laci yang jendelanya melingkupi `occurred_at`, **boleh yang sudah tertutup**. Sesi yang sudah ditutup tetap tidak berubah angkanya (`expected_amount` dibekukan saat tutup kas); yang berubah adalah penjualannya berhenti tak-bertuan.
-
-**Temuan yang lahir saat mengerjakannya, dan sebelumnya tidak tertulis di mana pun:** aturan `[BL-028]` menyebut uang milik laci yang **MELUNASI**, tapi kode tidak pernah melakukannya. Tagihan terbuka membawa `user_id` **pembuatnya**, dan `whereEffectiveBetween()` menyaring pakai tanggal saat tagihan itu **DIBUKA** — jadi tagihan pagi yang dilunasi malam menaruh uangnya di laci **pagi**. Laten selama satu kasir; bukan kekurangan yang menunggu masa depan, melainkan aturan yang selama ini dilanggar diam-diam. Kolom baru inilah yang pertama kali menyatakannya (`payOpenBill()` sekarang menerima `?User $paidBy`).
-
-#### Tahap B langkah 2 — sakelar baca + backfill, MASIH ditunda
-1. Pindahkan penyaring `CashDrawerReconciliation` dari `user_id` + jendela ke `cash_drawer_id`.
-2. Backfill baris lama dari rentang `opened_at`–`closed_at` per user. Transaksi yang jatuh di luar sesi mana pun dibiarkan `null` — jangan dipaksa masuk laci terdekat.
-- **Syarat teknisnya, dan ia tidak boleh dilewati:** salah satu dari — seluruh sesi yang masih hidup lahir sesudah migrasi langkah 1, **atau** backfill benar-benar dijalankan. Memindahkan jalur baca tanpa salah satunya akan membuat 248 sesi lama menghitung nol.
-- **Kapan dikerjakan — tiga pemicu, dan yang ketiga baru:**
-  1. Kasir kedua benar-benar ditambahkan.
-  2. Satu user bisa membuka lebih dari satu sesi dalam sehari (di situ jendela waktu mulai ambigu dan `user_id` tidak lagi cukup).
-  3. **Sesi pertama yang ditutup paksa `[BL-088]`.** Tutup-paksa 24 jam lahir sesudah keputusan penundaan ini, dan ia bentuk ketiga dari kegagalan yang sama: penjualan berlanjut saat tidak ada laci terbuka, lalu tidak jatuh ke mana pun. `closed_by_system` adalah tanda yang bisa dipantau.
-- **Catatan:** `summary()` memakai pola query yang sama dan **harus ikut dipindahkan**. Kalau hanya `close()` yang dipindahkan, rekap sesi akan menampilkan angka berbeda dari angka yang barusan dipakai menutup kas — lebih membingungkan daripada keadaan sekarang.
-
 ### [BL-024] "Perbaikan Alur Belanja Produk" — Belum Bisa Diverifikasi, Menunggu Perincian
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Catatan pemilik — "perbaikan alur dari proses belanja produk"
@@ -717,6 +668,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
+| `BL-028` | Rekonsiliasi kas tidak memperhitungkan penjualan tunai, dan angka server tidak per-laci | 2026-09-15 (Tahap A 2026-07-31; Tahap B langkah 1 2026-09-06; langkah 2: rekonsiliasi membaca `cash_drawer_id`, backfill lewat migrasi dengan turunan lama, tiga pemicu disemai di tenant `owner@sapi.test`) | `[ADDITION] Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2)` |
 | `BL-112` | Ability token Sanctum tidak pernah ditegakkan — token MCP "read-only" bisa membatalkan transaksi | 2026-09-15 (ability per permukaan `self-order:use`/`mobile:use`/`mcp:use`, penolakan berkode `token_ability_missing`, penjaga rute; token `*` yang beredar tetap lolos, token login mobile sengaja belum dipersempit) | `[HOTFIX] Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112)` |
 | `BL-111` | Stok satu varian tidak bisa punya lebih dari satu tanggal kedaluwarsa — restock menimpa batch sebelumnya | 2026-09-15 (tabel batch + FEFO di antara barang yang masih baik; `stock` tetap kolom yang dibaca, dijaga sama dengan jumlah batch; void dan edit mengembalikan unit ke batch asalnya) | `[SCHEMA] Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108)` |
 | `BL-108` | Barang kedaluwarsa terjual tanpa satu pun peringatan — dan tiga komentar menjanjikan penjagaan yang tidak pernah ada | 2026-09-15 (pertanyaan terbuka dijawab pemilik: kasir boleh mengonfirmasi dengan alasan wajib, pemilik meninjau di Laporan Saran Jual. Gerbang di server termasuk jalur offline; ketiga komentar diperbaiki di perubahan yang sama) | `[SCHEMA] Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108)` |

@@ -15,9 +15,9 @@ use function Pest\Laravel\actingAs;
 /**
  * Laci mana yang menerima uang sebuah penjualan ([BL-028] Tahap B langkah 1).
  *
- * Yang diuji di sini adalah PENGISIAN kolomnya, bukan angka rekonsiliasi —
- * jalur bacanya sengaja belum dipindahkan, dan `CashDrawerReconciliationTest`
- * yang menjaga bahwa angkanya tidak bergeser sedikit pun.
+ * Yang diuji di sini adalah PENGISIAN kolomnya saat penjualan dicatat. Angka
+ * rekonsiliasi yang membacanya dijaga `CashDrawerReconciliationTest`, dan
+ * pengisian baris lama dijaga `CashDrawerAttributionBackfillTest`.
  */
 beforeEach(function () {
     $this->tenant = Tenant::factory()->create();

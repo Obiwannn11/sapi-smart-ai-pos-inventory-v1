@@ -18,28 +18,16 @@ use Illuminate\Support\Carbon;
  * menjual tunai sepanjang shift melihat "selisih" sebesar seluruh penjualannya
  * (lihat [BL-028]).
  *
- * Dua keputusan yang menentukan angkanya, dan keduanya mudah salah:
+ * **Milik laci mana sebuah penjualan dibaca dari `transactions.cash_drawer_id`**
+ * ([BL-028] Tahap B langkah 2). Jawabannya ditetapkan saat penjualan dicatat —
+ * kebijakan lengkapnya di `TransactionService::drawerReceiving()` — bukan lagi
+ * diturunkan saat membaca dari `user_id` + rentang jam sesi. Turunan itu benar
+ * hanya selama satu kasir membuka satu sesi sehari, dan diam-diam melanggar
+ * aturan "uang milik laci yang MELUNASI": tagihan pagi yang dilunasi shift
+ * malam jatuh ke laci pagi.
  *
- *   MILIK SIAPA — disaring `user_id` laci, bukan `tenant_id` saja. Versi lama
- *   menjumlahkan seluruh uang tunai TOKO ke tiap laci, jadi dua kasir yang
- *   shift bersamaan sama-sama mengaku memegang uang yang sama. Tidak pernah
- *   terlihat selama outlet hanya punya satu kasir — asumsi yang tidak pernah
- *   ditulis.
- *
- *   KAPAN — disaring tanggal EFEKTIF (`occurred_at` bila ada), bukan
- *   `created_at`. Penjualan offline disinkronkan belakangan; memakai
- *   `created_at` melemparkan uang yang masuk laci kemarin ke laci hari ini.
- *   Alasan yang sama sudah tertulis untuk papan antrian di
- *   TransactionService::assignQueuePosition().
- *
- * **Kolom `transactions.cash_drawer_id` sudah ada dan sudah terisi, tapi
- * SENGAJA belum dibaca di sini** ([BL-028] Tahap B langkah 1). Ia hanya terisi
- * untuk penjualan yang lahir sesudah migrasinya; membacanya sekarang akan
- * membuat 248 sesi lama menghitung nol. Sakelar bacanya adalah langkah 2, dan
- * syaratnya salah satu dari — seluruh sesi yang masih hidup lahir sesudah
- * migrasi itu, atau backfill benar-benar dijalankan. Sampai itu terjadi,
- * turunan `user_id` + jendela di bawah ini tetap satu-satunya jawaban; ia
- * bukan sisa yang terlewat.
+ * Baris yang lahir sebelum kolomnya ada diisi `CashDrawerAttributionBackfill`
+ * lewat migrasi dengan turunan lama itu, jadi angka sesi lama tidak bergeser.
  */
 class CashDrawerReconciliation
 {
@@ -50,9 +38,9 @@ class CashDrawerReconciliation
     private const TYPE_CASH = 'cash';
 
     /**
-     * Rekonsiliasi satu sesi laci. Sesi yang masih terbuka dihitung sampai
-     * `now()`, jadi hasilnya bergerak selama shift berjalan — pemanggilnya
-     * yang bertanggung jawab mengambil ulang saat butuh angka terkini.
+     * Rekonsiliasi satu sesi laci. Sesi yang masih terbuka terus bergerak
+     * selama shift berjalan — pemanggilnya yang bertanggung jawab mengambil
+     * ulang saat butuh angka terkini.
      *
      * @return array{
      *     opening_amount: float,
@@ -123,12 +111,6 @@ class CashDrawerReconciliation
      *
      * Yang `rejected` tidak dihitung di mana pun kecuali sebagai riwayat.
      *
-     * Tidak disaring jendela waktu: mutasi menempel langsung pada
-     * `cash_drawer_id`, jadi kepemilikannya eksplisit dan tidak perlu
-     * diturunkan dari `user_id` + rentang jam seperti transaksi. Inilah yang
-     * dulu diminta `[BL-028]` Tahap B untuk transaksi, dan di sini ia gratis
-     * karena tabelnya lahir sesudah pelajaran itu.
-     *
      * @return \Illuminate\Support\Collection<int, CashDrawerMovement>
      */
     private function movementsOf(CashDrawer $drawer): \Illuminate\Support\Collection
@@ -150,9 +132,11 @@ class CashDrawerReconciliation
      * baris tersendiri: terlihat, dipertanggungjawabkan, tapi bukan selisih
      * laci.
      *
-     * Penyaringnya `unsettled_at`, bukan tanggal efektif penjualan: tagihannya
-     * memang lahir di shift lain — kemarin, menurut definisi 24 jam — dan yang
-     * jatuh ke sesi ini adalah SAAT ia berhenti bisa ditagih.
+     * **Satu-satunya kueri yang masih memakai `user_id` + jendela**, dan itu
+     * bukan sisa yang terlewat: tagihan ini tidak pernah punya laci, jadi yang
+     * dijawab di sini adalah TANGGUNG JAWAB pembuatnya, bukan isi laci. Penyaring
+     * waktunya `unsettled_at` — yang jatuh ke sesi ini adalah SAAT tagihannya
+     * berhenti bisa ditagih.
      *
      * Batas yang disadari: bila kasir itu tidak sedang membuka laci saat
      * sapuan berjalan, kas negatifnya tidak muncul di sesi mana pun. Ia tetap
@@ -183,13 +167,10 @@ class CashDrawerReconciliation
      */
     private function transactionsOf(CashDrawer $drawer): Builder
     {
-        [$from, $to] = $this->window($drawer);
-
         return Transaction::withoutGlobalScopes()
             ->where('tenant_id', $drawer->tenant_id)
-            ->where('user_id', $drawer->user_id)
-            ->where('status', Transaction::STATUS_COMPLETED)
-            ->whereEffectiveBetween($from, $to);
+            ->where('cash_drawer_id', $drawer->id)
+            ->where('status', Transaction::STATUS_COMPLETED);
     }
 
     /**
@@ -203,15 +184,12 @@ class CashDrawerReconciliation
      */
     private function paymentSummary(CashDrawer $drawer): array
     {
-        [$from, $to] = $this->window($drawer);
-
         return TransactionPayment::query()
             ->join('transactions', 'transaction_payments.transaction_id', '=', 'transactions.id')
             ->join('payment_methods', 'transaction_payments.payment_method_id', '=', 'payment_methods.id')
             ->where('transactions.tenant_id', $drawer->tenant_id)
-            ->where('transactions.user_id', $drawer->user_id)
+            ->where('transactions.cash_drawer_id', $drawer->id)
             ->where('transactions.status', Transaction::STATUS_COMPLETED)
-            ->whereRaw(Transaction::effectiveDateSql().' between ? and ?', [$from, $to])
             ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
             ->groupBy('payment_methods.name', 'payment_methods.type')
             ->get()
@@ -236,11 +214,13 @@ class CashDrawerReconciliation
     /**
      * Batas sesi. Laci yang masih terbuka dihitung sampai sekarang.
      *
-     * Batas yang disadari: penjualan offline yang TERJADI di dalam sesi tapi
-     * baru tersinkron setelah lacinya ditutup tidak akan terhitung di mana pun
-     * — `expected_amount` sesi itu sudah dibekukan. Memakai `created_at` tidak
-     * menyelesaikannya, hanya memindahkan kesalahannya ke laci yang salah.
-     * Jawaban sebenarnya menunggu `cash_drawer_id` di Tahap B [BL-028].
+     * Sesudah Tahap B langkah 2 hanya kas negatif yang memakainya. Bentuknya
+     * tetap harus sama dengan `CashDrawer::coveringAt()` dan dengan
+     * `CashDrawerAttributionBackfill`.
+     *
+     * Penjualan offline yang TERJADI di dalam sesi tapi baru tersinkron setelah
+     * lacinya ditutup kini tercatat di sesi itu dan muncul di rekapnya, tapi
+     * tidak menggeser `expected_amount` yang sudah dibekukan saat tutup kas.
      *
      * @return array{0: Carbon, 1: Carbon}
      */

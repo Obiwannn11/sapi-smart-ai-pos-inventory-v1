@@ -24,12 +24,17 @@ beforeEach(function () {
 /**
  * Penjualan milik $user, dibayar dengan $method, opsional ber-occurred_at
  * (mensimulasikan penjualan offline yang tersinkron belakangan).
+ *
+ * Lacinya dipilih seperti jalur penjualan memilihnya — laci kasir itu yang
+ * melingkupi saat penjualan TERJADI — karena rekonsiliasi membaca
+ * `cash_drawer_id` sejak [BL-028] Tahap B langkah 2.
  */
 function sale(User $user, PaymentMethod $method, int $amount, int $change = 0, ?string $occurredAt = null): Transaction
 {
     $transaction = Transaction::factory()->create([
         'tenant_id' => $user->tenant_id,
         'user_id' => $user->id,
+        'cash_drawer_id' => CashDrawer::coveringAt($user, $occurredAt ?? now())?->id,
         'status' => Transaction::STATUS_COMPLETED,
         'total_amount' => $amount - $change,
         'change_amount' => $change,

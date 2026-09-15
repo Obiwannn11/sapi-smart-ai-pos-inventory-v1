@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | ADDITION | Kas | Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2) |
 | 2026-09-15 | DECISION | Owner | Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102) |
 | 2026-09-15 | ADDITION | API | Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2) |
 | 2026-09-15 | ADDITION | Owner | Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1) |
@@ -278,6 +279,40 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase — menutup `[BL-028]` dengan Tahap B **langkah 2**. Tahap A (2026-07-31) dan langkah 1 (2026-09-06) sudah tercatat di bawah.
+- **Dampak:** Migration (data saja, tanpa perubahan skema), `Services\CashDrawerReconciliation`, `Services\CashDrawerAttributionBackfill` (baru), `Database\Seeders\CashDrawerScenarioSeeder` (baru), dua berkas test baru, satu pembantu test diperbarui.
+- **Breaking Change:** Tidak ada angka sesi lama yang bergeser karena perubahan ini (lihat verifikasi di bawah). Yang berubah perilakunya hanya penjualan yang lahir sejak langkah 1: tagihan yang dilunasi kasir lain kini dihitung di laci yang **melunasi**, dan penjualan offline yang tersinkron sesudah lacinya ditutup kini muncul di rekap sesi yang benar.
+- **Deskripsi:** `CashDrawerReconciliation` berhenti menurunkan kepemilikan laci dari `transactions.user_id` + rentang `opened_at`–`closed_at`, dan membaca `transactions.cash_drawer_id` yang sejak langkah 1 diisi saat penjualan dicatat. Baris yang lahir sebelum kolomnya ada diisi oleh backfill yang dijalankan sebuah migrasi.
+- **Kenapa sekarang:** pemicu 1 menyala. Kopi Nusantara (`owner@sapi.test`) kini punya dua kasir — `kasir@sapi.test` dan `gudang@sapi.test`. Diperiksa ulang 2026-09-15 dengan kueri, bukan dari ingatan: 0 sesi tumpang-tindih, maksimal 1 sesi per user per hari, 0 sesi ditutup paksa. Syarat teknis "seluruh sesi yang masih hidup lahir sesudah migrasi langkah 1" **tidak** terpenuhi — sesi 215 milik `kasir@sapi.test` terbuka sejak 2026-08-20 — jadi jalur yang diambil adalah backfill.
+- **File Terdampak:**
+  - `app/Services/CashDrawerReconciliation.php` — `transactionsOf()` dan `paymentSummary()` menyaring `cash_drawer_id`; `unsettledOf()` sengaja tetap `user_id` + jendela
+  - `app/Services/CashDrawerAttributionBackfill.php` — **baru**
+  - `database/migrations/2026_09_15_232857_backfill_cash_drawer_id_on_transactions.php` — **baru**; memanggil backfill, `down()` sengaja kosong
+  - `database/seeders/CashDrawerScenarioSeeder.php` — **baru**; tidak dipanggil `DatabaseSeeder`
+  - `app/Models/CashDrawer.php` — docblock relasi `transactions()` saja
+  - `tests/Feature/Cashier/CashDrawerAttributionBackfillTest.php` — **baru**, 8 test
+  - `tests/Feature/CashDrawerScenarioSeederTest.php` — **baru**, 6 test
+  - `tests/Feature/Cashier/CashDrawerReconciliationTest.php` — pembantu `sale()` memilih laci lewat `CashDrawer::coveringAt()`, seperti jalur penjualan
+  - `tests/Feature/Cashier/CashDrawerAttributionTest.php` — docblock saja
+- **Keputusan yang perlu diingat:**
+  - **Backfill menyalin turunan LAMA, bukan kebijakan pengisian maju.** `expected_amount` sesi lama dibekukan dengan turunan `user_id` + jendela; kalau backfill memakai aturan "laci yang melunasi", rekap sesi lama akan berbeda dari angka yang dulu dipakai menutup kasnya — persis kebingungan yang dilarang catatan `summary()` di entri backlognya. Akibatnya: tagihan terbuka lama yang dilunasi kasir lain tetap tercatat di laci pembuatnya, karena memang ke sanalah angka lama menaruhnya.
+  - **Dua pengecualian dari turunan lama**, keduanya mengikuti `TransactionService::drawerReceiving()`: self-order dan baris ber-`unsettled_at` (dilunasi pemilik sesudah 24 jam) tidak diberi laci. Pada data lokal 2026-09-15 tidak ada satu pun baris kedua jenis itu di dalam jendela sesi, jadi pengecualiannya tidak menggeser angka apa pun hari ini.
+  - **Transaksi di luar sesi mana pun dibiarkan `null`**, dan baris yang sudah punya laci tidak pernah ditimpa. Sesi seorang kasir yang tumpang-tindih menyerahkan irisannya ke sesi yang lebih baru — jawaban yang sama dengan `CashDrawer::coveringAt()`.
+  - **Migrasi, bukan perintah artisan.** Sakelar baca dan backfill mendarat di commit yang sama; syaratnya tidak boleh bergantung pada seseorang yang ingat menjalankan satu perintah lagi sesudah deploy.
+  - **`down()` kosong.** Sesudah backfill, baris yang diisinya tidak bisa dibedakan dari baris yang diisi saat penjualan terjadi.
+  - **Kas negatif tetap `user_id` + jendela `unsettled_at`.** Tagihan itu tidak pernah punya laci; yang dijawab di sana tanggung jawab pembuatnya, bukan isi laci.
+- **Verifikasi pada basis data lokal sesudah migrasi:** 308 sesi tertutup dihitung ulang dan dibandingkan dengan `expected_amount` bekunya — **307 cocok persis**. Satu-satunya yang berbeda, sesi 207 (Kopi Nusantara, 2026-07-27 s.d. 2026-08-20: beku Rp 4.503.000, dihitung ulang Rp 19.973.000), **bukan akibat backfill**: 332 baris di jendelanya disisipkan `DemoTransactionSeeder` dengan `created_at` mundur **sesudah** sesi itu ditutup. Menghitung ulang hanya baris ber-id lebih kecil dari baris pertama yang lahir sesudah penutupan menghasilkan tepat Rp 4.503.000, dan turunan lama akan menunjukkan selisih yang sama.
+- **Skenario di tenant demo (`owner@sapi.test`):** `php artisan db:seed --class=CashDrawerScenarioSeeder` menyemai ketiga pemicu pada hari H = tiga hari lalu, bertanda `[Skenario BL-028]` di catatan sesinya, dan aman dijalankan ulang. Buka rekap sesi kas sebagai owner:
+  - **B: shift pagi** — Rp 280.000 seharusnya; QRIS Rp 45.000 tampil tapi tidak masuk laci; penjualan tunai kasir A di jam yang sama tidak ikut.
+  - **B: shift sore** — sesi kedua kasir yang sama di hari yang sama; Rp 465.000 seharusnya, termasuk tagihan Rp 95.000 yang **dibuat kasir A** pukul 11:00 dan dilunasi di shift ini; uang fisik dicatat kurang Rp 10.000.
+  - **B: ditutup paksa** — `closed_by_system`, uang fisik tidak pernah dihitung, Rp 210.000 seharusnya; satu penjualan B sesudah sesi ini tertutup tidak jatuh ke laci mana pun.
+  - **A: laci bersamaan** — hanya dibuat bila kasir A belum punya sesi yang melingkupi hari H. Di basis data lokal kasir A masih memegang sesi 215 yang terbuka sejak 2026-08-20, jadi penjualan A masuk ke sana dan laci ini tidak dibuat; di basis data hasil `DatabaseSeeder` segar (yang dipakai test) ia dibuat dengan Rp 450.000 seharusnya.
+- **Yang sengaja tidak disentuh:** `Api\V1\Mobile\MobileCashDrawerController::close()` masih menghitung sendiri dengan penyaring `tenant_id` + `created_at` — cacat #2 dan #3 `[BL-028]` yang lolos dari Tahap A di jalur mobile. Itu perubahan terpisah dan tidak digabungkan ke sini.
+
+---
 
 ### [DECISION] Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102)
 - **Tanggal:** 2026-09-15

@@ -175,8 +175,8 @@ class CashDrawer extends Model
     /**
      * Penjualan yang uangnya masuk ke laci ini ([BL-028] Tahap B langkah 1).
      *
-     * Hanya terisi untuk penjualan yang lahir sesudah migrasi kolomnya;
-     * rekonsiliasi belum membaca relasi ini. Lihat docblock migrasinya.
+     * Diisi saat penjualan dicatat; baris lama diisi backfill Tahap B langkah
+     * 2. Inilah yang dibaca `CashDrawerReconciliation`.
      */
     public function transactions(): HasMany
     {
