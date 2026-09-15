@@ -543,7 +543,7 @@ Supaya tidak ada yang mengulang kalimat lama: **2FA platform sudah ada** (`[BL-0
 | Jaminan offline penuh | Background Sync dan penyimpanan persisten sudah dipasang **untuk Chrome Android**; di luar itu masih "sebisanya". | `[BL-016]` |
 | Multi-cabang | Satu tenant = satu outlet di seluruh basis kode; sengaja ditahan. | `[BL-068]` |
 | Restock dari foto struk | Belum ada — dan karena itu hampir semua varian tidak punya tanggal kedaluwarsa. | `[BL-107]`, `[BL-106]` |
-| Bundling berdiskon | Belum ada wujudnya; menunggu keputusan bentuk. | `[BL-103]` |
+| Bundling berdiskon | Bentuknya **sudah diputuskan** (2026-09-15: aturan "beli X, Y dapat potongan" di strip upsell), tapi kodenya belum ada. | `[BL-103]` |
 | Link Data untuk AI, diuji di layanan AI sungguhan | UI dan endpoint **sudah jadi** (tahap 1–2). Belum pernah ditempel ke Claude/ChatGPT/Gemini: layanan AI tidak bisa menjangkau `localhost`, jadi uji hidupnya menunggu deploy. | `[BL-102]` |
 | Gerai acara & tagihan terbuka | Paket "Gerai acara & bazar" tetap bisa membuka Tunda Bayar yang hampir pasti jadi kas negatif. | `[BL-104]` |
 | Rekonsiliasi kas per laci | Tahap A dan Tahap B langkah 1 selesai (tiap penjualan membawa lacinya); langkah 2 ditunda. | `[BL-028]` |
