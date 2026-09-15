@@ -125,11 +125,20 @@ const closeEditVariant = () => {
 };
 
 const updateVariant = () => {
-    editVariantForm.put(`/owner/products/${props.product.id}/variants/${editingVariantId.value}`, {
-        preserveScroll: true,
-        onSuccess: () => closeEditVariant(),
-    });
+    // Stok dan tanggal hanya ditampilkan, tidak dikirim ([BL-111]); server
+    // juga tidak menerimanya lagi.
+    editVariantForm
+        .transform(({ stock, expiry_date, ...editable }) => editable)
+        .put(`/owner/products/${props.product.id}/variants/${editingVariantId.value}`, {
+            preserveScroll: true,
+            onSuccess: () => closeEditVariant(),
+        });
 };
+
+/** Halaman Stok, tersaring ke produk ini, untuk mengubah stok variannya. */
+const stockPageHref = computed(() => (
+    props.product ? `/owner/stock?q=${encodeURIComponent(props.product.name)}` : null
+));
 
 // --- Currency formatting (CREATE mode inline variants) ---
 const formatNumber = (value) => {
@@ -437,6 +446,8 @@ const deleteVariant = (variantId) => {
         :show="showEditVariant"
         title="Edit Varian"
         :form="editVariantForm"
+        stock-locked
+        :stock-href="stockPageHref"
         submit-label="Perbarui Varian"
         @submit="updateVariant"
         @close="closeEditVariant"

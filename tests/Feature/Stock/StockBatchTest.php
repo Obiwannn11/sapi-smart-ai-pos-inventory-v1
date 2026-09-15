@@ -254,7 +254,7 @@ test('pencatat harian menstempel tiap tanggal kedaluwarsa dengan unitnya sendiri
     ]);
 });
 
-test('formulir varian yang mengubah tanggal memberi tanggal baru pada batch yang ditampilkannya', function () {
+test('formulir edit varian tidak lagi menyentuh stok maupun batch', function () {
     $variant = batchLedgerVariant();
     $this->stock->restock($variant, 20, null, '2026-06-10');
     $this->stock->restock($variant, 30, null, '2026-08-10');
@@ -272,10 +272,14 @@ test('formulir varian yang mengubah tanggal memberi tanggal baru pada batch yang
             'sku' => $fresh->sku,
             'price' => $fresh->price,
             'cost_price' => $fresh->cost_price,
-            'stock' => 50,
+            'stock' => 70,
             'expiry_date' => '2026-06-20',
         ])
         ->assertSessionHas('success');
 
-    expect(batchLedgerShelf($variant))->toBe([['2026-06-20', 20], ['2026-08-10', 30]]);
+    // Dulu formulir ini menulis stok langsung dan memberi tanggal baru pada
+    // batch terdepan. Sekarang stok dan tanggal hanya berubah lewat halaman
+    // Stok, jadi kiriman keduanya diabaikan.
+    expect(batchLedgerShelf($variant))->toBe([['2026-06-10', 20], ['2026-08-10', 30]])
+        ->and($variant->fresh()->stock)->toBe(50);
 });

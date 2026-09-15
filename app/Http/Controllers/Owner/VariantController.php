@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Owner;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreVariantRequest;
+use App\Http\Requests\UpdateVariantRequest;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Services\StockBatchService;
 use Illuminate\Http\RedirectResponse;
 
 class VariantController extends Controller
@@ -18,19 +18,22 @@ class VariantController extends Controller
         return back()->with('success', 'Varian berhasil ditambahkan.');
     }
 
-    public function update(StoreVariantRequest $request, Product $product, ProductVariant $variant, StockBatchService $batches): RedirectResponse
+    /**
+     * Ubah nama, SKU, dan harga varian.
+     *
+     * Stok dan tanggal kedaluwarsa TIDAK diterima di sini ([BL-111]). Keduanya
+     * hidup di batch, dan menulisnya dari formulir ini melewati catatan mutasi
+     * stok sekaligus mengganti tanggal batch tanpa jejak. Tempatnya halaman
+     * Stok: restock dan adjustment. Saat varian dibuat, stok awalnya tetap
+     * diterima dan jadi batch pembuka.
+     */
+    public function update(UpdateVariantRequest $request, Product $product, ProductVariant $variant): RedirectResponse
     {
         if ($variant->product_id !== $product->id) {
             abort(404);
         }
 
         $variant->update($request->validated());
-
-        // Formulir ini menulis `stock` dan `expiry_date` langsung, tanpa lewat
-        // StockService, jadi batchnya disusulkan di sini ([BL-111]).
-        if ($variant->wasChanged(['stock', 'expiry_date'])) {
-            $batches->syncAfterDirectEdit($variant, $variant->wasChanged('expiry_date'));
-        }
 
         return back()->with('success', 'Varian berhasil diperbarui.');
     }

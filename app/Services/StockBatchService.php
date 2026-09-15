@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\DB;
  * tetap membaca satu tanggal yang jujur tanpa perlu diubah, dan varian yang
  * masih menyimpan batch basi tidak dipromosikan sampai batch itu dibuang.
  *
- * Penulis yang melewati kelas ini (formulir varian, seeder yang menulis
+ * Penulis yang melewati kelas ini (seeder dan skrip yang menulis
  * `stock` dengan query builder) tidak merusak apa pun secara permanen:
  * {@see self::reconcile()} dipanggil sebelum dan sesudah setiap mutasi dan
  * menutup selisihnya. Tapi setiap selisih yang ditutup begitu kehilangan
@@ -348,27 +348,6 @@ class StockBatchService
 
         $variant->setAttribute('expiry_date', $earliest);
         $variant->syncOriginalAttribute('expiry_date');
-    }
-
-    /**
-     * Formulir varian menulis `stock` dan `expiry_date` langsung.
-     *
-     * Tanggal yang diubah di formulir adalah tanggal yang ditampilkannya —
-     * tanggal batch bersisa paling awal — jadi batch itulah yang diberi tanggal
-     * baru. Selisih stoknya ditutup {@see self::reconcile()}.
-     */
-    public function syncAfterDirectEdit(ProductVariant $variant, bool $expiryChanged): void
-    {
-        DB::transaction(function () use ($variant, $expiryChanged) {
-            if ($expiryChanged) {
-                $shown = $this->remainingBatches($variant, lock: true)->first();
-
-                $shown?->update(['expiry_date' => $variant->expiry_date?->toDateString()]);
-            }
-
-            $this->reconcile($variant);
-            $this->refreshExpiry($variant);
-        });
     }
 
     /**

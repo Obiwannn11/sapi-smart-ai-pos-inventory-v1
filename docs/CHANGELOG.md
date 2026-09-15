@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | DECISION | Stok | Formulir Edit Varian Berhenti Menulis Stok dan Tanggal Kedaluwarsa — Keduanya Hanya Berubah Lewat Halaman Stok |
 | 2026-09-15 | ADDITION | Stok | Adjustment Stok Memilih Batch Sasaran, Menampilkan Pratinjau, dan Membuang Barang Kedaluwarsa Sekali Tekan |
 | 2026-09-15 | ADDITION | Stok | Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada |
 | 2026-09-15 | ADDITION | Kas | Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2) |
@@ -281,6 +282,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Formulir Edit Varian Berhenti Menulis Stok dan Tanggal Kedaluwarsa — Keduanya Hanya Berubah Lewat Halaman Stok
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Controller | Service | Frontend
+- **Breaking Change:** Ya, untuk alur owner. Edit varian di halaman Produk tidak lagi mengubah stok atau tanggal kedaluwarsa. Varian BARU tetap mengisi stok awalnya.
+- **Deskripsi:**
+  Uji layar sesudah `[BL-111]` menemukan jalan samping ketiga di halaman Produk. Edit varian menulis `stock` dan `expiry_date` langsung: tanpa satu baris pun di `stock_movements`, dan dengan tanggal batch yang diganti diam-diam oleh `StockBatchService::syncAfterDirectEdit()`. Pemilik yang mengetik stok 50 di sana tidak meninggalkan catatan dari mana 50 itu datang.
+  - `UpdateVariantRequest` baru hanya menerima nama, SKU, harga jual, dan harga modal. Nilai stok dan tanggal yang tetap dikirim diabaikan.
+  - `VariantController::update()` tidak lagi menyusulkan batch; `syncAfterDirectEdit()` dihapus karena tidak ada lagi pemanggilnya.
+  - Modal Edit Varian (`VariantFormModal`, prop `stockLocked`) menampilkan stok dan kedaluwarsa terdekat sebagai teks, dengan tautan "Buka halaman Stok" yang tersaring ke produknya.
+  - Modal Tambah Varian dan formulir produk baru tidak berubah: stok awal tetap diisi dan jadi batch pembuka.
+- **Alasan:** Setiap perubahan stok harus meninggalkan jejak mutasi dan tahu batch mana yang bergerak. Formulir varian tidak punya tempat untuk keduanya, sedangkan halaman Stok kini punya (restock bertanggal, adjustment dengan batch sasaran).
+- **File Terdampak:**
+  - `app/Http/Requests/UpdateVariantRequest.php`: baru
+  - `app/Http/Controllers/Owner/VariantController.php`: `update()` memakai `UpdateVariantRequest`
+  - `app/Services/StockBatchService.php`: `syncAfterDirectEdit()` dihapus
+  - `resources/js/Components/VariantFormModal.vue`: mode `stockLocked`
+  - `resources/js/Pages/Owner/Products/Form.vue`: modal Edit Varian terkunci, stok dan tanggal tidak dikirim
+  - `tests/Feature/Owner/VariantStockLockTest.php`: baru; `tests/Feature/Stock/StockBatchTest.php`: uji formulir varian ditulis ulang ke perilaku baru
 
 ### [ADDITION] Adjustment Stok Memilih Batch Sasaran, Menampilkan Pratinjau, dan Membuang Barang Kedaluwarsa Sekali Tekan
 - **Tanggal:** 2026-09-15
