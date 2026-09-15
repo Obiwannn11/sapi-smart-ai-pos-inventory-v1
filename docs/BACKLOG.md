@@ -105,6 +105,28 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
+### [BL-113] Seeder Demo Menulis Transaksi Tanpa `subtotal_amount` — Laba Kopi Nusantara dan Kopi Story Terbaca Rugi Besar di AI Analysis, MCP, dan Link Data
+- **Ditemukan:** 2026-09-15
+- **Sumber:** uji ujung ke ujung endpoint link data untuk AI (`[BL-102]` tahap 2) terhadap basis data lokal
+- **Status:** Open
+- **Prioritas:** Medium — tidak menyentuh transaksi kasir sungguhan, tapi angka yang dibacakan AI saat peragaan salah arah: toko yang sehat terbaca rugi
+- **Area Terdampak:**
+  - `database/seeders/DemoTransactionSeeder.php:142-148` — insert transaksi tanpa `subtotal_amount` maupun `tax_amount`
+  - `database/seeders/CafeStudyCaseSeeder.php:384-390` — sama
+  - `database/migrations/2026_08_28_030340_add_tax_columns_to_transactions_table.php:34,46` — kolom baru ber-default 0; pengisian `subtotal_amount = total_amount` hanya berlaku untuk baris yang sudah ada saat migrasi dijalankan
+  - `app/Services/ProfitService.php:69-96` — `net_revenue = SUM(subtotal_amount)`, dasar `gross_profit`
+- **Deskripsi:**
+  Diperiksa dengan kueri baca di basis data lokal 2026-09-15 (transaksi `completed`, 30 hari terakhir): Kopi Nusantara 309 dari 396 tanpa `subtotal_amount`, Kopi Story 389 dari 389, Squid Coffee & Eatery 0 dari 991. Semua baris yang kosong bersumber `pos` dan jatuh dalam satu rentang tanggal (Kopi Nusantara 21 Agu sampai 3 Sep, Kopi Story 2 Agu sampai 4 Sep); baris sesudahnya terisi.
+
+  Akibatnya terlihat paling jelas di link data: "Laba kotor 30 hari Rp -6.383.000 (margin -63,2%)", padahal setiap baris laba per produk bermargin 59–74%. Laba per produk dihitung dari `transaction_items.subtotal`, sedangkan ringkasannya dari `transactions.subtotal_amount` — dua angka yang berselisih di satu paket, dibaca AI yang tidak punya cara mencurigainya. Angka ringkasan yang sama dipakai AI Analysis dan tool `get-profit` MCP.
+- **Dugaan Penyebab:** kedua seeder di atas menulis transaksi tanpa kolom pajak, jadi `subtotal_amount` jatuh ke default 0. `SquidCoffeeSeeder` sudah menulisnya (`:476`). Kaitan antara rentang tanggal yang kosong dan kapan seeder itu dijalankan **belum dipastikan** — dugaan ini dicocokkan dari isi seeder dan pola datanya, bukan dari riwayat menjalankannya.
+- **Usulan Perbaikan:**
+  1. Kedua seeder menulis `subtotal_amount`, `tax_amount`, dan `service_charge_amount` seperti `SquidCoffeeSeeder`, atau lewat `TaxCalculator` bila tenant demonya memungut pajak.
+  2. Data lokal yang sudah terlanjur diperbaiki sekali jalan (`subtotal_amount = total_amount` untuk baris dengan `subtotal_amount`, `tax_amount`, dan `service_charge_amount` sama-sama 0), bukan lewat migrasi — ini data demo, bukan skema.
+  3. Test penjaga: setiap transaksi `completed` hasil seeder memenuhi `subtotal + pajak + service charge = total`.
+- **Temuan ikutan (belum jadi entri sendiri):** sebagian `transaction_items.variant_name` berisi nama lengkap ("Croissant - Plain") alih-alih nama varian ("Plain"), sehingga produk terlaris dan laba per produk memecah satu varian jadi dua baris. Asal baris itu belum ditelusuri.
+- **Sampai selesai:** uji prompt `[BL-102]` di Claude, ChatGPT, dan Gemini sebaiknya memakai Squid Coffee & Eatery, satu-satunya tenant demo yang angkanya utuh.
+
 ### [BL-107] Foto Struk Belum Bisa Jadi Restock — dan Karena Itu 41 dari 42 Varian Tidak Punya Tanggal Kedaluwarsa
 - **Ditemukan:** 2026-09-08
 - **Sumber:** Pertanyaan pemilik — *"bisa edit dan nambah dengan note otomatis dari ai … jadi foto struk, melalui vn, dll di dashboard owner"*. Angkanya ditemukan saat memeriksa apakah permintaan itu masuk akal, dan ternyata ia menjawab pertanyaan lain yang lebih mendesak.
