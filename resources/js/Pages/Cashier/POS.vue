@@ -777,6 +777,17 @@ const {
 // dijawab bisa hilang dari pandangan sementara tombol bayar terkunci. Kartunya
 // tidak pernah bergerak dari atas tombol Bayar.
 
+/**
+ * Varian yang KINI menempati baris pemicu sebuah saran.
+ *
+ * Sama dengan pemicunya, kecuali baris itu sudah dinaikkan ukurannya: saran
+ * dari Espresso Single tetap hidup sesudah Single ditukar Double (lihat
+ * `triggerVariantIds` di useUpsell.js), sementara barisnya kini bervarian Double.
+ */
+const upsellLineVariantFor = (triggerId) =>
+    upsellAccepted.value.find((entry) => entry.type === 'upsize' && entry.trigger_variant_id === triggerId)
+        ?.suggested_variant_id ?? triggerId;
+
 /** id varian pemicu → nama baris keranjangnya, untuk keterangan "Dari …". */
 const upsellSourceNames = computed(() => {
     const names = {};
@@ -787,10 +798,16 @@ const upsellSourceNames = computed(() => {
         }
     }
 
+    for (const entry of upsellAccepted.value) {
+        if (entry.type === 'upsize' && entry.suggested_variant_id in names) {
+            names[entry.trigger_variant_id] = names[entry.suggested_variant_id];
+        }
+    }
+
     return names;
 });
 
-/** Berapa saran yang masih menunggu keputusan, per varian pemicunya. */
+/** Berapa saran yang masih menunggu keputusan, per varian BARIS pemicunya. */
 const upsellCountByTrigger = computed(() => {
     const counts = {};
 
@@ -799,7 +816,9 @@ const upsellCountByTrigger = computed(() => {
 
         if (!triggerId) continue;
 
-        counts[triggerId] = (counts[triggerId] ?? 0) + 1;
+        const lineVariantId = upsellLineVariantFor(triggerId);
+
+        counts[lineVariantId] = (counts[lineVariantId] ?? 0) + 1;
     }
 
     return counts;
@@ -826,7 +845,9 @@ const activeUpsellLineIndex = computed(() => {
     // tanpa kartu di layar — tepat pada saat kasir hendak menekan Bayar.
     if (activeUpsellTrigger.value === null || upsellSuggestions.value.length === 0) return -1;
 
-    return cart.value.findIndex((line) => line.variant_id === activeUpsellTrigger.value);
+    const lineVariantId = upsellLineVariantFor(activeUpsellTrigger.value);
+
+    return cart.value.findIndex((line) => line.variant_id === lineVariantId);
 });
 
 const upsellCountForLine = (item, index) => {

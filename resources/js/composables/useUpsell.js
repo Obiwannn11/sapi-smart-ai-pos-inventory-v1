@@ -32,6 +32,12 @@
  *   sekali sebagai barang yang benar-benar dijual, sekali lagi sebagai upsell
  *   "berhasil" yang tidak pernah terjadi. Angka yang mengaku lebih besar dari
  *   kenyataan adalah cara tercepat membuat seluruh laporan ini tidak dipercaya.
+ *
+ *   SARAN TIDAK BERANAK SARAN, dan batasnya adalah batas TAWARAN. Barang yang
+ *   masuk lewat saran tidak memicu saran baru (`triggerVariantIds`), dan
+ *   `max_per_transaction` menghitung tawaran yang sudah dijawab, bukan hanya
+ *   yang sedang menunggu (`remainingSlots`). Tanpa keduanya, satu kopi berujung
+ *   pada pelanggan yang ditawari seisi etalase.
  */
 
 import { ref, computed, watch } from 'vue';
@@ -90,6 +96,35 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
     const variantIdsInCart = computed(() => new Set(cart.value.map((line) => line.variant_id)));
 
     /**
+     * Varian yang boleh MEMICU saran: hanya yang dipilih pelanggan sendiri.
+     *
+     * Barang yang masuk lewat saran bukan pemicu. Tanpa aturan ini tawarannya
+     * beranak-pinak — Croissant yang diterima dari Espresso menawarkan Cookie,
+     * Cookie menawarkan Jus, Double hasil naik ukuran menawarkan Triple — sampai
+     * pelanggan disodori seisi etalase untuk satu kopi.
+     *
+     * Naik ukuran pengecualiannya: ia menukar varian baris yang MEMANG dipilih
+     * pelanggan, jadi varian ASAL-nya tetap pemicu. Tanpa itu Croissant yang
+     * ditawarkan dari Espresso Single lenyap begitu Single ditukar Double,
+     * padahal keduanya tawaran untuk kopi yang sama.
+     */
+    const triggerVariantIds = computed(() => {
+        const fromUpsell = new Set();
+        const ids = new Set();
+
+        for (const entry of acceptedByKey.value.values()) {
+            if (entry.suggested_variant_id) fromUpsell.add(entry.suggested_variant_id);
+            if (entry.type === 'upsize' && entry.trigger_variant_id) ids.add(entry.trigger_variant_id);
+        }
+
+        for (const variantId of variantIdsInCart.value) {
+            if (!fromUpsell.has(variantId)) ids.add(variantId);
+        }
+
+        return ids;
+    });
+
+    /**
      * Masih ada stok tersisa untuk ditawarkan? Stok snapshot bersifat indikatif,
      * tapi menawarkan barang yang jelas-jelas habis adalah cacat yang langsung
      * terlihat pelanggan.
@@ -107,6 +142,16 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
         // Menyarankan sesuatu yang sudah ada di keranjang membuat saran
         // terlihat asal-asalan.
         if (suggestion.suggested_variant_id && variantIdsInCart.value.has(suggestion.suggested_variant_id)) {
+            return false;
+        }
+
+        // Add-on dan naik ukuran MENYENTUH baris pemicunya. Pemicu warisan naik
+        // ukuran (lihat `triggerVariantIds`) sudah tidak punya baris itu, jadi
+        // tawarannya tidak bisa dijalankan — `applyUpsell` akan diam saja.
+        if (
+            (suggestion.type === 'attach' || suggestion.type === 'upsize')
+            && !variantIdsInCart.value.has(suggestion.trigger_variant_id)
+        ) {
             return false;
         }
 
@@ -153,12 +198,29 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
         });
     };
 
+    /**
+     * Jatah tawaran yang tersisa untuk keranjang ini.
+     *
+     * `max_per_transaction` membatasi berapa kali pelanggan DITAWARI dalam satu
+     * transaksi, bukan berapa kartu yang boleh menunggu sekaligus. Dulu saran
+     * yang sudah diputuskan keluar dari daftar dan slotnya langsung diisi saran
+     * berikutnya, jadi batas 3 tidak membatasi apa pun: kasir yang rajin
+     * menjawab justru disodori tawaran tanpa ujung.
+     *
+     * Yang DITOLAK ikut memakan jatah — pelanggan tetap sudah mendengarnya.
+     * Yang ditarik kembali ([BL-092]) mengembalikan jatahnya, karena
+     * penerimaannya memang tidak pernah terjadi.
+     */
+    const remainingSlots = computed(() =>
+        Math.max(0, maxPerTransaction.value - acceptedByKey.value.size - rejectedKeys.value.size)
+    );
+
     const suggestions = computed(() => {
-        if (cart.value.length === 0) return [];
+        if (cart.value.length === 0 || remainingSlots.value === 0) return [];
 
         const pool = new Map();
 
-        for (const variantId of variantIdsInCart.value) {
+        for (const variantId of triggerVariantIds.value) {
             for (const suggestion of activeIndex.value.by_variant?.[variantId] ?? []) {
                 pool.set(suggestion.key, suggestion);
             }
@@ -170,7 +232,7 @@ export function useUpsell(index, cart, { getVariantStock, getCartQtyForVariant, 
 
         return onePerSuggestedVariant(
             [...pool.values()].filter(isRelevant).sort((a, b) => b.score - a.score)
-        ).slice(0, maxPerTransaction.value);
+        ).slice(0, remainingSlots.value);
     });
 
     /**
