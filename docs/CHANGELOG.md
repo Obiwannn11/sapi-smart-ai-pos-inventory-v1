@@ -325,7 +325,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/composables/useUpsell.js` — `triggerVariantIds`, `remainingSlots`, saringan pemicu warisan di `isRelevant`, aturan baru di docblock kepala
   - `resources/js/Pages/Cashier/POS.vue` — `upsellLineVariantFor()` dipakai `upsellSourceNames`, `upsellCountByTrigger`, `activeUpsellLineIndex`
   - `tests/Feature/Upsell/UpsellChainLimitTest.php` — **baru**, 4 test. Menjalankan `useUpsell.js` sungguhan lewat node (bukan menggrep sumbernya); di-skip bila node tidak tersedia
-- **Yang sengaja tidak disentuh:** `UpsellIndexBuilder::rankForCart()`. Pratinjau owner hanya menyimulasikan satu pemicu, jadi tidak terkena. Jalur self-order (`ApiUpsellController`) terkena cacat yang sama, tapi request-nya hanya membawa `variant_ids`: server tidak tahu varian mana yang datang dari saran, atau berapa tawaran yang sudah dijawab. Menutupnya butuh parameter baru di kontrak API, jadi menunggu keputusan pemilik.
+- **Yang sengaja tidak disentuh:** `UpsellIndexBuilder::rankForCart()`. Pratinjau owner hanya menyimulasikan satu pemicu, jadi tidak terkena. Jalur self-order (`ApiUpsellController`) terkena cacat yang sama, tapi request-nya hanya membawa `variant_ids`: server tidak tahu varian mana yang datang dari saran, atau berapa tawaran yang sudah dijawab. Menutupnya butuh parameter baru di kontrak API; pemilik memutuskan 2026-09-16 untuk mencatatnya sebagai `[BL-114]` dan menyelesaikannya nanti.
 
 ---
 

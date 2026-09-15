@@ -105,6 +105,28 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 >
 > ~~Urutan yang disarankan, termurah dulu: `[BL-084]` → `[BL-085]` (keduanya satu berkas, tanpa skema) → `[BL-086]` (UI + pemecahan rute) → `[BL-088]` → `[BL-087]`.~~ **Seluruh jalur ini tertutup 2026-08-21**, urutannya diikuti apa adanya — termasuk alasannya, karena `[BL-087]` mengubah rumus `expected_amount` dan harus mendarat sesudah `[BL-086]` supaya layar tutup kas tidak dibongkar dua kali. `[BL-093]` yang dipecah dari `[BL-087]` menyusul 2026-09-06. Tidak ada sisa yang terbuka dari daftar ini.
 
+### [BL-114] Saran Jual Self-Order Masih Beranak-Pinak — Endpoint Tidak Tahu Varian Mana yang Datang dari Saran
+- **Ditemukan:** 2026-09-16
+- **Sumber:** Sisa `[HOTFIX] Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab` di `docs/CHANGELOG.md`. Pemilik memutuskan 2026-09-16: jalur kasir diselesaikan dulu, self-order dicatat untuk nanti
+- **Status:** Open
+- **Prioritas:** Medium — cacatnya sama persis dengan yang sudah ditutup di kasir; yang menahan hanya kontrak API
+- **Area Terdampak:**
+  - `app/Http/Controllers/Api/V1/ApiUpsellController.php` — request hanya membawa `variant_ids`
+  - `app/Services/Upsell/UpsellIndexBuilder.php` — `rankForCart()` menjadikan SEMUA `$variantIds` pemicu; `pickForCart()` memotong `max_per_transaction` per panggilan, bukan per transaksi
+  - `resources/js/composables/useUpsell.js` — `triggerVariantIds` dan `remainingSlots`, aturan yang harus dicerminkan server
+  - `tests/Feature/Upsell/UpsellChainLimitTest.php` — skenario kasirnya sudah ada dan bisa dipakai ulang untuk sisi server
+- **Deskripsi:** Dua cacat yang sudah ditutup di kasir masih hidup di `POST /api/v1/upsell/suggestions`:
+  1. **Varian yang masuk karena saran ikut jadi pemicu.** Klien mengirim ulang keranjangnya sesudah pelanggan menerima Croissant, dan Croissant itu menawarkan Cookie. Double hasil naik ukuran menawarkan Triple.
+  2. **Batasnya per panggilan.** Klien yang memanggil ulang sesudah tiap perubahan keranjang mendapat tiga slot baru setiap kali, berapa pun tawaran yang sudah dijawab pelanggan.
+  Prioritas diskon **sudah** berlaku di jalur ini, karena urutannya dibawa `score` dari server.
+- **Kenapa tidak diperbaiki bersama kasir:** server tidak punya informasinya. Mana yang dipilih pelanggan sendiri dan berapa tawaran yang sudah dijawab hanya diketahui klien.
+- **Usulan Perbaikan:**
+  1. Tambah parameter **opsional** ke request: saran yang diterima (`type`, `trigger_variant_id`, `suggested_variant_id`) dan jumlah tawaran yang sudah dijawab. Opsional supaya klien lama tetap jalan dengan perilaku lama.
+  2. Teruskan keduanya ke `rankForCart()`/`pickForCart()` sebagai argumen, dengan aturan yang sama persis dengan `useUpsell.js`: pemicu = varian pilihan pelanggan ditambah varian asal naik ukuran; jatah = batas − diterima − ditolak. Pratinjau owner memanggil tanpa argumen itu dan tidak berubah.
+  3. Satu test yang menjalankan skenario yang sama di server dan di composable, supaya keduanya tidak menyimpang diam-diam.
+  4. Perbarui dokumentasi API mobile.
+- **Yang JANGAN dilakukan:** jangan menebak "varian dari saran" di server dari aturan yang ada (mis. "Croissant disarankan oleh Espresso yang juga di keranjang, jadi pasti hasil saran"). Pelanggan bisa memilih Croissant sendiri, dan tebakan itu membungkam saran untuk pesanan yang sah.
+
 ### [BL-113] Seeder Demo Menulis Transaksi Tanpa `subtotal_amount` — Laba Kopi Nusantara dan Kopi Story Terbaca Rugi Besar di AI Analysis, MCP, dan Link Data
 - **Ditemukan:** 2026-09-15
 - **Sumber:** uji ujung ke ujung endpoint link data untuk AI (`[BL-102]` tahap 2) terhadap basis data lokal
