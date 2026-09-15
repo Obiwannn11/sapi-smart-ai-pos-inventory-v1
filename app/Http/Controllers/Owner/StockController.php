@@ -107,7 +107,9 @@ class StockController extends Controller
                 variant: $variant,
                 qty: $request->validated('qty'),
                 notes: $request->validated('notes'),
-                expiryDate: $request->validated('expiry_date'),
+                // "Tidak bertanggal" menang atas tanggal yang sempat terisi
+                // sebelum kotaknya dicentang.
+                expiryDate: $request->boolean('no_expiry') ? null : $request->validated('expiry_date'),
             );
 
             return back()->with('success', "Restock {$variant->name}: +{$request->qty} berhasil.");
@@ -352,7 +354,11 @@ class StockController extends Controller
                     ->orderByRaw('CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END')
                     ->orderBy('expiry_date')
                     ->orderBy('id'),
-            ]);
+            ])
+            // Kembaran kueri `StockBatchService::tracksExpiry()` untuk satu
+            // halaman sekaligus: formulir restock menuntut tanggal pada varian
+            // yang pernah bertanggal, termasuk yang batch bertanggalnya sudah habis.
+            ->withExists(['stockBatches as has_dated_batch' => fn ($batches) => $batches->whereNotNull('expiry_date')]);
 
         return $this->applySort($query, $filters['sort'], $filters['dir'])
             ->paginate($filters['per_page'])
@@ -363,6 +369,7 @@ class StockController extends Controller
                 'sku' => $variant->sku,
                 'stock' => $variant->stock,
                 'expiry_date' => $variant->expiry_date?->toDateString(),
+                'tracks_expiry' => $variant->expiry_date !== null || (bool) $variant->has_dated_batch,
                 'batches' => $variant->stockBatches->map(fn ($batch) => [
                     'expiry_date' => $batch->expiry_date?->toDateString(),
                     'qty' => $batch->qty_remaining,

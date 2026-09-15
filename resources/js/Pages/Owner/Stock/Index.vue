@@ -16,6 +16,7 @@
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { Deferred, useForm, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import Checkbox from '@/Components/Checkbox.vue';
 import DatePicker from '@/Components/DatePicker.vue';
 import Pagination from '@/Components/Pagination.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
@@ -178,6 +179,7 @@ const restockForm = useForm({
     qty: '',
     notes: '',
     expiry_date: '',
+    no_expiry: false,
 });
 
 const adjustForm = useForm({
@@ -203,6 +205,18 @@ const submitRestock = () => {
         onSuccess: () => closeRestock(),
     });
 };
+
+/**
+ * Varian yang pernah bertanggal wajib bertanggal lagi ([BL-111]). Server
+ * menegakkannya sendiri; tanda di sini supaya kewajibannya terlihat sebelum
+ * ditolak, bukan sesudahnya.
+ */
+const restockNeedsDate = computed(() => Boolean(selectedVariant.value?.tracks_expiry) && !restockForm.no_expiry);
+
+// Tanggal yang sempat terisi dibuang begitu kiriman dinyatakan tidak bertanggal.
+watch(() => restockForm.no_expiry, (declared) => {
+    if (declared) restockForm.expiry_date = '';
+});
 
 const openAdjust = (variant) => {
     selectedVariant.value = variant;
@@ -628,6 +642,26 @@ const formatDate = (date) => {
                         <span class="text-gray-400">(Stok saat ini: {{ selectedVariant?.stock }})</span>
                     </p>
 
+                    <!-- Isi rak sekarang, per batch ([BL-111]). Kiriman baru jadi
+                         baris sendiri dan tidak menimpa satu pun dari daftar ini. -->
+                    <div v-if="selectedVariant?.batches?.length" class="-mt-3 mb-5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                        <p class="text-xs font-medium text-gray-600">Stok sekarang per batch</p>
+                        <ul class="mt-1 space-y-0.5 text-xs tabular-nums">
+                            <li
+                                v-for="(batch, index) in selectedVariant.batches"
+                                :key="index"
+                                class="flex justify-between gap-3"
+                                :class="isExpired(batch.expiry_date) ? 'text-destructive' : 'text-gray-600'"
+                            >
+                                <span>
+                                    {{ batch.expiry_date ? formatDate(batch.expiry_date) : 'Tanpa tanggal' }}
+                                    <template v-if="isExpired(batch.expiry_date)"> · kedaluwarsa</template>
+                                </span>
+                                <span>{{ batch.qty }} pcs</span>
+                            </li>
+                        </ul>
+                    </div>
+
                     <form class="space-y-4" @submit.prevent="submitRestock">
                         <!-- Qty -->
                         <div>
@@ -644,12 +678,26 @@ const formatDate = (date) => {
                             <p v-if="restockForm.errors.qty" class="mt-1 text-xs text-red-600">{{ restockForm.errors.qty }}</p>
                         </div>
 
-                        <!-- Expiry Date -->
+                        <!-- Expiry Date. Wajib pada varian yang pernah bertanggal
+                             ([BL-111]): batch tanpa tanggal dijual paling akhir dan
+                             tidak pernah terhitung kedaluwarsa, jadi lupa mengisinya
+                             meloloskan satu kiriman dari semua penjaga barang basi.
+                             Mengosongkannya tetap bisa, tapi harus dinyatakan. -->
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Kedaluwarsa</label>
-                            <DatePicker v-model="restockForm.expiry_date" block clearable />
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Tanggal Kedaluwarsa <span v-if="restockNeedsDate" class="text-red-500">*</span>
+                            </label>
+                            <DatePicker v-if="!restockForm.no_expiry" v-model="restockForm.expiry_date" block clearable />
+                            <Checkbox
+                                v-if="selectedVariant?.tracks_expiry"
+                                v-model="restockForm.no_expiry"
+                                label="Kiriman ini tidak punya tanggal kedaluwarsa"
+                                class="mt-2"
+                            />
                             <p v-if="restockForm.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ restockForm.errors.expiry_date }}</p>
-                            <p v-else class="mt-1 text-xs text-gray-500">Disimpan sebagai batch baru. Stok lama tetap memakai tanggalnya sendiri.</p>
+                            <p v-else-if="restockForm.no_expiry" class="mt-1 text-xs text-warning-foreground">Kiriman ini dijual paling akhir dan tidak pernah dianggap kedaluwarsa.</p>
+                            <p v-else-if="restockNeedsDate" class="mt-1 text-xs text-gray-500">Kiriman baru jadi batch sendiri. Stok lama tetap memakai tanggalnya.</p>
+                            <p v-else class="mt-1 text-xs text-gray-500">Kosongkan kalau barang ini memang tidak punya kedaluwarsa.</p>
                         </div>
 
                         <!-- Notes -->

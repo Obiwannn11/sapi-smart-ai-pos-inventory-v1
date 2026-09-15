@@ -323,6 +323,25 @@ class StockBatchService
     }
 
     /**
+     * Varian ini PERNAH bertanggal kedaluwarsa, pada batch mana pun.
+     *
+     * Dipakai formulir restock untuk menuntut tanggal lagi. Batch tanpa tanggal
+     * dijual paling akhir dan tidak pernah terhitung basi, jadi satu kiriman
+     * croissant yang lupa diberi tanggal lolos dari seluruh penjaga barang basi
+     * tanpa satu pun tanda. Kopi kiloan dan gelas plastik tidak pernah
+     * bertanggal, dan tidak pernah dipaksa.
+     *
+     * `expiry_date` varian ikut dihitung karena ia tetap memegang tanggal
+     * terakhir walau seluruh batchnya sudah habis. Kueri kembarannya, untuk
+     * satu halaman daftar stok sekaligus, ada di `StockController::paginateVariants()`.
+     */
+    public function tracksExpiry(ProductVariant $variant): bool
+    {
+        return $variant->expiry_date !== null
+            || ProductStockBatch::where('product_variant_id', $variant->id)->whereNotNull('expiry_date')->exists();
+    }
+
+    /**
      * Unit yang masih boleh dijual tanpa konfirmasi.
      */
     public function freshUnits(ProductVariant $variant, ?string $asOf = null): int

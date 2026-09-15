@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-15 | ADDITION | Stok | Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada |
 | 2026-09-15 | ADDITION | Kas | Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2) |
 | 2026-09-15 | DECISION | Owner | Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102) |
 | 2026-09-15 | ADDITION | API | Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2) |
@@ -279,6 +280,27 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Uji layar sesudah `[BL-111]` menemukan bahwa restock tanpa tanggal kini lebih berbahaya daripada sebelum batch ada. Dulu tanggal lama tetap menempel di varian; sekarang kiriman tanpa tanggal jadi batch tanpa tanggal, yang dijual paling akhir dan tidak pernah dianggap kedaluwarsa.
+  - `RestockRequest` menolak restock tanpa tanggal pada varian yang pernah bertanggal. Definisinya di `StockBatchService::tracksExpiry()`: `expiry_date` varian terisi, atau ada batch bertanggal walau sudah habis.
+  - Mengosongkan tanggal tetap bisa, lewat centang "Kiriman ini tidak punya tanggal kedaluwarsa" (`no_expiry`). Centang itu juga membuang tanggal yang sempat terisi.
+  - Varian yang tidak pernah bertanggal (gelas plastik, kopi kiloan) tidak ditanya.
+  - Modal Restock menampilkan isi rak per batch, batch kedaluwarsa berwarna merah, dan tanda wajib pada kolom tanggal. Baris daftar stok membawa `tracks_expiry`.
+  - Ini salah satu bentuk "Alternatif murah" `[BL-107]`: menandai varian yang pernah bertanggal lalu menuntutnya lagi. Dampaknya pada jumlah restock bertanggal belum diukur.
+- **Alasan:** Kolom yang boleh dikosongkan dikosongkan orang yang sibuk. Di bawah model batch, kekosongan itu mematikan penjaga barang basi untuk satu kiriman penuh.
+- **File Terdampak:**
+  - `app/Services/StockBatchService.php`: `tracksExpiry()`
+  - `app/Http/Requests/RestockRequest.php`: `no_expiry` dan aturan tanggal wajib
+  - `app/Http/Controllers/Owner/StockController.php`: `tracks_expiry` per baris; `no_expiry` menang atas tanggal
+  - `resources/js/Pages/Owner/Stock/Index.vue`: modal Restock
+  - `docs/BACKLOG.md`: catatan pada `[BL-107]`
+  - `tests/Feature/Owner/RestockExpiryTest.php`: baru
 
 ### [ADDITION] Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2)
 - **Tanggal:** 2026-09-15

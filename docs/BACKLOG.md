@@ -131,6 +131,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 - **Ditemukan:** 2026-09-08
 - **Sumber:** Pertanyaan pemilik — *"bisa edit dan nambah dengan note otomatis dari ai … jadi foto struk, melalui vn, dll di dashboard owner"*. Angkanya ditemukan saat memeriksa apakah permintaan itu masuk akal, dan ternyata ia menjawab pertanyaan lain yang lebih mendesak.
 - **Status:** Open — **diblokir tiga hal**, urut dari yang paling murah: (1) jalur non-AI di blok "Alternatif murah" di bawah, yang harus dicoba dan diukur lebih dulu; (2) `[BL-106]` sebagai fondasi; (3) satu keputusan harga yang belum diambil.
+- **Catatan 2026-09-15:** satu bentuk "Alternatif murah" di bawah sudah dipasang: restock pada varian yang PERNAH bertanggal menuntut tanggal lagi, atau pernyataan eksplisit "Kiriman ini tidak punya tanggal kedaluwarsa" (entri `CHANGELOG.md` "Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal"). Varian yang belum pernah bertanggal tetap tidak ditanya, jadi ia belum menyentuh sebagian besar varian di tabel di bawah. Dampaknya belum diukur.
 - **Prioritas:** High
 - **Area Terdampak:**
   - `app/Services/StockService.php:60` — `restock(..., ?string $expiryDate = null)`. **Jalur tulisnya sudah lengkap**, dari formulir sampai kolom. Yang kurang bukan mekanismenya — lihat temuan di bawah.
