@@ -58,6 +58,7 @@ Enam minggu, sekitar 110 entri changelog. Tidak semuanya layak disebut di depan 
 | **Pengaturan pecah jadi tiga halaman**: Profil & Merek (termasuk logo), **Cara Kerja Sistem**, Integrasi & Kredensial. | — |
 | **Analisis AI** diminta menunjuk angka, bukan menasihati; nama varian di hasilnya bisa diklik; sisa kuota terlihat di halaman yang membelanjakannya. | "Hasil AI-nya menyebut barang dan angka milik toko ini, dan barangnya bisa diklik." |
 | **Staf** menjawab "orang ini bisa buka apa saja" dengan lencana modul. | — |
+| **Link Data untuk AI** (baru 2026-09-15): owner membuat link berumur 7 atau 30 hari, menempelnya bersama prompt ke ChatGPT, Claude, atau Gemini, dan AI itu membaca ringkasan penjualan, profit, dan menu toko. Link bisa dicabut kapan saja dan menyebut kapan terakhir dibuka. Rincian di [§7 · Bahan: AI membaca data toko](#bahan-ai-membaca-data-toko--mcp-dan-link-data). | "Tanpa memasang apa pun, owner bisa bertanya ke AI favoritnya soal tokonya sendiri." |
 | **Semua jam mengikuti jam toko (WITA)** — "hari ini" tidak lagi bergeser 8 jam. | — |
 
 ### Langganan & penagihan
@@ -99,9 +100,9 @@ Enam minggu, sekitar 110 entri changelog. Tidak semuanya layak disebut di depan 
 | Untuk | Yang bisa dilakukan |
 |---|---|
 | **Kasir** | POS berkategori dengan varian & modifier · **baris keranjang bisa diubah** · pembayaran tunai/QRIS/transfer, termasuk **split bill** dan **foto bukti non-tunai** · **pajak & biaya layanan** · **Tunda Bayar** yang tinggal di topbar dan berumur 24 jam · **identitas pesanan** (nama pelanggan / nomor meja / kode panggil) · struk layar & **cetak thermal ESC/POS** dengan logo usaha · **sesi kas buta** dengan catatan uang keluar/masuk laci · **penjualan offline (PWA)** · **papan antrian dapur** · **saran jual** satu kartu bergiliran · peringatan barang kedaluwarsa |
-| **Pemilik usaha** | Beranda dua periode dengan **Penyelamat Stok** · katalog produk–varian–kategori–modifier yang bisa dicari · **stok** per varian dengan kartu status, restock, penyesuaian, riwayat, mutasi · **Aturan Diskon** dengan lantai untung · **Aturan Saran Jual** dan laporannya · laporan harian & **bulanan** (CSV) · riwayat transaksi, sesi kas, persetujuan uang keluar, pembereskan kas negatif · **edit & void transaksi** · **staf & role modul (RBAC)** · **Analisis AI** · **token MCP** · pengaturan tiga halaman (merek, cara kerja sistem, integrasi) · halaman langganan & tagihan |
+| **Pemilik usaha** | Beranda dua periode dengan **Penyelamat Stok** · katalog produk–varian–kategori–modifier yang bisa dicari · **stok** per varian dengan kartu status, restock, penyesuaian, riwayat, mutasi · **Aturan Diskon** dengan lantai untung · **Aturan Saran Jual** dan laporannya · laporan harian & **bulanan** (CSV) · riwayat transaksi, sesi kas, persetujuan uang keluar, pembereskan kas negatif · **edit & void transaksi** · **staf & role modul (RBAC)** · **Analisis AI** · **token MCP** · **Link Data untuk AI** · pengaturan tiga halaman (merek, cara kerja sistem, integrasi) · halaman langganan & tagihan |
 | **Pemilik layanan (SaaS)** | Konsol terpisah di `/platform` dengan **2FA**: daftar klien dengan **rincian bertab** (Ikhtisar · Langganan · Tagihan · Kapabilitas · Omzet) · pindah paket & terbitkan tagihan beralasan · buka kunci pajak · **paket** dan **aturan harga berkriteria** yang bisa diubah tanpa deploy · **kebijakan kuota AI** · **jejak audit** · akun staf platform dengan modul terbatas |
-| **Sistem lain** | API self-order (`POST /api/v1/orders`) untuk n8n/Telegram/QR meja · webhook pembayaran (gateway tiruan hari ini) · webhook Xendit · API mobile v1 (login, produk, transaksi, sesi kas) · **MCP server** read-only untuk AI client pemilik toko |
+| **Sistem lain** | API self-order (`POST /api/v1/orders`) untuk n8n/Telegram/QR meja · webhook pembayaran (gateway tiruan hari ini) · webhook Xendit · API mobile v1 (login, produk, transaksi, sesi kas) · **MCP server** read-only untuk AI client pemilik toko (3 tool) · **Link Data untuk AI** (`GET /api/v1/connector/summary`) untuk ChatGPT/Claude/Gemini tanpa pemasangan |
 
 ### Tujuh hal yang membedakannya
 
@@ -109,7 +110,7 @@ Enam minggu, sekitar 110 entri changelog. Tidak semuanya layak disebut di depan 
 2. **Gerbangnya di server, bukan di menu.** Modul yang dicabut dari sebuah role bukan cuma hilang dari navigasi; mengetik URL-nya langsung tetap ditolak. Hal yang sama berlaku untuk kapabilitas outlet dan keadaan langganan — di web, API self-order, job antrean, dan MCP.
 3. **Harga bisa berubah tanpa deploy, dan tiap tagihan bisa dijelaskan.** Aturan harga berupa baris berkriteria; tiap tagihan **membekukan konteks harganya** berikut rinciannya (paket, kursi, kuota AI, prorata). Nominal yang menyimpang dari aturan wajib beralasan, dan alasannya dibaca tenant.
 4. **Kasirnya tetap hidup saat jaringan mati — dan saat telat bayar.** Katalog dan indeks saran jual ter-snapshot ke perangkat, antrean penjualan offline tersinkron lewat Background Sync. Masa tenggang baru mengunci layar POS di hari ke-20, bukan hari pertama.
-5. **AI-nya membaca data usaha itu sendiri, dua arah.** Owner meminta analisis di dalam aplikasi (job antrean, berkuota), **atau** menyambungkan Claude Desktop miliknya lewat token MCP — memakai kuota AI miliknya sendiri.
+5. **AI-nya membaca data usaha itu sendiri, dua arah.** Owner meminta analisis di dalam aplikasi (job antrean, berkuota), **atau** menyambungkan Claude Desktop miliknya lewat token MCP, **atau** menempel Link Data ke ChatGPT/Claude/Gemini — dua jalur terakhir memakai kuota AI miliknya sendiri.
 6. **Sinyal stok berubah jadi rupiah dan penjualan.** Barang yang hampir kedaluwarsa atau tak bergerak sebulan diberi potongan otomatis (dengan lantai untung), didorong lewat saran di layar kasir, dan hasilnya dihitung — omzet dari barang tertekan dan modal yang hangus.
 7. **Uang laci bisa dipertanggungjawabkan.** Kasir menghitung sebelum melihat angka seharusnya, uang yang keluar di tengah shift tercatat beralasan, dan tagihan terbuka yang terlupa berubah jadi kas negatif alih-alih menghilang.
 
@@ -435,7 +436,7 @@ Satu aplikasi, banyak bentuk usaha.
 6. **Laporan Bulanan** — garis tren sebulan, tekan satu tanggal untuk rinciannya, unduh CSV. **Laporan Harian** dan **Rekap Kas** Kopi Story: sesi pas, minus, plus lengkap dengan alasannya.
 7. **Sesi Kas** — setujui uang keluar Rp75.000 dari Babak 1, tunjukkan kolom **Angka Dibuka** dan label "Ditutup sistem". **Transaksi** — pembereskan kas negatif: catat pelunasan terlambat, atau hapuskan (hanya jalan kedua yang mengembalikan stok).
 8. **AI Analysis** — meter kuota di atas tombol; kirim satu analisis dan tunjukkan hasilnya menyebut angka milik toko ini, dengan nama varian yang bisa diklik.
-9. **Integrasi & Kredensial → Akses MCP** — owner bisa menyambungkan Claude Desktop ke datanya sendiri, dengan kuota AI miliknya.
+9. **Integrasi & Kredensial → Akses MCP** dan **Link Data untuk AI** — dua cara owner membawa data tokonya ke AI miliknya sendiri. Peragakan **Buat Link** (nama "ChatGPT", 30 hari, centang pernyataan bertanggal) → modal link tidak bisa ditutup sebelum link disalin → link muncul di daftar "Link aktif" dengan "belum pernah dibuka" → **Cabut**. Daftar fungsi yang bisa dipakai AI ada di [bahan AI membaca data toko](#bahan-ai-membaca-data-toko--mcp-dan-link-data).
 10. **Langganan & Tagihan** — tiga tab. Di Kopi Nusantara: jalur Harga Adaptif dengan jejak persetujuannya. Di Squid Coffee: buka **Harga Adaptif** dan tunjukkan penilaian seketika terhadap plafon Rp50 juta. Tab **Kapasitas**: beli dan lepas kursi atau blok kuota AI. Bila ada tagihan terbuka, bayar lewat modal kata sandi.
 
 ### Babak 4 — RBAC (3 menit) · `owner@sapi.test` (Kopi Nusantara)
@@ -459,6 +460,55 @@ Satu aplikasi, banyak bentuk usaha.
 ### Babak 6 — Isolasi Tenant (2 menit, penutup)
 
 Masuk sebagai `owner@sapi.test` dan `owner@kopistory.test` bersebelahan: produk, transaksi, laporan, logo, semuanya terpisah total. Isolasi ini dijaga berkas uji tersendiri (`tests/Feature/TenantIsolation`, `PlatformIsolationTest`), bukan hanya kedisiplinan menulis query.
+
+### Bahan: AI membaca data toko — MCP dan Link Data
+
+Keduanya ada di **Pengaturan → Integrasi & Kredensial**, hanya untuk **owner**, **hanya membaca**, dan hanya berisi **angka agregat tanpa data pelanggan**. Keduanya ditolak bila fitur analisis AI outlet dimatikan. Token dan link tersimpan sebagai hash; teks utuhnya tampil sekali saja.
+
+| | **Akses MCP** | **Link Data untuk AI** (baru) |
+|---|---|---|
+| Untuk siapa | AI client yang mendukung MCP (mis. Claude Desktop), pemakaian rutin | Owner pemula: tempel di ChatGPT, Claude, atau Gemini, tanpa memasang apa pun |
+| Alamat | `/mcp/business` + header `Authorization: Bearer <token>` | `GET /api/v1/connector/summary?token=…` |
+| Kredensial | Satu token (`mcp:use`), tanpa kedaluwarsa, bisa dibuat ulang atau dicabut | Banyak link bernama (`connector:read`), **wajib berumur 7 atau 30 hari**, tiap link bisa dicabut dan menyebut kapan terakhir dibuka |
+| Cara AI memakainya | AI **memilih tool** dan mengisi rentang tanggal sendiri | AI **membuka satu URL** dan membaca satu paket teks Markdown; tidak ada parameter |
+| Batas laju | 60 permintaan/menit | 30 permintaan/menit |
+| Token saling pakai? | Token MCP ditolak di link, link ditolak di MCP (`[BL-112]`) | |
+
+#### Fungsi (tool) di MCP server "SAPI Business Data"
+
+Hanya **tiga** tool. Ketiganya bertanda read-only. `from`/`to` opsional (format `YYYY-MM-DD`); bila kosong, rentangnya 30 hari terakhir sampai hari ini.
+
+| Nama tool | Parameter | Isi yang dikembalikan |
+|---|---|---|
+| `get-sales-summary` | `from`, `to` | Penjualan pada rentang itu: omzet, jumlah transaksi, rata-rata nota, **10 produk terlaris** (per varian: jumlah & omzet), dan **tren harian**. |
+| `get-profit` | `from`, `to` | Profit pada rentang itu: omzet (termasuk pajak), pendapatan bersih, pajak, biaya layanan, modal barang (COGS), laba kotor, margin %; **proyeksi** laba periode berikutnya dari rata-rata harian; dan **laba per produk/varian** (qty, pendapatan bersih, modal, margin). |
+| `get-menu` | — | Menu aktif: produk beserta kategorinya dan tiap varian dengan **nama, harga, dan sisa stok**. |
+
+**Yang tidak ada** — jawab jujur bila penonton bertanya: tidak ada tool untuk mengambil satu produk menurut ID, mencari produk, riwayat/mutasi stok, tanggal kedaluwarsa, daftar transaksi atau pelanggan, laporan kas, dan **tidak ada tool yang mengubah data** (membuat produk, restock, mengubah harga). Stok yang bisa dibaca AI hanya **sisa stok per varian** dari `get-menu`. Pertanyaan seperti "stok apa yang hampir habis?" tetap bisa dijawab AI dengan menyaring hasil `get-menu`.
+
+#### Isi paket Link Data untuk AI
+
+Link tidak punya fungsi yang dipilih; setiap kali dibuka ia mengembalikan paket yang sama, dihitung saat itu juga dari service yang sama dengan tool MCP:
+
+| Bagian | Isi |
+|---|---|
+| Kepala | Nama usaha, waktu data diambil (jam toko), pernyataan bahwa angkanya rupiah dan agregat |
+| Ringkasan penjualan | Lima periode: hari ini, 7 hari terakhir, 30 hari terakhir, bulan ini, bulan lalu — tiap periode berisi omzet, jumlah transaksi, rata-rata nota, laba kotor |
+| Profit 30 hari terakhir | Omzet, pendapatan bersih, pajak, service charge, modal barang, laba kotor & margin |
+| Produk terlaris 30 hari terakhir | Produk, varian, jumlah terjual, omzet |
+| Laba per produk 30 hari terakhir | Pendapatan bersih, modal, laba, margin per produk; sisanya digabung jadi satu baris "lainnya" |
+| Produk yang dijual | Menu aktif per kategori, tiap varian dengan harga dan **stok**; maksimal 100 produk, sisanya disebut jumlahnya |
+
+Dibanding MCP, link **tidak punya rentang tanggal bebas, tren harian, dan proyeksi**. Bila link ditolak (kedaluwarsa, dicabut, fitur AI mati, langganan), AI menerima kalimat penolakan biasa, bukan halaman login.
+
+#### Cara memperagakannya
+
+1. `owner@squid.id` → **Integrasi & Kredensial → Link Data untuk AI → Buat Link**. Pakai **Squid Coffee**: laba data demo dua tenant lain terbaca minus (`[BL-113]`).
+2. Modal menampilkan **prompt siap tempel**: AI diminta membuka link, menjawab hanya dari isinya, lalu membuktikan link terbaca dengan menyebut nama usaha dan daftar produk — dan mengaku bila link gagal dibuka, alih-alih menebak.
+3. **Di mesin lokal, AI sungguhan tidak bisa membuka link `localhost`.** Buka URL link itu di tab browser untuk memperlihatkan paket teks yang akan dibaca AI. Peragaan di ChatGPT/Claude/Gemini hanya bisa dilakukan di server yang sudah di-deploy, dan belum pernah diuji di sana (`[BL-102]`).
+4. Tutup dengan **Cabut**, lalu muat ulang tab URL tadi: aksesnya langsung hilang.
+
+Contoh pertanyaan untuk penonton: "Produk apa yang paling laku tapi marginnya paling tipis?", "Bandingkan omzet bulan ini dengan bulan lalu", "Varian mana yang stoknya tinggal sedikit?".
 
 ### Bahan tambahan bila ada waktu
 
@@ -494,7 +544,7 @@ Supaya tidak ada yang mengulang kalimat lama: **2FA platform sudah ada** (`[BL-0
 | Multi-cabang | Satu tenant = satu outlet di seluruh basis kode; sengaja ditahan. | `[BL-068]` |
 | Restock dari foto struk | Belum ada — dan karena itu hampir semua varian tidak punya tanggal kedaluwarsa. | `[BL-107]`, `[BL-106]` |
 | Bundling berdiskon | Belum ada wujudnya; menunggu keputusan bentuk. | `[BL-103]` |
-| Konektor data lewat URL (non-MCP) | Ditahan atas permintaan pemilik. | `[BL-102]` |
+| Link Data untuk AI, diuji di layanan AI sungguhan | UI dan endpoint **sudah jadi** (tahap 1–2). Belum pernah ditempel ke Claude/ChatGPT/Gemini: layanan AI tidak bisa menjangkau `localhost`, jadi uji hidupnya menunggu deploy. | `[BL-102]` |
 | Gerai acara & tagihan terbuka | Paket "Gerai acara & bazar" tetap bisa membuka Tunda Bayar yang hampir pasti jadi kas negatif. | `[BL-104]` |
 | Rekonsiliasi kas per laci | Tahap A dan Tahap B langkah 1 selesai (tiap penjualan membawa lacinya); langkah 2 ditunda. | `[BL-028]` |
 | Studi kasus demo kedua (bazar/non-kafe) | Belum ada; semua tenant demo adalah kafe. | `[BL-036]` |
@@ -548,7 +598,7 @@ Tanpa `schedule:run`, hal-hal berikut **tidak terjadi sendiri**: laci kas yang l
 - **Penjualan & Promosi:** Saran Jual (laporan) · Aturan Saran Jual · Aturan Diskon
 - **Keuangan:** Laporan Harian · Laporan Bulanan (+ CSV) · Transaksi (+ detail, void, kas negatif) · Sesi Kas (+ persetujuan uang keluar) · Koreksi Offline · Pembayaran · AI Analysis
 - **Tim & Akses:** Staf · Role
-- **Pengaturan:** Profil & Merek (nama, alamat, telepon, jenis usaha, logo) · Cara Kerja Sistem (paket setelan awal, mode & fitur outlet, batas untung minimum, batas uang keluar, aturan kerja kasir, jenis saran jual, pajak, biaya layanan) · Integrasi & Kredensial (AI, token MCP) · Langganan & Tagihan
+- **Pengaturan:** Profil & Merek (nama, alamat, telepon, jenis usaha, logo) · Cara Kerja Sistem (paket setelan awal, mode & fitur outlet, batas untung minimum, batas uang keluar, aturan kerja kasir, jenis saran jual, pajak, biaya layanan) · Integrasi & Kredensial (AI, token MCP, Link Data untuk AI) · Langganan & Tagihan
 
 Identitas akun, **Buka Kasir**, dan **Keluar** ada di dropdown avatar topbar.
 
@@ -579,7 +629,7 @@ Tab **Ringkasan** (paket, isi paket, kelas harga / Harga Adaptif) · **Tagihan**
 
 ### Antarmuka non-web
 
-API self-order (`POST /api/v1/orders`, `POST /api/v1/upsell/suggestions`, `PATCH /api/v1/orders/{transaction}/fulfillment`) · API mobile v1 (`/api/v1/mobile/*`) · webhook pembayaran (gateway tiruan) · webhook Xendit · MCP server (token dari Integrasi & Kredensial)
+API self-order (`POST /api/v1/orders`, `POST /api/v1/upsell/suggestions`, `PATCH /api/v1/orders/{transaction}/fulfillment`) · API mobile v1 (`/api/v1/mobile/*`) · webhook pembayaran (gateway tiruan) · webhook Xendit · MCP server `/mcp/business` (token dari Integrasi & Kredensial) · Link Data untuk AI `GET /api/v1/connector/summary?token=…`
 
 ---
 
