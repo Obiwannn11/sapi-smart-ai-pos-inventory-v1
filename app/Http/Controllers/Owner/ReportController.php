@@ -13,12 +13,14 @@ use App\Models\TransactionItem;
 use App\Models\UpsellEvent;
 use App\Services\BusinessClock;
 use App\Services\PaymentMethodRecap;
+use App\Services\Reports\MonthlyReportWorkbook;
 use App\Services\StockRescueService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
@@ -231,23 +233,109 @@ class ReportController extends Controller
     }
 
     /**
+     * Seluruh isi rekap bulanan, dikumpulkan sekali.
+     *
+     * Dipakai bersama oleh kedua unduhan. Dua unduhan yang masing-masing
+     * mengumpulkan angkanya sendiri adalah dua laporan yang suatu hari akan
+     * menjawab berbeda untuk bulan yang sama — dan yang paling mungkin
+     * menyimpang justru syarat pemunculan kolom pajak dan biaya layanan, yang
+     * ditentukan dari dua hal sekaligus di tiap tempat pemanggilannya.
+     *
+     * @return array{
+     *     month: string,
+     *     label: string,
+     *     range: array{from: string, to: string},
+     *     tenant_name: string,
+     *     generated_at: Carbon,
+     *     summary: array<string, mixed>,
+     *     comparison: array<string, mixed>,
+     *     daily_series: array<int, array<string, mixed>>,
+     *     payment_summary: array<int, array{id: int, name: string, type: string, total: float}>,
+     *     top_products: \Illuminate\Support\Collection<int, array<string, mixed>>,
+     *     tax: array{active: bool, label: string},
+     *     service_charge: array{active: bool, label: string}
+     * }
+     */
+    private function monthlyReport(Carbon $month): array
+    {
+        $dailySeries = $this->dailySeriesFor($month);
+        $summary = $this->summarizeSeries($dailySeries);
+        $previous = $month->copy()->subMonth();
+        $previousTotals = $this->monthTotals($previous);
+
+        return [
+            'month' => $month->format('Y-m'),
+            'label' => $this->monthLabel($month),
+            'range' => [
+                'from' => $month->toDateString(),
+                'to' => $month->copy()->endOfMonth()->toDateString(),
+            ],
+            'tenant_name' => auth()->user()->tenant?->name ?? config('app.name'),
+            'generated_at' => BusinessClock::now(),
+            'summary' => $summary,
+            'comparison' => [
+                'month' => $previous->format('Y-m'),
+                'label' => $this->monthLabel($previous),
+                'total_revenue' => $previousTotals['total_revenue'],
+                'total_transactions' => $previousTotals['total_transactions'],
+                'revenue_delta_pct' => $this->deltaPercent($summary['total_revenue'], $previousTotals['total_revenue']),
+                'transactions_delta_pct' => $this->deltaPercent($summary['total_transactions'], $previousTotals['total_transactions']),
+            ],
+            'daily_series' => $dailySeries,
+            'payment_summary' => $this->paymentSummaryFor($month),
+            'top_products' => $this->topProductsFor($month),
+            'tax' => $this->taxContext($this->completedIn($month), $summary['tax_collected']),
+            'service_charge' => $this->serviceChargeContext($this->completedIn($month), $summary['service_charge_collected']),
+        ];
+    }
+
+    /**
+     * Unduhan Excel dari rekap bulanan yang sedang dilihat.
+     *
+     * Ini unduhan yang dianjurkan, dan CSV di bawah tetap berdiri di sebelahnya.
+     * Bedanya bukan ekstensinya: tabel-tabel yang di CSV ditumpuk dengan baris
+     * kosong sebagai sekat di sini berdiri di lembarnya masing-masing, dengan
+     * satu baris kepala per lembar, angka yang tetap berupa angka, dan tanggal
+     * yang benar-benar tanggal. Perakitannya ada di `MonthlyReportWorkbook`.
+     */
+    public function monthlyExportExcel(Request $request): StreamedResponse
+    {
+        $month = $this->resolveMonth($request->input('month'));
+        $book = (new MonthlyReportWorkbook)->build($this->monthlyReport($month));
+
+        return response()->streamDownload(function () use ($book) {
+            (new Xlsx($book))->save('php://output');
+
+            // Buku kerjanya memegang tiap lembarnya di memori sampai dilepas,
+            // dan lembar-lembar itu saling menunjuk — tanpa ini, memori satu
+            // bulan penuh baru dibebaskan saat proses PHP-nya berakhir.
+            $book->disconnectWorksheets();
+        }, 'laporan-bulanan-'.$month->format('Y-m').'.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
      * Unduhan CSV dari rekap bulanan yang sedang dilihat.
      *
      * Isinya persis yang ada di layar, dalam empat blok bersekat: ringkasan,
-     * rincian harian, metode pembayaran, dan produk terlaris. Rekap bulanan
-     * yang tidak bisa dibawa ke spreadsheet akan tetap disalin dengan tangan.
+     * rincian harian, metode pembayaran, dan produk terlaris. Bentuk datar
+     * tanpa gaya itulah yang membuatnya tetap ada di sebelah unduhan Excel
+     * alih-alih digantikan olehnya: yang dimakan pemroses lain — impor ke
+     * akuntansi, skrip, spreadsheet yang bukan Excel — adalah file seperti ini.
      */
     public function monthlyExport(Request $request): StreamedResponse
     {
         $month = $this->resolveMonth($request->input('month'));
 
-        $dailySeries = $this->dailySeriesFor($month);
-        $summary = $this->summarizeSeries($dailySeries);
-        $paymentSummary = $this->paymentSummaryFor($month);
-        $topProducts = $this->topProductsFor($month);
-        $label = $this->monthLabel($month);
-        $tax = $this->taxContext($this->completedIn($month), $summary['tax_collected']);
-        $service = $this->serviceChargeContext($this->completedIn($month), $summary['service_charge_collected']);
+        $report = $this->monthlyReport($month);
+        $label = $report['label'];
+        $summary = $report['summary'];
+        $dailySeries = $report['daily_series'];
+        $paymentSummary = $report['payment_summary'];
+        $topProducts = $report['top_products'];
+        $tax = $report['tax'];
+        $service = $report['service_charge'];
 
         return response()->streamDownload(function () use ($label, $summary, $dailySeries, $paymentSummary, $topProducts, $tax, $service) {
             $out = fopen('php://output', 'w');

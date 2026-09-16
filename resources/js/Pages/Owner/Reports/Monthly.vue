@@ -54,6 +54,10 @@ const changeMonth = (newMonth) => {
     });
 };
 
+// Dua unduhan, dan yang pertama yang dianjurkan: Excel-nya sudah bersekat per
+// lembar dengan angka yang tetap berupa angka. CSV tetap ada di sebelahnya
+// untuk yang mengimpor angkanya ke sistem lain.
+const excelUrl = computed(() => `/owner/reports/monthly/export/excel?month=${props.month}`);
 const exportUrl = computed(() => `/owner/reports/monthly/export?month=${props.month}`);
 
 // Bulan yang belum ada pembandingnya (delta null) tidak boleh ditulis "+100%".
@@ -134,11 +138,26 @@ const paymentTypeLabel = (type) => {
             </div>
             <div class="flex items-center gap-2">
                 <MonthPicker v-model="selectedMonth" @update:modelValue="changeMonth" />
+                <!-- Excel lebih dulu dan lebih tegas: itu unduhan yang
+                     dianjurkan. CSV tetap di sebelahnya, lebih senyap, untuk
+                     yang mengimpor angkanya ke sistem lain. -->
+                <a
+                    :href="excelUrl"
+                    title="Unduh Excel — tiap tabel di lembarnya sendiri"
+                    class="inline-flex items-center gap-2 px-3 py-2 bg-primary border border-primary rounded-lg text-sm font-medium text-white hover:bg-primary/90 transition-colors shadow-sm"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Excel
+                </a>
                 <a
                     :href="exportUrl"
+                    title="Unduh CSV — satu file datar untuk diimpor ke sistem lain"
                     class="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
                 >
-                    <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
