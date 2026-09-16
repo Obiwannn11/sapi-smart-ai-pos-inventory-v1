@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Owner | Stok, Produk, dan Aturan Diskon: "Adjustment" Jadi "Koreksi", dan Dialog Hapus Menyebut Akibatnya |
 | 2026-09-17 | DECISION | Kasir | Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama |
 | 2026-09-16 | ADDITION | Platform | Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather |
 | 2026-09-16 | DECISION | Kasir | Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir |
@@ -290,6 +291,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Stok, Produk, dan Aturan Diskon: "Adjustment" Jadi "Koreksi", dan Dialog Hapus Menyebut Akibatnya
+- **Tanggal:** 2026-09-17
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting halaman Stok, Produk, dan Aturan Diskon.
+  - **"Adjustment" jadi "Koreksi"** di halaman Stok, Riwayat Stok, dan Riwayat Pergerakan Stok. Formulirnya sendiri sudah bertanya "Jenis koreksi", jadi kata Inggrisnya ganjil sendiri di layar yang sama. Subjudul halaman "Restock, adjustment, dan pantau stok produk" jadi "Tambah stok, koreksi jumlah, dan pantau kedaluwarsa".
+  - **"Tanggal Expired" jadi "Tanggal Kedaluwarsa"** di formulir produk dan modal varian, mengikuti kolom dan lencana di halaman Stok.
+  - **"Modifier Groups" jadi "Grup Modifier"** di judul halaman Modifier dan di bagian formulir produk.
+  - **Dialog hapus menyebut akibatnya, bukan bertanya dua kali.** Empat dialog berbunyi "Apakah Anda yakin ingin menghapus X?" padahal judulnya sudah bertanya. Pesannya sekarang menyebut yang ikut terhapus atau yang berubah. Kalimat cadangan `ConfirmDialog` ikut diganti, karena dialog yang lupa mengisi pesan tidak boleh jatuh ke kalimat tanpa akibat.
+  - **Aturan Diskon:** "{n} diam" jadi "{n} tidak berlaku"; "mempersenjatai Penyelamat Stok" jadi "memberi potongan pada Penyelamat Stok"; pilihan pemicu "Tetap — alasan saya sendiri" memakai titik dua; dan dua kalimat bertanda pisah dipecah.
+  - Pesan kosong Riwayat Pergerakan Stok menyebut penyaring, bukan "filter".
+- **Alasan:** Halaman ini dipakai pemilik tiap minggu, dan istilahnya bocor dari kolom basis data ("adjustment", "expired") ke layar. Dialog yang bertanya "apakah Anda yakin" memakai satu baris untuk tidak mengatakan apa pun tentang akibatnya.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/Stock/{Index,History,Movements}.vue`
+  - `resources/js/Pages/Owner/Products/{Index,Form}.vue`, `resources/js/Components/VariantFormModal.vue`
+  - `resources/js/Pages/Owner/DiscountRules/Index.vue`, `resources/js/Pages/Owner/Modifiers/Index.vue`, `resources/js/Pages/Owner/Categories/Index.vue`, `resources/js/Pages/Owner/PaymentMethods/Index.vue`
+  - `resources/js/Components/ConfirmDialog.vue`: kalimat cadangan
+  - `tests/Feature/Owner/CatalogCopyTest.php`: penjaga baru
+- **Catatan:** Istilah "restock" tetap — ia sudah dipakai sehari-hari di ritel Indonesia, tidak seperti "adjustment". "Lantai untung" (layar pemilik) dan "batas untung" (layar kasir) masih dua kata untuk satu hal, dan itu belum diputuskan.
 
 ### [DECISION] Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama
 - **Tanggal:** 2026-09-17

@@ -147,7 +147,7 @@ const inputClass =
                     <p v-if="form.errors.stock" class="mt-1 text-xs text-red-600">{{ form.errors.stock }}</p>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Expired</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Kedaluwarsa</label>
                     <DatePicker v-model="form.expiry_date" block clearable />
                     <p v-if="form.errors.expiry_date" class="mt-1 text-xs text-red-600">{{ form.errors.expiry_date }}</p>
                 </div>
@@ -158,7 +158,7 @@ const inputClass =
                     Stok {{ form.stock }}<template v-if="form.expiry_date"> · kedaluwarsa terdekat {{ formatDay(form.expiry_date) }}</template>
                 </p>
                 <p class="mt-1 text-xs text-gray-500">
-                    Diubah lewat restock atau adjustment supaya setiap perubahan tercatat per batch.
+                    Diubah lewat restock atau koreksi supaya setiap perubahan tercatat per batch.
                     <Link v-if="stockHref" :href="stockHref" class="font-medium text-primary hover:underline">Buka halaman Stok</Link>
                 </p>
             </div>

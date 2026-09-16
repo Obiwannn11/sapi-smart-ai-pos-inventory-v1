@@ -27,7 +27,7 @@ const typeOptions = [
     { value: '', label: 'Semua Tipe' },
     { value: 'sale', label: 'Penjualan' },
     { value: 'restock', label: 'Restock' },
-    { value: 'adjustment', label: 'Adjustment' },
+    { value: 'adjustment', label: 'Koreksi' },
     { value: 'void', label: 'Void' },
     { value: 'edit', label: 'Edit transaksi' },
 ];
@@ -84,7 +84,7 @@ const typeLabel = (type) => {
     const labels = {
         sale: 'Penjualan',
         restock: 'Restock',
-        adjustment: 'Adjustment',
+        adjustment: 'Koreksi',
         void: 'Void',
         edit: 'Edit transaksi',
     };
@@ -127,7 +127,7 @@ const qtyClass = (qty) => {
                 Kembali ke Stok
             </Link>
             <h1 class="text-2xl font-bold text-gray-900">Semua Pergerakan Stok</h1>
-            <p class="text-sm text-gray-500 mt-1">Riwayat seluruh pergerakan stok (penjualan, restock, adjustment)</p>
+            <p class="text-sm text-gray-500 mt-1">Riwayat seluruh pergerakan stok: penjualan, restock, dan koreksi</p>
         </div>
 
         <!-- Filters -->
@@ -245,7 +245,7 @@ const qtyClass = (qty) => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
                 <p class="mt-3 text-sm text-gray-500">
-                    {{ hasFilters() ? 'Tidak ada data yang cocok dengan filter' : 'Belum ada riwayat pergerakan stok' }}
+                    {{ hasFilters() ? 'Tidak ada riwayat yang cocok dengan penyaring ini' : 'Belum ada riwayat pergerakan stok' }}
                 </p>
             </div>
         </div>

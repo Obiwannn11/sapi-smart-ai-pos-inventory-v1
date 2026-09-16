@@ -146,7 +146,7 @@ const formatCurrency = (val) => {
         <div class="flex items-center justify-between mb-6">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Produk</h1>
-                <p v-if="products" class="text-sm text-gray-500 mt-1">{{ filteredProducts.length }} produk ditemukan</p>
+                <p v-if="products" class="text-sm text-gray-500 mt-1">{{ filteredProducts.length }} produk</p>
                 <p v-else class="text-sm text-gray-500 mt-1">Memuat produk…</p>
             </div>
             <Link
@@ -336,8 +336,8 @@ const formatCurrency = (val) => {
     <!-- Delete confirm -->
     <ConfirmDialog
         :show="!!deleteTarget"
-        title="Hapus Produk"
-        :message="`Apakah Anda yakin ingin menghapus produk '${deleteTarget?.name}'? Semua varian produk juga akan dihapus.`"
+        title="Hapus produk ini?"
+        :message="`Semua varian “${deleteTarget?.name}” ikut dihapus.`"
         confirmText="Hapus"
         @confirm="doDelete"
         @cancel="cancelDelete"

@@ -209,7 +209,7 @@ const cancelDelete = () => {
     <ConfirmDialog
         :show="!!deleteTarget"
         title="Hapus Kategori"
-        :message="`Apakah Anda yakin ingin menghapus kategori '${deleteTarget?.name}'? Produk di kategori ini akan dipindahkan ke 'Tanpa Kategori'.`"
+        :message="`Produk di kategori “${deleteTarget?.name}” dipindahkan ke “Tanpa Kategori”.`"
         confirmText="Hapus"
         @confirm="doDelete"
         @cancel="cancelDelete"

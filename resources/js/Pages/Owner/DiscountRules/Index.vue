@@ -48,8 +48,8 @@ const triggerLabels = {
  * tanggal — terbaca saat owner memilih, bukan di paragraf bantuan di bawahnya.
  */
 const triggerOptions = [
-    { value: 'manual', label: 'Tetap — alasan saya sendiri' },
-    { value: 'dead_stock', label: 'Tetap — barang lama tak terjual' },
+    { value: 'manual', label: 'Tetap: alasan saya sendiri' },
+    { value: 'dead_stock', label: 'Tetap: barang lama tak terjual' },
     { value: 'near_expiry', label: 'Membesar sendiri mendekati kedaluwarsa' },
 ];
 
@@ -253,7 +253,7 @@ const doDelete = () => {
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Aturan Diskon</h1>
                 <p v-if="ruleCounts" class="text-sm text-gray-500 mt-1">
-                    {{ ruleCounts.live }} berlaku di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} diam</template>
+                    {{ ruleCounts.live }} berlaku di kasir<template v-if="ruleCounts.dormant"> · {{ ruleCounts.dormant }} tidak berlaku</template>
                 </p>
                 <p v-else class="text-sm text-gray-500 mt-1">Memuat aturan…</p>
                 <!-- Halaman ini adalah tahap MEMASANG pada rantai Penyelamat
@@ -264,7 +264,7 @@ const doDelete = () => {
                      Disebutkan hanya untuk `near_expiry`: pemicu `manual` dan
                      `dead_stock` punya kegunaannya sendiri di luar rantai ini. -->
                 <p class="text-xs text-gray-400 mt-1">
-                    Aturan bertipe <span class="font-medium">mendekati kedaluwarsa</span> juga yang mempersenjatai
+                    Aturan bertipe <span class="font-medium">mendekati kedaluwarsa</span> juga yang memberi potongan pada
                     <Link href="/owner/reports/upsell" class="text-primary hover:underline">Penyelamat Stok</Link> —
                     tanpa aturannya, barang tertekan tetap disarankan kasir, tapi pada harga katalog.
                 </p>
@@ -380,7 +380,7 @@ const doDelete = () => {
                                     </span>
                                 </div>
                                 <p v-if="preview.blocked" class="mt-1.5 text-amber-700">
-                                    Modal barang ini belum diisi — potongan tidak akan berlaku.
+                                    Modal barang ini belum diisi, jadi potongan tidak akan berlaku.
                                 </p>
                             </div>
 
@@ -519,7 +519,7 @@ const doDelete = () => {
     <ConfirmDialog
         :show="!!deleteTarget"
         title="Hapus aturan diskon ini?"
-        message="Penjualan yang sudah memakainya tidak berubah — harga dan alasannya sudah tercatat pada tiap barisnya. Kalau hanya ingin menghentikan sementara, pakai Hentikan."
+        message="Penjualan yang sudah memakainya tidak berubah: harga dan alasannya sudah tercatat pada tiap barisnya. Kalau hanya ingin menghentikan sementara, pakai Hentikan."
         confirm-text="Hapus"
         variant="danger"
         @confirm="doDelete"

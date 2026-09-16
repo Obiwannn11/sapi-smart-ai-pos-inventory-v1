@@ -330,7 +330,7 @@ const deleteVariant = (variantId) => {
                                 <p v-if="form.errors[`variants.${i}.stock`]" class="mt-1 text-xs text-red-600">{{ form.errors[`variants.${i}.stock`] }}</p>
                             </div>
                             <div>
-                                <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Expired</label>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Kedaluwarsa</label>
                                 <DatePicker v-model="variant.expiry_date" block clearable />
                             </div>
                         </div>
@@ -392,15 +392,15 @@ const deleteVariant = (variantId) => {
                     </div>
 
                     <div v-if="!product.variants?.length" class="py-8 text-center text-sm text-gray-500">
-                        Belum ada varian. Tambahkan varian menggunakan tombol di atas.
+                        Belum ada varian. Tambahkan lewat tombol di atas.
                     </div>
                 </div>
             </div>
 
-            <!-- Section 3: Modifier Groups -->
+            <!-- Section 3: Grup Modifier -->
             <div v-if="modifierGroups?.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 class="text-lg font-semibold text-gray-800 mb-4">Modifier Groups</h2>
-                <p class="text-sm text-gray-500 mb-3">Pilih modifier group yang tersedia untuk produk ini</p>
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Grup Modifier</h2>
+                <p class="text-sm text-gray-500 mb-3">Pilih grup modifier yang tersedia untuk produk ini</p>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     <Checkbox

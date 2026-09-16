@@ -4,7 +4,7 @@ import { ref, watch, onMounted } from 'vue';
 const props = defineProps({
     show: { type: Boolean, default: false },
     title: { type: String, default: 'Konfirmasi' },
-    message: { type: String, default: 'Apakah Anda yakin ingin melakukan tindakan ini?' },
+    message: { type: String, default: 'Tindakan ini tidak bisa dibatalkan.' },
     confirmText: { type: String, default: 'Hapus' },
     cancelText: { type: String, default: 'Batal' },
     variant: { type: String, default: 'danger' }, // danger | warning

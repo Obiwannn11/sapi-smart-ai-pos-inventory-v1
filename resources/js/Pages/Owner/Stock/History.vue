@@ -31,7 +31,7 @@ const typeLabel = (type) => {
     const labels = {
         sale: 'Penjualan',
         restock: 'Restock',
-        adjustment: 'Adjustment',
+        adjustment: 'Koreksi',
         void: 'Void',
         edit: 'Edit transaksi',
     };

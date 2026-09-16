@@ -411,7 +411,7 @@ const formatDate = (date) => {
         <div class="flex items-center justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Manajemen Stok</h1>
-                <p class="text-sm text-gray-500 mt-1">Restock, adjustment, dan pantau stok produk</p>
+                <p class="text-sm text-gray-500 mt-1">Tambah stok, koreksi jumlah, dan pantau kedaluwarsa</p>
             </div>
             <Link
                 href="/owner/stock/movements"
@@ -556,7 +556,7 @@ const formatDate = (date) => {
                                             v-else-if="isLowStock(variant.stock)"
                                             class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning-foreground tabular-nums"
                                         >
-                                            {{ variant.stock }} — Kritis
+                                            {{ variant.stock }} · Kritis
                                         </span>
                                         <span v-else class="font-semibold text-gray-800 tabular-nums">
                                             {{ variant.stock }}
@@ -607,7 +607,7 @@ const formatDate = (date) => {
                                             </button>
                                             <button
                                                 class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-warning-foreground bg-warning/10 border border-warning/20 rounded-lg hover:bg-warning/20 transition-colors"
-                                                title="Adjustment"
+                                                title="Koreksi stok"
                                                 @click="openAdjust(variant)"
                                             >
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -651,7 +651,7 @@ const formatDate = (date) => {
                                     v-else-if="isLowStock(variant.stock)"
                                     class="shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning-foreground tabular-nums"
                                 >
-                                    {{ variant.stock }} — Kritis
+                                    {{ variant.stock }} · Kritis
                                 </span>
                                 <span v-else class="shrink-0 text-sm font-semibold text-gray-800 tabular-nums">
                                     {{ variant.stock }}
@@ -857,7 +857,7 @@ const formatDate = (date) => {
         </Transition>
     </Teleport>
 
-    <!-- Adjustment Modal -->
+    <!-- Modal koreksi stok -->
     <Teleport to="body">
         <Transition
             enter-active-class="transition-opacity duration-200"
@@ -870,7 +870,7 @@ const formatDate = (date) => {
             <div v-if="showAdjustModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 <div class="absolute inset-0 bg-black/50" @click="closeAdjust" />
                 <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-1">Adjustment Stok</h3>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-1">Koreksi Stok</h3>
                     <p class="text-sm text-gray-500 mb-5">
                         {{ selectedVariant?.product_name }} — {{ selectedVariant?.name }}
                         <span class="text-gray-400">(Stok saat ini: {{ selectedVariant?.stock }})</span>
@@ -952,7 +952,7 @@ const formatDate = (date) => {
                                     <span class="min-w-0">
                                         <span class="block font-medium text-gray-800">Otomatis</span>
                                         <span class="block text-xs text-gray-500">
-                                            {{ adjustForm.direction === 'decrease' ? 'Yang kedaluwarsa dulu, lalu yang paling cepat basi' : 'Batch yang terakhir datang' }}
+                                            {{ adjustForm.direction === 'decrease' ? 'Yang kedaluwarsa dulu, lalu yang tanggalnya paling dekat' : 'Batch yang terakhir datang' }}
                                         </span>
                                     </span>
                                 </label>
@@ -1034,7 +1034,7 @@ const formatDate = (date) => {
                                 :disabled="adjustForm.processing || adjustAmount === 0 || adjustPreview?.error"
                                 class="px-4 py-2 text-sm font-medium text-warning-foreground bg-warning rounded-lg hover:bg-warning/90 disabled:opacity-50 transition-colors"
                             >
-                                {{ adjustForm.processing ? 'Menyimpan...' : 'Simpan Adjustment' }}
+                                {{ adjustForm.processing ? 'Menyimpan...' : 'Simpan Koreksi' }}
                             </button>
                         </div>
                     </form>

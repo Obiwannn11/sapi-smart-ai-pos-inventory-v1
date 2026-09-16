@@ -259,7 +259,7 @@ const cancelDelete = () => {
     <ConfirmDialog
         :show="!!deleteTarget"
         title="Hapus Metode Pembayaran"
-        :message="`Apakah Anda yakin ingin menghapus metode '${deleteTarget?.name}'?`"
+        :message="`Metode “${deleteTarget?.name}” tidak bisa dipilih lagi saat pembayaran.`"
         confirmText="Hapus"
         @confirm="doDelete"
         @cancel="cancelDelete"
