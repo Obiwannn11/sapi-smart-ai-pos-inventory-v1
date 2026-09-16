@@ -172,8 +172,8 @@ class CashDrawerController extends Controller
         ]);
 
         return back()->with('success', $autoApproved
-            ? 'Mutasi kas dicatat.'
-            : 'Mutasi kas dicatat dan menunggu persetujuan pemilik. Uang seharusnya di laci belum berubah.');
+            ? 'Catatan uang laci tersimpan.'
+            : 'Catatan tersimpan dan menunggu persetujuan pemilik. Uang yang seharusnya di laci belum berubah.');
     }
 
     /**
@@ -231,7 +231,7 @@ class CashDrawerController extends Controller
 
         // Validasi: tidak boleh ada sesi terbuka
         if (CashDrawer::openFor($user)) {
-            return back()->with('error', 'Anda masih memiliki sesi kas yang terbuka.');
+            return back()->with('error', 'Sesi kas Anda masih terbuka.');
         }
 
         CashDrawer::create([
@@ -241,7 +241,7 @@ class CashDrawerController extends Controller
             'opened_at' => now(),
         ]);
 
-        return redirect()->route('cashier.pos')->with('success', 'Kas berhasil dibuka.');
+        return redirect()->route('cashier.pos')->with('success', 'Kas dibuka.');
     }
 
     /**
@@ -267,7 +267,7 @@ class CashDrawerController extends Controller
         ]);
 
         return redirect()->route('cashier.cash-drawer.summary', $drawer)
-            ->with('success', 'Kas berhasil ditutup.');
+            ->with('success', 'Kas ditutup.');
     }
 
     /**

@@ -393,7 +393,7 @@ const movementStatusLabel = (movement) => {
                         </div>
                         <p v-if="!showExpected" class="text-xs text-muted-foreground mt-1 leading-relaxed">
                             Disembunyikan supaya hitungan uang fisik Anda jujur. Hitung dulu isi laci, masukkan angkanya, dan ringkasan tutup kas akan membandingkannya sendiri.
-                            <span class="block mt-1">Boleh dibuka kalau memang perlu — pemilik akan melihat catatan bahwa angkanya dibuka.</span>
+                            <span class="block mt-1">Boleh dibuka kalau memang perlu. Pemilik akan melihat catatan bahwa angkanya dibuka.</span>
                         </p>
                     </div>
                 </div>
@@ -442,7 +442,7 @@ const movementStatusLabel = (movement) => {
                             class="flex items-start justify-between gap-3 text-xs"
                         >
                             <span class="text-muted-foreground">
-                                {{ movementLabel(movement) }} — {{ movement.reason }}
+                                {{ movementLabel(movement) }} · {{ movement.reason }}
                                 <span
                                     class="block"
                                     :class="{
@@ -505,8 +505,8 @@ const movementStatusLabel = (movement) => {
             :show="movementOpen"
             :title="movementType === 'payout' ? 'Catat Uang Keluar' : 'Catat Setoran Masuk'"
             :description="movementType === 'payout'
-                ? 'Uang yang keluar dari laci dan bukan kembalian — setoran ke pemilik, beli galon, tukar uang kecil.'
-                : 'Uang yang masuk ke laci di luar penjualan — misalnya tambahan uang kecil.'"
+                ? 'Uang yang keluar dari laci dan bukan kembalian. Contoh: setoran ke pemilik, beli galon, tukar uang kecil.'
+                : 'Uang yang masuk ke laci di luar penjualan. Misalnya tambahan uang kecil.'"
             @close="movementOpen = false"
         >
                 <form @submit.prevent="submitMovement" class="space-y-4">

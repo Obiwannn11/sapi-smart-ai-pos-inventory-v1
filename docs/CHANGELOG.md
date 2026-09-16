@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-16 | DECISION | Kasir | Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir |
 | 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
 | 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
 | 2026-09-16 | DECISION | Kasir | Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin |
@@ -287,6 +288,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Service | Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Lanjutan audit antislop-copywriting ke halaman kasir selain POS, dan ke pesan kesalahan yang mendarat di layar kasir sebagai flash.
+  - **Rekap Kas.** "Expected Cash (uang tunai di laci)" jadi "Seharusnya di laci" dan "Closing Amount (aktual)" jadi "Uang fisik aktual", sama dengan halaman Tutup Kas. "Pendapatan per Metode Pembayaran" jadi "Rekap per Metode Pembayaran", sama dengan dashboard. Tombol "Logout" jadi "Keluar", sama dengan judul dialognya.
+  - **Pesan kesalahan.** "User tidak terautentikasi" jadi "Sesi Anda sudah berakhir. Login lagi untuk melanjutkan." "Transaksi ini bukan open bill / sudah dibayar" jadi "Tagihan ini sudah dibayar." "Lantai margin" jadi "batas untung", istilah yang dipakai layar kasir. Tagihan lewat 24 jam tidak lagi dijelaskan sebagai "kas negatif" kepada kasir, melainkan "Hanya pemilik yang bisa melunasinya".
+  - **Bug format angka.** Dua pesan kurang bayar memakai `number_format()` polos, sehingga menulis "Rp 12,000" dengan pemisah ribuan gaya Inggris. Sekarang "Rp 12.000".
+  - **Antrian dapur.** "Transaksi ini tidak punya fulfillment tracking" jadi "Pesanan ini tidak masuk papan antrian", dan pesan status berubah tidak lagi membocorkan nama status mentah ("sekarang: preparing") ke orang di dapur.
+  - **Kas.** Keterangan modal uang keluar/masuk, catatan mutasi, dan keterangan angka tersembunyi dipecah dari satu kalimat bertanda pisah jadi dua kalimat.
+  - Flash "Kas berhasil dibuka/ditutup" jadi "Kas dibuka/ditutup", dan "Mutasi kas dicatat" jadi "Catatan uang laci tersimpan" — "mutasi kas" tidak dipakai di layar mana pun yang dilihat kasir.
+- **Alasan:** Pesan kesalahan adalah teks yang dibaca kasir justru saat ia sedang panik di depan pelanggan. Istilah basis data ("pending", "completed", "kas negatif", "fulfillment tracking") memindahkan pertanyaan, bukan menjawabnya.
+- **File Terdampak:**
+  - `app/Services/TransactionService.php`, `app/Services/FulfillmentService.php`, `app/Http/Controllers/Cashier/CashDrawerController.php`: pesan dan flash
+  - `resources/js/Pages/Cashier/{CashDrawer,CashDrawerClose,CashDrawerSummary,Queue,TransactionHistory}.vue`: teks UI
+  - `tests/Feature/Cashier/CashierPagesCopyTest.php`: penjaga baru
+- **Catatan:** Istilah "kas negatif" sengaja TETAP di layar pemilik dan di nama kolom rekonsiliasi; yang dibuang hanya pemakaiannya dalam kalimat yang dibaca kasir. Penyeragaman istilah itu untuk pemilik belum diputuskan.
 
 ### [DECISION] Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin
 ### [HOTFIX] Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115)

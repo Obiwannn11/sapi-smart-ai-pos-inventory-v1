@@ -220,7 +220,7 @@ const onConfirm = () => {
                                     {{ stepOf(card).label }}
                                 </span>
                                 <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                                    {{ card.source === 'self_order' ? 'Self-Order' : 'Kasir' }}
+                                    {{ card.source === 'self_order' ? 'Self-order' : 'Kasir' }}
                                 </span>
                                 <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
                                     {{ card.order_type === 'pickup' ? 'Bawa pulang' : 'Makan di tempat' }}
@@ -246,7 +246,7 @@ const onConfirm = () => {
                                     <span class="font-semibold">{{ item.qty }}×</span>
                                     {{ item.name }}
                                     <span v-if="item.modifiers.length" class="text-gray-500">
-                                        — {{ item.modifiers.map((m) => m.name).join(', ') }}
+                                        · {{ item.modifiers.map((m) => m.name).join(', ') }}
                                     </span>
                                     <span v-if="item.notes" class="block pl-5 text-xs italic text-amber-700">
                                         “{{ item.notes }}”

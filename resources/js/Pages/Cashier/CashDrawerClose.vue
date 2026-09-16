@@ -276,7 +276,7 @@ const closeCashDrawer = () => {
                             <span class="text-muted-foreground">
                                 Kas negatif
                                 <span class="text-muted-foreground/60">
-                                    — {{ reconciliation.unsettled_count }} tagihan lewat 24 jam, hanya pemilik yang bisa membereskan
+                                    · {{ reconciliation.unsettled_count }} tagihan lewat 24 jam, hanya pemilik yang bisa membereskan
                                 </span>
                             </span>
                             <span class="text-destructive font-mono">−{{ formatCurrency(reconciliation.unsettled_cash) }}</span>
@@ -296,7 +296,7 @@ const closeCashDrawer = () => {
                             <span class="text-muted-foreground">
                                 Menunggu persetujuan pemilik
                                 <span class="text-muted-foreground/60">
-                                    — {{ reconciliation.pending_movement_count }} catatan, belum mengubah angka di atas
+                                    · {{ reconciliation.pending_movement_count }} catatan, belum mengubah angka di atas
                                 </span>
                             </span>
                             <span class="text-warning-foreground font-mono">
@@ -315,7 +315,7 @@ const closeCashDrawer = () => {
                         >
                             <span class="text-muted-foreground">
                                 Non-tunai (QRIS/transfer)
-                                <span class="text-muted-foreground/60">— tidak masuk laci</span>
+                                <span class="text-muted-foreground/60">· tidak masuk laci</span>
                             </span>
                             <span class="text-muted-foreground font-mono">{{ formatCurrency(reconciliation.non_cash_in) }}</span>
                         </div>

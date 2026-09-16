@@ -189,7 +189,7 @@ const openEdit = (transaction) => {
                             <span
                                 v-if="tx.sync_status === 'needs_review'"
                                 class="px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive"
-                                title="Ada anomali stok/harga — menunggu koreksi owner"
+                                title="Stok atau harga tidak cocok. Menunggu koreksi pemilik."
                             >
                                 Perlu koreksi
                             </span>
@@ -218,7 +218,7 @@ const openEdit = (transaction) => {
                     <div class="text-xs text-gray-600 space-y-0.5 mb-2">
                         <p v-for="item in tx.items?.slice(0, 3)" :key="item.id" class="truncate">
                             {{ item.qty }}x {{ item.variant_name }}
-                            <span v-if="item.notes" class="text-amber-600 italic"> — {{ item.notes }}</span>
+                            <span v-if="item.notes" class="text-amber-600 italic"> · {{ item.notes }}</span>
                         </p>
                         <p v-if="tx.items?.length > 3" class="text-gray-400">
                             +{{ tx.items.length - 3 }} item lainnya
@@ -253,8 +253,8 @@ const openEdit = (transaction) => {
 
                 <!-- Empty state -->
                 <div v-if="transactions.data.length === 0" class="text-center py-12 text-gray-400">
-                    <p class="text-sm">Tidak ada transaksi ditemukan.</p>
-                    <p v-if="scope.label" class="text-xs mt-1">Cakupan: {{ scope.label }}.</p>
+                    <p class="text-sm">Tidak ada transaksi.</p>
+                    <p v-if="scope.label" class="text-xs mt-1">Yang ditampilkan: {{ scope.label }}.</p>
                 </div>
             </div>
 

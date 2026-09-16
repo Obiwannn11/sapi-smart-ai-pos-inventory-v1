@@ -86,7 +86,7 @@ class TransactionService
             $user = Auth::user();
 
             if (! $user) {
-                throw new \Exception('User tidak terautentikasi.');
+                throw new \Exception('Sesi Anda sudah berakhir. Login lagi untuk melanjutkan.');
             }
 
             $tenantId = $user->tenant_id;
@@ -209,8 +209,8 @@ class TransactionService
             // needs_review, tidak pernah ditolak.
             if ($totalPaid < $totalAmount) {
                 throw new \Exception(
-                    'Total pembayaran kurang. Harga katalog mungkin berubah — harus: '
-                    .number_format($totalAmount).', dibayar: '.number_format($totalPaid)
+                    'Pembayaran kurang. Harga katalog mungkin sudah berubah. Harus Rp '
+                    .number_format($totalAmount, 0, ',', '.').', dibayar Rp '.number_format($totalPaid, 0, ',', '.')
                 );
             }
 
@@ -249,7 +249,7 @@ class TransactionService
             $user = Auth::user();
 
             if (! $user) {
-                throw new \Exception('User tidak terautentikasi.');
+                throw new \Exception('Sesi Anda sudah berakhir. Login lagi untuk melanjutkan.');
             }
 
             $tenantId = $user->tenant_id;
@@ -301,7 +301,7 @@ class TransactionService
     public function confirmSelfOrderPayment(Transaction $transaction, ?string $referenceCode = null): Transaction
     {
         if ($transaction->status !== Transaction::STATUS_PENDING) {
-            throw new \Exception('Transaksi ini bukan pending / sudah dibayar.');
+            throw new \Exception('Tagihan ini sudah dibayar.');
         }
 
         if ($transaction->source !== Transaction::SOURCE_SELF_ORDER) {
@@ -420,12 +420,12 @@ class TransactionService
     {
         if ($transaction->isUnsettled()) {
             throw new \Exception(
-                'Tagihan ini sudah lewat '.Transaction::OPEN_BILL_LIFETIME_HOURS.' jam dan tercatat sebagai kas negatif. Hanya pemilik yang dapat membereskannya.'
+                'Tagihan ini sudah lewat '.Transaction::OPEN_BILL_LIFETIME_HOURS.' jam. Hanya pemilik yang bisa melunasinya.'
             );
         }
 
         if ($transaction->status !== Transaction::STATUS_PENDING) {
-            throw new \Exception('Transaksi ini bukan open bill / sudah dibayar.');
+            throw new \Exception('Tagihan ini sudah dibayar.');
         }
 
         // Uangnya jatuh ke laci yang MELUNASI ([BL-028]) — itu sudah jadi
@@ -462,11 +462,11 @@ class TransactionService
     public function paySettledLateBill(Transaction $transaction, array $payments, User $owner): Transaction
     {
         if (! $transaction->isUnsettled()) {
-            throw new \Exception('Transaksi ini bukan kas negatif.');
+            throw new \Exception('Tagihan ini belum lewat batas waktunya.');
         }
 
         if (! $owner->isOwner() || $owner->tenant_id !== $transaction->tenant_id) {
-            throw new \Exception('Hanya pemilik yang dapat melunasi kas negatif.');
+            throw new \Exception('Hanya pemilik yang bisa melunasi tagihan yang lewat batas.');
         }
 
         // `cash_drawer_id` sengaja dibiarkan null: alinea di atas menyebutnya
@@ -528,7 +528,7 @@ class TransactionService
 
             if ($totalPaid < $totalAmount) {
                 throw new \Exception(
-                    'Total pembayaran kurang. Harus: '.number_format($totalAmount).', dibayar: '.number_format($totalPaid)
+                    'Pembayaran kurang. Harus Rp '.number_format($totalAmount, 0, ',', '.').', dibayar Rp '.number_format($totalPaid, 0, ',', '.')
                 );
             }
 
@@ -560,12 +560,12 @@ class TransactionService
     public function void(Transaction $transaction): Transaction
     {
         if ($transaction->status !== Transaction::STATUS_COMPLETED) {
-            throw new \Exception('Hanya transaksi completed yang bisa di-void.');
+            throw new \Exception('Hanya transaksi yang sudah selesai yang bisa di-void.');
         }
 
         // MVP: hanya bisa void transaksi hari ini
         if (! $transaction->created_at->isToday()) {
-            throw new \Exception('Hanya bisa void transaksi hari ini.');
+            throw new \Exception('Transaksi hanya bisa di-void pada hari yang sama.');
         }
 
         return DB::transaction(function () use ($transaction) {
@@ -765,7 +765,7 @@ class TransactionService
             // Penjaga server. Kasir yang mengirim request sendiri tetap
             // ditolak di sini, bukan hanya di layar.
             if (! $user || ! $user->isOwner()) {
-                throw new \Exception('Hanya pemilik yang bisa menetapkan harga di bawah lantai margin.');
+                throw new \Exception('Hanya pemilik yang bisa menetapkan harga di bawah batas untung.');
             }
 
             $reason = trim((string) ($item['discount_reason'] ?? ''));
@@ -1366,7 +1366,7 @@ class TransactionService
     private function parseOccurredAt(?string $value): Carbon
     {
         if (blank($value)) {
-            throw new \Exception('Waktu transaksi offline (occurred_at) wajib diisi.');
+            throw new \Exception('Waktu transaksi offline wajib diisi.');
         }
 
         try {

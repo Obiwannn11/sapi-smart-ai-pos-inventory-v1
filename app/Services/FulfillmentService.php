@@ -36,12 +36,12 @@ class FulfillmentService
             $transaction->refresh();
 
             if (! $transaction->hasFulfillmentTracking()) {
-                throw new \Exception('Transaksi ini tidak punya fulfillment tracking.');
+                throw new \Exception('Pesanan ini tidak masuk papan antrian.');
             }
 
             if ($transaction->fulfillment_status !== $expectedFrom) {
                 throw new \Exception(
-                    'Status pesanan sudah berubah (sekarang: '.$transaction->fulfillment_status.'). Papan disegarkan.'
+                    'Status pesanan sudah diubah orang lain. Papan disegarkan.'
                 );
             }
 

@@ -63,7 +63,7 @@ test('advance dengan status yang tidak cocok ditolak tanpa mengubah apa pun', fu
     // Inti proteksi balapan: kartu di layar masih menampilkan "Mulai masak"
     // padahal orang lain sudah memajukannya.
     expect(fn () => $this->service->advance($card, Transaction::FULFILLMENT_WAITING))
-        ->toThrow(Exception::class, 'Status pesanan sudah berubah');
+        ->toThrow(Exception::class, 'Status pesanan sudah diubah orang lain');
 
     expect($card->fresh()->fulfillment_status)->toBe(Transaction::FULFILLMENT_PREPARING);
 });
@@ -83,7 +83,7 @@ test('advance menolak transaksi tanpa fulfillment tracking', function () {
     ]);
 
     expect(fn () => $this->service->advance($card, Transaction::FULFILLMENT_WAITING))
-        ->toThrow(Exception::class, 'tidak punya fulfillment tracking');
+        ->toThrow(Exception::class, 'tidak masuk papan antrian');
 });
 
 test('stempel waktu tidak ditimpa saat status dilewati ulang', function () {
