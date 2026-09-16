@@ -96,7 +96,7 @@ class OfflineReviewController extends Controller
             }
 
             if ($variant->stock < 0) {
-                $reasons[] = "{$item->variant_name}: stok minus ({$variant->stock}) — perlu opname fisik.";
+                $reasons[] = "{$item->variant_name}: stok minus ({$variant->stock}), perlu opname fisik.";
             }
 
             // Sejak `[BL-115]` baris offline membawa jejak potongannya, jadi
@@ -111,7 +111,7 @@ class OfflineReviewController extends Controller
                 }
 
                 $reasons[] = sprintf(
-                    '%s: potongan Rp %s tanpa aturan diskon yang cocok — periksa harga yang ditagih.',
+                    '%s: potongan Rp %s tanpa aturan diskon yang cocok. Periksa harga yang ditagih.',
                     $item->variant_name,
                     number_format($discount, 0, ',', '.'),
                 );
@@ -134,7 +134,7 @@ class OfflineReviewController extends Controller
         if (empty($reasons)) {
             // Flag-nya menyala tapi katalog sudah dirapikan sejak sync — biasanya
             // owner sudah mengoreksi stok/harga tanpa menandai selesai.
-            $reasons[] = 'Anomali sudah tidak terdeteksi — kemungkinan sudah dikoreksi.';
+            $reasons[] = 'Selisihnya sudah tidak ada, kemungkinan sudah Anda koreksi.';
         }
 
         return array_values(array_unique($reasons));

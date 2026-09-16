@@ -53,7 +53,7 @@ const resolve = (transaction) => {
             <h1 class="text-xl font-semibold text-foreground">Koreksi Transaksi Offline</h1>
             <p class="mt-1 text-sm text-muted-foreground">
                 Transaksi ini <span class="font-medium text-foreground">sudah tersimpan dan uangnya sudah diterima</span>.
-                Yang perlu dirapikan hanya angkanya — stok atau harga melenceng saat perangkat offline.
+                Yang perlu dirapikan hanya angkanya: stok atau harga melenceng saat perangkat offline.
             </p>
         </div>
 
@@ -79,7 +79,7 @@ const resolve = (transaction) => {
                             :key="variant.id"
                             class="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs text-amber-900"
                         >
-                            {{ variant.product_name }} — {{ variant.variant_name }}
+                            {{ variant.product_name }} - {{ variant.variant_name }}
                             <span class="font-semibold text-destructive">{{ variant.stock }}</span>
                         </li>
                     </ul>
@@ -108,7 +108,7 @@ const resolve = (transaction) => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p class="text-sm font-medium text-foreground">Tidak ada yang perlu dikoreksi</p>
-                <p class="mt-1 text-xs text-muted-foreground">Semua transaksi offline tersinkron tanpa anomali.</p>
+                <p class="mt-1 text-xs text-muted-foreground">Semua transaksi offline masuk dengan angka yang cocok.</p>
             </div>
 
             <ul v-else class="divide-y divide-border">

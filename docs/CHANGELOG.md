@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Owner | Riwayat Sesi Kas dan Koreksi Offline: Kolom "Expected/Closed" Berbahasa Indonesia, Alasan Koreksi Tanpa Kata "Anomali" |
 | 2026-09-17 | DECISION | Langganan | Halaman Langganan Berhenti Menyebut "Kursi" dan "Pengguna" untuk Hal yang Sama |
 | 2026-09-17 | DECISION | Platform | Konsol Platform: "Kapabilitas" Jadi "Fitur", dan Satu-satunya Kata "Seat" di Layar Dibuang |
 | 2026-09-17 | DECISION | Owner | Stok, Produk, dan Aturan Diskon: "Adjustment" Jadi "Koreksi", dan Dialog Hapus Menyebut Akibatnya |
@@ -293,6 +294,23 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Riwayat Sesi Kas dan Koreksi Offline: Kolom "Expected/Closed" Berbahasa Indonesia, Alasan Koreksi Tanpa Kata "Anomali"
+- **Tanggal:** 2026-09-17
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Controller | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting dua halaman pemilik yang menutup rangkaian layar kasir.
+  - **Riwayat Sesi Kas.** Kolom "Expected" dan "Aktual" jadi "Seharusnya" dan "Uang fisik", sama dengan nama yang dipakai layar Tutup Kas dan Rekap Kas milik kasir. Lencana status "Closed"/"Open" jadi "Ditutup"/"Berjalan" — dua kata Inggris terakhir yang tersisa di layar pemilik.
+  - Kolom "Angka Dibuka" jadi "Angka dilihat". Yang dihitungnya adalah berapa kali kasir melihat angka "seharusnya di laci" sebelum menghitung uang fisik; "dibuka" terbaca seperti angkanya yang terbuka.
+  - **Koreksi Transaksi Offline.** Kata "anomali" dibuang dari dua tempat: keadaan kosong ("Semua transaksi offline masuk dengan angka yang cocok") dan kalimat alasan terakhir ("Selisihnya sudah tidak ada, kemungkinan sudah Anda koreksi").
+  - Tiga kalimat alasan yang dirakit server dipecah dari tanda pisah. Kalimat ini dibaca sebagai daftar periksa, satu baris per temuan, jadi ia termasuk teks yang dibaca sekilas.
+- **Alasan:** Kedua halaman ini membaca pekerjaan kasir. Kalau namanya berbeda dari yang dilihat kasir, pemilik dan kasir sedang membicarakan angka yang sama dengan dua kosakata.
+- **File Terdampak:**
+  - `resources/js/Pages/Owner/CashDrawers/Index.vue`, `resources/js/Pages/Owner/OfflineReview/Index.vue`
+  - `app/Http/Controllers/Owner/OfflineReviewController.php`: kalimat alasan
+  - `tests/Feature/Owner/CashAndOfflineCopyTest.php`: penjaga baru
 
 ### [DECISION] Halaman Langganan Berhenti Menyebut "Kursi" dan "Pengguna" untuk Hal yang Sama
 - **Tanggal:** 2026-09-17

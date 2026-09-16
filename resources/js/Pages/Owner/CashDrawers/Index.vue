@@ -51,7 +51,7 @@ const formatDateTime = (datetime) => {
     <div class="max-w-6xl mx-auto space-y-6">
         <div>
             <h1 class="text-2xl font-bold text-gray-900">Riwayat Sesi Kas</h1>
-            <p class="text-sm text-gray-500 mt-1">Semua sesi kas kasir</p>
+            <p class="text-sm text-gray-500 mt-1">Setiap sesi kas yang pernah dibuka kasir</p>
         </div>
 
         <!-- Menunggu keputusan pemilik ([BL-087]).
@@ -62,7 +62,7 @@ const formatDateTime = (datetime) => {
             <div class="px-5 py-4 border-b border-gray-100">
                 <h2 class="text-base font-semibold text-gray-900">Uang Keluar Menunggu Persetujuan</h2>
                 <p class="text-xs text-gray-500 mt-0.5">
-                    Sampai Anda menyetujuinya, nominal ini <strong>belum</strong> mengurangi uang yang seharusnya ada di laci —
+                    Sampai Anda menyetujuinya, nominal ini <strong>belum</strong> mengurangi uang yang seharusnya ada di laci,
                     jadi ia tidak bisa dipakai menutupi selisih.
                 </p>
             </div>
@@ -93,7 +93,7 @@ const formatDateTime = (datetime) => {
                             <span class="font-semibold font-mono">
                                 {{ movement.type === 'payout' ? '−' : '+' }}{{ formatCurrency(movement.amount) }}
                             </span>
-                            — {{ movement.reason }}
+                            · {{ movement.reason }}
                         </p>
                         <p class="text-xs text-gray-500 mt-0.5">
                             {{ movement.user?.name || 'Kasir' }} · dicatat {{ formatDateTime(movement.created_at) }}
@@ -136,14 +136,14 @@ const formatDateTime = (datetime) => {
                             <th class="text-left py-3 px-4 text-gray-500 font-medium">Buka Kas</th>
                             <th class="text-left py-3 px-4 text-gray-500 font-medium">Tutup Kas</th>
                             <th class="text-right py-3 px-4 text-gray-500 font-medium">Modal</th>
-                            <th class="text-right py-3 px-4 text-gray-500 font-medium">Expected</th>
-                            <th class="text-right py-3 px-4 text-gray-500 font-medium">Aktual</th>
+                            <th class="text-right py-3 px-4 text-gray-500 font-medium">Seharusnya</th>
+                            <th class="text-right py-3 px-4 text-gray-500 font-medium">Uang fisik</th>
                             <th class="text-right py-3 px-4 text-gray-500 font-medium">Selisih</th>
                             <!-- [BL-090]: apakah kasir sudah membaca angka
                                  "seharusnya di laci" sebelum menghitung. Bukan
                                  pelanggaran — konteks untuk membaca selisih di
                                  sebelahnya. -->
-                            <th class="text-center py-3 px-4 text-gray-500 font-medium">Angka Dibuka</th>
+                            <th class="text-center py-3 px-4 text-gray-500 font-medium">Angka dilihat</th>
                             <th class="text-center py-3 px-4 text-gray-500 font-medium">Status</th>
                         </tr>
                     </thead>
@@ -194,7 +194,7 @@ const formatDateTime = (datetime) => {
                                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                                     :class="cd.closed_at ? 'bg-muted text-muted-foreground' : 'bg-success/10 text-success'"
                                 >
-                                    {{ cd.closed_at ? 'Closed' : 'Open' }}
+                                    {{ cd.closed_at ? 'Ditutup' : 'Berjalan' }}
                                 </span>
                             </td>
                         </tr>
