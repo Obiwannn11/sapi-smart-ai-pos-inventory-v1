@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Kasir | Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama |
 | 2026-09-16 | ADDITION | Platform | Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather |
 | 2026-09-16 | DECISION | Kasir | Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir |
 | 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
@@ -289,6 +290,26 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama
+- **Tanggal:** 2026-09-17
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting struk. Teksnya dibaca PELANGGAN, bukan kasir, dan layar serta kertas harus berbunyi sama.
+  - **"Point of Sale" dibuang** dari kepala struk, di layar dan di kertas. Itu kategori produk kami, bukan keterangan toko yang mencetak struknya, dan pelanggan warung tidak mendapat apa pun darinya. Toko yang ingin mencantumkan alamat atau telepon sudah punya kolomnya sendiri di pengaturan printer.
+  - **"Kembali" jadi "Kembalian"**, sama dengan modal pembayaran dan layar konfirmasi transaksi. Satu kata untuk satu angka.
+  - Layar menulis "Simpan struk **ini** sebagai bukti pembayaran" sementara kertas menulis tanpa "ini". Disamakan.
+  - **Dua tombol cetak berhenti bernama sama.** Sebelumnya "Cetak Thermal" dan "Cetak Struk" berdampingan, dan bedanya harus ditebak. Sekarang yang utama "Cetak Struk" (menyebut hasilnya) dan yang cadangan "Cetak lewat Browser" (menyebut jalannya). Saat printer thermal tidak tersedia, tombol browser kembali bernama "Cetak Struk" karena ia satu-satunya cara mencetak.
+  - **Pengaturan printer:** placeholder "Kosongkan untuk memakai nama **tenant**" jadi "nama toko" — "tenant" istilah konsol platform, bukan kata yang pernah dilihat pemilik warung. "Sub-judul (alamat/telepon)" jadi "Alamat atau telepon", dan peringatan browser tak didukung dipadatkan dari tiga kalimat jadi dua.
+- **Alasan:** Struk adalah satu-satunya teks aplikasi ini yang dibawa pulang pelanggan. Baris yang tidak berarti bagi pembacanya adalah baris yang memakan kertas.
+- **File Terdampak:**
+  - `resources/js/Components/ReceiptModal.vue`: struk di layar, label tombol cetak
+  - `resources/js/services/escpos.js`: struk di kertas
+  - `resources/js/Components/PrinterSetupModal.vue`: label dan placeholder
+  - `tests/Feature/Cashier/ReceiptCopyTest.php`: penjaga baru, termasuk penjaga bahwa layar dan kertas memakai kata yang sama
+- **Catatan:** Bingkai tanda bintang pada "*** Terima Kasih ***" sengaja dipertahankan — itu konvensi struk, bukan hiasan yang dikarang mesin. Teks penutupnya tetap bisa diganti pemilik di pengaturan printer.
 
 ### [ADDITION] Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather
 - **Tanggal:** 2026-09-16

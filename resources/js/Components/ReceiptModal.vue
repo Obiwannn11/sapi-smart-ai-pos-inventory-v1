@@ -78,6 +78,11 @@ const close = () => emit('close');
 
 const printReceipt = () => window.print();
 
+// Saat printer thermal tersedia, tombol ini jadi jalan cadangan — jadi ia
+// menyebut JALANNYA. Saat tidak ada, ia satu-satunya cara mencetak, dan yang
+// perlu disebut adalah hasilnya.
+const browserPrintLabel = computed(() => (canThermal.value ? 'Cetak lewat Browser' : 'Cetak Struk'));
+
 // Direct thermal printing (Web Bluetooth/USB). Falls back to the setup modal
 // when no printer is configured yet, and to window.print() on unsupported browsers.
 const canThermal = computed(() => printer.supports.bluetooth || printer.supports.usb);
@@ -140,7 +145,6 @@ const printThermal = async () => {
                                     class="w-14 h-14 mx-auto mb-2"
                                 />
                                 <p class="text-base font-bold uppercase tracking-widest">{{ brandName }}</p>
-                                <p class="text-[10px] text-gray-500 mt-0.5">Point of Sale</p>
 
                                 <!--
                                     Nomor antrian hanya ada saat papan dapur
@@ -267,7 +271,7 @@ const printThermal = async () => {
                                     <span>{{ formatCurrency(payment.amount) }}</span>
                                 </div>
                                 <div v-if="Number(transaction.change_amount) > 0" class="flex justify-between font-semibold">
-                                    <span>Kembali</span>
+                                    <span>Kembalian</span>
                                     <span>{{ formatCurrency(transaction.change_amount) }}</span>
                                 </div>
                             </div>
@@ -280,7 +284,7 @@ const printThermal = async () => {
                             <!-- ===== FOOTER ===== -->
                             <div class="pt-3 text-center space-y-0.5">
                                 <p class="font-semibold">*** Terima Kasih ***</p>
-                                <p class="text-gray-400 text-[10px]">Simpan struk ini sebagai bukti pembayaran</p>
+                                <p class="text-gray-400 text-[10px]">Simpan struk sebagai bukti pembayaran</p>
                             </div>
 
                         </div>
@@ -303,7 +307,7 @@ const printThermal = async () => {
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                                 </svg>
-                                {{ thermalBusy ? 'Mencetak…' : 'Cetak Thermal' }}
+                                {{ thermalBusy ? 'Mencetak…' : 'Cetak Struk' }}
                             </button>
                             <button
                                 @click="showPrinterSetup = true"
@@ -336,7 +340,7 @@ const printThermal = async () => {
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                                 </svg>
-                                Cetak Struk
+                                {{ browserPrintLabel }}
                             </button>
                         </div>
                     </div>

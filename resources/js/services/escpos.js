@@ -135,7 +135,6 @@ export function buildReceipt(transaction, options = {}) {
     b.raw(CMD.doubleOff);
     b.raw(CMD.boldOff);
     if (options.subheader) b.line(options.subheader);
-    b.line('Point of Sale');
 
     // ── Nomor antrian ──
     // Hanya ada saat papan dapur hidup atau mode identitas "kode panggil"
@@ -226,7 +225,7 @@ export function buildReceipt(transaction, options = {}) {
         b.line(twoCols(label, formatCurrency(p.amount), width));
     }
     if (Number(transaction.change_amount) > 0) {
-        b.line(twoCols('Kembali', formatCurrency(transaction.change_amount), width));
+        b.line(twoCols('Kembalian', formatCurrency(transaction.change_amount), width));
     }
     b.line(divider(width));
 

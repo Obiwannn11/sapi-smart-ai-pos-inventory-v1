@@ -89,9 +89,8 @@ const close = () => emit('close');
                     <div class="flex-1 overflow-y-auto px-5 py-4 space-y-5">
                         <!-- Unsupported browser notice -->
                         <div v-if="!anySupported" class="rounded-lg bg-warning/10 border border-warning/30 p-3 text-sm text-warning-foreground">
-                            Browser ini tidak mendukung koneksi langsung ke printer (Web Bluetooth/USB).
-                            Gunakan <strong>Google Chrome</strong> atau <strong>Microsoft Edge</strong> di Android/desktop.
-                            Sementara itu, tombol <strong>Cetak Struk</strong> tetap bisa dipakai lewat dialog cetak.
+                            Browser ini tidak bisa terhubung langsung ke printer. Pakai <strong>Chrome</strong> atau <strong>Edge</strong>.
+                            Tombol <strong>Cetak Struk</strong> tetap bisa dipakai lewat dialog cetak browser.
                         </div>
 
                         <template v-else>
@@ -151,12 +150,12 @@ const close = () => emit('close');
                                         :value="config.header"
                                         @input="onField('header', $event.target.value)"
                                         type="text"
-                                        placeholder="Kosongkan untuk memakai nama tenant"
+                                        placeholder="Kosongkan untuk memakai nama toko"
                                         class="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     />
                                 </div>
                                 <div>
-                                    <label class="text-sm font-medium block mb-1">Sub-judul (alamat/telepon)</label>
+                                    <label class="text-sm font-medium block mb-1">Alamat atau telepon</label>
                                     <input
                                         :value="config.subheader"
                                         @input="onField('subheader', $event.target.value)"
