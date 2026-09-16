@@ -10,7 +10,9 @@ use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
 use App\Services\DiscountService;
+use App\Services\TransactionService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\actingAs;
@@ -622,6 +624,46 @@ test('laporan memisahkan penjualan di bawah lantai dari diskon biasa', function 
             ->where('discountSummary.below_floor_items', 1)
             ->where('discountSummary.below_floor_lines.0.reason', 'Kemasan rusak')
             ->where('discountSummary.below_floor_lines.0.approved_by', $owner->name)
+            ->etc()
+        )
+    );
+});
+
+test('laporan diskon ikut menghitung potongan yang terjadi saat offline', function () {
+    ['tenant' => $tenant, 'owner' => $owner, 'cashier' => $cashier, 'variant' => $variant, 'cash' => $cash] = makeDiscountContext(price: 20000, cost: 10000);
+
+    $rule = DiscountRule::factory()->create([
+        'tenant_id' => $tenant->id,
+        'product_variant_id' => $variant->id,
+        'percent' => 25,
+        'reason' => 'Promo',
+    ]);
+
+    // Penjualan yang terjadi saat perangkat putus. Sebelum `[BL-115]` baris ini
+    // tersimpan tanpa `discount_amount`, jadi potongannya tidak pernah sampai
+    // ke angka di bawah — ia terbaca sebagai penjualan biasa yang lebih murah.
+    app(TransactionService::class)->commitOffline([
+        'client_uuid' => (string) Str::uuid(),
+        'occurred_at' => now()->subHour()->toIso8601String(),
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => 'Kopi',
+            'qty' => 2,
+            'unit_price' => 15000,
+            'catalog_unit_price' => 20000,
+            'discount_rule_id' => $rule->id,
+            'modifiers' => [],
+        ]],
+        'payments' => [['payment_method_id' => $cash->id, 'amount' => 30000]],
+    ], $cashier);
+
+    actingAs($owner);
+
+    get('/owner/reports/daily')->assertInertia(fn (Assert $page) => $page
+        ->component('Owner/Reports/Daily')
+        ->loadDeferredProps('rekap', fn (Assert $reload) => $reload
+            ->where('discountSummary.total_given', 10000)
+            ->where('discountSummary.below_floor_total', 0)
             ->etc()
         )
     );

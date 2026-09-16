@@ -50,6 +50,15 @@ class SyncOfflineTransactionsRequest extends FormRequest
             'transactions.*.items.*.qty' => 'required|integer|min:1',
             'transactions.*.items.*.unit_price' => 'required|numeric|min:0',
             'transactions.*.items.*.notes' => 'nullable|string|max:500',
+            // Bahan jejak potongan ([BL-115]). Keduanya KLAIM perangkat, bukan
+            // kebenaran: `commitOffline()` memverifikasi aturannya milik tenant
+            // ini dan menandai harga katalog yang tidak cocok lagi.
+            'transactions.*.items.*.catalog_unit_price' => 'nullable|numeric|min:0',
+            'transactions.*.items.*.discount_rule_id' => 'nullable|integer',
+            // Harga khusus owner ([BL-018]) yang dimasukkan saat offline.
+            // Wewenangnya diperiksa server, bukan dipercaya dari payload.
+            'transactions.*.items.*.override_unit_price' => 'nullable|numeric|min:0',
+            'transactions.*.items.*.discount_reason' => 'nullable|string|max:200',
             // Alasan kasir menjual barang basi saat offline ([BL-108]). Tanpanya
             // penjualan tetap tersimpan, tapi ditandai untuk ditinjau owner.
             'transactions.*.items.*.expired_confirmation_reason' => 'nullable|string|max:200',

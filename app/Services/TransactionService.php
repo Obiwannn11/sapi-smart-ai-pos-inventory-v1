@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CashDrawer;
+use App\Models\DiscountRule;
 use App\Models\Modifier;
 use App\Models\PaymentMethod;
 use App\Models\ProductVariant;
@@ -973,6 +974,7 @@ class TransactionService
             $taxColumns = $this->tax->columnsFor(
                 $baseAmount,
                 $this->tax->contextFor($cashier->tenant),
+                $cashier,
                 $this->tax->serviceContextFor($cashier->tenant),
             );
 
@@ -1029,7 +1031,7 @@ class TransactionService
      *
      * @return array{0: float, 1: bool} [totalAmount, needsReview]
      */
-    private function processOfflineItems(Transaction $transaction, array $items, int $tenantId, Carbon $occurredAt): array
+    private function processOfflineItems(Transaction $transaction, array $items, int $tenantId, Carbon $occurredAt, User $cashier): array
     {
         $tenant = Tenant::find($tenantId);
 
@@ -1100,6 +1102,18 @@ class TransactionService
                 $transaction->id,
                 $tenantId,
                 $occurredAt->toDateString(),
+            // Jejak potongannya ikut dicatat ([BL-115]). Tanpa ini penjualan
+            // berdiskon offline tersimpan sebagai penjualan biasa yang
+            // kebetulan lebih murah, dan laporan diskon tidak pernah melihatnya.
+            [$trailColumns, $trailNeedsReview] = $this->offlineDiscountTrail(
+                $variant,
+                $tenant,
+                $line,
+                $unitPrice,
+                $cashier,
+            );
+            $needsReview = $needsReview || $trailNeedsReview;
+
             );
 
             if ($taken['went_negative']) {
@@ -1150,6 +1164,7 @@ class TransactionService
                 ]);
             }
 
+                ...$trailColumns,
             $totalAmount += $subtotal;
         }
 
@@ -1166,6 +1181,118 @@ class TransactionService
         $extraTotal = 0;
         $resolved = [];
         $needsReview = false;
+
+    /**
+     * Jejak potongan untuk satu baris penjualan offline ([BL-115]).
+     *
+     * Jalur online mengisi kolom-kolom ini di `resolveItemPrice()`; jalur
+     * offline dulu tidak mengisi satu pun, sehingga potongan yang terjadi saat
+     * perangkat putus tidak pernah sampai ke laporan diskon — ia terbaca
+     * sebagai penjualan biasa yang kebetulan lebih murah.
+     *
+     * `unit_price` TIDAK pernah disentuh di sini: pelanggan sudah membayarnya
+     * dan struknya sudah tercetak. Yang ditambahkan hanya konteks yang membuat
+     * angka itu bisa dipertanggungjawabkan.
+     *
+     * Payload perangkat diperlakukan sebagai KLAIM. Harga katalog yang ia lihat
+     * dipakai sebagai `original_unit_price` karena itulah angka yang tercetak
+     * di struk pelanggan — tapi bila berbeda dari harga katalog server, barisnya
+     * ditandai: snapshot katalognya basi, dan owner perlu melihatnya.
+     *
+     * @param  array<string, mixed>  $line
+     * @return array{0: array<string, mixed>, 1: bool} [kolom jejak, perlu ditinjau]
+     */
+    private function offlineDiscountTrail(ProductVariant $variant, ?Tenant $tenant, array $line, float $unitPrice, User $cashier): array
+    {
+        if (! $tenant) {
+            return [[], false];
+        }
+
+        $catalogNow = (float) $variant->price;
+        $seen = isset($line['catalog_unit_price']) ? (float) $line['catalog_unit_price'] : null;
+        $original = $seen ?? $catalogNow;
+
+        $needsReview = $seen !== null && ! $this->amountsMatch($seen, $catalogNow);
+
+        $columns = [
+            'original_unit_price' => $original,
+            // Selisih terhadap harga katalog yang dilihat pelanggan. Harga yang
+            // justru lebih MAHAL dari katalog bukan potongan negatif; ia sudah
+            // ditandai oleh pemeriksaan harga di pemanggil.
+            'discount_amount' => max(0, round($original - $unitPrice, 2)),
+            'cost_price_at_sale' => $variant->cost_price,
+            'margin_floor_at_sale' => $this->discounts->floorFor($variant, $tenant),
+        ];
+
+        $override = $line['override_unit_price'] ?? null;
+
+        if ($override !== null) {
+            $reason = trim((string) ($line['discount_reason'] ?? ''));
+
+            // Wewenang menembus lantai ditegakkan di sini sama seperti jalur
+            // online: kasir tidak bisa menembusnya, bahkan lewat perangkat yang
+            // sedang tidak tersambung dan payload yang ia susun sendiri.
+            if ($cashier->isOwner() && $reason !== '') {
+                return [$columns + [
+                    'discount_reason' => $reason,
+                    'below_floor_approved_by' => $cashier->id,
+                ], $needsReview];
+            }
+
+            // Harganya tetap dicatat — pelanggan sudah membayar — tapi tanpa
+            // persetujuan yang tidak pernah diberikan siapa pun, dan barisnya
+            // sampai ke meja owner.
+            return [$columns, true];
+        }
+
+        $rule = $this->offlineDiscountRule($variant, $tenant, $line, $unitPrice);
+
+        if ($rule !== null) {
+            return [$columns + [
+                'discount_rule_id' => $rule->id,
+                'discount_reason' => $rule->reason,
+            ], $needsReview];
+        }
+
+        // Potongan yang tidak bisa dijelaskan aturan mana pun tetap dicatat
+        // SEBAGAI potongan, supaya ia muncul di laporan diskon alih-alih hilang
+        // dari sana. Penandaannya sudah dikerjakan pemeriksaan harga.
+        return [$columns, $needsReview];
+    }
+
+    /**
+     * Aturan diskon di balik harga offline — diverifikasi, bukan dipercaya.
+     *
+     * Aturan yang disebut perangkat hanya dipakai bila ia sungguh milik tenant
+     * ini DAN menyasar varian ini; payload yang menyebut aturan tenant lain
+     * tidak boleh menempelkan alasan orang lain pada penjualan ini.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    private function offlineDiscountRule(ProductVariant $variant, Tenant $tenant, array $line, float $unitPrice): ?DiscountRule
+    {
+        $claimed = $line['discount_rule_id'] ?? null;
+
+        if ($claimed !== null) {
+            $rule = DiscountRule::withoutGlobalScopes()
+                ->where('tenant_id', $tenant->id)
+                ->where('product_variant_id', $variant->id)
+                ->find($claimed);
+
+            if ($rule !== null) {
+                return $rule;
+            }
+        }
+
+        // Perangkat yang antreannya terisi sebelum fitur ini ada tidak menyebut
+        // aturan sama sekali. Bila harga yang dibayar sama persis dengan harga
+        // berdiskon yang berlaku, aturannya bisa ditemukan sendiri.
+        $pricing = $this->discounts->priceFor($variant, $tenant);
+
+        return $pricing['rule'] !== null && $this->amountsMatch((float) $pricing['price'], $unitPrice)
+            ? $pricing['rule']
+            : null;
+    }
 
         foreach ($modifiers as $mod) {
             // Modifier juga tanpa global scope — lewat group-nya ke tenant.

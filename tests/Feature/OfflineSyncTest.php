@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\DiscountRule;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
 use App\Models\PaymentMethod;
@@ -527,4 +528,184 @@ it('tidak memajaki penjualan offline milik tenant tanpa pajak', function () {
         ->and((float) $transaction->tax_amount)->toBe(0.0)
         ->and($transaction->tax_mode)->toBeNull()
         ->and($transaction->sync_status)->toBeNull();
+});
+
+// ── Jejak potongan ([BL-115]) ───────────────────────────────────────────────
+
+/**
+ * Konteks offline yang bisa didiskon: modal diketahui (ada lantai untung) dan
+ * ada owner, karena harga khusus hanya boleh dari owner.
+ *
+ * @return array{tenant: Tenant, cashier: User, owner: User, variant: ProductVariant, cash: PaymentMethod}
+ */
+function makeOfflineDiscountContext(float $price = 10000, float $cost = 5000, float $margin = 10): array
+{
+    $tenant = Tenant::factory()->create(['min_margin_percent' => $margin]);
+    $product = Product::factory()->create(['tenant_id' => $tenant->id]);
+
+    return [
+        'tenant' => $tenant,
+        'cashier' => User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'cashier']),
+        'owner' => User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']),
+        'variant' => ProductVariant::factory()->create([
+            'product_id' => $product->id, 'price' => $price, 'cost_price' => $cost, 'stock' => 50, 'expiry_date' => null,
+        ]),
+        'cash' => PaymentMethod::factory()->create(['tenant_id' => $tenant->id, 'type' => 'cash']),
+    ];
+}
+
+/**
+ * Payload satu baris offline dengan field jejak potongan ikut disertakan.
+ *
+ * @param  array<string, mixed>  $itemFields
+ * @return array<string, mixed>
+ */
+function offlineDiscountPayload(array $ctx, float $unitPrice, array $itemFields = []): array
+{
+    $payload = offlinePayload($ctx, ['qty' => 2, 'unit_price' => $unitPrice]);
+    $payload['items'][0] = array_merge($payload['items'][0], $itemFields);
+
+    return $payload;
+}
+
+it('menyimpan jejak potongan saat perangkat menyebut aturan diskonnya', function () {
+    $ctx = makeOfflineDiscountContext();
+    $rule = DiscountRule::factory()->create([
+        'tenant_id' => $ctx['tenant']->id,
+        'product_variant_id' => $ctx['variant']->id,
+        'percent' => 30,
+        'reason' => 'Promo sore',
+    ]);
+
+    $transaction = commitOffline($ctx, offlineDiscountPayload($ctx, 7000, [
+        'catalog_unit_price' => 10000,
+        'discount_rule_id' => $rule->id,
+    ]));
+
+    $item = $transaction->items->first();
+
+    // Harga yang dibayar TIDAK disentuh; yang bertambah hanya konteksnya.
+    expect((float) $item->unit_price)->toBe(7000.0)
+        ->and((float) $item->original_unit_price)->toBe(10000.0)
+        ->and((float) $item->discount_amount)->toBe(3000.0)
+        ->and($item->discount_rule_id)->toBe($rule->id)
+        ->and($item->discount_reason)->toBe('Promo sore')
+        ->and((float) $item->cost_price_at_sale)->toBe(5000.0)
+        ->and((float) $item->margin_floor_at_sale)->toBe(5500.0)
+        // Potongan yang sah bukan anomali.
+        ->and($transaction->sync_status)->toBeNull();
+});
+
+it('menemukan sendiri aturan diskonnya saat perangkat tidak menyebutnya', function () {
+    $ctx = makeOfflineDiscountContext();
+    $rule = DiscountRule::factory()->create([
+        'tenant_id' => $ctx['tenant']->id,
+        'product_variant_id' => $ctx['variant']->id,
+        'percent' => 30,
+    ]);
+
+    // Bentuk antrean lama: tidak ada satu pun field jejak.
+    $transaction = commitOffline($ctx, offlineDiscountPayload($ctx, 7000));
+
+    $item = $transaction->items->first();
+
+    expect($item->discount_rule_id)->toBe($rule->id)
+        ->and((float) $item->original_unit_price)->toBe(10000.0)
+        ->and((float) $item->discount_amount)->toBe(3000.0)
+        ->and($transaction->sync_status)->toBeNull();
+});
+
+it('mencatat potongan yang tidak cocok aturan mana pun, lalu menandainya', function () {
+    $ctx = makeOfflineDiscountContext();
+
+    $transaction = commitOffline($ctx, offlineDiscountPayload($ctx, 6000, [
+        'catalog_unit_price' => 10000,
+    ]));
+
+    $item = $transaction->items->first();
+
+    // Tetap tercatat SEBAGAI potongan supaya muncul di laporan diskon —
+    // hilang dari laporan justru yang ingin dihindari entri ini.
+    expect((float) $item->discount_amount)->toBe(4000.0)
+        ->and($item->discount_rule_id)->toBeNull()
+        ->and($item->discount_reason)->toBeNull()
+        ->and($transaction->sync_status)->toBe(Transaction::SYNC_NEEDS_REVIEW);
+});
+
+it('mengabaikan klaim aturan diskon milik tenant lain', function () {
+    $ctx = makeOfflineDiscountContext();
+    $lain = makeOfflineDiscountContext();
+    $ruleLain = DiscountRule::factory()->create([
+        'tenant_id' => $lain['tenant']->id,
+        'product_variant_id' => $lain['variant']->id,
+        'percent' => 30,
+        'reason' => 'Promo tetangga',
+    ]);
+
+    $transaction = commitOffline($ctx, offlineDiscountPayload($ctx, 7000, [
+        'catalog_unit_price' => 10000,
+        'discount_rule_id' => $ruleLain->id,
+    ]));
+
+    $item = $transaction->items->first();
+
+    expect($item->discount_rule_id)->toBeNull()
+        ->and($item->discount_reason)->toBeNull()
+        ->and((float) $item->discount_amount)->toBe(3000.0)
+        ->and($transaction->sync_status)->toBe(Transaction::SYNC_NEEDS_REVIEW);
+});
+
+it('menandai harga katalog yang sudah berubah sejak snapshot perangkat', function () {
+    $ctx = makeOfflineDiscountContext(price: 12000);
+
+    // Perangkat menjual dari katalog lama: Rp 10.000, padahal katalog kini
+    // Rp 12.000. Harga yang dilihat pelanggan tetap yang dicatat.
+    $transaction = commitOffline($ctx, offlineDiscountPayload($ctx, 10000, [
+        'catalog_unit_price' => 10000,
+    ]));
+
+    $item = $transaction->items->first();
+
+    expect((float) $item->original_unit_price)->toBe(10000.0)
+        ->and((float) $item->discount_amount)->toBe(0.0)
+        ->and($transaction->sync_status)->toBe(Transaction::SYNC_NEEDS_REVIEW);
+});
+
+it('mencatat harga khusus offline beserta persetujuan owner', function () {
+    $ctx = makeOfflineDiscountContext();
+
+    // Di bawah lantai untung (Rp 5.500) — hanya owner yang boleh.
+    $payload = offlineDiscountPayload($ctx, 4000, [
+        'catalog_unit_price' => 10000,
+        'override_unit_price' => 4000,
+        'discount_reason' => 'Teman lama owner',
+    ]);
+
+    $transaction = app(TransactionService::class)->commitOffline($payload, $ctx['owner']);
+    $item = $transaction->items->first();
+
+    expect($item->below_floor_approved_by)->toBe($ctx['owner']->id)
+        ->and($item->discount_reason)->toBe('Teman lama owner')
+        ->and((float) $item->discount_amount)->toBe(6000.0)
+        ->and((float) $item->margin_floor_at_sale)->toBe(5500.0);
+});
+
+it('tidak mencatat persetujuan saat harga khusus offline dikirim kasir', function () {
+    $ctx = makeOfflineDiscountContext();
+
+    $payload = offlineDiscountPayload($ctx, 4000, [
+        'catalog_unit_price' => 10000,
+        'override_unit_price' => 4000,
+        'discount_reason' => 'Katanya boleh',
+    ]);
+
+    $transaction = commitOffline($ctx, $payload);
+    $item = $transaction->items->first();
+
+    // Wewenangnya sama dengan jalur online: kasir tidak pernah bisa menembus
+    // lantai, termasuk lewat payload yang ia susun sendiri.
+    expect($item->below_floor_approved_by)->toBeNull()
+        ->and($item->discount_reason)->toBeNull()
+        ->and((float) $item->unit_price)->toBe(4000.0)
+        ->and($transaction->sync_status)->toBe(Transaction::SYNC_NEEDS_REVIEW);
 });

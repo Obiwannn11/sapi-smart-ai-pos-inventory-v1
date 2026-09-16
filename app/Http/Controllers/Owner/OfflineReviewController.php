@@ -99,7 +99,29 @@ class OfflineReviewController extends Controller
                 $reasons[] = "{$item->variant_name}: stok minus ({$variant->stock}) — perlu opname fisik.";
             }
 
-            if (abs((float) $variant->price - (float) $item->unit_price) >= 0.01) {
+            // Sejak `[BL-115]` baris offline membawa jejak potongannya, jadi
+            // potongan yang sah berhenti muncul di sini sebagai "harga beda".
+            // Sebelumnya setiap penjualan berdiskon offline mengadukan dirinya
+            // sendiri, dan daftar ini penuh oleh hal yang memang disengaja.
+            $discount = (float) $item->discount_amount;
+
+            if ($discount > 0) {
+                if ($item->discount_rule_id !== null || $item->below_floor_approved_by !== null) {
+                    continue;
+                }
+
+                $reasons[] = sprintf(
+                    '%s: potongan Rp %s tanpa aturan diskon yang cocok — periksa harga yang ditagih.',
+                    $item->variant_name,
+                    number_format($discount, 0, ',', '.'),
+                );
+
+                continue;
+            }
+
+            $sold = (float) ($item->original_unit_price ?? $item->unit_price);
+
+            if (abs((float) $variant->price - $sold) >= 0.01) {
                 $reasons[] = sprintf(
                     '%s: dijual Rp %s, harga katalog kini Rp %s.',
                     $item->variant_name,

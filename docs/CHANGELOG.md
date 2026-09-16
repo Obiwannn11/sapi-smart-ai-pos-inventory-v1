@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
 | 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
 | 2026-09-16 | DECISION | Kasir | Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin |
 | 2026-09-15 | HOTFIX | Kasir | Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab |
@@ -288,6 +289,34 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ## Revision History
 
 ### [DECISION] Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin
+### [HOTFIX] Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115)
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase — `[BL-115]`, lahir dari pemeriksaan jalur offline untuk `[BL-103]` dan dipisah atas keputusan pemilik. Dikerjakan sesudah struk, sebelum paket berdiskon.
+- **Dampak:** Service (`TransactionService`), FormRequest sinkronisasi, props POS, payload kasir, halaman Tinjauan Offline, docblock laporan, test.
+- **Breaking Change:** Tidak. Payload offline mendapat dua field opsional (`catalog_unit_price`, `discount_rule_id`); antrean yang sudah terisi sebelum ini tetap bisa di-flush, dan aturannya ditemukan server lewat pencocokan harga.
+- **Deskripsi:** Kasir offline menjual Teh Manis yang sedang diskon: katalog Rp 10.000, dibayar Rp 7.000, struk benar, uang di laci benar. Yang tercatat di server hanya `unit_price` 7.000 — tanpa harga normal, tanpa besar potongan, tanpa aturan yang memotongnya. Laporan diskon menyaring `discount_amount > 0`, jadi potongan yang terjadi saat perangkat putus tidak pernah ikut terhitung: ia terbaca sebagai penjualan biasa yang kebetulan lebih murah. Harga khusus owner lebih buruk lagi — perangkat sudah mengirim alasannya, tapi server tidak pernah membacanya.
+- **Prinsip yang tidak berubah:** `unit_price` tidak disentuh sama sekali. Pelanggan sudah membayar dan struknya sudah tercetak; yang ditambahkan hanya konteks yang membuat angka itu bisa dipertanggungjawabkan.
+- **Perbaikannya:**
+  - **Payload membawa apa yang DILIHAT perangkat** — harga katalog dan id aturan diskon, diambil sekali di `cartToItems()` lewat pencarian katalog. Sengaja bukan disimpan di baris keranjang: baris itu dibentuk di lima tempat berbeda, dan satu di antaranya pasti terlewat.
+  - **Server memperlakukan payload sebagai KLAIM.** Aturan yang disebut perangkat hanya dipakai bila ia milik tenant ini DAN menyasar varian ini; payload yang menyebut aturan tenant lain tidak bisa menempelkan alasan orang lain pada penjualan ini.
+  - **Harga katalog yang sudah berubah sejak snapshot menandai barisnya**, tapi yang dicatat tetap angka yang dilihat pelanggan — itulah yang tercetak di struk yang ia bawa pulang.
+  - **Wewenang harga khusus ditegakkan di jalur offline juga.** Alasan dan `below_floor_approved_by` hanya tercatat bila yang menyinkronkan owner. Dari kasir, harganya tetap dicatat — sudah dibayar — tanpa persetujuan yang tidak pernah diberikan siapa pun, dan barisnya sampai ke meja owner.
+  - **Potongan yang tidak cocok aturan mana pun tetap dicatat SEBAGAI potongan**, supaya ia muncul di laporan diskon alih-alih hilang dari sana.
+- **Halaman Tinjauan Offline berhenti mengadukan potongan yang sah.** Sebelumnya tiap penjualan berdiskon offline muncul di sana sebagai "dijual Rp X, harga katalog kini Rp Y", dan daftar itu penuh oleh hal yang memang disengaja. Kini baris berjejak lengkap diam; yang diadukan hanya potongan tanpa aturan yang cocok.
+- **Yang sengaja TIDAK dikerjakan:** data lama tidak diisi ulang. Harga katalog bisa sudah berubah sejak penjualannya, dan `original_unit_price` hasil tebakan membuat laporan masa lalu tampak pasti padahal tidak. Dua kelemahan tetangganya tetap di `[BL-103]`: aturan masih dinilai pada waktu SINKRON, bukan waktu penjualan (K2), dan snapshot katalog offline masih tanpa batas berlaku (K3).
+- **File Terdampak:**
+  - `app/Services/TransactionService.php` — `offlineDiscountTrail()` dan `offlineDiscountRule()` baru; `processOfflineItems()` kini menerima kasir yang menyinkronkan
+  - `app/Http/Requests/SyncOfflineTransactionsRequest.php` — empat field baris divalidasi bentuknya (`catalog_unit_price`, `discount_rule_id`, `override_unit_price`, `discount_reason`)
+  - `app/Http/Controllers/Cashier/POSController.php` — props varian membawa `discount_rule_id`
+  - `resources/js/Pages/Cashier/POS.vue` — `findCatalogVariant()`, dua field baru di `cartToItems()`
+  - `app/Http/Controllers/Owner/OfflineReviewController.php` — alasan tinjauan dibaca dari jejaknya, bukan ditebak dari selisih harga
+  - `app/Http/Controllers/Owner/ReportController.php` — catatan "kurang catat sebesar potongan offline" dicabut. Berkasnya sedang dikerjakan sesi lain untuk rekap bulanan (`[BL-116]`), jadi koreksi kalimat itu mendarat bersama perubahan mereka, bukan di commit ini
+  - `tests/Feature/OfflineSyncTest.php` — 7 test baru
+  - `tests/Feature/DynamicDiscountTest.php` — laporan diskon harian ikut menghitung penjualan offline
+  - `docs/BACKLOG.md`, `docs/BACKLOG-ARCHIVE.md` — `[BL-115]` diarsipkan, `[BL-103]` butir 2b ditandai selesai
+
+---
+
 ### [ADDITION] Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a)
 - **Tanggal:** 2026-09-16
 - **Fase Terkait:** Di Luar Fase — `[BL-103]` butir 2a, dikerjakan lebih dulu atas keputusan pemilik supaya struk transparan sebelum paket berdiskon lahir.

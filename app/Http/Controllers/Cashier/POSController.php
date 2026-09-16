@@ -166,6 +166,9 @@ class POSController extends Controller
 
         return $products;
     }
+            // Ikut dikirim supaya penjualan offline bisa menyebut aturan mana
+            // yang dipakainya ([BL-115]); server tetap memverifikasinya.
+            $variant->setAttribute('discount_rule_id', $pricing['rule']?->id);
 
     public function store(StoreTransactionRequest $request): RedirectResponse
     {

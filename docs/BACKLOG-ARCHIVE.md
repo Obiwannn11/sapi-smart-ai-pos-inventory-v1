@@ -10,6 +10,35 @@
 
 ## Daftar Entri
 
+### [BL-115] Penjualan Offline Kehilangan Jejak Potongannya — Diskon dan Harga Khusus yang Terjadi Saat Offline Tidak Terhitung di Laporan Mana Pun
+- **Ditemukan:** 2026-09-16
+- **Sumber:** Pemeriksaan jalur offline untuk `[BL-103]` (bagian "Kelemahan jalur offline", butir K1 dan K4). Pemilik memutuskan 2026-09-16 memisahkannya jadi entri sendiri, karena cacatnya sudah hidup hari ini untuk diskon per barang, terlepas dari ada paket atau tidak
+- **Status:** Selesai (2026-09-16) — lihat `[HOTFIX] Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium — bukan salah tagih (pelanggan membayar harga yang benar dan struknya benar), melainkan potongan yang tidak bisa dipertanggungjawabkan di laporan. **Urutan dari pemilik:** sesudah struk (`[BL-103]` butir 2a), sebelum paket (`[BL-103]` butir 2c). Paket yang dibangun di atas cacat ini akan mewarisinya
+- **Area Terdampak:**
+  - `app/Services/TransactionService.php:1043` — `processOfflineItems()`; `items()->create()` di `:1146` hanya menulis `unit_price`, `subtotal`, `notes`, dan kolom kedaluwarsa
+  - `app/Services/TransactionService.php:750` — `resolveItemPrice()`, pembandingnya: jalur online mengisi seluruh jejak (`original_unit_price`, `discount_amount`, `discount_rule_id`, `discount_reason`, `cost_price_at_sale`, `margin_floor_at_sale`, `below_floor_approved_by`)
+  - `app/Services/TransactionService.php:831` — `matchesAnyValidPrice()`, satu-satunya tempat jalur offline mengenali diskon, dan ia hanya menjawab ya/tidak
+  - `resources/js/Pages/Cashier/POS.vue:1114-1124` — payload baris membawa `unit_price`, `override_unit_price`, dan `discount_reason`; tanpa harga katalog yang dilihat perangkat dan tanpa aturan diskon yang dipakai
+  - `app/Http/Controllers/Owner/ReportController.php:147,156` — ringkasan diskon dan "di bawah lantai untung" menyaring `discount_amount > 0`
+  - `app/Services/TransactionEditService.php:283-293` — edit transaksi membawa jejak lama apa adanya, jadi transaksi offline yang kemudian diedit tetap tanpa jejak
+  - `tests/Feature/OfflineSyncTest.php` — tidak ada satu pun test yang menyebut diskon
+- **Deskripsi:**
+  **K1 — potongan offline tidak tercatat sebagai potongan.** Kasir offline menjual Teh Manis yang sedang diskon kedaluwarsa: katalog Rp 10.000, dibayar Rp 7.000, struknya benar. Di server barisnya tercatat `unit_price` 7.000, `discount_amount` 0, `original_unit_price` kosong. Laporan diskon harian tidak menghitung Rp 3.000 itu, kartu "Di bawah lantai untung" tidak tahu barisnya ada, dan tidak ada yang bisa menjawab aturan mana yang memotongnya. Di mata laporan, itu penjualan biasa yang kebetulan lebih murah.
+  **K4 — harga khusus owner yang dimasukkan offline kehilangan alasannya.** Perangkat sudah mengirim `override_unit_price` dan `discount_reason`, tapi `processOfflineItems()` tidak membaca keduanya. Harga khusus itu tercatat tanpa alasan dan tanpa `below_floor_approved_by`, lalu jatuh ke `needs_review` karena harganya tidak cocok dengan aturan mana pun. Owner diminta memeriksa penjualan yang ia putuskan sendiri, dan alasannya sudah hilang saat ia membukanya. Jalur offline juga tidak memeriksa bahwa pengirim harga khusus adalah owner — penjaganya hari ini hanya `needs_review`.
+  **Kenapa belum terlihat sampai sekarang:** penjualan offline hanya tunai dan hanya terjadi saat perangkat benar-benar putus sambungan, dan totalnya tetap benar. Yang hilang bukan uang di laci, melainkan penjelasan atas uang yang tidak masuk.
+- **Dugaan Penyebab:** Saat `[BL-018]` menambahkan kolom jejak potongan, jalur offline hanya diajari **mengenali** harga berdiskon supaya tidak membanjiri `needs_review` (`matchesAnyValidPrice()`, `[BL-018]` poin 7), tidak diajari **mencatatnya**.
+- **Usulan Perbaikan:**
+  1. **Payload baris offline membawa bahan jejaknya:** harga katalog yang dilihat perangkat dan id aturan diskon yang dipakai, bila ada. `override_unit_price` dan `discount_reason` sudah terkirim.
+  2. **Server mengisi kolom jejak, memperlakukan payload sebagai klaim, bukan kebenaran.** `original_unit_price` = harga katalog yang dilihat perangkat, karena itulah angka yang tercetak di struk; bila berbeda dari harga katalog server, baris ditandai dengan alasan "harga katalog berubah sejak snapshot". `discount_amount` = selisih harga katalog itu dan harga yang dibayar. `discount_rule_id` dan `discount_reason` diisi dari aturan server bila id kiriman memang milik tenant dan menyasar varian itu. `cost_price_at_sale` dan `margin_floor_at_sale` diisi saat sinkron — itu bahan terbaik yang ada, dan keterbatasannya ditulis di docblock.
+  3. **Harga khusus offline mengikuti penjaga yang sama dengan jalur online:** alasan dan `below_floor_approved_by` hanya tercatat bila pengirimnya owner. Dari non-owner, harga yang dibayar tetap dicatat (sudah dibayar), tanpa persetujuan, dan ditandai dengan alasan "harga khusus dari non-owner".
+  4. **Potongan yang tidak bisa dijelaskan aturan mana pun tetap dicatat SEBAGAI potongan** (`discount_amount` terisi, `discount_rule_id` kosong) dan ditandai. Tujuannya supaya ia muncul di laporan diskon, bukan menghilang dari sana.
+  5. **Test di `OfflineSyncTest`:** diskon sah offline tercatat lengkap dan tidak ditandai; harga khusus owner offline membawa alasan dan persetujuan; harga khusus dari kasir ditandai tanpa persetujuan; potongan tak dikenal tercatat dan ditandai; ringkasan diskon harian ikut menghitung baris offline.
+- **Yang JANGAN dilakukan:**
+  1. **Jangan mengisi ulang data lama dari harga katalog hari ini.** Harga katalog bisa sudah berubah sejak penjualannya, dan `original_unit_price` hasil tebakan membuat laporan diskon masa lalu tampak pasti padahal tidak. Kalau data lama perlu disentuh, tandai sebagai "jejak tidak lengkap", jangan dikarang.
+  2. **Jangan mengubah `unit_price` yang dibayar.** Prinsip jalur offline tetap: harga yang sudah dibayar dan tercetak di struk tidak ditimpa server.
+- **Bukan bagian entri ini — tetap di `[BL-103]`:** K2 (aturan dinilai saat sinkron, bukan saat penjualan) dan K3 (snapshot tanpa batas berlaku). Keduanya menghasilkan penanda palsu atau potongan basi, bukan jejak yang hilang, dan penyelesaiannya (riwayat versi harga, `valid_until` di snapshot) paling masuk akal dirancang bersama paket.
+
 ### [BL-028] Rekonsiliasi Kas Tidak Memperhitungkan Penjualan Tunai, dan Angka Server Tidak Per-Laci
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Catatan pemilik — "review dan mau diperbaiki konsep kas uang dalam menu kasir, bukan dari uang modal, tapi dari uang dari bertipe cash yang diterima harusnya include juga"

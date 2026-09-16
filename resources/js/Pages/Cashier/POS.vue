@@ -414,6 +414,23 @@ const getVariantStock = (variantId) => {
 // --- Barang kedaluwarsa ([BL-108]) ---
 
 /**
+/**
+ * Varian apa adanya dari katalog yang sedang dipegang layar ini — termasuk
+ * snapshot offline, karena bentuknya sama persis dengan props.
+ *
+ * Dipakai payload penjualan untuk menyebut harga katalog dan aturan diskon
+ * yang benar-benar DILIHAT perangkat saat menjual ([BL-115]). Baris keranjang
+ * sendiri sengaja tidak ikut menyimpannya: ia dibentuk di lima tempat berbeda,
+ * dan satu di antaranya pasti terlewat.
+ */
+const findCatalogVariant = (variantId) => {
+    for (const product of catalogProducts.value) {
+        const variant = (product.variants || []).find(v => v.id === variantId);
+        if (variant) return variant;
+    }
+    return null;
+};
+
  * Unit yang sudah kedaluwarsa dari sebuah varian, dihitung server per batch.
  * Snapshot katalog offline yang lebih tua dari kolom ini tidak punya angkanya:
  * dianggap nol, dan server tetap menjaga penjualannya.
@@ -1112,6 +1129,12 @@ const cartToItems = () => cart.value.map(item => ({
     modifiers: (item.modifiers || []).map(m => ({
         id: m.id,
         name: m.name,
+    // Harga katalog dan aturan diskon yang dilihat perangkat ([BL-115]).
+    // Jalur online mengabaikan keduanya — server menghitung sendiri — tapi
+    // jalur offline tidak punya sumber lain: tanpa ini, potongan yang terjadi
+    // saat perangkat putus tercatat sebagai penjualan biasa yang lebih murah.
+    catalog_unit_price: findCatalogVariant(item.variant_id)?.price ?? null,
+    discount_rule_id: findCatalogVariant(item.variant_id)?.discount_rule_id ?? null,
         extra_price: m.extra_price,
     })),
     notes: item.notes || null,
