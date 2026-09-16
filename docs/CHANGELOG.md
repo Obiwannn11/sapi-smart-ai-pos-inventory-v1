@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Langganan | Halaman Langganan Berhenti Menyebut "Kursi" dan "Pengguna" untuk Hal yang Sama |
 | 2026-09-17 | DECISION | Platform | Konsol Platform: "Kapabilitas" Jadi "Fitur", dan Satu-satunya Kata "Seat" di Layar Dibuang |
 | 2026-09-17 | DECISION | Owner | Stok, Produk, dan Aturan Diskon: "Adjustment" Jadi "Koreksi", dan Dialog Hapus Menyebut Akibatnya |
 | 2026-09-17 | DECISION | Kasir | Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama |
@@ -292,6 +293,21 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Halaman Langganan Berhenti Menyebut "Kursi" dan "Pengguna" untuk Hal yang Sama
+- **Tanggal:** 2026-09-17
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting halaman Langganan & Tagihan.
+  - **Satu nama untuk satu hal.** Panel Kapasitas memakai dua kata bergantian: tombolnya "Tambah pengguna", judulnya "Lepas pengguna tambahan", tapi kalimat penjelas dan tombol keduanya berbunyi "kursi" ("Kursi Anda sudah penuh", "Lepas kursi", "per kursi", "Paling banyak 3 kursi sekarang"). Tagihan yang terbit menyebut "Tambah pengguna", dan konsol platform menulis "Batas pengguna". Sekarang seluruh halaman memakai **pengguna**.
+  - Dua kalimat status pendek yang disambung tanda pisah dipecah: "Hubungi pengelola layanan" dan "Omzet Anda Rp …, di atas batas keringanan".
+- **Alasan:** Yang dibeli tenant adalah hak memakai aplikasi untuk seorang pengguna. "Kursi" adalah kiasan yang tidak pernah muncul di tagihannya, jadi pembacanya harus memetakan dua kata ke satu barang sambil memutuskan pembelian.
+- **File Terdampak:**
+  - `resources/js/Pages/Billing/Show.vue`: teks panel Kapasitas dan dua kalimat status
+  - `tests/Feature/Subscription/BillingCopyTest.php`: penjaga baru
+- **Catatan:** Paragraf penjelas panjang di halaman ini — dan tanda pisah di dalamnya — sengaja DIBIARKAN. Halaman ini dibaca sambil mengambil keputusan membeli, bukan sekilas di depan pelanggan seperti layar kasir, dan kalimat-kalimatnya menerangkan konsekuensi yang memang perlu diterangkan. Aturan yang dipakai sepanjang audit ini: tanda pisah dibuang di teks yang dibaca sekilas, dibiarkan di teks yang memang dibaca.
 
 ### [DECISION] Konsol Platform: "Kapabilitas" Jadi "Fitur", dan Satu-satunya Kata "Seat" di Layar Dibuang
 - **Tanggal:** 2026-09-17

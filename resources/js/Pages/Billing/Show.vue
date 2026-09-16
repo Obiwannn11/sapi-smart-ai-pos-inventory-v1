@@ -297,7 +297,7 @@ const subsidyBlocked = computed(() => {
     if (props.subsidy.can_switch) return null;
 
     if (props.subsidy.reason === 'above_ceiling') {
-        return `Omzet Anda ${formatRupiah(props.subsidy.measured_revenue)} — di atas batas ${formatRupiah(props.subsidy.ceiling)} untuk keringanan. Harga Adaptif ditujukan untuk usaha beromzet rendah, jadi jalur yang berlaku bagi Anda adalah paket berbayar penuh.`;
+        return `Omzet Anda ${formatRupiah(props.subsidy.measured_revenue)}, di atas batas ${formatRupiah(props.subsidy.ceiling)} untuk keringanan. Harga Adaptif ditujukan untuk usaha beromzet rendah, jadi jalur yang berlaku bagi Anda adalah paket berbayar penuh.`;
     }
 
     if (props.subsidy.reason === 'cooldown') {
@@ -441,7 +441,7 @@ const reactivationBlockedNote = computed(() => {
         case 'already_invoiced':
             return 'Tagihan yang harus diselesaikan sudah ada di tab Tagihan. Bayar tagihan itu, dan akses Anda terbuka kembali.';
         case 'not_ready':
-            return 'Tarif periode ini belum bisa dihitung karena ringkasan omzet penentunya belum tersedia. Hubungi pengelola layanan — kami tidak menerbitkan tagihan dengan angka yang belum tentu benar.';
+            return 'Tarif periode ini belum bisa dihitung karena ringkasan omzet penentunya belum tersedia. Hubungi pengelola layanan. Kami tidak menerbitkan tagihan dengan angka yang belum tentu benar.';
         default:
             return 'Tarif langganan Anda belum ditetapkan, jadi belum ada tagihan yang bisa diterbitkan. Hubungi pengelola layanan untuk membuka kembali akun Anda.';
     }
@@ -854,14 +854,14 @@ const invoiceStatusLabels = {
                                     <div class="flex items-baseline justify-between">
                                         <dt class="text-sm text-muted-foreground">Pengguna</dt>
                                         <dd class="text-sm font-medium text-foreground tabular-nums">
-                                            {{ subscription.seats }} kursi
+                                            {{ subscription.seats }} pengguna
                                         </dd>
                                     </div>
 
                                     <p class="mt-1 text-xs text-muted-foreground leading-relaxed">
                                         {{ subscription.included_seats }} dari paket {{ subscription.plan_name }}<template v-if="subscription.extra_seats > 0">,
-                                        <span class="text-foreground font-medium">{{ subscription.extra_seats }} kursi tambahan yang Anda beli</span>
-                                        ({{ formatRupiah(upgrade.extra_seat_price) }}/kursi/bulan = {{ extraSeatsCost }}/bulan)</template>.
+                                        <span class="text-foreground font-medium">{{ subscription.extra_seats }} pengguna tambahan yang Anda beli</span>
+                                        ({{ formatRupiah(upgrade.extra_seat_price) }}/pengguna/bulan = {{ extraSeatsCost }}/bulan)</template>.
                                         Terpakai {{ subscription.seats_used }}, tersisa {{ Math.max(0, subscription.seats - subscription.seats_used) }}.
                                     </p>
 
@@ -876,9 +876,9 @@ const invoiceStatusLabels = {
                                          sejak dulu hanya dirender untuk owner. Sekarang tujuannya
                                          disebut, dan disebut hanya kepada yang punya tabnya. -->
                                     <p v-if="seatPercent >= 100" class="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                        Kursi Anda sudah penuh.
-                                        <template v-if="tenant.is_owner">Penambahan kursi ada di tab Kapasitas.</template>
-                                        <template v-else>Penambahan kursi adalah keputusan pemilik usaha.</template>
+                                        Jatah pengguna Anda sudah penuh.
+                                        <template v-if="tenant.is_owner">Penambahan pengguna ada di tab Kapasitas.</template>
+                                        <template v-else>Penambahan pengguna adalah keputusan pemilik usaha.</template>
                                     </p>
 
                                     <!-- Pelepasan yang sudah dijadwalkan. Tanggalnya wajib
@@ -886,7 +886,7 @@ const invoiceStatusLabels = {
                                          dipakai, dan tenant yang hanya melihat "akan
                                          dilepas" akan mengira kursinya hilang hari ini. -->
                                     <p v-if="upgrade.release_at" class="mt-2 text-xs text-muted-foreground">
-                                        Pelepasan kursi tercatat: mulai {{ formatDate(upgrade.release_at) }} kursi tambahan Anda
+                                        Pelepasan pengguna tercatat: mulai {{ formatDate(upgrade.release_at) }} pengguna tambahan Anda
                                         menjadi {{ upgrade.scheduled_seats }}. Sampai tanggal itu semuanya masih bisa dipakai.
                                     </p>
                                 </div>
@@ -1211,8 +1211,8 @@ const invoiceStatusLabels = {
                                 langsung aktif dan tidak menambah tagihan apa pun.
                             </p>
                             <p v-else class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                                Kursi baru langsung bisa dipakai dan <span class="text-foreground font-medium">gratis sampai periode ini habis</span>.
-                                Sesudah itu ia masuk tagihan bulanan sebesar {{ formatRupiah(upgrade.extra_seat_price) }} per kursi —
+                                Pengguna tambahannya langsung bisa dipakai dan <span class="text-foreground font-medium">gratis sampai periode ini habis</span>.
+                                Sesudah itu ia masuk tagihan bulanan sebesar {{ formatRupiah(upgrade.extra_seat_price) }} per pengguna,
                                 tidak ada tagihan terpisah di tengah bulan.
                             </p>
 
@@ -1260,13 +1260,13 @@ const invoiceStatusLabels = {
                                     Menambah pengguna lagi akan membatalkannya.
                                 </p>
                                 <p v-else-if="upgrade.releasable_seats < 1" class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                                    Semua kursi Anda sedang dipakai staf aktif. Nonaktifkan salah satu staf dulu, baru kursinya
+                                    Semua jatah pengguna Anda sedang dipakai staf aktif. Nonaktifkan salah satu staf dulu, baru jatahnya
                                     bisa dilepas — pelepasan tidak akan mematikan akun siapa pun.
                                 </p>
                                 <template v-else>
                                     <p class="mt-1 text-sm text-muted-foreground leading-relaxed">
-                                        Berlaku di akhir periode berikutnya, bukan hari ini: kursinya masih bisa dipakai selama
-                                        periode yang sudah ditagihkan. Paling banyak {{ upgrade.releasable_seats }} kursi sekarang.
+                                        Berlaku di akhir periode berikutnya, bukan hari ini: jatahnya masih bisa dipakai selama
+                                        periode yang sudah ditagihkan. Paling banyak {{ upgrade.releasable_seats }} pengguna sekarang.
                                     </p>
 
                                     <form class="mt-3 flex flex-wrap items-end gap-3" @submit.prevent="submitRelease">
@@ -1286,7 +1286,7 @@ const invoiceStatusLabels = {
                                             :disabled="releaseForm.processing"
                                             class="px-4 py-2 border border-border text-foreground text-sm font-semibold rounded-lg hover:bg-muted disabled:opacity-50"
                                         >
-                                            Lepas kursi
+                                            Lepas pengguna
                                         </button>
                                     </form>
 
