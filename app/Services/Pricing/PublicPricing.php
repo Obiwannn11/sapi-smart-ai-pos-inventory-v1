@@ -2,6 +2,7 @@
 
 namespace App\Services\Pricing;
 
+use App\Models\AiBlockPrice;
 use App\Models\Plan;
 use App\Services\PricingService;
 use App\Services\SubscriptionService;
@@ -64,7 +65,7 @@ class PublicPricing
             // berbohong.
             'ai_quota' => [
                 'block_size' => (int) config('subscription.ai_quota.block_size'),
-                'block_price' => (float) config('subscription.ai_quota.block_price'),
+                'block_price' => AiBlockPrice::current(),
             ],
         ];
     }

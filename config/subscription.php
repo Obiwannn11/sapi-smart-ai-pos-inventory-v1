@@ -212,6 +212,17 @@ return [
 
         /**
          * Harga satu blok per bulan, rupiah. Seragam untuk semua paket.
+         *
+         * **Hanya bawaan, bukan lagi sumbernya.** Sejak 2026-09-16 angkanya
+         * disunting pemilik SaaS dari `/platform/pricing-rules` dan disimpan di
+         * tabel `ai_block_prices`; nilai di sini yang berlaku hanya selama tabel
+         * itu masih kosong. Mengubahnya di pemasangan yang sudah pernah
+         * disunting tidak berpengaruh apa pun — baca lewat
+         * `AiBlockPrice::current()`, jangan lewat config.
+         *
+         * Yang disunting di panel berlaku juga untuk blok yang SUDAH dibeli,
+         * pada tagihan berikutnya. Itu keputusan pemilik, bukan kelalaian:
+         * tidak ada grandfathering untuk komponen ini.
          */
         'block_price' => 15_000,
 

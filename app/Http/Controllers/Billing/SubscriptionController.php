@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiBlockPrice;
 use App\Models\Subscription;
 use App\Models\TenantConsent;
 use App\Services\Ai\AiQuota;
@@ -103,7 +104,7 @@ class SubscriptionController extends Controller
             // saya lakukan terhadap jatah itu", dan hanya berlaku di sini.
             'aiQuotaOffer' => [
                 'block_size' => (int) config('subscription.ai_quota.block_size'),
-                'block_price' => (float) config('subscription.ai_quota.block_price'),
+                'block_price' => AiBlockPrice::current(),
                 'max_blocks' => (int) config('subscription.ai_quota.max_blocks'),
                 // Dikirim sebagai angka, bukan sebagai boleh/tidak, dengan
                 // alasan yang sama seperti `releasable_seats`: formulir yang

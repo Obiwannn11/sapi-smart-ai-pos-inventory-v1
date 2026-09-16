@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiBlockPrice;
 use App\Models\Plan;
 use App\Models\PlatformAuditLog;
 use App\Models\PricingRule;
@@ -67,6 +68,20 @@ class PricingRuleController extends Controller
             // Bawaan platform, untuk ditampilkan sebagai angka yang berlaku bila
             // paket tidak menyetel batasnya sendiri.
             'aiDailyDefault' => (int) config('ai.free_tier.daily_limit'),
+            // Harga blok kuota AI — satu angka, seragam untuk semua paket,
+            // karena itu ia berdiri sendiri dan bukan kolom di tabel paket.
+            //
+            // `is_custom` dikirim supaya panel bisa membedakan "Rp 15.000
+            // karena seseorang menetapkannya" dari "Rp 15.000 karena itu bawaan
+            // berkas config" — beda yang sama persis dengan `ai_daily_limit`
+            // null pada paket, dan sama pentingnya untuk tidak disembunyikan.
+            'aiBlockPrice' => [
+                'value' => AiBlockPrice::current(),
+                'is_custom' => AiBlockPrice::record() !== null,
+                'config_default' => (float) config('subscription.ai_quota.block_price'),
+                'block_size' => (int) config('subscription.ai_quota.block_size'),
+                'max_blocks' => (int) config('subscription.ai_quota.max_blocks'),
+            ],
             // Katalog dimensi menggerakkan form: pilihan dimensi, operator yang
             // masuk akal per tipe, dan nilai sah untuk dimensi beratribut. Panel
             // tidak menyalin daftar ini — ia menerimanya, sehingga dimensi baru
@@ -248,6 +263,47 @@ class PricingRuleController extends Controller
         ]);
 
         return back()->with('success', 'Paket baru dibuat.');
+    }
+
+    /**
+     * Ubah harga satu blok kuota AI.
+     *
+     * Satu-satunya angka di halaman ini yang TIDAK di-grandfather, dan
+     * perkecualian itu keputusan pemilik 2026-09-16: blok yang sudah dibeli
+     * ikut harga baru pada tagihan berikutnya. Karena itu ia tidak punya
+     * `effective_from` seperti aturan, tidak punya padanan `price_locked`
+     * seperti paket, dan pesan suksesnya sengaja mengatakannya terbalik dari
+     * pesan kedua tetangganya — orang yang baru saja menyunting paket akan
+     * membawa harapan yang salah ke formulir ini bila tidak diberi tahu.
+     *
+     * Tarif per periode yang SUDAH ditagihkan tidak ikut berubah: tiap tagihan
+     * membekukan `ai_block_price`-nya sendiri sejak `[BL-069]`.
+     */
+    public function updateAiBlockPrice(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            // Batas atasnya ada karena akibat salah ketik di sini menimpa
+            // SELURUH pembeli sekaligus, bukan satu tenant — dan menimpanya di
+            // tagihan berikutnya, tanpa satu pun lapis grandfathering yang
+            // menahannya seperti pada paket dan aturan.
+            'block_price' => ['required', 'numeric', 'min:0', 'max:10000000'],
+        ]);
+
+        $sebelum = AiBlockPrice::current();
+        $adalahBawaan = AiBlockPrice::record() === null;
+
+        $price = AiBlockPrice::put((float) $validated['block_price']);
+
+        PlatformAuditLog::record('ai-block-price.update', $price, [
+            'before' => $sebelum,
+            'after' => (float) $price->block_price,
+            // Perlu terbaca sebagai peristiwa yang berbeda: yang pertama kali
+            // menyuntingnya mencabut angka bawaan config untuk selamanya,
+            // sesudah itu yang berubah hanya angkanya.
+            'was_config_default' => $adalahBawaan,
+        ]);
+
+        return back()->with('success', 'Harga blok kuota AI diperbarui. Berbeda dari paket dan aturan, harga ini juga berlaku untuk blok yang sudah dibeli — mulai tagihan periode berikutnya.');
     }
 
     /**

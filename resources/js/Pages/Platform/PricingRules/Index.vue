@@ -18,6 +18,7 @@ const props = defineProps({
     rules: { type: Array, required: true },
     dimensions: { type: Array, required: true },
     aiDailyDefault: { type: Number, required: true },
+    aiBlockPrice: { type: Object, required: true },
 });
 
 // --- Katalog dimensi ---
@@ -150,6 +151,19 @@ const submitPlan = () => {
         preserveScroll: true,
         onSuccess: () => { editingPlan.value = null; },
     });
+};
+
+// --- Harga blok kuota AI ---
+// Satu angka untuk semua paket, dan satu-satunya di halaman ini yang berlaku
+// juga untuk yang SUDAH dibeli. Formulirnya karena itu tidak ditaruh di modal
+// seperti paket: yang perlu dibaca sebelum menekan simpan adalah peringatannya,
+// dan peringatan di dalam modal hanya terbaca oleh yang sudah membukanya.
+const aiBlockPriceForm = useForm({
+    block_price: props.aiBlockPrice.value,
+});
+
+const submitAiBlockPrice = () => {
+    aiBlockPriceForm.put('/platform/ai-block-price', { preserveScroll: true });
 };
 
 // --- Paket baru ---
@@ -419,6 +433,39 @@ const confirmDelete = () => {
                 </td>
             </tr>
         </DataTable>
+
+        <!-- ── Blok kuota AI tambahan ───────────────────────────────────── -->
+        <div class="mb-8 rounded-lg border border-border bg-card p-4">
+            <h3 class="text-sm font-semibold text-foreground">Blok kuota AI tambahan</h3>
+            <p class="mt-1 text-xs text-muted-foreground leading-relaxed max-w-2xl">
+                Dijual seperti pengguna tambahan: komponen bulanan yang berulang, dibeli dan dilepas tenant dari
+                halaman langganannya. Satu blok menaikkan plafon harian sebesar
+                <span class="font-medium text-foreground">{{ aiBlockPrice.block_size }} analisis</span>, paling banyak
+                {{ aiBlockPrice.max_blocks }} blok per langganan. Harganya seragam untuk semua paket — ongkos satu
+                analisis tidak berbeda menurut paket pembelinya.
+            </p>
+
+            <Notice tone="warning" class="mt-3 max-w-2xl">
+                Berbeda dari paket dan aturan di halaman ini, harga ini
+                <span class="font-medium">tidak di-grandfather</span>: blok yang sudah dibeli tenant ikut harga baru
+                mulai tagihan periode berikutnya. Tagihan yang sudah terbit tetap memegang tarif lamanya.
+            </Notice>
+
+            <form class="mt-4 flex flex-wrap items-end gap-3" @submit.prevent="submitAiBlockPrice">
+                <FormField
+                    label="Harga per blok / bulan"
+                    class="w-56"
+                    :error="aiBlockPriceForm.errors.block_price"
+                >
+                    <input v-model.number="aiBlockPriceForm.block_price" type="number" min="0" :class="inputClass" />
+                </FormField>
+                <Button type="submit" size="sm" :disabled="aiBlockPriceForm.processing">Simpan harga</Button>
+                <p class="text-xs text-muted-foreground">
+                    Berlaku sekarang: <span class="font-medium text-foreground">{{ formatRupiah(aiBlockPrice.value) }}</span>
+                    <span v-if="!aiBlockPrice.is_custom"> — bawaan berkas config, belum pernah disetel dari sini.</span>
+                </p>
+            </form>
+        </div>
 
         <!-- ── Aturan: jalur Harga Adaptif ──────────────────────────────── -->
         <div class="flex flex-wrap items-start justify-between gap-3 mb-3">

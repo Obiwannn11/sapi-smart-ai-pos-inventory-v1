@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\ComputeTenantMonthlyRevenue;
+use App\Models\AiBlockPrice;
 use App\Models\Invoice;
 use App\Models\Plan;
 use App\Models\PlatformAuditLog;
@@ -524,18 +525,25 @@ class SubscriptionService
      * berselisih pada hal yang paling mahal untuk salah: apa yang berhak
      * ditagih.
      *
-     * **Tarifnya dari config, bukan dari paket,** dan di sinilah ia berpisah
-     * dari seat. `extra_seat_price` bertangga per paket karena seat adalah hak
-     * yang nilainya berbeda menurut ukuran tenant; ongkos satu analisis tidak
+     * **Tarifnya seragam, bukan per paket,** dan di sinilah ia berpisah dari
+     * seat. `extra_seat_price` bertangga per paket karena seat adalah hak yang
+     * nilainya berbeda menurut ukuran tenant; ongkos satu analisis tidak
      * berbeda menurut paket pembelinya, sehingga tangga di sana hanya akan jadi
      * angka yang harus dijelaskan tanpa punya dasar.
+     *
+     * Dibaca SETIAP periode dari `AiBlockPrice`, tidak pernah dibekukan di
+     * langganan — keputusan pemilik 2026-09-16: blok yang sudah dibeli ikut
+     * harga baru. Yang membekukannya tetap ada, tapi di hilir, pada tagihan
+     * yang sudah terbit (`pricing_context.billing_breakdown.ai_block_price`),
+     * sehingga tagihan lama tetap bisa dijelaskan sementara tagihan berikutnya
+     * memakai tarif yang berlaku hari ini.
      *
      * @return array{blocks: int, block_size: int, unit_price: float, amount: float}
      */
     public function aiQuotaChargeFor(Subscription $subscription, ?Carbon $periodStart = null): array
     {
         $blocks = $subscription->entitledAiBlocks($periodStart);
-        $unitPrice = (float) config('subscription.ai_quota.block_price', 0);
+        $unitPrice = AiBlockPrice::current();
 
         return [
             'blocks' => $blocks,

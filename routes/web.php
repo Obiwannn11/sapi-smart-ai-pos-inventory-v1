@@ -228,6 +228,8 @@ Route::middleware(['auth', 'tenant'])
                 ->name('reports.monthly');
             Route::get('reports/monthly/export', [\App\Http\Controllers\Owner\ReportController::class, 'monthlyExport'])
                 ->name('reports.monthly.export');
+            Route::get('reports/monthly/export/excel', [\App\Http\Controllers\Owner\ReportController::class, 'monthlyExportExcel'])
+                ->name('reports.monthly.export.excel');
 
             Route::get('reports/upsell', [\App\Http\Controllers\Owner\ReportController::class, 'upsell'])
                 ->name('reports.upsell');
@@ -634,6 +636,12 @@ Route::prefix('platform')
                     ->name('plans.store');
                 Route::put('/plans/{plan}', [\App\Http\Controllers\Platform\PricingRuleController::class, 'updatePlan'])
                     ->name('plans.update');
+                // Harga blok kuota AI. Menumpang modul yang sama karena ia
+                // tarif yang dibayar tenant — sisi yang berseberangan dengan
+                // `/platform/ai-quota`, yang mengurus tagihan kunci bersama
+                // milik pemilik SaaS dan karena itu punya modulnya sendiri.
+                Route::put('/ai-block-price', [\App\Http\Controllers\Platform\PricingRuleController::class, 'updateAiBlockPrice'])
+                    ->name('ai-block-price.update');
             });
 
             // Modul: Kuota AI — kebijakan jatah analisis harian, dan tombol

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Models\AiBlockPrice;
 use App\Services\SubscriptionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -68,7 +69,7 @@ class AiQuotaController extends Controller
             'Jatah analisis AI Anda bertambah %d per hari dan langsung berlaku hari ini. '
             .'Tambahannya gratis sampai periode ini habis, lalu masuk tagihan bulanan sebesar %s per blok.',
             $validated['blocks'] * (int) config('subscription.ai_quota.block_size'),
-            'Rp '.number_format((float) config('subscription.ai_quota.block_price'), 0, ',', '.'),
+            'Rp '.number_format(AiBlockPrice::current(), 0, ',', '.'),
         ));
     }
 

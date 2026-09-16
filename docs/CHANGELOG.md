@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-16 | ADDITION | Platform | Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather |
 | 2026-09-16 | DECISION | Kasir | Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir |
 | 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
 | 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
@@ -288,6 +289,28 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [ADDITION] Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Schema | Model | Controller | Service | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Harga satu blok kuota AI tambahan (`subscription.ai_quota.block_price`, Rp 15.000/bulan) adalah satu-satunya tarif yang dibayar tenant yang masih menuntut deploy untuk berubah — paket, seat, dan seluruh bracket Adaptif sudah lama jadi baris tabel yang disunting dari platform console. Sekarang ia ikut.
+  - **Tabel `ai_block_prices`, satu baris.** Lahir kosong, mengikuti preseden `ai_quota_policies`: selama belum ada yang menyuntingnya, `config/subscription.php` tetap lapis terakhir yang berlaku, sehingga pemasangan migrasi ini sendiri tidak mengubah tagihan satu tenant pun. `AiBlockPrice::current()` jadi satu-satunya pembaca angka ini; empat pembaca config lama (penerbit tagihan, panel langganan tenant, pesan sukses pembelian, halaman harga publik) dialihkan ke sana.
+  - **Panelnya menumpang `/platform/pricing-rules`,** bukan `/platform/ai-quota`. Batas yang sudah ditarik `routes/web.php` dipegang: halaman kuota AI mengurus tagihan kunci bersama milik pemilik SaaS, halaman aturan harga mengurus tarif yang dibayar tenant. Harga blok adalah yang kedua, jadi ia digerbang modul `pricing_rules`.
+  - **TIDAK ada grandfathering, dan itu keputusan pemilik 2026-09-16.** Blok yang sudah dibeli ikut harga baru mulai tagihan periode berikutnya. Ia karena itu tidak punya `effective_from` seperti aturan dan tidak punya padanan `price_locked` seperti paket — dua lapis yang justru melindungi setiap angka lain di halaman yang sama.
+  - **Karena itu panelnya mengatakannya terbalik dari tetangganya.** Kotak peringatan di halaman itu berbunyi "perubahan tidak mengubah tagihan yang sedang berjalan"; panel harga blok memasang peringatannya sendiri yang mengatakan kebalikannya, dan pesan suksesnya mengulanginya. Orang yang baru saja menyunting paket akan membawa harapan yang salah ke formulir ini bila tidak diberi tahu.
+  - **Yang tetap menjaga tagihan lama bisa dijelaskan** bukan grandfathering, melainkan `invoices.pricing_context.billing_breakdown.ai_block_price` yang sudah membekukan tarif tiap periode sejak `[BL-069]`. Ada tesnya sekarang, dua arah: tagihan berikutnya memakai harga baru, tagihan yang sudah terbit tidak ikut berubah.
+  - **Batas atas Rp 10.000.000 per blok** pada validasinya. Bukan kehati-hatian berlebih: tanpa grandfathering, satu salah ketik di sini menimpa SELURUH pembeli sekaligus pada tagihan berikutnya, tidak seperti salah ketik di paket yang masih tertahan `price_locked`.
+  - **`block_size` dan `max_blocks` sengaja TETAP di config.** Keduanya bukan harga: mengubah `block_size` mengubah kapasitas yang sudah dimiliki orang, dan itu keputusan yang berbeda jenis, bukan angka yang tinggal disunting.
+- **Alasan:** Tarif yang menuntut deploy untuk berubah adalah tarif yang pada praktiknya tidak pernah berubah. Yang membuat entri ini perlu ditulis panjang bukan perpindahannya, melainkan perkecualiannya: satu angka yang berperilaku berbeda dari seluruh tetangganya di halaman yang sama akan dibaca sebagai berperilaku sama, kecuali ada yang menuliskannya — di panel, di pesan sukses, di docblock, dan di tes yang gagal bila seseorang kelak "menyeragamkannya".
+- **File Terdampak:**
+  - `database/migrations/2026_09_17_005011_create_ai_block_prices_table.php`, `app/Models/AiBlockPrice.php`: tabel satu baris dan satu-satunya pembacanya
+  - `app/Http/Controllers/Platform/PricingRuleController.php`, `routes/web.php`, `resources/js/Pages/Platform/PricingRules/Index.vue`: panel, rute `PUT /platform/ai-block-price`, jejak audit `ai-block-price.update`
+  - `app/Services/SubscriptionService.php`, `app/Services/Pricing/PublicPricing.php`, `app/Http/Controllers/Billing/SubscriptionController.php`, `app/Http/Controllers/Billing/AiQuotaController.php`: empat pembaca config dialihkan
+  - `config/subscription.php`: nilainya turun pangkat jadi bawaan, dengan catatan bahwa ia tidak berpengaruh di pemasangan yang sudah pernah disunting
+  - `tests/Feature/Platform/AiBlockPriceTest.php`: 10 tes, dua di antaranya menjaga keputusan tanpa-grandfathering dari kedua arahnya
 
 ### [DECISION] Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir
 - **Tanggal:** 2026-09-16
