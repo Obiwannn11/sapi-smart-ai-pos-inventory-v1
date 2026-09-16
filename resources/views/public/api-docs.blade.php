@@ -1628,6 +1628,7 @@ Content-Type: application/json</pre>
                     </div>
                     <div class="endpoint-body">
                         <p class="endpoint-desc">Mengembalikan data struk lengkap: informasi tenant, detail transaksi, item dengan modifier, dan rincian pembayaran. Digunakan untuk mencetak struk.</p>
+                        <p class="endpoint-desc"><code>price</code> adalah harga yang dibayar per unit, <code>original_price</code> harga normal saat penjualan, dan <code>discount_amount</code> potongan per unit (<code>0</code> bila tanpa potongan). Cetak baris berdiskon sebagai harga normal lalu baris <em>Diskon</em>. <code>discount_total</code> adalah jumlah potongan untuk baris "Anda hemat" &mdash; keterangan saja, subtotal sudah bersih dari potongan. <code>original_price</code> bernilai <code>null</code> pada transaksi tanpa jejak potongan (penjualan offline).</p>
 
                         <div class="param-section">
                             <div class="param-label">Path Parameter</div>
@@ -1664,6 +1665,7 @@ Accept: application/json</pre>
       <span class="tok-key">"date"</span>: <span class="tok-str">"29/05/2026 14:30"</span>,
       <span class="tok-key">"cashier"</span>: <span class="tok-str">"Budi Santoso"</span>,
       <span class="tok-key">"total_amount"</span>: <span class="tok-num">36000</span>,
+      <span class="tok-key">"discount_total"</span>: <span class="tok-num">0</span>,
       <span class="tok-key">"change_amount"</span>: <span class="tok-num">4000</span>,
       <span class="tok-key">"status"</span>: <span class="tok-str">"completed"</span>,
       <span class="tok-key">"order_type"</span>: <span class="tok-str">"dine_in"</span>,
@@ -1676,6 +1678,8 @@ Accept: application/json</pre>
         <span class="tok-key">"name"</span>: <span class="tok-str">"Kopi Susu Regular"</span>,
         <span class="tok-key">"qty"</span>: <span class="tok-num">2</span>,
         <span class="tok-key">"price"</span>: <span class="tok-num">18000</span>,
+        <span class="tok-key">"original_price"</span>: <span class="tok-num">18000</span>,
+        <span class="tok-key">"discount_amount"</span>: <span class="tok-num">0</span>,
         <span class="tok-key">"subtotal"</span>: <span class="tok-num">36000</span>,
         <span class="tok-key">"notes"</span>: <span class="tok-str">"Gula sedikit"</span>,
         <span class="tok-key">"modifiers"</span>: [

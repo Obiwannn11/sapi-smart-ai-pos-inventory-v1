@@ -426,6 +426,7 @@ Authorization: Bearer {token}
       "date": "14/05/2026 09:30",
       "cashier": "Budi Kasir",
       "total_amount": 39000,
+      "discount_total": 3000,
       "change_amount": 11000,
       "status": "completed",
       "order_type": "dine_in",
@@ -439,6 +440,8 @@ Authorization: Bearer {token}
         "name": "Regular",
         "qty": 2,
         "price": 12000,
+        "original_price": 12000,
+        "discount_amount": 0,
         "subtotal": 27000,
         "notes": "less ice",
         "modifiers": [
@@ -451,8 +454,10 @@ Authorization: Bearer {token}
       {
         "name": "Original",
         "qty": 1,
-        "price": 15000,
-        "subtotal": 15000,
+        "price": 12000,
+        "original_price": 15000,
+        "discount_amount": 3000,
+        "subtotal": 12000,
         "notes": null,
         "modifiers": []
       }
@@ -470,6 +475,8 @@ Authorization: Bearer {token}
 
 > **Catatan subtotal:** subtotal item sudah include extra_price modifier × qty.  
 > Contoh: Regular 2×12000 + (1500×2) = 27000
+
+> **Catatan potongan:** `price` adalah harga yang **dibayar** per unit, `original_price` harga normal saat penjualan, dan `discount_amount` potongan **per unit** (`0` bila tanpa potongan). Cetak baris berdiskon sebagai harga normal lalu potongannya — contoh: `1 x Rp 15.000 … Rp 15.000`, lalu `Diskon … -Rp 3.000`. `discount_total` adalah jumlah seluruh potongan untuk baris "Anda hemat"; ia **keterangan**, jangan dikurangkan lagi dari subtotal karena subtotal sudah bersih. `original_price` bernilai `null` pada transaksi tanpa jejak potongan (penjualan offline); cetak baris itu apa adanya tanpa baris diskon.
 
 ### Error
 

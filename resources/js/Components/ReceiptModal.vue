@@ -5,6 +5,7 @@ import BrandMark from '@/Components/BrandMark.vue';
 import { useThermalPrinter } from '@/composables/useThermalPrinter';
 import PrinterSetupModal from '@/Components/PrinterSetupModal.vue';
 import { BUSINESS_TZ } from '@/support/date';
+import { itemDiscount, receiptSavings } from '@/support/discount';
 import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 
 const props = defineProps({
@@ -59,6 +60,14 @@ const totals = computed(() => receiptTotals(props.transaction));
 const subtotal = computed(() => totals.value.subtotal);
 const tax = computed(() => taxLine(totals.value));
 const serviceCharge = computed(() => serviceChargeLine(totals.value));
+
+// Potongan dibaca dari helper yang sama dengan struk termal ([BL-103] butir
+// 2a), supaya layar dan kertas tidak pernah menulisnya dengan cara berbeda.
+const receiptLines = computed(() => (props.transaction?.items || []).map((item) => ({
+    item,
+    discount: itemDiscount(item),
+})));
+const savings = computed(() => receiptSavings(props.transaction));
 
 const totalPaid = computed(() => {
     if (!props.transaction?.payments) return 0;
@@ -176,15 +185,21 @@ const printThermal = async () => {
 
                             <!-- ===== ITEMS ===== -->
                             <div class="py-2.5 border-b border-dashed border-gray-400 space-y-2">
-                                <div v-for="item in transaction.items" :key="item.id">
-                                    <!-- Item name + subtotal -->
+                                <div v-for="{ item, discount } in receiptLines" :key="item.id">
+                                    <!-- Nama + jumlah baris. Baris berdiskon memakai
+                                         jumlah SEBELUM dipotong, lalu potongannya di
+                                         bawah — kolom kanan dibaca menurun. -->
                                     <div class="flex justify-between items-start gap-2">
                                         <span class="flex-1 font-medium leading-tight">{{ item.variant_name }}</span>
-                                        <span class="shrink-0 font-semibold">{{ formatCurrency(item.subtotal) }}</span>
+                                        <span class="shrink-0 font-semibold">{{ formatCurrency(discount ? discount.grossSubtotal : item.subtotal) }}</span>
                                     </div>
-                                    <!-- Qty × unit price -->
+                                    <!-- Qty × harga normal (berdiskon) atau harga yang dibayar -->
                                     <div class="flex justify-between text-gray-500 pl-2">
-                                        <span>{{ item.qty }} × {{ formatCurrency(item.unit_price) }}</span>
+                                        <span>{{ item.qty }} × {{ formatCurrency(discount ? discount.originalUnitPrice : item.unit_price) }}</span>
+                                    </div>
+                                    <div v-if="discount" class="flex justify-between pl-2 text-gray-700">
+                                        <span>{{ discount.label }}</span>
+                                        <span>-{{ formatCurrency(discount.amount) }}</span>
                                     </div>
                                     <!-- Modifiers -->
                                     <div v-if="item.modifiers && item.modifiers.length > 0" class="pl-2 space-y-0.5">
@@ -232,6 +247,12 @@ const printThermal = async () => {
                                 <div v-if="tax && !tax.inline" class="flex justify-between text-gray-500">
                                     <span>{{ tax.text }}</span>
                                     <span>{{ formatCurrency(tax.amount) }}</span>
+                                </div>
+                                <!-- Keterangan, bukan baris hitungan: subtotal
+                                     sudah bersih dari potongan. -->
+                                <div v-if="savings > 0" class="flex justify-between text-gray-500">
+                                    <span>Anda hemat</span>
+                                    <span>{{ formatCurrency(savings) }}</span>
                                 </div>
                             </div>
 

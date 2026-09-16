@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
 | 2026-09-16 | DECISION | Kasir | Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin |
 | 2026-09-15 | HOTFIX | Kasir | Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab |
 | 2026-09-15 | ADDITION | Stok | Riwayat Stok Menyebut Batch yang Disentuh Tiap Mutasi |
@@ -287,6 +288,32 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ## Revision History
 
 ### [DECISION] Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin
+### [ADDITION] Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a)
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase — `[BL-103]` butir 2a, dikerjakan lebih dulu atas keputusan pemilik supaya struk transparan sebelum paket berdiskon lahir.
+- **Dampak:** Frontend (`ReceiptModal.vue`, `services/escpos.js`, helper baru `support/discount.js`), API mobile (`MobileTransactionController::receipt()`), dokumentasi API, test.
+- **Breaking Change:** Tidak. Struk API mobile mendapat tiga kolom baru (`items[].original_price`, `items[].discount_amount`, `transaction.discount_total`); `price` tetap harga yang dibayar per unit, jadi pembaca lama tidak berubah.
+- **Deskripsi:** Sebelum ini, Teh Manis yang didiskon dari Rp 10.000 ke Rp 7.000 tercetak "2 x Rp 7.000" — angka yang tidak ada di papan menu, tanpa satu kata pun tentang sebabnya. Diskon `[BL-018]` dan harga khusus owner sama-sama hanya terlihat sebagai harga satuan yang lebih kecil. Pemilik meminta struknya transparan supaya pelanggan tidak kaget.
+- **Bentuk struknya:**
+  - Baris berdiskon mencetak **harga normal × qty** dengan jumlah sebelum dipotong, lalu baris **Diskon** tepat di bawahnya. Kolom kanan dibaca menurun: `Rp 20.000`, lalu `-Rp 6.000`.
+  - Baris tanpa potongan tidak berubah sama sekali.
+  - **Anda hemat** muncul di bawah TOTAL bila ada potongan. Ia keterangan, bukan baris hitungan: subtotal yang tercetak sudah bersih dari potongan.
+  - Labelnya selalu **Diskon**. `discount_reason` sengaja tidak dicetak, karena ditulis untuk owner dan kasir (alasan aturan diskon, atau alasan harga khusus), bukan untuk pelanggan.
+- **Yang dibaca:** kolom yang dibekukan server saat penjualan (`original_unit_price`, dan `discount_amount` per unit), bukan harga katalog hari ini — struk yang dicetak ulang harus sama dengan kertas yang dibawa pulang. Baris tanpa `original_unit_price` tidak diberi baris diskon walau harganya di bawah katalog: penjualan offline hari ini tidak menyimpan jejak potongannya (`[BL-115]`), dan struk tidak boleh mengarangnya.
+- **Yang ternyata tidak perlu diubah:** penjualan offline tidak mencetak struk sama sekali (`queueOfflineSale()` hanya menampilkan pesan), dan ketiga pemanggil struk web (`POS.vue`, `TransactionHistory.vue`, `CashierTopbar.vue`) menerima objek transaksi dari server yang sudah membawa kedua kolom itu.
+- **Satu helper untuk tiga permukaan:** `itemDiscount()` dan `receiptSavings()` dipakai struk layar dan struk termal, dengan alasan yang sama seperti `support/tax.js`. Paket berdiskon (`[BL-103]` butir 2c) kelak cukup memberi label baris yang lain, bukan jalur cetak kedua.
+- **File Terdampak:**
+  - `resources/js/support/discount.js` — baru: `itemDiscount()`, `receiptSavings()`
+  - `resources/js/services/escpos.js` — baris harga normal + Diskon, dan "Anda hemat"
+  - `resources/js/Components/ReceiptModal.vue` — bentuk yang sama di struk layar
+  - `app/Http/Controllers/Api/V1/Mobile/MobileTransactionController.php` — `original_price`, `discount_amount`, `discount_total`
+  - `docs/phases-2/API-DOCS-Mobile.md`, `resources/views/public/api-docs.blade.php` — contoh respons dan catatan cara mencetaknya
+  - `tests/Feature/Cashier/ReceiptDiscountTest.php` — baru; menjalankan `escpos.js` sungguhan lewat node dengan transaksi hasil checkout: kertas 58 dan 80 mm, struk tanpa potongan, harga khusus owner tanpa alasannya, dan baris tanpa jejak potongan
+  - `tests/Feature/Api/MobileReceiptDiscountTest.php` — baru
+  - `docs/BACKLOG.md` — `[BL-103]` butir 2a ditandai selesai
+
+---
+
 - **Tanggal:** 2026-09-16
 - **Fase Terkait:** Di Luar Fase — keputusan pemilik (opsi A) sesudah jatah tawaran per transaksi benar-benar membatasi jumlah tawaran (lihat `[HOTFIX] Saran Jual Berhenti Beranak-Pinak …`).
 - **Dampak:** Service (`Upsell\Suggestion`, tiga strategi varian, `UpsellIndexBuilder`), Frontend (`UpsellStrip.vue`), test.

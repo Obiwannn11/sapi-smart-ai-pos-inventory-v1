@@ -9,6 +9,7 @@
  */
 
 import { BUSINESS_TZ } from '@/support/date';
+import { itemDiscount, receiptSavings } from '@/support/discount';
 import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 
 // ── Low-level command bytes ──────────────────────────────────────────────
@@ -163,8 +164,20 @@ export function buildReceipt(transaction, options = {}) {
     // ── Items ──
     const items = transaction.items || [];
     for (const item of items) {
+        const discount = itemDiscount(item);
+
         b.line(item.variant_name || '-');
-        b.line(twoCols(`  ${item.qty} x ${formatCurrency(item.unit_price)}`, formatCurrency(item.subtotal), width));
+
+        // Baris berdiskon dicetak dengan harga NORMAL lalu potongannya
+        // ([BL-103] butir 2a), supaya kolom kanan bisa dijumlahkan menurun.
+        // Mencetak harga yang sudah dipotong saja membuat pelanggan melihat
+        // angka yang lebih kecil dari papan menu tanpa tahu sebabnya.
+        if (discount) {
+            b.line(twoCols(`  ${item.qty} x ${formatCurrency(discount.originalUnitPrice)}`, formatCurrency(discount.grossSubtotal), width));
+            b.line(twoCols(`  ${discount.label}`, `-${formatCurrency(discount.amount)}`, width));
+        } else {
+            b.line(twoCols(`  ${item.qty} x ${formatCurrency(item.unit_price)}`, formatCurrency(item.subtotal), width));
+        }
 
         for (const mod of item.modifiers || []) {
             const extra = Number(mod.extra_price) > 0 ? formatCurrency(mod.extra_price) : '';
@@ -198,6 +211,12 @@ export function buildReceipt(transaction, options = {}) {
     b.raw(CMD.boldOff);
     if (tax && !tax.inline) {
         b.line(twoCols(tax.text, formatCurrency(tax.amount), width));
+    }
+    // Keterangan, bukan baris hitungan: subtotal di atas sudah bersih dari
+    // potongan, jadi angka ini tidak dikurangkan lagi dari apa pun.
+    const savings = receiptSavings(transaction);
+    if (savings > 0) {
+        b.line(twoCols('Anda hemat', formatCurrency(savings), width));
     }
     b.line(divider(width));
 

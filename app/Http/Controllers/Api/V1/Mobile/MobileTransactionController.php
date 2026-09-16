@@ -239,6 +239,14 @@ class MobileTransactionController extends Controller
                     'service_charge_rate' => $transaction->service_charge_rate,
                     'service_charge_label' => $transaction->service_charge_label,
                     'total_amount' => $transaction->total_amount,
+                    // Angka "Anda hemat" ([BL-103] butir 2a): keterangan,
+                    // bukan baris hitungan — subtotal di atas sudah bersih.
+                    'discount_total' => number_format(
+                        $transaction->items->sum(fn ($item) => $item->isDiscounted() ? (float) $item->discount_amount * $item->qty : 0),
+                        2,
+                        '.',
+                        '',
+                    ),
                     'change_amount' => $transaction->change_amount,
                     'status' => $transaction->status,
                     'order_type' => $transaction->order_type,
@@ -251,6 +259,12 @@ class MobileTransactionController extends Controller
                     'name' => $item->variant_name,
                     'qty' => $item->qty,
                     'price' => $item->unit_price,
+                    // Jejak potongan untuk dicetak ([BL-103] butir 2a).
+                    // `price` tetap harga yang DIBAYAR per unit;
+                    // `discount_amount` potongan PER UNIT. Keduanya null/0
+                    // pada baris tanpa jejak (penjualan offline, [BL-115]).
+                    'original_price' => $item->original_unit_price,
+                    'discount_amount' => $item->discount_amount,
                     'subtotal' => $item->subtotal,
                     'notes' => $item->notes,
                     'modifiers' => $item->modifiers->map(fn ($m) => [
