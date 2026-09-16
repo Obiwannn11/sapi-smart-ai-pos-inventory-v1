@@ -963,6 +963,7 @@ class TransactionService
                 $data['items'],
                 $tenantId,
                 $occurredAt,
+                $cashier,
             );
 
             // Pajak dihitung ulang di server dengan setelan tenant SEKARANG
@@ -974,7 +975,6 @@ class TransactionService
             $taxColumns = $this->tax->columnsFor(
                 $baseAmount,
                 $this->tax->contextFor($cashier->tenant),
-                $cashier,
                 $this->tax->serviceContextFor($cashier->tenant),
             );
 
@@ -1091,17 +1091,6 @@ class TransactionService
                 $needsReview = true;
             }
 
-            // Deduct OPTIMISTIK — sengaja tidak lewat StockService::deduct(), yang
-            // menolak saat stok tak cukup (WHERE stock >= qty) dan saat barang
-            // basi belum dikonfirmasi. Di sini keduanya BOLEH: barangnya sudah
-            // keluar dari rak. "Basi" dinilai pada hari penjualannya TERJADI,
-            // bukan hari sinkronisasinya.
-            $taken = $this->stockService->deductOffline(
-                $variant,
-                $qty,
-                $transaction->id,
-                $tenantId,
-                $occurredAt->toDateString(),
             // Jejak potongannya ikut dicatat ([BL-115]). Tanpa ini penjualan
             // berdiskon offline tersimpan sebagai penjualan biasa yang
             // kebetulan lebih murah, dan laporan diskon tidak pernah melihatnya.
@@ -1114,6 +1103,17 @@ class TransactionService
             );
             $needsReview = $needsReview || $trailNeedsReview;
 
+            // Deduct OPTIMISTIK — sengaja tidak lewat StockService::deduct(), yang
+            // menolak saat stok tak cukup (WHERE stock >= qty) dan saat barang
+            // basi belum dikonfirmasi. Di sini keduanya BOLEH: barangnya sudah
+            // keluar dari rak. "Basi" dinilai pada hari penjualannya TERJADI,
+            // bukan hari sinkronisasinya.
+            $taken = $this->stockService->deductOffline(
+                $variant,
+                $qty,
+                $transaction->id,
+                $tenantId,
+                $occurredAt->toDateString(),
             );
 
             if ($taken['went_negative']) {
@@ -1153,6 +1153,7 @@ class TransactionService
                 'unit_price' => $unitPrice,
                 'subtotal' => $subtotal,
                 'notes' => $line['notes'] ?? null,
+                ...$trailColumns,
                 ...$expiredColumns,
             ]);
 
@@ -1164,23 +1165,11 @@ class TransactionService
                 ]);
             }
 
-                ...$trailColumns,
             $totalAmount += $subtotal;
         }
 
         return [$totalAmount, $needsReview];
     }
-
-    /**
-     * Resolve modifier dari payload offline.
-     *
-     * @return array{0: float, 1: array<int, array{id:int, name:string, extra_price:float}>, 2: bool}
-     */
-    private function resolveOfflineModifiers(array $modifiers, int $qty, int $tenantId): array
-    {
-        $extraTotal = 0;
-        $resolved = [];
-        $needsReview = false;
 
     /**
      * Jejak potongan untuk satu baris penjualan offline ([BL-115]).
@@ -1293,6 +1282,17 @@ class TransactionService
             ? $pricing['rule']
             : null;
     }
+
+    /**
+     * Resolve modifier dari payload offline.
+     *
+     * @return array{0: float, 1: array<int, array{id:int, name:string, extra_price:float}>, 2: bool}
+     */
+    private function resolveOfflineModifiers(array $modifiers, int $qty, int $tenantId): array
+    {
+        $extraTotal = 0;
+        $resolved = [];
+        $needsReview = false;
 
         foreach ($modifiers as $mod) {
             // Modifier juga tanpa global scope — lewat group-nya ke tenant.

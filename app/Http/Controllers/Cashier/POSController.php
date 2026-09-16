@@ -162,13 +162,13 @@ class POSController extends Controller
             $variant->setAttribute('effective_price', $pricing['price']);
             $variant->setAttribute('discount_amount', $pricing['discount']);
             $variant->setAttribute('discount_reason', $pricing['rule']?->reason);
+            // Ikut dikirim supaya penjualan offline bisa menyebut aturan mana
+            // yang dipakainya ([BL-115]); server tetap memverifikasinya.
+            $variant->setAttribute('discount_rule_id', $pricing['rule']?->id);
         }
 
         return $products;
     }
-            // Ikut dikirim supaya penjualan offline bisa menyebut aturan mana
-            // yang dipakainya ([BL-115]); server tetap memverifikasinya.
-            $variant->setAttribute('discount_rule_id', $pricing['rule']?->id);
 
     public function store(StoreTransactionRequest $request): RedirectResponse
     {
