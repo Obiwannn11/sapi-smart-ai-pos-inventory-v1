@@ -98,7 +98,7 @@ const statusOf = (value) => TENANT_STATUS[value] ?? { label: value ?? '—', ton
         </Deferred>
 
         <Notice class="mt-6 max-w-2xl">
-            Jenis usaha, jumlah akun, riwayat tagihan, dan kapabilitas kasir tiap tenant ada di halaman rinciannya.
+            Jenis usaha, jumlah akun, riwayat tagihan, dan fitur kasir tiap tenant ada di halaman rinciannya.
             Jenis usaha adalah dasar penetapan harga, tapi <span class="font-medium">bukan milik kita</span> — ia
             diatur pemilik toko dari halaman Pengaturan mereka, dan hanya bisa dibaca di sana.
         </Notice>

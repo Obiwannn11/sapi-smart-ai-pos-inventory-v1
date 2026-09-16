@@ -30,7 +30,7 @@ const submit = () => form.post('/platform/reset-password', {
                 <div class="leading-none">
                     <span class="block text-lg font-bold text-foreground tracking-tight">SAPI</span>
                     <span class="block text-[0.625rem] font-semibold text-muted-foreground uppercase tracking-widest mt-0.5">
-                        Platform Console
+                        PLATFORM
                     </span>
                 </div>
             </div>

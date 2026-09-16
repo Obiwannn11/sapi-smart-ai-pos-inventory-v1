@@ -107,7 +107,7 @@ const severity = (value) =>
             v-slot="{ cellClass }"
             :columns="columns"
             :count="logs.data.length"
-            empty="Tidak ada catatan yang cocok dengan filter ini."
+            empty="Tidak ada catatan yang cocok dengan penyaring ini."
         >
             <tr v-for="log in logs.data" :key="log.id" class="hover:bg-accent/30 transition-colors">
                 <td :class="[cellClass, 'whitespace-nowrap text-muted-foreground tabular-nums']">{{ log.at }}</td>

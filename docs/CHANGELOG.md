@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Platform | Konsol Platform: "Kapabilitas" Jadi "Fitur", dan Satu-satunya Kata "Seat" di Layar Dibuang |
 | 2026-09-17 | DECISION | Owner | Stok, Produk, dan Aturan Diskon: "Adjustment" Jadi "Koreksi", dan Dialog Hapus Menyebut Akibatnya |
 | 2026-09-17 | DECISION | Kasir | Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama |
 | 2026-09-16 | ADDITION | Platform | Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather |
@@ -291,6 +292,25 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Konsol Platform: "Kapabilitas" Jadi "Fitur", dan Satu-satunya Kata "Seat" di Layar Dibuang
+- **Tanggal:** 2026-09-17
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting konsol platform. **Hasilnya pendek, dan itu temuannya sendiri:** halaman-halaman ini sudah ditulis spesifik, menyebut akibat, dan tidak memakai kata jualan kosong. Yang diperbaiki hanya istilah yang bertabrakan dengan kalimatnya sendiri.
+  - **"Kapabilitas" jadi "Fitur"** pada tab dan judul panel di rincian tenant. Panelnya sendiri sudah berbunyi "Fitur yang menyala untuk toko ini", dan di layar pemilik toko namanya juga fitur. Kalimat penunjuk di Daftar Tenant ikut.
+  - **"Seat" dibuang.** Kalimat di modal pindah paket berbunyi "seat yang sudah dibeli tidak hangus" tepat di bawah kalimat yang memakai "pengguna". Ini satu-satunya tempat di seluruh aplikasi yang menulis "seat" di layar; `PlanContentsTest` bahkan melarangnya di halaman publik.
+  - **Label "Periode (YYYY-MM)" jadi "Periode".** Formatnya sudah diperagakan placeholder "2026-08", jadi kode formatnya tidak perlu jadi label.
+  - Halaman Lupa Kata Sandi dan Atur Ulang Kata Sandi menulis "Platform Console", sedangkan halaman masuk dan verifikasi dua langkah menulis "PLATFORM". Disamakan.
+  - Pesan kosong Jejak Audit menyebut "penyaring", sama dengan halaman lain.
+- **Alasan:** Konsol ini dibaca operator layanan, jadi istilah teknis boleh. Yang tidak boleh adalah dua kata untuk satu hal di layar yang sama.
+- **File Terdampak:**
+  - `resources/js/Pages/Platform/Tenants/{Show,Index}.vue`, `resources/js/Pages/Platform/AuditLogs/Index.vue`
+  - `resources/js/Pages/Platform/{ForgotPassword,ResetPassword}.vue`
+  - `tests/Feature/Platform/PlatformCopyTest.php`: penjaga baru
+- **Catatan:** Tanda pisah di konsol platform sengaja DIBIARKAN. Di layar kasir ia dibuang karena kalimatnya harus dibaca sekilas sambil melayani pelanggan; di sini pembacanya operator yang memang sedang membaca, dan kalimat-kalimatnya punya suara yang jelas ditulis orang. Menyeragamkannya hanya akan mensterilkan tulisan yang sudah benar.
 
 ### [DECISION] Stok, Produk, dan Aturan Diskon: "Adjustment" Jadi "Koreksi", dan Dialog Hapus Menyebut Akibatnya
 - **Tanggal:** 2026-09-17

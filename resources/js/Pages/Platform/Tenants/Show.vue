@@ -58,7 +58,7 @@ const tabs = computed(() => [
     { key: 'ikhtisar', label: 'Ikhtisar' },
     ...(props.can.subscriptions && props.subscription ? [{ key: 'langganan', label: 'Langganan' }] : []),
     ...(props.can.payments ? [{ key: 'tagihan', label: 'Tagihan', badge: invoiceRows.value.length }] : []),
-    { key: 'kapabilitas', label: 'Kapabilitas' },
+    { key: 'kapabilitas', label: 'Fitur' },
     ...(props.can.revenue && isAdaptive.value ? [{ key: 'omzet', label: 'Omzet' }] : []),
 ]);
 
@@ -651,10 +651,10 @@ const revenueColumns = [
             </Notice>
         </div>
 
-        <!-- ── Kapabilitas kasir ────────────────────────────────────────── -->
+        <!-- ── Fitur kasir ───────────────────────────────────────────────── -->
         <div v-show="activeTab === 'kapabilitas'">
             <Panel
-                title="Kapabilitas sistem kasir"
+                title="Fitur sistem kasir"
                 description="Fitur yang menyala untuk toko ini — inilah yang membedakan tampilan kasirnya dari tenant lain."
                 flush
             >
@@ -911,7 +911,7 @@ const revenueColumns = [
                             <span class="font-medium text-foreground tabular-nums">{{ seatsAfterPlanChange }}</span>
                             <template v-if="purchasedSeats > 0">
                                 = {{ targetPlan.included_seats }} dari paket baru + {{ purchasedSeats }} tambahan yang
-                                sudah dibayar — seat yang sudah dibeli tidak hangus karena pindah paket.
+                                sudah dibayar. Pengguna tambahan yang sudah dibeli tidak hangus karena pindah paket.
                             </template>
                             <template v-else>, mengikuti jatah paket barunya.</template>
                         </span>
@@ -949,7 +949,7 @@ const revenueColumns = [
             @close="showInvoiceForm = false"
         >
             <form class="space-y-4" @submit.prevent="submitInvoice">
-                <FormField label="Periode (YYYY-MM)" :error="invoiceForm.errors.period">
+                <FormField label="Periode" :error="invoiceForm.errors.period">
                     <input
                         v-model="invoiceForm.period"
                         type="text"
