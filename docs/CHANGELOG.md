@@ -74,11 +74,11 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
 | 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
 | 2026-09-16 | DECISION | Kasir | Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin |
-| 2026-09-15 | HOTFIX | Kasir | Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab |
 | 2026-09-15 | ADDITION | Stok | Riwayat Stok Menyebut Batch yang Disentuh Tiap Mutasi |
 | 2026-09-15 | DECISION | Stok | Formulir Edit Varian Berhenti Menulis Stok dan Tanggal Kedaluwarsa — Keduanya Hanya Berubah Lewat Halaman Stok |
 | 2026-09-15 | ADDITION | Stok | Adjustment Stok Memilih Batch Sasaran, Menampilkan Pratinjau, dan Membuang Barang Kedaluwarsa Sekali Tekan |
 | 2026-09-15 | ADDITION | Stok | Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada |
+| 2026-09-15 | HOTFIX | Kasir | Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab |
 | 2026-09-15 | ADDITION | Kas | Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2) |
 | 2026-09-15 | DECISION | Owner | Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102) |
 | 2026-09-15 | ADDITION | API | Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2) |
@@ -477,7 +477,6 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `tests/Feature/Cashier/CashierPagesCopyTest.php`: penjaga baru
 - **Catatan:** Istilah "kas negatif" sengaja TETAP di layar pemilik dan di nama kolom rekonsiliasi; yang dibuang hanya pemakaiannya dalam kalimat yang dibaca kasir. Penyeragaman istilah itu untuk pemilik belum diputuskan.
 
-### [DECISION] Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin
 ### [HOTFIX] Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115)
 - **Tanggal:** 2026-09-16
 - **Fase Terkait:** Di Luar Fase — `[BL-115]`, lahir dari pemeriksaan jalur offline untuk `[BL-103]` dan dipisah atas keputusan pemilik. Dikerjakan sesudah struk, sebelum paket berdiskon.
@@ -532,6 +531,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 ---
 
+### [DECISION] Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin
 - **Tanggal:** 2026-09-16
 - **Fase Terkait:** Di Luar Fase — keputusan pemilik (opsi A) sesudah jatah tawaran per transaksi benar-benar membatasi jumlah tawaran (lihat `[HOTFIX] Saran Jual Berhenti Beranak-Pinak …`).
 - **Dampak:** Service (`Upsell\Suggestion`, tiga strategi varian, `UpsellIndexBuilder`), Frontend (`UpsellStrip.vue`), test.
@@ -550,27 +550,6 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `app/Services/Upsell/UpsellIndexBuilder.php` — pemotongan per pemicu memakai `rankScore()`
   - `resources/js/Components/UpsellStrip.vue` — label Diskon dan harga coret
   - `tests/Feature/Upsell/UpsellDiscountedPriceTest.php` — tiga test urutan baru; test tangga ukuran kini mengharapkan skor 240, bukan 40
-
----
-
-### [HOTFIX] Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab
-- **Tanggal:** 2026-09-15
-- **Fase Terkait:** Di Luar Fase — ditemukan pemilik saat mencoba strip saran sebagai kasir.
-- **Dampak:** Frontend (`composables/useUpsell.js`, `Pages/Cashier/POS.vue`), satu berkas test baru. Tanpa skema, tanpa perubahan API.
-- **Breaking Change:** Tidak. Perilaku kasir berubah: satu transaksi kini paling banyak mendengar `upsell.max_per_transaction` (3) tawaran, **termasuk yang ditolak**.
-- **Deskripsi:** Dua cacat yang saling menguatkan:
-  1. **Barang yang masuk lewat saran ikut jadi pemicu.** Espresso Single menawarkan Croissant; Croissant yang diterima menawarkan Cookie; Cookie menawarkan Jus. Double hasil naik ukuran menawarkan Triple.
-  2. **`max_per_transaction` hanya memotong saran yang sedang menunggu.** Saran yang sudah diputuskan keluar dari daftar dan slotnya langsung diisi kandidat berikutnya, jadi batas 3 tidak pernah membatasi jumlah tawaran.
-  Direproduksi dengan menjalankan composable asli di node: dengan batas 3, pelanggan menerima **6** tawaran dan keranjang berakhir `[Triple, Croissant, Cookie, Jus, Cake]`.
-- **Perbaikan:**
-  - `useUpsell.js` → `triggerVariantIds`: pemicu hanya varian pilihan pelanggan sendiri. **Pengecualian naik ukuran:** varian asalnya tetap pemicu, karena barisnya tetap pesanan pelanggan. Tanpa itu Croissant yang ditawarkan dari Single lenyap begitu Single ditukar Double. Add-on dan naik ukuran dari pemicu warisan itu disaring, karena barisnya sudah tidak ada untuk disentuh `applyUpsell`.
-  - `useUpsell.js` → `remainingSlots`: jatah = batas − diterima − ditolak. Penerimaan yang ditarik kembali (`[BL-092]`) mengembalikan jatahnya.
-  - `POS.vue` → `upsellLineVariantFor()`: memetakan pemicu warisan ke baris hasil naik ukuran, supaya keterangan "Dari …", penghitung saran per baris, dan sorotan baris tetap menunjuk baris yang benar.
-- **File Terdampak:**
-  - `resources/js/composables/useUpsell.js` — `triggerVariantIds`, `remainingSlots`, saringan pemicu warisan di `isRelevant`, aturan baru di docblock kepala
-  - `resources/js/Pages/Cashier/POS.vue` — `upsellLineVariantFor()` dipakai `upsellSourceNames`, `upsellCountByTrigger`, `activeUpsellLineIndex`
-  - `tests/Feature/Upsell/UpsellChainLimitTest.php` — **baru**, 4 test. Menjalankan `useUpsell.js` sungguhan lewat node (bukan menggrep sumbernya); di-skip bila node tidak tersedia
-- **Yang sengaja tidak disentuh:** `UpsellIndexBuilder::rankForCart()`. Pratinjau owner hanya menyimulasikan satu pemicu, jadi tidak terkena. Jalur self-order (`ApiUpsellController`) terkena cacat yang sama, tapi request-nya hanya membawa `variant_ids`: server tidak tahu varian mana yang datang dari saran, atau berapa tawaran yang sudah dijawab. Menutupnya butuh parameter baru di kontrak API; pemilik memutuskan 2026-09-16 untuk mencatatnya sebagai `[BL-114]` dan menyelesaikannya nanti.
 
 ---
 
@@ -654,6 +633,27 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/Pages/Owner/Stock/Index.vue`: modal Restock
   - `docs/BACKLOG.md`: catatan pada `[BL-107]`
   - `tests/Feature/Owner/RestockExpiryTest.php`: baru
+
+### [HOTFIX] Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase — ditemukan pemilik saat mencoba strip saran sebagai kasir.
+- **Dampak:** Frontend (`composables/useUpsell.js`, `Pages/Cashier/POS.vue`), satu berkas test baru. Tanpa skema, tanpa perubahan API.
+- **Breaking Change:** Tidak. Perilaku kasir berubah: satu transaksi kini paling banyak mendengar `upsell.max_per_transaction` (3) tawaran, **termasuk yang ditolak**.
+- **Deskripsi:** Dua cacat yang saling menguatkan:
+  1. **Barang yang masuk lewat saran ikut jadi pemicu.** Espresso Single menawarkan Croissant; Croissant yang diterima menawarkan Cookie; Cookie menawarkan Jus. Double hasil naik ukuran menawarkan Triple.
+  2. **`max_per_transaction` hanya memotong saran yang sedang menunggu.** Saran yang sudah diputuskan keluar dari daftar dan slotnya langsung diisi kandidat berikutnya, jadi batas 3 tidak pernah membatasi jumlah tawaran.
+  Direproduksi dengan menjalankan composable asli di node: dengan batas 3, pelanggan menerima **6** tawaran dan keranjang berakhir `[Triple, Croissant, Cookie, Jus, Cake]`.
+- **Perbaikan:**
+  - `useUpsell.js` → `triggerVariantIds`: pemicu hanya varian pilihan pelanggan sendiri. **Pengecualian naik ukuran:** varian asalnya tetap pemicu, karena barisnya tetap pesanan pelanggan. Tanpa itu Croissant yang ditawarkan dari Single lenyap begitu Single ditukar Double. Add-on dan naik ukuran dari pemicu warisan itu disaring, karena barisnya sudah tidak ada untuk disentuh `applyUpsell`.
+  - `useUpsell.js` → `remainingSlots`: jatah = batas − diterima − ditolak. Penerimaan yang ditarik kembali (`[BL-092]`) mengembalikan jatahnya.
+  - `POS.vue` → `upsellLineVariantFor()`: memetakan pemicu warisan ke baris hasil naik ukuran, supaya keterangan "Dari …", penghitung saran per baris, dan sorotan baris tetap menunjuk baris yang benar.
+- **File Terdampak:**
+  - `resources/js/composables/useUpsell.js` — `triggerVariantIds`, `remainingSlots`, saringan pemicu warisan di `isRelevant`, aturan baru di docblock kepala
+  - `resources/js/Pages/Cashier/POS.vue` — `upsellLineVariantFor()` dipakai `upsellSourceNames`, `upsellCountByTrigger`, `activeUpsellLineIndex`
+  - `tests/Feature/Upsell/UpsellChainLimitTest.php` — **baru**, 4 test. Menjalankan `useUpsell.js` sungguhan lewat node (bukan menggrep sumbernya); di-skip bila node tidak tersedia
+- **Yang sengaja tidak disentuh:** `UpsellIndexBuilder::rankForCart()`. Pratinjau owner hanya menyimulasikan satu pemicu, jadi tidak terkena. Jalur self-order (`ApiUpsellController`) terkena cacat yang sama, tapi request-nya hanya membawa `variant_ids`: server tidak tahu varian mana yang datang dari saran, atau berapa tawaran yang sudah dijawab. Menutupnya butuh parameter baru di kontrak API; pemilik memutuskan 2026-09-16 untuk mencatatnya sebagai `[BL-114]` dan menyelesaikannya nanti.
+
+---
 
 ### [ADDITION] Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2)
 - **Tanggal:** 2026-09-15
