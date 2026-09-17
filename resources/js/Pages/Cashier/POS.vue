@@ -411,9 +411,6 @@ const getVariantStock = (variantId) => {
     return 0;
 };
 
-// --- Barang kedaluwarsa ([BL-108]) ---
-
-/**
 /**
  * Varian apa adanya dari katalog yang sedang dipegang layar ini — termasuk
  * snapshot offline, karena bentuknya sama persis dengan props.
@@ -431,6 +428,9 @@ const findCatalogVariant = (variantId) => {
     return null;
 };
 
+// --- Barang kedaluwarsa ([BL-108]) ---
+
+/**
  * Unit yang sudah kedaluwarsa dari sebuah varian, dihitung server per batch.
  * Snapshot katalog offline yang lebih tua dari kolom ini tidak punya angkanya:
  * dianggap nol, dan server tetap menjaga penjualannya.
@@ -1126,15 +1126,15 @@ const cartToItems = () => cart.value.map(item => ({
     variant_name: item.variant_name,
     qty: item.qty,
     unit_price: item.unit_price,
-    modifiers: (item.modifiers || []).map(m => ({
-        id: m.id,
-        name: m.name,
     // Harga katalog dan aturan diskon yang dilihat perangkat ([BL-115]).
     // Jalur online mengabaikan keduanya — server menghitung sendiri — tapi
     // jalur offline tidak punya sumber lain: tanpa ini, potongan yang terjadi
     // saat perangkat putus tercatat sebagai penjualan biasa yang lebih murah.
     catalog_unit_price: findCatalogVariant(item.variant_id)?.price ?? null,
     discount_rule_id: findCatalogVariant(item.variant_id)?.discount_rule_id ?? null,
+    modifiers: (item.modifiers || []).map(m => ({
+        id: m.id,
+        name: m.name,
         extra_price: m.extra_price,
     })),
     notes: item.notes || null,
