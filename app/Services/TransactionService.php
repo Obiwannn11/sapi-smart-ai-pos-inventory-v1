@@ -103,6 +103,17 @@ class TransactionService
                 }
             }
 
+            // Outlet yang menutup tagihan terbuka ([BL-104]). Ditolak DI SINI,
+            // bukan di layar kasir atau di FormRequest-nya: POS web, API mobile,
+            // dan sinkronisasi offline semuanya lewat checkout(), dan tombol
+            // yang disembunyikan tidak berlaku bagi klien yang mengirim request
+            // sendiri. Hanya MEMBUKA yang dilarang — melunasi tagihan lama
+            // lewat payOpenBill() sengaja tetap jalan, supaya uang yang
+            // benar-benar tertagih tidak ikut terkubur.
+            if ($isOpenBill && ! ($user->tenant?->open_bill_enabled ?? true)) {
+                throw new \Exception('Outlet ini tidak menerima tagihan terbuka. Selesaikan pembayarannya sekarang.');
+            }
+
             // 1. Generate kode transaksi
             $code = $this->generateTransactionCode($tenantId);
 

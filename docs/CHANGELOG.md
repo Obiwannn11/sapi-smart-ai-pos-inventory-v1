@@ -81,6 +81,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-15 | ADDITION | Stok | Restock Menuntut Tanggal pada Varian yang Pernah Bertanggal, dan Menampilkan Batch yang Sudah Ada |
 | 2026-09-15 | HOTFIX | Kasir | Saran Jual Berhenti Beranak-Pinak — Barang dari Saran Tidak Memicu Saran Baru, dan Batas Per Transaksi Menghitung Tawaran yang Sudah Dijawab |
 | 2026-09-15 | ADDITION | Kas | Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2) |
+| 2026-09-15 | ADDITION | Kasir | Outlet Bisa Menutup Tagihan Terbuka — Tombolnya Hilang, Server Menolak, Tagihan Lama Tetap Bisa Dilunasi (BL-104) |
 | 2026-09-15 | DECISION | Owner | Link Data untuk AI Tampil di Modal yang Baru Bisa Ditutup Setelah Link Benar-Benar Tersalin (BL-102) |
 | 2026-09-15 | ADDITION | API | Link Data untuk AI Kini Membuka Data Toko: Satu Paket Teks Tanpa Parameter, dan Setiap Penolakan Terbaca Sebagai Penolakan (BL-102 Tahap 2) |
 | 2026-09-15 | ADDITION | Owner | Link Data untuk AI di Halaman Integrasi: Owner Membuat, Melihat, dan Mencabut Link Berumur, Endpoint Datanya Menyusul (BL-102 Tahap 1) |
@@ -714,6 +715,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - **B: ditutup paksa** — `closed_by_system`, uang fisik tidak pernah dihitung, Rp 210.000 seharusnya; satu penjualan B sesudah sesi ini tertutup tidak jatuh ke laci mana pun.
   - **A: laci bersamaan** — hanya dibuat bila kasir A belum punya sesi yang melingkupi hari H. Di basis data lokal kasir A masih memegang sesi 215 yang terbuka sejak 2026-08-20, jadi penjualan A masuk ke sana dan laci ini tidak dibuat; di basis data hasil `DatabaseSeeder` segar (yang dipakai test) ia dibuat dengan Rp 450.000 seharusnya.
 - **Yang sengaja tidak disentuh:** `Api\V1\Mobile\MobileCashDrawerController::close()` masih menghitung sendiri dengan penyaring `tenant_id` + `created_at` — cacat #2 dan #3 `[BL-028]` yang lolos dari Tahap A di jalur mobile. Itu perubahan terpisah dan tidak digabungkan ke sini.
+
+---
+
+### [ADDITION] Outlet Bisa Menutup Tagihan Terbuka — Tombolnya Hilang, Server Menolak, Tagihan Lama Tetap Bisa Dilunasi (BL-104)
+- **Tanggal:** 2026-09-15
+- **Fase Terkait:** Di Luar Fase — `[BL-104]`, dipecah dari `[BL-035]`; keputusannya diambil pemilik 2026-09-06.
+- **Dampak:** migrasi `tenants.open_bill_enabled` (boolean, bawaan `true`), `Tenant`, `TransactionService::checkout()`, `POSController::index()`, `SystemBehaviorController` (baca, validasi, `featureWarnings.open_bills`), `config/business-presets.php`, `Cashier/POS.vue`, `Owner/Settings/Operations.vue`, dokumen API mobile.
+- **Breaking Change:** Tidak untuk tenant yang berjalan — bawaan kolomnya menyala. Klien API yang mengirim `is_open_bill: true` ke outlet yang mematikannya kini menerima `422`.
+- **Deskripsi:**
+  Tagihan terbuka mengandaikan pelanggan masih bisa ditemui besok. Di gerai acara ia pergi saat acara bubar, jadi hampir setiap tagihan di sana lewat 24 jam, jatuh jadi kas negatif (`[BL-031]`), lalu menunggu pemilik menghapusnya satu per satu. Sekarang ada setelan "Izinkan tagihan terbuka" di **Cara Kerja Sistem → Aturan Kerja Kasir**.
+- **Keputusan yang membentuknya:**
+  **(a) Penjaganya di `TransactionService::checkout()`, bukan di FormRequest.** POS web, API mobile, dan sinkronisasi offline semuanya lewat satu method itu, sedangkan `MobileTransactionController` punya validasinya sendiri. Satu gerbang di sana menutup ketiganya; menaruhnya di `StoreTransactionRequest` akan meninggalkan mobile terbuka. Penolakannya terjadi di dalam transaksi database sebelum item dicatat, jadi stok tidak sempat berkurang — ada ujinya.
+  **(b) Tombol "Tunda Bayar" disembunyikan, bukan dimatikan.** Tombol pudar mengundang pertanyaan "kenapa tidak bisa?", padahal outlet ini memang tidak melayani utang. Layar kasir hanya kenyamanan; server tetap menolak sendiri.
+  **(c) Hanya MEMBUKA yang dilarang (keputusan 2026-09-06).** `payOpenBill()`, topbar tagihan terbuka, sapuan `open-bills:expire`, dan jalur `writeOff()` pemilik tidak disentuh sama sekali. Mematikan setelan saat masih ada tagihan memunculkan catatan bahwa tagihan itu tetap bisa dilunasi — angkanya dari `featureWarnings.open_bills` (`Transaction::liveOpenBills()`).
+  **(d) Aturan kerja, bukan kapabilitas.** Katalog paketnya `capability: false`, jadi `Tenant::hasFeature('open_bill')` sengaja menjawab `false`: setelan ini tidak menggerbangi rute apa pun, sama seperti `upsell_mandatory`.
+- **Isi paket setelah perubahan ini:** "Gerai Acara & Bazar" menyetel `open_bill` **mati** (ditulis tegas di `settings`, bukan cuma absen dari `features`). Setelan ini `visible: false`, jadi ia muncul di ringkasan "Disetel otomatis untuk Anda" saat pendaftaran dan di pratinjau "Terapkan paket ini".
+- **Jebakan yang ditemukan saat mengerjakan:** setelan boolean di paket bernilai **mati kalau tidak disebut di `features`**. Kolom ini bawaannya menyala, jadi menambahkannya ke katalog tanpa menyebutnya di paket lain akan membuat `warung_menetap`, `toko_retail`, `jasa`, dan `lainnya` diam-diam mencabut "Tunda Bayar" — di pendaftaran maupun lewat tombol terapkan ulang. Keempatnya sekarang menyebut `open_bill`, dan ada uji yang gagal kalau satu paket selain gerai acara mematikannya.
+- **Uji:** `tests/Feature/Cashier/OpenBillSettingTest.php` (10 uji).
 
 ---
 

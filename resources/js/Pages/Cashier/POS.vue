@@ -28,6 +28,9 @@ const props = defineProps({
     paymentMethods: Array,
     // Saklar foto bukti bayar non-tunai milik toko ([BL-075]).
     paymentProofEnabled: { type: Boolean, default: false },
+    // Saklar tagihan terbuka milik toko ([BL-104]). Bawaan true mengikuti
+    // kolomnya; server tetap menolak sendiri bila mati.
+    openBillEnabled: { type: Boolean, default: true },
     cashDrawer: Object,
     tenantName: { type: String, default: 'SAPI POS' },
     upsell: { type: Object, default: null },
@@ -1314,7 +1317,7 @@ const printFromSuccess = () => {
 
 // --- Open Bill ---
 const saveAsOpenBill = () => {
-    if (cart.value.length === 0 || processing.value) return;
+    if (cart.value.length === 0 || processing.value || !props.openBillEnabled) return;
 
     // Open bills stay online-only, deliberately. Unlike a completed sale, an
     // open bill is a *pending* record the cashier expects to find and settle
@@ -1753,6 +1756,7 @@ onUnmounted(() => {
 
                     <div class="flex gap-2">
                         <button
+                            v-if="openBillEnabled"
                             @click="saveAsOpenBill"
                             :disabled="cart.length === 0 || processing"
                             class="flex-1 py-3 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"

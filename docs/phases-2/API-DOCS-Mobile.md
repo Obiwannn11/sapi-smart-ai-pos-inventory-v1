@@ -320,7 +320,7 @@ Content-Type: application/json
 
 | Field | Tipe | Wajib | Default | Keterangan |
 |---|---|---|---|---|
-| `is_open_bill` | boolean | Tidak | `false` | `true` = open bill, `payments` boleh kosong |
+| `is_open_bill` | boolean | Tidak | `false` | `true` = open bill, `payments` boleh kosong. Ditolak `422` bila outlet mematikan setelan "izinkan tagihan terbuka" (`[BL-104]`); open bill yang sudah ada tetap bisa dibayar |
 | `order_type` | string | Tidak | `dine_in` | Enum: `dine_in`, `takeaway` |
 | `customer_name` | string | Tidak | `null` | Nama pelanggan untuk struk |
 | `table_number` | string | Tidak | `null` | Nomor meja |

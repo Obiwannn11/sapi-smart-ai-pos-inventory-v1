@@ -565,22 +565,6 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
   5. **Apa yang terjadi pada tenant yang sudah berjalan?** Jawaban yang paling murah dan paling aman: setiap tenant lahir dengan satu cabang bawaan, dan yang tidak pernah membuat cabang kedua tidak pernah melihat kata "cabang" di mana pun.
 - **Catatan pengerjaan:** kalau nanti dikerjakan, buka sebagai **fase tersendiri** dengan dokumennya sendiri di `docs/phases-*`, bukan sebagai entri backlog. Ukurannya sekelas fase SAAS, dan menyelundupkannya sebagai "satu perbaikan" akan menghasilkan migrasi setengah jadi di tabel yang paling tidak boleh setengah jadi.
 
-### [BL-104] Gerai Acara Tetap Bisa Membuka Tagihan yang Hampir Pasti Jadi Kas Negatif
-- **Ditemukan:** 2026-09-06
-- **Sumber:** Dipecah dari `[BL-035]` atas keputusan pemilik — satu-satunya bagian "mode bazar" yang butuh perubahan perilaku, bukan sekadar nilai awal setelan
-- **Status:** Open
-- **Prioritas:** Medium
-- **Area Terdampak:**
-  - `app/Http/Requests/StoreTransactionRequest.php:99` — `is_open_bill` diterima tanpa syarat; `:137` melewatkan validasi pembayaran saat ia menyala
-  - `app/Services/OpenBillExpiryService.php` — memindahkan tagihan lewat 24 jam ke kas negatif (`Transaction::STATUS_UNSETTLED`)
-  - `app/Http/Controllers/Owner/UnsettledBillController.php` — satu-satunya jalur pemilik membereskannya
-- **Deskripsi:**
-  Tagihan terbuka masuk akal untuk warung menetap: pelanggan makan dulu, bayar sebelum pulang, dan kalaupun lupa ia masih bisa ditemui besok. Di gerai acara asumsi itu runtuh — pelanggan pergi saat acara bubar dan tidak pernah kembali. Artinya hampir **setiap** tagihan terbuka di sana akan lewat 24 jam, jatuh jadi kas negatif, lalu menunggu pemilik menghapusnya satu per satu lewat jalur `writeOff()`. Yang dibutuhkan bukan pengingat, melainkan kemampuan menutup pintunya: outlet yang tahu dirinya tidak melayani utang harus bisa membuat tombolnya tidak ada.
-- **Usulan Perbaikan:**
-  Satu setelan tenant "izinkan tagihan terbuka" (bawaan: nyala, supaya tidak ada tenant berjalan yang berubah perilakunya). Saat dimatikan: tombolnya hilang dari layar kasir **dan** `is_open_bill` ditolak server — dua-duanya, bukan salah satu, karena jalur `MobileTransactionController` dan sinkronisasi offline tidak melewati layar kasir.
-- **Keputusan yang sudah diambil (2026-09-06):** tenant yang **sudah punya** tagihan terbuka lalu mematikan setelan ini tetap bisa **melunasinya**; yang dilarang hanya membuat **yang baru**. Mematikan jalur pelunasan akan mengubur uang yang benar-benar tertagih.
-- **Hubungan dengan entri lain:** bukan prasyarat `[BL-035]` dan bukan turunannya — keduanya bisa dikerjakan dalam urutan mana pun. Kalau `[BL-035]` mendarat lebih dulu, setelan ini ikut jadi anggota paket "Gerai Acara & Bazar" (nilai: mati) dengan satu baris tambahan. `[BL-031]` tidak terpengaruh: `open-bills:expire` tetap berjalan lintas tenant dan tetap benar, ia cuma tidak menemukan apa-apa di outlet yang menutup pintunya.
-
 ### [BL-036] Belum Ada Studi Kasus Demo Kedua — Semua Peragaan Bertumpu pada Satu Kafe
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Review demo pemilik — "tambahkan suatu toko usaha baru, bergerak di bidang makanan bazar kayak chicken shi lin atau ayam potong kripsi, ... dia ada antrian, dan mode bazar"
@@ -755,6 +739,7 @@ Isi lengkap entri yang sudah selesai dipindahkan ke **`docs/BACKLOG-ARCHIVE.md`*
 | ID | Judul | Selesai | Entri penutup di `docs/CHANGELOG.md` |
 |---|---|---|---|
 | `BL-115` | Penjualan offline kehilangan jejak potongannya — diskon dan harga khusus tidak terhitung di laporan mana pun | 2026-09-16 (payload membawa harga katalog dan aturan yang dilihat perangkat; server mengisi jejaknya sendiri dan memverifikasi klaimnya; harga khusus offline hanya sah dari owner; potongan tanpa aturan tetap dicatat lalu ditandai) | `[HOTFIX] Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115)` |
+| `BL-104` | Gerai acara tetap bisa membuka tagihan yang hampir pasti jadi kas negatif | 2026-09-15 (setelan `open_bill_enabled`, bawaan menyala; ditolak di `TransactionService::checkout()` sehingga POS, mobile, dan sinkron tertutup bersama; tombol "Tunda Bayar" disembunyikan; pelunasan tagihan lama tidak disentuh; paket "Gerai Acara & Bazar" menyetelnya mati) | `[ADDITION] Outlet Bisa Menutup Tagihan Terbuka — Tombolnya Hilang, Server Menolak, Tagihan Lama Tetap Bisa Dilunasi (BL-104)` |
 | `BL-028` | Rekonsiliasi kas tidak memperhitungkan penjualan tunai, dan angka server tidak per-laci | 2026-09-15 (Tahap A 2026-07-31; Tahap B langkah 1 2026-09-06; langkah 2: rekonsiliasi membaca `cash_drawer_id`, backfill lewat migrasi dengan turunan lama, tiga pemicu disemai di tenant `owner@sapi.test`) | `[ADDITION] Rekonsiliasi Kas Membaca Laci yang Tercatat pada Penjualan — Backfill Lewat Migrasi dan Tiga Pemicunya Bisa Diperiksa di Tenant Demo (BL-028 Tahap B Langkah 2)` |
 | `BL-112` | Ability token Sanctum tidak pernah ditegakkan — token MCP "read-only" bisa membatalkan transaksi | 2026-09-15 (ability per permukaan `self-order:use`/`mobile:use`/`mcp:use`, penolakan berkode `token_ability_missing`, penjaga rute; token `*` yang beredar tetap lolos, token login mobile sengaja belum dipersempit) | `[HOTFIX] Token MCP Berhenti Bisa Membatalkan Transaksi — Ability Token Sanctum Akhirnya Ditegakkan di Setiap Rute Bertoken (BL-112)` |
 | `BL-111` | Stok satu varian tidak bisa punya lebih dari satu tanggal kedaluwarsa — restock menimpa batch sebelumnya | 2026-09-15 (tabel batch + FEFO di antara barang yang masih baik; `stock` tetap kolom yang dibaca, dijaga sama dengan jumlah batch; void dan edit mengembalikan unit ke batch asalnya) | `[SCHEMA] Stok Satu Varian Akhirnya Punya Banyak Tanggal Kedaluwarsa (Batch + FEFO), dan Barang Basi Hanya Terjual dengan Alasan Tertulis (BL-111, BL-108)` |

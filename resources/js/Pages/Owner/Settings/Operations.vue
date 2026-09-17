@@ -34,6 +34,7 @@ const form = useForm({
     ai_enabled:            props.features.ai_enabled,
     payment_proof_enabled: props.features.payment_proof_enabled,
     upsell_mandatory:      props.features.upsell_mandatory,
+    open_bill_enabled:     props.features.open_bill_enabled ?? true,
     upsell_attach_enabled:        props.features.upsell_attach_enabled ?? true,
     upsell_pressed_stock_enabled: props.features.upsell_pressed_stock_enabled ?? true,
     upsell_upsize_enabled:        props.features.upsell_upsize_enabled ?? true,
@@ -573,6 +574,30 @@ const submitServiceCharge = () => {
                                 Ini satu-satunya pengaturan yang bisa <strong>menahan penjualan</strong>.
                                 Kasir yang antre panjang akan menekan "ditolak" tanpa menawarkan kalau merasa terburu —
                                 angka penolakan yang melonjak adalah tanda pertama itu terjadi.
+                            </span>
+                        </div>
+
+                        <!-- Tagihan terbuka ([BL-104]) -->
+                        <Checkbox v-model="form.open_bill_enabled" variant="card" align="start">
+                            <span class="text-sm">
+                                <span class="font-medium text-gray-900 block">Izinkan tagihan terbuka</span>
+                                <span class="text-xs text-gray-500">
+                                    Kasir boleh menekan <strong>Tunda Bayar</strong>: pesanan disimpan dan dibayar belakangan.
+                                    Tagihan yang belum lunas setelah 24 jam jadi kas negatif dan hanya bisa diselesaikan Anda.
+                                    Matikan kalau pelanggan Anda tidak bisa ditemui lagi setelah pergi, misalnya di bazar atau acara.
+                                </span>
+                            </span>
+                        </Checkbox>
+
+                        <div v-if="!form.open_bill_enabled && features.open_bill_enabled" class="flex gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                            <svg class="w-4 h-4 shrink-0 mt-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z" />
+                            </svg>
+                            <span>
+                                Tombol Tunda Bayar hilang dari layar kasir, dan tagihan baru ditolak dari perangkat mana pun.
+                                <template v-if="featureWarnings.open_bills > 0">
+                                    <strong>{{ featureWarnings.open_bills }}</strong> tagihan yang sudah terbuka tetap bisa dilunasi seperti biasa.
+                                </template>
                             </span>
                         </div>
 

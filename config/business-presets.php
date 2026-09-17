@@ -147,6 +147,19 @@ return [
             'description' => 'Tombol bayar tertahan sampai kasir menjawab setiap saran yang muncul.',
         ],
 
+        // Aturan kerja ([BL-104]): mati berarti tombol "Tunda Bayar" hilang dan
+        // server menolak tagihan terbuka baru. Tidak tampil, sama seperti
+        // `upsell_mandatory` — pendaftar belum punya konteks untuk memutuskan
+        // ini, dan ringkasan "Disetel otomatis" tetap menyebutnya.
+        'open_bill' => [
+            'column' => 'open_bill_enabled',
+            'type' => 'boolean',
+            'capability' => false,
+            'visible' => false,
+            'label' => 'Tagihan terbuka',
+            'description' => 'Kasir boleh menyimpan pesanan dan menagihnya belakangan (Tunda Bayar).',
+        ],
+
         // Setelan bernilai pilihan pertama yang ikut paket, dan alasan `type`
         // ada sama sekali ([BL-026]). Tampil, karena inilah yang paling terasa
         // bedanya antara warung menetap dan gerai acara.
@@ -205,6 +218,10 @@ return [
     | berarti mati. `settings` memberi nilai untuk setelan bertipe lain; yang
     | tidak disebut dibiarkan pada bawaan kolomnya.
     |
+    | `open_bill` menyala di setiap paket KECUALI gerai acara ([BL-104]):
+    | kolomnya bawaan menyala, dan paket yang lupa menyebutnya akan diam-diam
+    | mencabut tombol "Tunda Bayar" dari tenant yang tidak memintanya.
+    |
     | `self_order` tidak menyala di mana pun, dan itu bukan kelalaian:
     | menyalakannya membuka tautan pemesanan yang bisa diakses siapa saja. Itu
     | keputusan yang harus diambil pemiliknya sendiri, bukan disimpulkan dari
@@ -215,7 +232,7 @@ return [
         // Dapur mengolah pesanan, dan pelanggannya duduk cukup lama untuk
         // dipanggil dengan nama.
         'warung_menetap' => [
-            'features' => ['kitchen_queue', 'ai'],
+            'features' => ['kitchen_queue', 'ai', 'open_bill'],
             'settings' => ['order_identity_mode' => Tenant::ORDER_IDENTITY_NAME],
         ],
 
@@ -224,29 +241,34 @@ return [
         // itulah penanda utamanya. `upsell_mandatory` ditegaskan mati walau
         // bawaannya memang mati — paket ini yang paling dirugikan olehnya, jadi
         // ia ditulis sebagai pernyataan, bukan diwariskan diam-diam.
+        //
+        // `open_bill` mati dengan alasan yang sama dan ditulis sama tegasnya
+        // ([BL-104]): pelanggan acara pergi saat acara bubar, jadi hampir setiap
+        // tagihan terbuka di sini berakhir sebagai kas negatif.
         'gerai_acara' => [
             'features' => ['kitchen_queue', 'ai'],
             'settings' => [
                 'order_identity_mode' => Tenant::ORDER_IDENTITY_CODE,
                 'upsell_mandatory' => false,
+                'open_bill' => false,
             ],
         ],
 
         // Barang diserahkan saat itu juga — tidak ada yang perlu diantre.
         'toko_retail' => [
-            'features' => ['ai'],
+            'features' => ['ai', 'open_bill'],
             'settings' => ['order_identity_mode' => Tenant::ORDER_IDENTITY_NONE],
         ],
 
         'jasa' => [
-            'features' => ['ai'],
+            'features' => ['ai', 'open_bill'],
             'settings' => ['order_identity_mode' => Tenant::ORDER_IDENTITY_NONE],
         ],
 
         // Bawaan netral: cara berjualan yang belum dijawab tidak boleh membuat
         // aplikasi mengaku tahu cara kerja pemiliknya.
         'lainnya' => [
-            'features' => ['ai'],
+            'features' => ['ai', 'open_bill'],
             'settings' => ['order_identity_mode' => Tenant::ORDER_IDENTITY_NONE],
         ],
 

@@ -71,6 +71,10 @@ class POSController extends Controller
             // ditunda: modal pembayaran harus tahu jawabannya sebelum kasir
             // menekan Bayar, dan jawabannya satu boolean.
             'paymentProofEnabled' => $user->tenant->payment_proof_enabled,
+            // Saklar tagihan terbuka ([BL-104]). Mati berarti tombol "Tunda
+            // Bayar" tidak ada; server tetap menolaknya sendiri di
+            // TransactionService, jadi ini kenyamanan layar, bukan penjaganya.
+            'openBillEnabled' => $user->tenant->open_bill_enabled,
             // Konteks pajak ([BL-065]). Eager dan ikut snapshot katalog, bukan
             // ditunda: kasir offline harus bisa menghitung total yang sama
             // dengan yang akan dihitung server saat sinkronisasi. Tanpa ini

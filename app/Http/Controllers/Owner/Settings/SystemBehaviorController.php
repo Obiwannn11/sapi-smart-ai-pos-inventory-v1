@@ -46,6 +46,10 @@ class SystemBehaviorController extends Controller
                 // mata owner, tapi sengaja TIDAK masuk Tenant::hasFeature() —
                 // ia tidak menggerbangi rute atau modul apa pun ([BL-025]).
                 'upsell_mandatory' => $tenant->upsell_mandatory,
+                // Aturan kerja kedua ([BL-104]): boleh tidaknya kasir membuka
+                // tagihan terbuka baru. Mematikannya tidak menyentuh tagihan
+                // yang sudah ada — itu tetap bisa dilunasi.
+                'open_bill_enabled' => $tenant->open_bill_enabled,
                 // Empat saklar per-jenis saran jual ([BL-099]). Bukan
                 // kapabilitas modul dan bukan aturan kerja: ia menentukan
                 // JENIS saran apa yang boleh dihasilkan mesin untuk toko ini.
@@ -128,6 +132,10 @@ class SystemBehaviorController extends Controller
                     ->where('fulfillment_status', '!=', Transaction::FULFILLMENT_DONE)
                     ->count(),
                 'pending_analyses' => AiAnalysis::where('status', AiAnalysis::STATUS_PENDING)->count(),
+                // Bukan peringatan bahwa sesuatu akan hilang, justru sebaliknya:
+                // layar memakainya untuk menegaskan tagihan ini TETAP bisa
+                // dilunasi setelah saklarnya dimatikan ([BL-104]).
+                'open_bills' => Transaction::liveOpenBills()->count(),
             ],
         ]);
     }
@@ -157,6 +165,7 @@ class SystemBehaviorController extends Controller
             'ai_enabled' => 'boolean',
             'payment_proof_enabled' => 'boolean',
             'upsell_mandatory' => 'boolean',
+            'open_bill_enabled' => 'boolean',
             'upsell_attach_enabled' => 'boolean',
             'upsell_pressed_stock_enabled' => 'boolean',
             'upsell_upsize_enabled' => 'boolean',

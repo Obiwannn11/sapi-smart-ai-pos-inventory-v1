@@ -39,6 +39,23 @@
   2. **Jangan mengubah `unit_price` yang dibayar.** Prinsip jalur offline tetap: harga yang sudah dibayar dan tercetak di struk tidak ditimpa server.
 - **Bukan bagian entri ini — tetap di `[BL-103]`:** K2 (aturan dinilai saat sinkron, bukan saat penjualan) dan K3 (snapshot tanpa batas berlaku). Keduanya menghasilkan penanda palsu atau potongan basi, bukan jejak yang hilang, dan penyelesaiannya (riwayat versi harga, `valid_until` di snapshot) paling masuk akal dirancang bersama paket.
 
+### [BL-104] Gerai Acara Tetap Bisa Membuka Tagihan yang Hampir Pasti Jadi Kas Negatif
+- **Ditemukan:** 2026-09-06
+- **Sumber:** Dipecah dari `[BL-035]` atas keputusan pemilik — satu-satunya bagian "mode bazar" yang butuh perubahan perilaku, bukan sekadar nilai awal setelan
+- **Status:** Selesai (2026-09-15) — lihat `[ADDITION] Outlet Bisa Menutup Tagihan Terbuka — Tombolnya Hilang, Server Menolak, Tagihan Lama Tetap Bisa Dilunasi (BL-104)` di `docs/CHANGELOG.md`
+- **Prioritas:** Medium
+- **Area Terdampak:**
+  - `app/Http/Requests/StoreTransactionRequest.php:99` — `is_open_bill` diterima tanpa syarat; `:137` melewatkan validasi pembayaran saat ia menyala
+  - `app/Services/OpenBillExpiryService.php` — memindahkan tagihan lewat 24 jam ke kas negatif (`Transaction::STATUS_UNSETTLED`)
+  - `app/Http/Controllers/Owner/UnsettledBillController.php` — satu-satunya jalur pemilik membereskannya
+- **Deskripsi:**
+  Tagihan terbuka masuk akal untuk warung menetap: pelanggan makan dulu, bayar sebelum pulang, dan kalaupun lupa ia masih bisa ditemui besok. Di gerai acara asumsi itu runtuh — pelanggan pergi saat acara bubar dan tidak pernah kembali. Artinya hampir **setiap** tagihan terbuka di sana akan lewat 24 jam, jatuh jadi kas negatif, lalu menunggu pemilik menghapusnya satu per satu lewat jalur `writeOff()`. Yang dibutuhkan bukan pengingat, melainkan kemampuan menutup pintunya: outlet yang tahu dirinya tidak melayani utang harus bisa membuat tombolnya tidak ada.
+- **Usulan Perbaikan:**
+  Satu setelan tenant "izinkan tagihan terbuka" (bawaan: nyala, supaya tidak ada tenant berjalan yang berubah perilakunya). Saat dimatikan: tombolnya hilang dari layar kasir **dan** `is_open_bill` ditolak server — dua-duanya, bukan salah satu, karena jalur `MobileTransactionController` dan sinkronisasi offline tidak melewati layar kasir.
+- **Keputusan yang sudah diambil (2026-09-06):** tenant yang **sudah punya** tagihan terbuka lalu mematikan setelan ini tetap bisa **melunasinya**; yang dilarang hanya membuat **yang baru**. Mematikan jalur pelunasan akan mengubur uang yang benar-benar tertagih.
+- **Hubungan dengan entri lain:** bukan prasyarat `[BL-035]` dan bukan turunannya — keduanya bisa dikerjakan dalam urutan mana pun. Kalau `[BL-035]` mendarat lebih dulu, setelan ini ikut jadi anggota paket "Gerai Acara & Bazar" (nilai: mati) dengan satu baris tambahan. `[BL-031]` tidak terpengaruh: `open-bills:expire` tetap berjalan lintas tenant dan tetap benar, ia cuma tidak menemukan apa-apa di outlet yang menutup pintunya.
+- **Penyelesaian (2026-09-15):** penjaganya ternyata tidak di `StoreTransactionRequest` seperti yang ditunjuk Area Terdampak, melainkan di `TransactionService::checkout()` — satu-satunya titik yang dilewati POS web, API mobile (yang punya validasinya sendiri), dan sinkronisasi offline sekaligus. Ketiga berkas di Area Terdampak tidak diubah: pelunasan, sapuan kedaluwarsa, dan `writeOff()` sengaja dibiarkan persis seperti sebelumnya.
+
 ### [BL-028] Rekonsiliasi Kas Tidak Memperhitungkan Penjualan Tunai, dan Angka Server Tidak Per-Laci
 - **Ditemukan:** 2026-07-31
 - **Sumber:** Catatan pemilik — "review dan mau diperbaiki konsep kas uang dalam menu kasir, bukan dari uang modal, tapi dari uang dari bertipe cash yang diterima harusnya include juga"

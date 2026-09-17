@@ -91,7 +91,7 @@ class Tenant extends Model
         'ai_provider', 'ai_api_key', 'ai_model',
         'kitchen_queue_enabled', 'self_order_enabled', 'ai_enabled', 'payment_proof_enabled',
         'min_margin_percent', 'cash_payout_approval_threshold',
-        'upsell_mandatory', 'order_identity_mode',
+        'upsell_mandatory', 'open_bill_enabled', 'order_identity_mode',
         'upsell_attach_enabled', 'upsell_pressed_stock_enabled', 'upsell_upsize_enabled', 'upsell_manual_enabled',
         'tax_enabled', 'tax_mode', 'tax_rate', 'tax_label', 'tax_lock_opened_until',
         'service_charge_enabled', 'service_charge_rate', 'service_charge_label',
@@ -117,6 +117,9 @@ class Tenant extends Model
         'min_margin_percent' => 10.00,
         'cash_payout_approval_threshold' => 50000.00,
         'upsell_mandatory' => false,
+        // Hidup: tagihan terbuka sudah dipakai tenant yang berjalan sebelum
+        // saklarnya ada ([BL-104]).
+        'open_bill_enabled' => true,
         // Bawaannya HIDUP, kebalikan dari `upsell_mandatory` di atas:
         // keempat jenis ini sudah berjalan untuk setiap tenant sebelum
         // saklarnya ada, jadi bawaan mati akan mematikan fitur yang sedang
@@ -149,6 +152,7 @@ class Tenant extends Model
             'min_margin_percent' => 'decimal:2',
             'cash_payout_approval_threshold' => 'decimal:2',
             'upsell_mandatory' => 'boolean',
+            'open_bill_enabled' => 'boolean',
             'upsell_attach_enabled' => 'boolean',
             'upsell_pressed_stock_enabled' => 'boolean',
             'upsell_upsize_enabled' => 'boolean',
