@@ -5252,6 +5252,57 @@ hro### [ADDITION] Pemisahan README ↔ Panduan Demo
 
 ---
 
+### [DECISION] SumoPod Jadi Provider AI Default (OpenAI-Compatible Gateway)
+- **Tanggal:** 2026-07-11
+- **Fase Terkait:** Phase-AI-2 (AI Engine)
+- **Dampak:** Service | Config | Controller | Frontend
+- **Breaking Change:** Tidak (default berubah `gemini` → `sumopod`; provider lama tetap didukung)
+- **Deskripsi:** Menambah provider `sumopod` sebagai default. SumoPod adalah gateway AI OpenAI-compatible (persis OpenAI, hanya beda base URL `https://ai.sumopod.com/v1`), jadi `SumoPodProvider` cukup extend `OpenAiProvider` dan override endpoint chat completions. `OpenAiProvider` di-refactor agar endpoint & label provider bisa di-override lewat method `endpoint()`/`providerLabel()` (tanpa mengubah kontrak `AiProvider`). Satu API key SumoPod (`sk-...`) memberi akses ke banyak model (Anthropic, OpenAI, Gemini, DeepSeek, dll) via nama model.
+- **Alasan:** Menyederhanakan setup BYOK & free-tier: satu penyedia + satu format key gaya OpenAI untuk banyak model, dengan budget limit di dashboard SumoPod. Tanpa dependency PHP baru — tetap via `Http` facade sesuai prinsip Phase-AI-2.
+- **File Terdampak:**
+  - `app/Services/Ai/SumoPodProvider.php` — provider baru (extends `OpenAiProvider`, override base URL ke `https://ai.sumopod.com/v1/chat/completions`)
+  - `app/Services/Ai/OpenAiProvider.php` — endpoint & label di-ekstrak ke `endpoint()`/`providerLabel()`; props `protected`
+  - `app/Services/Ai/AiProviderFactory.php` — `match` tambah cabang `sumopod`
+  - `config/ai.php` — `default` → `sumopod`, tambah `models.sumopod`; `config/services.php` — `sumopod` key
+  - `app/Http/Controllers/Owner/SettingsController.php` — validasi `ai_provider` tambah `sumopod`
+  - `resources/js/Pages/Owner/Settings/Index.vue` — opsi provider "SumoPod" + label default
+  - `.env.example` — `AI_DEFAULT_PROVIDER=sumopod`, `SUMOPOD_API_KEY`, `AI_SUMOPOD_MODEL`
+  - `tests/Feature/Ai/AiProviderTest.php`, `tests/Feature/Ai/AiProviderFactoryTest.php` — test SumoPod (Http::fake + resolusi factory)
+- **Catatan Migrasi:** Tidak ada migrasi. Isi `SUMOPOD_API_KEY` (untuk free tier: `AI_FREE_TIER_KEY` = key SumoPod) lalu `php artisan config:clear`. Detail penyedia di `docs/phases-2/PHASE-AI-2b_SumoPod-Provider.md`.
+
+---
+
+### [ADDITION] MCP Server: Data Bridge Read-Only untuk AI Client Milik Owner
+- **Tanggal:** 2026-07-11
+- **Fase Terkait:** Phase-AI-4 (MCP Server)
+- **Dampak:** Route | Controller | Service | Config | Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:** MCP Server (`POST /mcp/business`) mengekspos data agregat tenant (penjualan, profit, menu) sebagai sumber data read-only untuk AI client milik owner (mis. Claude Desktop). Tiga tool: `get-sales-summary`, `get-profit`, `get-menu`. Akses via bearer token Sanctum yang dibuat/dicabut owner di Settings; endpoint dibatasi rate limit `mcp` (60/menit), owner-only, tenant-scoped otomatis, tanpa PII.
+- **Alasan:** Pada MCP, LLM yang memanggil adalah client milik owner — app hanya menyediakan data dan tidak menanggung biaya LLM. Karena itu MCP **tidak** memakai kuota/free-tier AI aplikasi (beda dari AI-2/AI-3); cukup rate limit untuk cegah abuse. `ProductCatalogService` diekstrak agar query katalog dipakai bersama MCP & API consumer.
+- **File Terdampak:**
+  - `routes/ai.php` — `Mcp::web('/mcp/business', SapiBusinessServer::class)` + middleware `auth:sanctum`, `tenant.api`, `role:owner`, `throttle:mcp`
+  - `app/Mcp/Servers/SapiBusinessServer.php`, `app/Mcp/Tools/*` — server + `BusinessDataTool` (base) + 3 tool
+  - `app/Services/ProductCatalogService.php` — katalog produk bersama; `app/Http/Controllers/Api/V1/ApiProductController.php` — refactor memakai service
+  - `app/Providers/AppServiceProvider.php` — RateLimiter `mcp`
+  - `app/Http/Controllers/Owner/SettingsController.php`, `resources/js/Pages/Owner/Settings/Index.vue`, `app/Http/Middleware/HandleInertiaRequests.php` — generate/cabut token MCP (plaintext flash sekali)
+- **Catatan Migrasi:** Tidak ada migrasi. Detail & backlog tools di `docs/phases-2/PHASE-AI-4_MCP-Server.md`.
+
+---
+
+### [DECISION] RunAiAnalysisJob Autentikasi sebagai Pemilik Analisis (Tenant Scoping di Queue)
+- **Tanggal:** 2026-07-10
+- **Fase Terkait:** Phase-AI-3 (AI Analysis)
+- **Dampak:** Job | Service
+- **Breaking Change:** Tidak
+- **Deskripsi:** `RunAiAnalysisJob` memanggil `Auth::setUser($analysis->user)` sebelum membangun konteks, lalu `Auth::forgetGuards()` di blok `finally`. Ini menyimpang dari contoh kode awal di dokumen `PHASE-AI-3` yang tidak meng-set auth di dalam Job.
+- **Alasan:** `AiContextService` dan `ProfitService` bergantung pada `TenantScope` global yang berbasis `auth()`. Karena queue job berjalan tanpa sesi HTTP, tanpa autentikasi eksplisit query konteks tidak ter-scope ke tenant yang benar (berisiko membaca/menggabungkan data lintas tenant). Meng-set user pemilik analisis memastikan seluruh agregasi ter-scope ke tenant tersebut; `forgetGuards()` mencegah kebocoran state auth antar job pada worker yang sama.
+- **File Terdampak:**
+  - `app/Jobs/RunAiAnalysisJob.php` — `Auth::setUser()` sebelum `buildContext()`, `Auth::forgetGuards()` di `finally`
+  - `docs/phases-2/PHASE-AI-3_AI-Analysis.md` — contoh kode Job disinkronkan dengan implementasi
+- **Catatan Migrasi:** Tidak ada migrasi. Perilaku hanya relevan saat worker queue memproses beberapa job dari tenant berbeda.
+
+---
+
 ### [ADDITION] Public API Reference Page for Mobile POS
 - **Tanggal:** 2026-05-29
 - **Fase Terkait:** Cross-Phase (Phase-2 Mobile API / Public Docs)
