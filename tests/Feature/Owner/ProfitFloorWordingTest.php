@@ -44,3 +44,12 @@ test('kartu Batas Untung Minimum memakai kata yang sama dengan judulnya', functi
         ->and($source)->not->toContain('Lantai harga tiap barang')
         ->and($source)->not->toContain('di bawah lantai ini');
 });
+
+test('contoh batas untung menulis rupiahnya seperti angka rupiah lain di halaman ini', function () {
+    // Satu-satunya angka di halaman ini yang lolos `rupiah()`, jadi contohnya
+    // berbunyi "Rp 11000" sementara kartu tepat di bawahnya menulis "Rp 50.000".
+    $source = floorWordingSource('Pages/Owner/Settings/Operations.vue');
+
+    expect($source)->toContain('Rp {{ rupiah(Math.ceil(10000 *')
+        ->and($source)->not->toContain('Rp {{ Math.ceil(10000 *');
+});

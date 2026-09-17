@@ -495,7 +495,7 @@ const submitServiceCharge = () => {
                         </div>
                         <p class="text-xs text-gray-500">
                             Barang bermodal Rp 10.000 punya batas
-                            <strong>Rp {{ Math.ceil(10000 * (1 + (form.min_margin_percent || 0) / 100) / 500) * 500 }}</strong>.
+                            <strong>Rp {{ rupiah(Math.ceil(10000 * (1 + (form.min_margin_percent || 0) / 100) / 500) * 500) }}</strong>.
                         </p>
                     </div>
 
