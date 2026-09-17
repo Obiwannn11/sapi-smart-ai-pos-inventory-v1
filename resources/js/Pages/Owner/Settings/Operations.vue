@@ -110,7 +110,7 @@ const UPSELL_TYPES = [
     {
         key: 'attach',
         field: 'upsell_attach_enabled',
-        title: 'Tambahan (add-on)',
+        title: 'Tambah add-on',
         detail: 'Topping atau pelengkap yang sering menyertai barang di keranjang. Jenis yang paling sering muncul, dan paling kecil nilainya per saran.',
     },
     {
@@ -128,7 +128,7 @@ const UPSELL_TYPES = [
     {
         key: 'manual',
         field: 'upsell_manual_enabled',
-        title: 'Aturan yang Anda tulis sendiri',
+        title: 'Aturan Anda',
         detail: 'Mematikannya membungkam SELURUH aturan di halaman Aturan Saran Jual sekaligus — saklar darurat, bukan cara mengatur satu per satu.',
     },
 ];

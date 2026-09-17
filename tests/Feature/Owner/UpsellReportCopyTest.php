@@ -60,3 +60,21 @@ test('pratinjau aturan menyalin kata kasir, dan modal hangus punya satu nama', f
         ->and(file_get_contents(resource_path('js/Pages/Owner/Dashboard.vue')))->not->toContain('Modal basi')
         ->and(file_get_contents(app_path('Services/BadgeHelperService.php')))->toContain(" hangus'");
 });
+
+test('setelan menamai jenis saran persis seperti tabel laporan menamainya', function () {
+    // Docblock `UPSELL_TYPES` menyebut owner sampai ke setelan DARI tabel "Per
+    // Jenis Saran". Dua dari empat namanya dulu berganti di perjalanan itu:
+    // "Tambah add-on" jadi "Tambahan (add-on)", "Aturan Anda" jadi "Aturan yang
+    // Anda tulis sendiri". Baris `detail` di bawah judulnya yang menerangkan,
+    // bukan judulnya.
+    $settings = file_get_contents(resource_path('js/Pages/Owner/Settings/Operations.vue'));
+
+    preg_match_all("/(attach|pressed_stock|upsize|manual): '([^']+)',/", upsellReportCopySource(), $matches, PREG_SET_ORDER);
+
+    expect($matches)->toHaveCount(4);
+
+    foreach ($matches as [, $key, $label]) {
+        expect($settings)->toContain("key: '{$key}',")
+            ->and($settings)->toContain("title: '{$label}',");
+    }
+});

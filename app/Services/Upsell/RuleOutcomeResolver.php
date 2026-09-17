@@ -141,7 +141,7 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'type_unavailable',
                 'Jenis mati untuk semua toko',
-                'Jenis saran "Aturan yang Anda tulis sendiri" sedang dimatikan untuk seluruh toko, jadi tidak ada aturan yang tampil.',
+                'Jenis saran "Aturan Anda" sedang dimatikan untuk seluruh toko, jadi tidak ada aturan yang tampil.',
                 self::TONE_QUIET,
                 // TANPA tombol perbaikan, dan itu disengaja ([BL-099]): tidak ada
                 // layar yang bisa dibuka owner untuk mengubahnya, dan menawarkan
@@ -153,7 +153,7 @@ class RuleOutcomeResolver
             return $this->dormant(
                 'type_disabled',
                 'Jenis dimatikan',
-                'Anda mematikan jenis saran "Aturan yang Anda tulis sendiri" di Setelan, jadi tidak ada aturan yang tampil.',
+                'Anda mematikan jenis saran "Aturan Anda" di Setelan, jadi tidak ada aturan yang tampil.',
                 self::TONE_BLOCKED,
                 fix: ['label' => 'Nyalakan', 'href' => route('owner.settings.operations.index', absolute: false)],
             );

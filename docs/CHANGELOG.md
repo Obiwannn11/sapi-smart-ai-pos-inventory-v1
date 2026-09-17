@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Saran Jual | Jenis Saran Berhenti Berganti Nama di Tengah Jalan dari Laporan ke Setelan |
 | 2026-09-17 | DECISION | Harga | Satu Nama untuk Harga Terendah: "Lantai Untung" Jadi "Batas Untung" di Seluruh Layar Pemilik |
 | 2026-09-17 | DECISION | Publik | Landing Berhenti Menjanjikan Ramalan Stok, Setup oleh AI, dan "AI Dilatih Khusus Per-Toko" |
 | 2026-09-17 | DECISION | Owner | Riwayat Sesi Kas dan Koreksi Offline: Kolom "Expected/Closed" Berbahasa Indonesia, Alasan Koreksi Tanpa Kata "Anomali" |
@@ -296,6 +297,16 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Jenis Saran Berhenti Berganti Nama di Tengah Jalan dari Laporan ke Setelan
+
+- **Tanggal:** 2026-09-17
+- **Tipe:** DECISION
+- **Area:** Saran Jual / Copy
+- **Deskripsi:** Empat jenis saran jual punya nama di tabel "Per Jenis Saran" dan nama lagi di saklar Cara Kerja Sistem. Dua di antaranya tidak sama: `attach` disebut "Tambah add-on" lalu "Tambahan (add-on)", dan `manual` disebut "Aturan Anda" lalu "Aturan yang Anda tulis sendiri". Nama pendek dari laporan sekarang dipakai keduanya, dan kalimat status di halaman Aturan Saran Jual ikut memakainya.
+- **Alasan:** Docblock `UPSELL_TYPES` di `Operations.vue` sudah menyebut jalannya sendiri: "Owner sampai ke layar ini dari tabel Per Jenis Saran di laporan, jadi ia sudah tahu jenisnya apa." Separuh namanya berganti persis di perjalanan itu. Judul saklar tidak perlu menerangkan apa-apa: baris `detail` tepat di bawahnya sudah melakukannya, dan kalimat status di halaman aturan menyebut nama itu dalam tanda kutip sebagai barang yang harus dicari owner di Setelan. Nama yang dikutip harus sama persis dengan yang tertulis di sana.
+- **Penjaga:** `tests/Feature/Owner/UpsellReportCopyTest.php` membaca keempat label dari `Upsell.vue` dan menuntut tiap `key` di `UPSELL_TYPES` memakai judul yang sama. Penjaga ini tumbuh bersama daftarnya: jenis kelima cukup ditulis di laporan, dan test langsung menuntut saklarnya menamainya sama.
+- **Berkas:** `resources/js/Pages/Owner/Settings/Operations.vue`, `app/Services/Upsell/RuleOutcomeResolver.php`
 
 ### [DECISION] Satu Nama untuk Harga Terendah: "Lantai Untung" Jadi "Batas Untung" di Seluruh Layar Pemilik
 

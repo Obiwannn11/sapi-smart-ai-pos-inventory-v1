@@ -59,6 +59,6 @@ test('kalimat status aturan tidak memakai kosakata mesin', function (string $phr
 test('nama jenis di kalimat status sama dengan judul saklarnya di setelan', function () {
     $settings = file_get_contents(resource_path('js/Pages/Owner/Settings/Operations.vue'));
 
-    expect($settings)->toContain("title: 'Aturan yang Anda tulis sendiri'")
-        ->and(upsellRulesResolverSource())->toContain('jenis saran "Aturan yang Anda tulis sendiri"');
+    expect($settings)->toContain("title: 'Aturan Anda'")
+        ->and(upsellRulesResolverSource())->toContain('jenis saran "Aturan Anda"');
 });
