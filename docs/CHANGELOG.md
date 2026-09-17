@@ -71,6 +71,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-17 | DECISION | Kasir | Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama |
 | 2026-09-16 | ADDITION | Platform | Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather |
 | 2026-09-16 | DECISION | Kasir | Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir |
+| 2026-09-16 | ADDITION | Laporan | Rekap Bulanan Punya Unduhan Excel — Satu Lembar per Tabel, Angka yang Tetap Angka, dan CSV Tetap di Sebelahnya |
 | 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
 | 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
 | 2026-09-16 | DECISION | Kasir | Saran yang Sedang Berdiskon Didahulukan di Dalam Kelompoknya — Aturan Owner Tetap di Atas Saran Mesin |
@@ -476,6 +477,33 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/Pages/Cashier/{CashDrawer,CashDrawerClose,CashDrawerSummary,Queue,TransactionHistory}.vue`: teks UI
   - `tests/Feature/Cashier/CashierPagesCopyTest.php`: penjaga baru
 - **Catatan:** Istilah "kas negatif" sengaja TETAP di layar pemilik dan di nama kolom rekonsiliasi; yang dibuang hanya pemakaiannya dalam kalimat yang dibaca kasir. Penyeragaman istilah itu untuk pemilik belum diputuskan.
+
+### [ADDITION] Rekap Bulanan Punya Unduhan Excel — Satu Lembar per Tabel, Angka yang Tetap Angka, dan CSV Tetap di Sebelahnya
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase — permintaan pemilik langsung: "laporan bulanan itu ada laporan CSV, perbaiki agar dapat dilaporkan dalam bentuk Excel, sudah ada sheet terpisah, dan tabel sheetnya rapi".
+- **Dampak:** Dependensi baru (`phpoffice/phpspreadsheet ^5.9`, disetujui pemilik), kelas perakit baru (`app/Services/Reports/MonthlyReportWorkbook.php`), satu rute unduhan baru, dua tombol di halaman Laporan Bulanan, test baru.
+- **Breaking Change:** Tidak. Rute CSV lama (`/owner/reports/monthly/export`) tidak berubah sedikit pun — isinya, namanya, header-nya. Excel berdiri di rute sendiri.
+- **Deskripsi:** Unduhan rekap bulanan satu file CSV berisi beberapa tabel yang ditumpuk vertikal dengan baris kosong sebagai sekat: RINGKASAN, RINCIAN HARIAN, METODE PEMBAYARAN, POTONGAN HARGA, PRODUK TERLARIS. Itu terbaca oleh manusia, tapi tidak oleh spreadsheet — dan itulah keluhannya. Satu lembar dengan lima kepala tabel berbeda tidak bisa di-filter dan tidak bisa di-pivot; kolom "Total" milik metode pembayaran jatuh persis di kolom yang sama dengan "Omzet" milik rincian harian, sehingga seretan `SUM()` apa pun menjumlahkan dua hal yang berbeda. Angkanya pun sampai sebagai teks polos tanpa format, dan tanggalnya sebagai string yang terurut secara alfabet.
+- **Bentuk buku kerjanya:**
+  - **Satu lembar per tabel** — `Ringkasan`, `Rincian Harian`, `Metode Pembayaran`, `Potongan Harga`, `Produk Terlaris`. Tiap lembar punya SATU baris kepala dan satu jenis baris data, jadi filter, pivot, dan `SUM()` menjawab hal yang sama dengan yang dibaca matanya.
+  - **Angka tetap berupa angka**, dengan "Rp" dan pemisah ribuan sebagai format sel. Ini inti perubahannya: `"Rp 65.000"` sebagai teks terbaca sama oleh mata dan tidak bisa dijumlahkan sama sekali.
+  - **Tanggal adalah tanggal Excel yang sebenarnya**, bukan string. Kolom `Hari` di sebelahnya menulis nama harinya sendiri dalam bahasa Indonesia — nama bulan pada format tanggal dirender Excel menurut locale mesin pembacanya, dan tidak bisa dijamin dari sini.
+  - **Rapi tanpa dihias:** kepala tabel berwarna dan dibekukan (`freezePane`), AutoFilter di tabel panjang, lebar kolom ditulis eksplisit, baris TOTAL bergaris ganda di atasnya, dan hari tutup diberi arsiran abu-abu agar terbaca sebagai hari tanpa penjualan, bukan sebagai baris yang datanya hilang. Cetaknya sudah diatur: landscape, fit-to-width, kepala tabel berulang tiap halaman.
+  - **Lembar `Ringkasan` membawa perbandingan bulan sebelumnya**, yang di CSV tidak pernah ikut turun sama sekali.
+- **Aturan lama yang sengaja dipertahankan utuh:** kolom pajak dan biaya layanan hanya lahir untuk tenant yang memungut (`[BL-065]`, `[BL-097]`); lembar potongan tidak dibuat sama sekali bila tidak ada yang dipotong; produk terlaris tetap satu baris per VARIAN tanpa baris total per produk di antaranya, supaya `SUM()` tidak menghitung ganda; dan rekap tunai tetap yang sudah dikurangi kembalian (`[BL-109]`), dengan catatan kakinya ditulis di lembarnya.
+- **Yang membuat dua unduhan tidak akan berselisih:** keduanya membaca satu pengumpul data, `monthlyReport()`. Dua unduhan yang masing-masing mengumpulkan angkanya sendiri adalah dua laporan yang suatu hari akan menjawab berbeda untuk bulan yang sama, dan yang paling mungkin menyimpang justru syarat pemunculan kolom pajak.
+- **Kenapa CSV tidak digantikan:** diputuskan pemilik. Bentuk datar tanpa gaya itulah yang dimakan pemroses lain — impor ke akuntansi, skrip, spreadsheet yang bukan Excel. Di halaman Laporan Bulanan tombolnya jadi dua, dengan Excel lebih dulu dan lebih tegas sebagai unduhan yang dianjurkan.
+- **Dependensi:** `phpoffice/phpspreadsheet ^5.9` ditambahkan setelah pemilik memilihnya di atas menulis penulis XLSX sendiri. Ekstensi PHP yang dibutuhkannya (`zip`, `xml`, `gd`) sudah aktif.
+- **Yang sengaja TIDAK dikerjakan:** laporan harian tetap tanpa unduhan Excel, dan tidak ada grafik yang ditanam di dalam buku kerjanya. Keduanya di luar yang diminta.
+- **File Terdampak:**
+  - `app/Services/Reports/MonthlyReportWorkbook.php` — baru; seluruh perakitan lembar, gaya, dan format angkanya
+  - `app/Http/Controllers/Owner/ReportController.php` — `monthlyReport()` baru sebagai pengumpul bersama; `monthlyExportExcel()` baru; `monthlyExport()` (CSV) kini membaca pengumpul yang sama
+  - `routes/web.php` — `reports.monthly.export.excel`
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` — dua tombol unduhan
+  - `composer.json`, `composer.lock` — `phpoffice/phpspreadsheet`
+  - `tests/Feature/Owner/MonthlyReportExcelTest.php` — baru; 10 test yang benar-benar membuka kembali file xlsx-nya dan membaca selnya
+
+---
 
 ### [HOTFIX] Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115)
 - **Tanggal:** 2026-09-16
