@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Harga | Satu Nama untuk Harga Terendah: "Lantai Untung" Jadi "Batas Untung" di Seluruh Layar Pemilik |
 | 2026-09-17 | DECISION | Publik | Landing Berhenti Menjanjikan Ramalan Stok, Setup oleh AI, dan "AI Dilatih Khusus Per-Toko" |
 | 2026-09-17 | DECISION | Owner | Riwayat Sesi Kas dan Koreksi Offline: Kolom "Expected/Closed" Berbahasa Indonesia, Alasan Koreksi Tanpa Kata "Anomali" |
 | 2026-09-17 | DECISION | Langganan | Halaman Langganan Berhenti Menyebut "Kursi" dan "Pengguna" untuk Hal yang Sama |
@@ -295,6 +296,21 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Satu Nama untuk Harga Terendah: "Lantai Untung" Jadi "Batas Untung" di Seluruh Layar Pemilik
+
+- **Tanggal:** 2026-09-17
+- **Tipe:** DECISION
+- **Area:** Harga / Copy
+- **Deskripsi:** Harga terendah yang boleh dicapai sebuah barang punya dua nama. Layar pemilik menyebutnya "lantai untung"; layar kasir, `TransactionService`, dan judul kartu di Cara Kerja Sistem menyebutnya "batas untung". Pemiliknya memilih yang kedua, dan seluruh tulisan yang dibaca orang sekarang memakainya.
+- **Alasan:** Catatan penutup pada entri "Stok, Produk, dan Aturan Diskon" menyebut perpecahan ini sebagai satu-satunya istilah yang belum diputuskan. Yang paling jelas memperlihatkan biayanya adalah kartu di Cara Kerja Sistem: judulnya sudah berbunyi **Batas Untung Minimum**, lalu paragraf tepat di bawahnya berbunyi "Lantai harga tiap barang ... di bawah lantai ini". Dua kata untuk satu hal, di dalam satu kotak yang sama, dan pembacanya harus menebak sendiri bahwa keduanya barang yang sama.
+- **Yang berubah di layar:**
+  - **Aturan Diskon.** Label rumus di pratinjau jadi "Batas untung (modal + 10%)". Sebab aturan diam jadi "Habis dimakan batas untung". Angka di bawah harga baris jadi "batas Rp 16.500".
+  - **Chip baris terjepit** jadi "Tertahan batas untung" di kedua tempatnya. Sebelumnya berbunyi "Tertahan lantai": cukup di pratinjau, yang punya label rumus tepat di atasnya, tapi menggantung di tabel, yang tidak punya apa-apa di dekatnya.
+  - **Cara Kerja Sistem.** Paragraf di bawah judul berhenti memperkenalkan kata kedua: "Harga terendah tiap barang, dihitung dari harga modalnya ... tidak akan pernah menurunkan harga di bawah batas ini."
+- **Yang sengaja TIDAK diubah:** kata "lantai" di komentar kode, docblock, dan nama test. Di sana ia istilah domain, dan dipakai juga oleh hal yang berbeda — `ManualRuleStrategy` punya "lantai skor" yang tidak ada hubungannya dengan harga. Mengganti kata di ~40 komentar hanya menambah keributan pada riwayat tanpa satu pun pembaca layar yang diuntungkan.
+- **Penjaga:** `tests/Feature/Owner/ProfitFloorWordingTest.php` — tiga test: label di halaman aturan diskon, chip yang berbunyi sama di dua tempat, dan kartu di Cara Kerja Sistem yang memakai kata judulnya sendiri.
+- **Berkas:** `resources/js/Pages/Owner/DiscountRules/Index.vue`, `resources/js/Pages/Owner/Settings/Operations.vue`
 
 ### [DECISION] Landing Berhenti Menjanjikan Ramalan Stok, Setup oleh AI, dan "AI Dilatih Khusus Per-Toko"
 - **Tanggal:** 2026-09-17

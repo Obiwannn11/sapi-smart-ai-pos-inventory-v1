@@ -12,7 +12,7 @@
  * Paragrafnya dibaca sekali, oleh owner yang belum punya satu pun aturan,
  * lalu tidak pernah dibaca lagi tepat pada saat batas itu menggigit. Sekarang
  * keduanya DITUNJUK pada barisnya sendiri: sebab yang spesifik di kolom
- * status, dan penanda "Tertahan lantai" pada harga yang benar-benar terjepit.
+ * status, dan penanda "Tertahan batas untung" pada harga yang benar-benar terjepit.
  */
 import { ref, computed } from 'vue';
 import { Deferred, useForm, Head, Link } from '@inertiajs/vue3';
@@ -64,7 +64,7 @@ const REASON_LABELS = {
     expired: 'Barang sudah kedaluwarsa',
     unknown_cost: 'Modal belum diisi',
     no_cut_today: 'Potongan 0% hari ini',
-    floor_absorbed: 'Habis dimakan lantai untung',
+    floor_absorbed: 'Habis dimakan batas untung',
     cut_too_small: 'Potongan terlalu kecil',
     no_rule: 'Tidak berlaku',
 };
@@ -364,7 +364,7 @@ const doDelete = () => {
                                     <a
                                         href="/owner/settings/operations"
                                         class="text-gray-500 underline decoration-gray-300 hover:decoration-gray-500"
-                                    >Lantai untung (modal + {{ minMarginPercent }}%)</a>
+                                    >Batas untung (modal + {{ minMarginPercent }}%)</a>
                                     <span class="text-gray-700">{{ formatRupiah(preview.floor) }}</span>
                                 </div>
                                 <div class="flex items-center justify-between mt-1 font-medium">
@@ -373,7 +373,7 @@ const doDelete = () => {
                                         <span
                                             v-if="preview.clamped"
                                             class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
-                                        >Tertahan lantai</span>
+                                        >Tertahan batas untung</span>
                                         <span :class="preview.blocked ? 'text-gray-500' : 'text-success'">
                                             {{ formatRupiah(preview.price) }}
                                         </span>
@@ -469,10 +469,10 @@ const doDelete = () => {
                                              lantainya, dan angka kembar berdampingan membuat
                                              pembacanya mencari beda yang tidak ada. -->
                                         <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                                            Tertahan lantai
+                                            Tertahan batas untung
                                         </span>
                                     </span>
-                                    <span v-else class="block text-xs text-gray-400">lantai {{ formatRupiah(rule.effective?.floor) }}</span>
+                                    <span v-else class="block text-xs text-gray-400">batas {{ formatRupiah(rule.effective?.floor) }}</span>
                                 </td>
                                 <td class="px-5 py-4 text-center">
                                     <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', statusClass(rule)]">

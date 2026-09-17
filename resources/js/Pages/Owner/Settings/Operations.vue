@@ -478,7 +478,7 @@ const submitServiceCharge = () => {
                 <div class="pt-5 border-t border-gray-200">
                     <h2 class="text-base font-semibold text-gray-900">Batas Untung Minimum</h2>
                     <p class="text-xs text-gray-500 mt-0.5 mb-4">
-                        Lantai harga tiap barang, dihitung dari harga modalnya. Aturan diskon tidak akan pernah menurunkan harga di bawah lantai ini.
+                        Harga terendah tiap barang, dihitung dari harga modalnya. Aturan diskon tidak akan pernah menurunkan harga di bawah batas ini.
                     </p>
 
                     <div class="flex items-center gap-3">
@@ -494,7 +494,7 @@ const submitServiceCharge = () => {
                             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">%</span>
                         </div>
                         <p class="text-xs text-gray-500">
-                            Barang bermodal Rp 10.000 punya lantai
+                            Barang bermodal Rp 10.000 punya batas
                             <strong>Rp {{ Math.ceil(10000 * (1 + (form.min_margin_percent || 0) / 100) / 500) * 500 }}</strong>.
                         </p>
                     </div>
@@ -504,7 +504,7 @@ const submitServiceCharge = () => {
                     </p>
 
                     <p class="mt-3 text-xs text-gray-500 leading-relaxed">
-                        Hanya <strong>Anda</strong> yang bisa menjual di bawah lantai ini, dan setiap kali wajib menyertakan alasan yang ikut tercatat pada penjualannya.
+                        Hanya <strong>Anda</strong> yang bisa menjual di bawah batas ini, dan setiap kali wajib menyertakan alasan yang ikut tercatat pada penjualannya.
                         Kasir tidak punya jalan ke sana sama sekali.
                     </p>
                 </div>
