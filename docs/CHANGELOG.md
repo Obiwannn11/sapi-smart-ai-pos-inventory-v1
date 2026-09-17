@@ -61,6 +61,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 
 | Tanggal | Tipe | Area | Judul |
 |---|---|---|---|
+| 2026-09-17 | DECISION | Publik | Landing Berhenti Menjanjikan Ramalan Stok, Setup oleh AI, dan "AI Dilatih Khusus Per-Toko" |
 | 2026-09-17 | DECISION | Owner | Riwayat Sesi Kas dan Koreksi Offline: Kolom "Expected/Closed" Berbahasa Indonesia, Alasan Koreksi Tanpa Kata "Anomali" |
 | 2026-09-17 | DECISION | Langganan | Halaman Langganan Berhenti Menyebut "Kursi" dan "Pengguna" untuk Hal yang Sama |
 | 2026-09-17 | DECISION | Platform | Konsol Platform: "Kapabilitas" Jadi "Fitur", dan Satu-satunya Kata "Seat" di Layar Dibuang |
@@ -294,6 +295,24 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 ---
 
 ## Revision History
+
+### [DECISION] Landing Berhenti Menjanjikan Ramalan Stok, Setup oleh AI, dan "AI Dilatih Khusus Per-Toko"
+- **Tanggal:** 2026-09-17
+- **Fase Terkait:** Di Luar Fase
+- **Dampak:** Frontend
+- **Breaking Change:** Tidak
+- **Deskripsi:**
+  Audit antislop-copywriting halaman publik. Yang ditemukan bukan soal gaya bahasa melainkan **klaim yang tidak dilakukan kodenya** — lanjutan langsung dari `[BL-032]`, `[BL-083]`, dan `[BL-089]`, yang membersihkan hal serupa di bagian lain halaman yang sama.
+  - **Ramalan stok yang luput.** Gelembung "Cara SAPI" masih berbunyi "Stok Anda aman untuk 10 hari ke depan". Tidak ada perhitungan horizon di basis kode; `BadgeHelperService` membandingkan ambang tetap. `LandingClaimsTest` tidak menangkapnya karena kalimatnya berbeda dari "Aman Hingga 14 Hari" yang dulu dibuang. Diganti kalimat yang memang keluar dari badge.
+  - **"AI dilatih khusus per-toko" tidak benar.** Aplikasi memanggil API model pihak ketiga (SumoPod, Gemini, OpenAI, Anthropic) lewat `AiProviderFactory`; tidak ada pelatihan model di mana pun. Jawaban FAQ keamanan ditulis ulang menyebut yang benar-benar terjadi: pemisahan data antar toko, apa yang dikirim ke penyedia model dan kapan, pilihan memakai kunci API sendiri, dan jejak audit saat pengelola layanan membuka angka omzet. "Sangat aman" dan "enkripsi standar industri" dibuang — klaim kepercayaan tanpa isi.
+  - **Setup yang mengaku dikerjakan AI.** Judul "Mulai Berjualan Lebih Cerdas Hanya dalam 3 Menit" dengan lencana "AI-Powered Setup" dan kalimat "Biarkan AI kami yang menyiapkan segalanya" bertentangan dengan langkah keduanya sendiri, yang berbunyi katalog disusun sendiri oleh pemilik. Angka "3 menit" juga tidak pernah diukur.
+  - **FAQ offline salah arah ke bawah.** "Mode cache terbatas" menyebut kemampuan yang lebih kecil daripada yang sudah ada: penjualan offline tersimpan di perangkat dan terkirim otomatis. Ditulis apa adanya, termasuk yang memang butuh koneksi (non-tunai dan tagihan terbuka).
+  - **Kata jualan kosong dibuang:** "bukan sekadar aplikasi kasir biasa", "Segala yang Anda Butuhkan untuk Scale-up", "Bukti Nyata", "real-time tanpa ribet", "setiap detik", "ribuan SKU", "Interface Kasir".
+- **Alasan:** Halaman ini yang dibaca orang sebelum mendaftar. Klaim yang tidak ditepati aplikasinya bukan sekadar tulisan buruk — ia janji yang ditagih pemakainya di hari pertama.
+- **File Terdampak:**
+  - `resources/views/public/landing.blade.php`
+  - `tests/Feature/Public/LandingCopyTest.php`: penjaga baru untuk klaim-klaim di atas
+- **Catatan:** `LandingClaimsTest` yang sudah ada tidak diubah; penjaga baru menambah kalimat yang belum tercakup. Tangga harga, kelas tarif, dan tiga kalimat "apa yang TIDAK terjadi" di bagian Harga Adaptif dibiarkan — semuanya dibaca dari `PublicPricing`, bukan diketik, dan sudah menyebut angkanya apa adanya.
 
 ### [DECISION] Riwayat Sesi Kas dan Koreksi Offline: Kolom "Expected/Closed" Berbahasa Indonesia, Alasan Koreksi Tanpa Kata "Anomali"
 - **Tanggal:** 2026-09-17

@@ -163,7 +163,7 @@
                         Dengan AI.
                     </h1>
                     <p class="text-lg sm:text-xl text-gray-600 mb-10 leading-relaxed max-w-lg font-medium">
-                        SAPI bukan sekadar aplikasi kasir biasa. SAPI menandai stok yang menipis dan barang yang berhenti laku, menganalisis pola penjualan Anda, dan menurunkan saran jual yang menyebut barangnya.
+                        SAPI menandai stok yang menipis dan barang yang berhenti laku, menganalisis pola penjualan Anda, dan menurunkan saran jual yang menyebut barangnya.
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4 sm:gap-5">
                         {{--
@@ -344,19 +344,19 @@
                             <div class="w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
                             </div>
-                            <p class="text-lg font-bold">"Stok Anda aman untuk 10 hari ke depan."</p>
+                            <p class="text-lg font-bold">"3 varian mendekati habis, ini daftarnya."</p>
                         </li>
                         <li class="flex items-start gap-4">
                             <div class="w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
                             </div>
-                            <p class="text-lg font-bold">"Laba bersih Anda naik 20% bulan ini."</p>
+                            <p class="text-lg font-bold">"Laba bersih bulan ini sudah terhitung, bukan dikira-kira."</p>
                         </li>
                         <li class="flex items-start gap-4">
                             <div class="w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
                             </div>
-                            <p class="text-lg font-bold">"Promo bundling A & B efektif tingkatkan penjualan."</p>
+                            <p class="text-lg font-bold">"Saran jual kemarin: 12 ditawarkan, 5 diterima."</p>
                         </li>
                     </ul>
                     <div class="mt-12 text-center md:text-left">
@@ -371,7 +371,7 @@
     <section id="fitur" class="py-24 lg:py-32 bg-white">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Segala yang Anda Butuhkan untuk <span class="text-primary">Scale-up</span></h3>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Fitur yang Sudah <span class="text-primary">Jalan Hari Ini</span></h3>
             </div>
 
             <div class="bg-gray-50 rounded-[4rem] p-10 lg:p-16 border border-gray-100 reveal">
@@ -436,7 +436,7 @@
                                 <div class="relative bg-white rounded-[2.5rem] p-4 shadow-2xl border border-gray-100 transform -rotate-2 transition-transform hover:rotate-0 duration-500">
                                     <img src="{{ asset('POS-Interface.webp') }}" alt="Layar kasir SAPI dengan keranjang berisi" width="2160" height="1350" loading="lazy" class="rounded-[2rem] w-full shadow-inner">
                                     <div class="absolute -bottom-6 -right-6 bg-primary text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl">
-                                        Interface Kasir
+                                        Layar Kasir
                                     </div>
                                 </div>
                             </div>
@@ -451,8 +451,8 @@
     <section class="py-24 lg:py-32 bg-gray-50 overflow-hidden">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900">Bukti Nyata Sistem SAPI</h3>
-                <p class="text-lg text-gray-600 font-medium mt-4">Bukan mockup — inilah layar yang benar-benar dipakai sehari-hari, diambil dari aplikasi yang berjalan.</p>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900">Layar yang Dipakai Sehari-hari</h3>
+                <p class="text-lg text-gray-600 font-medium mt-4">Diambil dari aplikasi yang berjalan, bukan gambar rancangan.</p>
             </div>
 
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -463,8 +463,8 @@
                             <img src="{{ asset('Reports-Daily.webp') }}" alt="Laporan Harian" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <h4 class="text-xl font-black text-gray-900 px-2">Laporan Harian Pintar</h4>
-                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Analisis penjualan real-time tanpa ribet.</p>
+                        <h4 class="text-xl font-black text-gray-900 px-2">Laporan Harian</h4>
+                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Omzet, laba, dan rekap metode bayar hari itu.</p>
                     </div>
                 </div>
 
@@ -475,8 +475,8 @@
                             <img src="{{ asset('Stock-Management.webp') }}" alt="Manajemen Stok" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <h4 class="text-xl font-black text-gray-900 px-2">Kontrol Inventori Akurat</h4>
-                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Pantau pergerakan barang setiap detik.</p>
+                        <h4 class="text-xl font-black text-gray-900 px-2">Manajemen Stok</h4>
+                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Tiap pergerakan stok tercatat beserta alasannya.</p>
                     </div>
                 </div>
 
@@ -487,8 +487,8 @@
                             <img src="{{ asset('Product-List.webp') }}" alt="Daftar Produk" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <h4 class="text-xl font-black text-gray-900 px-2">Katalog Produk Modern</h4>
-                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Kelola ribuan SKU dengan sangat mudah.</p>
+                        <h4 class="text-xl font-black text-gray-900 px-2">Katalog Produk</h4>
+                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Produk, varian, dan modifier dalam satu tempat.</p>
                     </div>
                 </div>
             </div>
@@ -598,10 +598,10 @@
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
                 <div class="inline-flex items-center gap-2 px-4 py-2 bg-primary/5 text-primary rounded-full text-xs font-black uppercase tracking-widest mb-6">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-                    AI-Powered Setup
+                    Mulai Cepat
                 </div>
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Mulai Berjualan Lebih Cerdas Hanya dalam <span class="text-primary">3 Menit</span></h3>
-                <p class="text-lg text-gray-600 font-medium mt-6">Lupakan input manual yang melelahkan. Biarkan AI kami yang menyiapkan segalanya untuk Anda.</p>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Tiga Langkah sampai <span class="text-primary">Kasir Siap Dipakai</span></h3>
+                <p class="text-lg text-gray-600 font-medium mt-6">Daftar, susun katalog, buka sesi kas. Tidak ada yang disiapkan diam-diam untuk Anda.</p>
             </div>
 
             <div class="relative">
@@ -1025,7 +1025,7 @@
                         <svg id="faq-icon-1" class="w-6 h-6 text-gray-400 group-hover:text-primary transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div id="faq-ans-1" class="hidden px-8 pb-6 text-gray-600 font-medium leading-relaxed">
-                        SAPI berbasis cloud untuk memastikan sinkronisasi AI yang akurat, namun kami memiliki mode cache terbatas untuk transaksi kasir saat internet tidak stabil.
+                        Bisa. Saat internet putus, kasir tetap melayani memakai salinan katalog dan harga di perangkat, dan penjualannya disimpan di perangkat lalu terkirim sendiri begitu koneksi kembali. Yang memang butuh koneksi: pembayaran non-tunai dan tagihan terbuka, karena keduanya diperiksa di server.
                     </div>
                 </div>
 
@@ -1047,7 +1047,7 @@
                         <svg id="faq-icon-3" class="w-6 h-6 text-gray-400 group-hover:text-primary transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div id="faq-ans-3" class="hidden px-8 pb-6 text-gray-600 font-medium leading-relaxed">
-                        Sangat aman. Kami menggunakan enkripsi standar industri dan data Anda tidak akan pernah dibagikan ke tenant lain. AI dilatih khusus per-toko.
+                        Data tiap toko terpisah dan tidak pernah dibagikan ke toko lain. Untuk analisis AI, yang dikirim ke penyedia model hanya ringkasan penjualan Anda, dan hanya saat Anda meminta analisis — Anda juga bisa memakai kunci API sendiri supaya kiriman itu memakai akun Anda. Setiap pembukaan angka omzet oleh pengelola layanan tercatat di jejak audit.
                     </div>
                 </div>
             </div>
