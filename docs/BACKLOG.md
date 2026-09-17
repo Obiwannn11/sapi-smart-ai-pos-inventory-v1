@@ -108,7 +108,7 @@ lalu baca hanya potongan barisnya. Status entri yang sudah selesai bisa dijawab 
 ### [BL-116] Potongan Hanya Terlaporkan Sehari — Rekap Bulanan, Performa per Aturan, dan Omzet Sebelum Potongan Tidak Ada di Mana Pun
 - **Ditemukan:** 2026-09-16
 - **Sumber:** Pertanyaan pemilik 2026-09-16: *"apakah ada pencatatan dalam bentuk paket diskon … owner bisa liat penjualan produk murni dan di bagian lain dia dapat liat performa dari diskonnya, apakah banyak pakai, berapa total uang digunakan untuk diskon"*. Sudah **diverifikasi terhadap kode**: pencatatan per barisnya lengkap sejak `[BL-018]`, yang belum ada adalah yang MEMBACANYA
-- **Status:** Open — butir 1 dan 2 **selesai 2026-09-16**; yang menahan entri ini tetap terbuka adalah butir 3 (performa per aturan) dan blok potongan di unduhan Excel
+- **Status:** Open — butir 1 dan 2 **selesai 2026-09-16**. Yang tersisa: butir 3 (performa per aturan), butir 4 (potongan paket, menunggu `[BL-103]`), dan dua kolom butir 2 (Harga Normal dan Potongan) di lembar `Produk Terlaris` unduhan Excel — lembar `Potongan Harga`-nya sendiri sudah ada sejak hari yang sama
 - **Prioritas:** Medium — bukan angka yang salah, melainkan angka yang benar dan tidak pernah ditanyakan. Uang yang dikorbankan lewat potongan sudah tercatat utuh di `transaction_items`, dan owner tidak punya satu pun layar yang menjumlahkannya di luar satu hari
 - **Area Terdampak:**
   - `app/Http/Controllers/Owner/ReportController.php:140` — `discountSummary()`, satu-satunya pembaca kolom potongan di seluruh laporan, dan ia menerima **satu tanggal**
