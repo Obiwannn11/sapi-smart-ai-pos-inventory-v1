@@ -117,12 +117,15 @@ class ReportController extends Controller
             ), 'rekap'),
 
             // Potongan harga hari itu ([BL-018]).
-            'discountSummary' => Inertia::defer(fn () => $this->discountSummary($date), 'rekap'),
+            'discountSummary' => Inertia::defer(fn () => $this->discountSummary(
+                fn (Builder $q) => $q->whereEffectiveDate($date)
+            ), 'rekap'),
         ]);
     }
 
     /**
-     * Berapa yang dipotong hari itu, dan berapa yang benar-benar DIKORBANKAN.
+     * Berapa yang dipotong dalam satu periode, dan berapa yang benar-benar
+     * DIKORBANKAN.
      *
      * Dua angka, dan memisahkannya adalah permintaan eksplisit `[BL-018]`:
      *
@@ -137,30 +140,71 @@ class ReportController extends Controller
      *
      * `discount_amount` adalah potongan PER UNIT, jadi ia dikali `qty`.
      *
+     * **Periodenya dioper sebagai closure**, seperti {@see self::topProducts()}:
+     * rekap harian dan rekap bulanan harus menghitung himpunan yang sama, dan
+     * dua salinan definisi "potongan" akan berbeda suatu hari ([BL-116]).
+     *
+     * `gross_sales` adalah harga NORMAL barang yang terjual — omzet sebelum
+     * potongan. Ia dihitung sebagai `net_sales + total_given`, bukan dari
+     * `product_variants.price` hari ini: harga katalog berubah, dan bruto masa
+     * lalu yang dihitung dari harga hari ini adalah angka karangan yang
+     * terlihat pasti ([BL-116] "Yang JANGAN dilakukan" butir 1). Keduanya
+     * mengikuti `transaction_items.subtotal`, jadi modifier ada di dalam
+     * kedua angka dan di mode pajak inclusive pajaknya pun ada di dalam
+     * keduanya — yang dijamin bukan bebas-pajaknya, melainkan bahwa
+     * selisihnya benar-benar potongan dan bukan efek dasar yang berbeda.
+     *
+     * `$lineLimit` memotong daftar baris rugi untuk periode panjang. Urutannya
+     * potongan terbesar lebih dulu — daftar yang dipotong tanpa urutan berarti
+     * yang tampil ditentukan kebetulan.
+     *
+     * **Penjualan offline ikut terhitung sejak `[BL-115]`**: jalur sinkron kini
+     * menulis `original_unit_price` dan `discount_amount` seperti jalur online,
+     * jadi potongan yang terjadi saat perangkat putus tidak lagi hilang dari
+     * angka ini. Yang tetap di luar hanyalah baris yang tersinkron SEBELUM
+     * entri itu — jejaknya tidak pernah tercatat dan tidak boleh dikarang.
+     *
      * @return array<string, mixed>
      */
-    private function discountSummary(string $date): array
+    private function discountSummary(\Closure $withinPeriod, ?int $lineLimit = null): array
     {
-        $scoped = fn () => TransactionItem::query()
-            ->whereHas('transaction', function ($q) use ($date) {
-                $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereEffectiveDate($date);
-            })
-            ->where('discount_amount', '>', 0);
+        $items = fn () => TransactionItem::query()
+            ->whereHas('transaction', function (Builder $q) use ($withinPeriod) {
+                $withinPeriod($q->where('status', Transaction::STATUS_COMPLETED));
+            });
 
-        $totalGiven = (float) (clone $scoped())->selectRaw('SUM(discount_amount * qty) as total')->value('total');
+        // Satu baris agregat untuk tiga angka sekaligus. Tiga kueri terpisah
+        // menyisir himpunan yang sama tiga kali, dan di rekap bulanan himpunan
+        // itu seluruh item sebulan.
+        $totals = $items()
+            ->selectRaw('COALESCE(SUM(subtotal), 0) as net_sales')
+            ->selectRaw('COALESCE(SUM(discount_amount * qty), 0) as total_given')
+            ->selectRaw('COALESCE(SUM(CASE WHEN discount_amount > 0 THEN 1 ELSE 0 END), 0) as items_discounted')
+            ->first();
 
-        $belowFloor = (clone $scoped())->whereNotNull('below_floor_approved_by');
+        $belowFloor = fn () => $items()->whereNotNull('below_floor_approved_by');
+
+        $floor = $belowFloor()
+            ->selectRaw('COALESCE(SUM(discount_amount * qty), 0) as total')
+            ->selectRaw('COUNT(*) as items')
+            ->first();
+
+        $netSales = (float) $totals->net_sales;
+        $totalGiven = (float) $totals->total_given;
 
         return [
+            'gross_sales' => round($netSales + $totalGiven, 2),
+            'net_sales' => $netSales,
             'total_given' => $totalGiven,
-            'items_discounted' => (clone $scoped())->count(),
-            'below_floor_total' => (float) (clone $belowFloor)->selectRaw('SUM(discount_amount * qty) as total')->value('total'),
-            'below_floor_items' => (clone $belowFloor)->count(),
+            'items_discounted' => (int) $totals->items_discounted,
+            'below_floor_total' => (float) $floor->total,
+            'below_floor_items' => (int) $floor->items,
             // Barisnya sendiri, supaya owner bisa melihat APA yang dijual rugi
             // dan dengan alasan apa — bukan cuma jumlahnya.
-            'below_floor_lines' => (clone $belowFloor)
+            'below_floor_lines' => $belowFloor()
                 ->with('belowFloorApprover:id,name')
+                ->orderByRaw('discount_amount * qty DESC')
+                ->when($lineLimit !== null, fn (Builder $q) => $q->limit($lineLimit))
                 ->get(['id', 'variant_name', 'qty', 'unit_price', 'original_unit_price', 'discount_amount', 'discount_reason', 'margin_floor_at_sale', 'below_floor_approved_by'])
                 ->map(fn (TransactionItem $item) => [
                     'variant_name' => $item->variant_name,
@@ -173,6 +217,26 @@ class ReportController extends Controller
                 ])
                 ->all(),
         ];
+    }
+
+    /**
+     * Potongan sepanjang satu bulan kalender ([BL-116] butir 1).
+     *
+     * Daftar baris rugi dibatasi 50: tiap barisnya butuh persetujuan owner satu
+     * per satu, jadi jumlahnya memang terbatas manusia — tapi "terbatas
+     * manusia" bukan "terbatas", dan `below_floor_items` tetap membawa jumlah
+     * sebenarnya supaya layarnya bisa mengaku kalau daftarnya terpotong.
+     *
+     * @return array<string, mixed>
+     */
+    private function discountSummaryFor(Carbon $month): array
+    {
+        $endOfMonth = $month->copy()->endOfMonth();
+
+        return $this->discountSummary(
+            fn (Builder $q) => $q->whereEffectiveBetween($month, $endOfMonth),
+            lineLimit: 50,
+        );
     }
 
     /**
@@ -229,6 +293,11 @@ class ReportController extends Controller
             // tidak ada gunanya sampai bergiliran.
             'paymentSummary' => Inertia::defer(fn () => $this->paymentSummaryFor($month), 'rekap'),
             'topProducts' => Inertia::defer(fn () => $this->topProductsFor($month), 'rekap'),
+
+            // Potongan sebulan ([BL-116] butir 1). Ikut ditunda bersama dua
+            // rekap di atas: ia menyisir item transaksi sebulan penuh, dan
+            // sama-sama tabel di bawah lipatan.
+            'discountSummary' => Inertia::defer(fn () => $this->discountSummaryFor($month), 'rekap'),
         ]);
     }
 
@@ -252,6 +321,7 @@ class ReportController extends Controller
      *     daily_series: array<int, array<string, mixed>>,
      *     payment_summary: array<int, array{id: int, name: string, type: string, total: float}>,
      *     top_products: \Illuminate\Support\Collection<int, array<string, mixed>>,
+     *     discount_summary: array<string, mixed>,
      *     tax: array{active: bool, label: string},
      *     service_charge: array{active: bool, label: string}
      * }
@@ -284,6 +354,7 @@ class ReportController extends Controller
             'daily_series' => $dailySeries,
             'payment_summary' => $this->paymentSummaryFor($month),
             'top_products' => $this->topProductsFor($month),
+            'discount_summary' => $this->discountSummaryFor($month),
             'tax' => $this->taxContext($this->completedIn($month), $summary['tax_collected']),
             'service_charge' => $this->serviceChargeContext($this->completedIn($month), $summary['service_charge_collected']),
         ];
@@ -318,11 +389,12 @@ class ReportController extends Controller
     /**
      * Unduhan CSV dari rekap bulanan yang sedang dilihat.
      *
-     * Isinya persis yang ada di layar, dalam empat blok bersekat: ringkasan,
-     * rincian harian, metode pembayaran, dan produk terlaris. Bentuk datar
-     * tanpa gaya itulah yang membuatnya tetap ada di sebelah unduhan Excel
-     * alih-alih digantikan olehnya: yang dimakan pemroses lain — impor ke
-     * akuntansi, skrip, spreadsheet yang bukan Excel — adalah file seperti ini.
+     * Isinya persis yang ada di layar, dalam blok-blok bersekat: ringkasan,
+     * rincian harian, metode pembayaran, potongan harga, dan produk terlaris.
+     * Bentuk datar tanpa gaya inilah yang membuatnya tetap ada di sebelah
+     * unduhan Excel alih-alih digantikan olehnya: yang dimakan
+     * pemroses lain — impor ke akuntansi, skrip, spreadsheet yang bukan
+     * Excel — adalah file seperti ini.
      */
     public function monthlyExport(Request $request): StreamedResponse
     {
@@ -334,10 +406,11 @@ class ReportController extends Controller
         $dailySeries = $report['daily_series'];
         $paymentSummary = $report['payment_summary'];
         $topProducts = $report['top_products'];
+        $discountSummary = $report['discount_summary'];
         $tax = $report['tax'];
         $service = $report['service_charge'];
 
-        return response()->streamDownload(function () use ($label, $summary, $dailySeries, $paymentSummary, $topProducts, $tax, $service) {
+        return response()->streamDownload(function () use ($label, $summary, $dailySeries, $paymentSummary, $topProducts, $discountSummary, $tax, $service) {
             $out = fopen('php://output', 'w');
 
             // BOM UTF-8: tanpa ini Excel membaca CSV-nya sebagai ANSI dan nama
@@ -412,22 +485,82 @@ class ReportController extends Controller
             }
             fputcsv($out, []);
 
+            // Potongan harga ([BL-116] butir 1). Seluruh bloknya hilang untuk
+            // periode tanpa satu pun potongan, dengan alasan yang sama seperti
+            // kolom pajak di atas: blok nol bukan kejujuran, melainkan sesuatu
+            // yang harus dibaca ulang tiap bulan oleh mayoritas yang tidak
+            // pernah mendiskon.
+            $hasDiscounts = $discountSummary['items_discounted'] > 0;
+
+            if ($hasDiscounts) {
+                fputcsv($out, ['POTONGAN HARGA']);
+                fputcsv($out, ['Harga normal barang terjual', $discountSummary['gross_sales']]);
+                fputcsv($out, ['Total dipotong', $discountSummary['total_given']]);
+                fputcsv($out, ['Tertagih setelah potongan', $discountSummary['net_sales']]);
+                fputcsv($out, ['Baris penjualan berpotongan', $discountSummary['items_discounted']]);
+                // Dua baris terakhir yang paling ingin dilihat owner, dan
+                // alasannya ada di discountSummary(): penjualan rugi terlihat
+                // persis seperti diskon sehat sampai dipisahkan.
+                fputcsv($out, ['Di bawah batas untung', $discountSummary['below_floor_total']]);
+                fputcsv($out, ['Baris di bawah batas untung', $discountSummary['below_floor_items']]);
+                fputcsv($out, []);
+
+                if ($discountSummary['below_floor_lines'] !== []) {
+                    fputcsv($out, ['PENJUALAN DI BAWAH LANTAI UNTUNG']);
+                    fputcsv($out, ['Barang', 'Qty', 'Harga normal', 'Harga jual', 'Batas', 'Alasan', 'Disetujui']);
+                    foreach ($discountSummary['below_floor_lines'] as $line) {
+                        fputcsv($out, [
+                            $line['variant_name'],
+                            $line['qty'],
+                            $line['original_unit_price'],
+                            $line['unit_price'],
+                            $line['floor'],
+                            $line['reason'],
+                            $line['approved_by'],
+                        ]);
+                    }
+                    // Daftarnya dibatasi 50 baris; kalau terpotong, CSV-nya
+                    // mengaku alih-alih membiarkan pembacanya menjumlahkan
+                    // sebagian dan menamainya seluruhnya.
+                    if ($discountSummary['below_floor_items'] > count($discountSummary['below_floor_lines'])) {
+                        fputcsv($out, [
+                            'Menampilkan '.count($discountSummary['below_floor_lines'])
+                            .' baris potongan terbesar dari '.$discountSummary['below_floor_items'].' baris',
+                        ]);
+                    }
+                    fputcsv($out, []);
+                }
+            }
+
             // Satu baris per VARIAN, dengan peringkat dan nama produknya
             // diulang di tiap baris. Barisnya sengaja tidak dicampur dengan
             // baris total per produk: kolom Qty yang memuat total dan
             // rinciannya sekaligus akan terhitung dua kali begitu seseorang
             // menyeret SUM() ke bawahnya.
+            //
+            // Dua kolom potongan hanya ikut untuk periode yang memang punya
+            // potongan ([BL-116] butir 2) — syarat yang sama dengan blok di
+            // atas, dan sengaja dibaca dari angka periode, bukan dari setelan
+            // tenant hari ini: tenant yang menghapus semua aturan diskonnya
+            // bulan ini tetap harus bisa membaca laporan bulan lalu.
             fputcsv($out, ['PRODUK TERLARIS']);
-            fputcsv($out, ['Peringkat', 'Produk', 'Varian', 'Qty Terjual', 'Omzet']);
+            fputcsv($out, array_merge(
+                ['Peringkat', 'Produk', 'Varian', 'Qty Terjual'],
+                $hasDiscounts ? ['Harga Normal', 'Potongan'] : [],
+                ['Omzet'],
+            ));
             foreach ($topProducts as $rank => $product) {
                 foreach ($product['variants'] as $variant) {
-                    fputcsv($out, [
-                        $rank + 1,
-                        $product['product_name'],
-                        $variant['variant_name'],
-                        $variant['total_qty'],
-                        $variant['total_revenue'],
-                    ]);
+                    fputcsv($out, array_merge(
+                        [
+                            $rank + 1,
+                            $product['product_name'],
+                            $variant['variant_name'],
+                            $variant['total_qty'],
+                        ],
+                        $hasDiscounts ? [$variant['total_gross'], $variant['total_discount']] : [],
+                        [$variant['total_revenue']],
+                    ));
                 }
             }
 
@@ -769,6 +902,15 @@ class ReportController extends Controller
             ->selectRaw('products.id as product_id, products.name as product_name')
             ->selectRaw('product_variants.id as variant_id, product_variants.name as variant_name')
             ->selectRaw('SUM(transaction_items.qty) as total_qty, SUM(transaction_items.subtotal) as total_revenue')
+            // Potongan per produk ([BL-116] butir 2), supaya "penjualan murni"
+            // dan "yang benar-benar tertagih" terbaca berdampingan alih-alih di
+            // dua layar berbeda. Harga normalnya dijumlahkan di PHP dari kedua
+            // kolom ini, bukan dari `original_unit_price`: kolom itu kosong
+            // untuk baris tanpa potongan dan untuk penjualan offline yang
+            // tersinkron sebelum `[BL-115]`, sedangkan
+            // `total_revenue + total_discount` selalu berjumlah tepat dengan
+            // kolom omzet di sebelahnya.
+            ->selectRaw('SUM(transaction_items.discount_amount * transaction_items.qty) as total_discount')
             ->groupBy('products.id', 'products.name', 'product_variants.id', 'product_variants.name')
             ->get()
             ->groupBy('product_id')
@@ -777,6 +919,8 @@ class ReportController extends Controller
                 'product_name' => $rows->first()->product_name,
                 'total_qty' => (int) $rows->sum('total_qty'),
                 'total_revenue' => (float) $rows->sum('total_revenue'),
+                'total_discount' => (float) $rows->sum('total_discount'),
+                'total_gross' => (float) $rows->sum('total_revenue') + (float) $rows->sum('total_discount'),
                 // Pecahan variannya ikut: produk menjawab "apa yang laku",
                 // varian menjawab "dalam bentuk apa" — dan yang kedua yang
                 // menentukan apa yang harus disiapkan besok pagi.
@@ -787,6 +931,8 @@ class ReportController extends Controller
                         'variant_name' => $row->variant_name,
                         'total_qty' => (int) $row->total_qty,
                         'total_revenue' => (float) $row->total_revenue,
+                        'total_discount' => (float) $row->total_discount,
+                        'total_gross' => (float) $row->total_revenue + (float) $row->total_discount,
                     ])
                     ->values(),
             ])

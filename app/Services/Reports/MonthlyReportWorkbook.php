@@ -68,6 +68,7 @@ class MonthlyReportWorkbook
      *     daily_series: array<int, array<string, mixed>>,
      *     payment_summary: array<int, array{id: int, name: string, type: string, total: float}>,
      *     top_products: iterable<int, array<string, mixed>>,
+     *     discount_summary: array<string, mixed>,
      *     tax: array{active: bool, label: string},
      *     service_charge: array{active: bool, label: string}
      * }  $report
@@ -85,6 +86,15 @@ class MonthlyReportWorkbook
         $this->buildSummarySheet($book->getActiveSheet(), $report);
         $this->buildDailySheet($book->createSheet(), $report);
         $this->buildPaymentSheet($book->createSheet(), $report);
+
+        // Lembar potongan hanya lahir kalau ada yang dipotong, dengan alasan
+        // yang sama seperti kolom pajak: lembar berisi nol bukan kejujuran,
+        // melainkan satu tab lagi yang harus dibuka dan ditutup tiap bulan oleh
+        // mayoritas yang tidak pernah mendiskon.
+        if (($report['discount_summary']['items_discounted'] ?? 0) > 0) {
+            $this->buildDiscountSheet($book->createSheet(), $report);
+        }
+
         $this->buildProductSheet($book->createSheet(), $report);
 
         // Lembar pertama yang aktif saat file dibuka, bukan lembar terakhir
@@ -387,7 +397,112 @@ class MonthlyReportWorkbook
     }
 
     /**
-     * Lembar 4 — sepuluh produk terlaris, dipecah per varian.
+     * Lembar 4 — apa yang dipotong bulan itu, dan berapa yang dijual rugi.
+     *
+     * Dua angka yang sengaja berdiri terpisah: seluruh potongan, dan bagian
+     * yang jatuh DI BAWAH lantai untung. Tanpa pemisahan itu satu penjualan
+     * rugi terlihat persis seperti diskon 5% yang sehat, dan yang kedua yang
+     * paling ingin dilihat pemilik toko.
+     *
+     * @param  array<string, mixed>  $report
+     */
+    private function buildDiscountSheet(Worksheet $sheet, array $report): void
+    {
+        $sheet->setTitle('Potongan Harga');
+        $this->prepare($sheet, [
+            'A' => 34, 'B' => 10, 'C' => 18, 'D' => 18, 'E' => 18, 'F' => 34, 'G' => 22,
+        ]);
+
+        $discount = $report['discount_summary'];
+
+        $this->title($sheet, 'A1:G1', 'POTONGAN HARGA');
+        $this->subtitle($sheet, 'A2:G2', $report['label']);
+
+        $row = 4;
+        $this->sectionHeader($sheet, "A{$row}:B{$row}", 'RINGKASAN POTONGAN');
+        $row++;
+
+        $lines = [
+            ['Harga normal barang terjual', $discount['gross_sales'], self::FORMAT_CURRENCY],
+            ['Total dipotong', $discount['total_given'], self::FORMAT_CURRENCY],
+            ['Tertagih setelah potongan', $discount['net_sales'], self::FORMAT_CURRENCY],
+            ['Baris penjualan berpotongan', $discount['items_discounted'], self::FORMAT_INTEGER],
+            ['Di bawah batas untung', $discount['below_floor_total'], self::FORMAT_CURRENCY],
+            ['Baris di bawah batas untung', $discount['below_floor_items'], self::FORMAT_INTEGER],
+        ];
+
+        $firstLine = $row;
+        foreach ($lines as [$label, $value, $format]) {
+            $sheet->setCellValue("A{$row}", $label);
+            $sheet->setCellValue("B{$row}", $value);
+            $sheet->getStyle("B{$row}")->getNumberFormat()->setFormatCode($format);
+            $row++;
+        }
+        $lastLine = $row - 1;
+
+        $this->grid($sheet, "A{$firstLine}:B{$lastLine}");
+        $sheet->getStyle("B{$firstLine}:B{$lastLine}")
+            ->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        // Dua baris terakhir ditebalkan: itu angka yang tiap barisnya butuh
+        // persetujuan owner satu per satu.
+        $sheet->getStyle('A'.($lastLine - 1).":B{$lastLine}")->getFont()->setBold(true);
+
+        if ($discount['below_floor_lines'] === []) {
+            $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_PORTRAIT);
+
+            return;
+        }
+
+        $row += 2;
+        $this->sectionHeader($sheet, "A{$row}:G{$row}", 'PENJUALAN DI BAWAH LANTAI UNTUNG');
+        $row++;
+
+        $head = $row;
+        $this->tableHeader($sheet, "A{$head}:G{$head}", [
+            'Barang', 'Qty', 'Harga normal', 'Harga jual', 'Batas', 'Alasan', 'Disetujui',
+        ]);
+        $row++;
+
+        foreach ($discount['below_floor_lines'] as $line) {
+            $sheet->setCellValue("A{$row}", $line['variant_name']);
+            $sheet->setCellValue("B{$row}", $line['qty']);
+            $sheet->setCellValue("C{$row}", $line['original_unit_price']);
+            $sheet->setCellValue("D{$row}", $line['unit_price']);
+            $sheet->setCellValue("E{$row}", $line['floor']);
+            $sheet->setCellValue("F{$row}", $line['reason']);
+            $sheet->setCellValue("G{$row}", $line['approved_by']);
+            $row++;
+        }
+        $last = $row - 1;
+
+        $this->grid($sheet, "A{$head}:G{$last}");
+        $sheet->getStyle('B'.($head + 1).":B{$last}")->getNumberFormat()->setFormatCode(self::FORMAT_INTEGER);
+        $sheet->getStyle('C'.($head + 1).":E{$last}")->getNumberFormat()->setFormatCode(self::FORMAT_CURRENCY);
+        // Alasan yang panjang dibungkus ke bawah, bukan dipotong oleh kolom
+        // sebelahnya: alasan yang tidak terbaca membuat kolomnya tidak berguna.
+        $sheet->getStyle('F'.($head + 1).":F{$last}")->getAlignment()->setWrapText(true);
+
+        $sheet->freezePane('A'.($head + 1));
+        $sheet->setAutoFilter("A{$head}:G{$last}");
+
+        // Daftarnya dibatasi; kalau terpotong, lembarnya mengaku alih-alih
+        // membiarkan pembacanya menjumlahkan sebagian dan menamainya seluruhnya.
+        if ($discount['below_floor_items'] > count($discount['below_floor_lines'])) {
+            $note = $last + 2;
+            $sheet->setCellValue("A{$note}", 'Menampilkan '.count($discount['below_floor_lines'])
+                .' baris potongan terbesar dari '.$discount['below_floor_items'].' baris.');
+            $sheet->mergeCells("A{$note}:G{$note}");
+            $sheet->getStyle("A{$note}")->getFont()->setItalic(true)->getColor()->setRGB(self::MUTED_TEXT);
+        }
+
+        $sheet->getPageSetup()
+            ->setOrientation(PageSetup::ORIENTATION_LANDSCAPE)
+            ->setFitToWidth(1)
+            ->setFitToHeight(0);
+    }
+
+    /**
+     * Lembar terakhir — sepuluh produk terlaris, dipecah per varian.
      *
      * Satu baris per VARIAN, dengan peringkat dan nama produk diulang di tiap
      * barisnya. Baris total per produk sengaja tidak disisipkan di antaranya:

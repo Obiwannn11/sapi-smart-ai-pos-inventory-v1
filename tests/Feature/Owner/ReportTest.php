@@ -395,9 +395,21 @@ test('monthly csv carries the tax collected, and omits the column when there is 
 
 /**
  * Penjualan satu varian pada tanggal tertentu.
+ *
+ * `$discountPerUnit` mengikuti bentuk kolomnya: potongan PER UNIT, dan
+ * `$subtotal` adalah yang benar-benar tertagih — jadi harga normalnya
+ * `$subtotal + $discountPerUnit * $qty`, persis cara laporan menghitungnya
+ * ([BL-116]).
  */
-function sellVariant(App\Models\ProductVariant $variant, int $qty, int $subtotal, string $occurredAt): void
-{
+function sellVariant(
+    App\Models\ProductVariant $variant,
+    int $qty,
+    int $subtotal,
+    string $occurredAt,
+    int $discountPerUnit = 0,
+    ?string $reason = null,
+    bool $belowFloor = false,
+): void {
     $transaction = Transaction::factory()->create([
         'tenant_id' => test()->tenant->id,
         'user_id' => test()->owner->id,
@@ -406,12 +418,21 @@ function sellVariant(App\Models\ProductVariant $variant, int $qty, int $subtotal
         'occurred_at' => $occurredAt,
     ]);
 
+    $unitPrice = $subtotal / $qty;
+
     $transaction->items()->create([
         'product_variant_id' => $variant->id,
         'variant_name' => $variant->name,
         'qty' => $qty,
-        'unit_price' => $subtotal / $qty,
+        'unit_price' => $unitPrice,
         'subtotal' => $subtotal,
+        ...$discountPerUnit > 0 ? [
+            'original_unit_price' => $unitPrice + $discountPerUnit,
+            'discount_amount' => $discountPerUnit,
+            'discount_reason' => $reason,
+            'margin_floor_at_sale' => $unitPrice + ($belowFloor ? 1000 : -1000),
+            'below_floor_approved_by' => $belowFloor ? test()->owner->id : null,
+        ] : [],
     ]);
 }
 
@@ -547,4 +568,120 @@ test('the variant breakdown merges rows that recorded the same variant under dif
                 ->where('topProducts.0.variants.0.total_revenue', 126000)
             )
         );
+});
+
+// --- Potongan harga sebulan ([BL-116]) ---
+
+test('monthly report sums the discounts given across the month', function () {
+    [$hot] = twoProductsSharingAVariantName();
+
+    // Dua penjualan berpotongan di bulan yang diminta, satu tanpa potongan,
+    // dan satu berpotongan di bulan lain yang tidak boleh ikut terhitung.
+    sellVariant($hot, qty: 2, subtotal: 16000, occurredAt: '2026-06-03 09:00:00', discountPerUnit: 2000, reason: 'Dekat kedaluwarsa');
+    sellVariant($hot, qty: 1, subtotal: 9000, occurredAt: '2026-06-11 09:00:00', discountPerUnit: 1000, reason: 'Stok mati');
+    sellVariant($hot, qty: 3, subtotal: 60000, occurredAt: '2026-06-20 09:00:00');
+    sellVariant($hot, qty: 1, subtotal: 5000, occurredAt: '2026-07-02 09:00:00', discountPerUnit: 5000, reason: 'Bulan lain');
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-06')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Owner/Reports/Monthly')
+            // Ditunda bersama rekap lain — angkanya baru ada di permintaan
+            // lanjutan.
+            ->missing('discountSummary')
+            ->loadDeferredProps(['rekap'], fn (Assert $reload) => $reload
+                // Inti [BL-116]: harga normal dan yang benar-benar tertagih
+                // berdampingan, bukan di dua layar berbeda.
+                ->where('discountSummary.gross_sales', 90000)
+                ->where('discountSummary.net_sales', 85000)
+                ->where('discountSummary.total_given', 5000)
+                ->where('discountSummary.items_discounted', 2)
+                ->etc()
+            )
+        );
+});
+
+test('monthly report separates loss sales from healthy discounts', function () {
+    [$hot] = twoProductsSharingAVariantName();
+
+    sellVariant($hot, qty: 1, subtotal: 19000, occurredAt: '2026-06-04 09:00:00', discountPerUnit: 1000, reason: 'Promo');
+    sellVariant($hot, qty: 1, subtotal: 5000, occurredAt: '2026-06-05 09:00:00', discountPerUnit: 15000, reason: 'Kemasan rusak', belowFloor: true);
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-06')
+        ->assertInertia(fn (Assert $page) => $page
+            ->loadDeferredProps(['rekap'], fn (Assert $reload) => $reload
+                ->where('discountSummary.total_given', 16000)
+                // Angka yang paling ingin dilihat owner: tanpa dipisahkan,
+                // penjualan rugi ini tenggelam di dalam Rp 16.000 di atas.
+                ->where('discountSummary.below_floor_total', 15000)
+                ->where('discountSummary.below_floor_items', 1)
+                ->has('discountSummary.below_floor_lines', 1)
+                ->where('discountSummary.below_floor_lines.0.reason', 'Kemasan rusak')
+                ->where('discountSummary.below_floor_lines.0.approved_by', $this->owner->name)
+                ->etc()
+            )
+        );
+});
+
+test('monthly top products separate the normal price from what was actually billed', function () {
+    [$latteHot, , $arenHot] = twoProductsSharingAVariantName();
+
+    sellVariant($latteHot, qty: 4, subtotal: 80000, occurredAt: '2026-06-04 09:00:00', discountPerUnit: 5000, reason: 'Dekat kedaluwarsa');
+    sellVariant($arenHot, qty: 2, subtotal: 44000, occurredAt: '2026-06-05 09:00:00');
+
+    $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly?month=2026-06')
+        ->assertInertia(fn (Assert $page) => $page
+            ->loadDeferredProps(['rekap'], fn (Assert $reload) => $reload
+                ->where('topProducts.0.product_name', 'Cafe Latte')
+                // Harga normal = yang tertagih + potongannya, supaya ketiga
+                // kolomnya selalu berjumlah tepat.
+                ->where('topProducts.0.total_gross', 100000)
+                ->where('topProducts.0.total_discount', 20000)
+                ->where('topProducts.0.total_revenue', 80000)
+                ->where('topProducts.0.variants.0.total_gross', 100000)
+                ->where('topProducts.0.variants.0.total_discount', 20000)
+                // Produk tanpa potongan tetap membawa kolomnya, bernilai nol —
+                // yang menghilang untuk tenant tanpa diskon adalah KOLOMNYA di
+                // layar, bukan angkanya di payload.
+                ->where('topProducts.1.total_discount', 0)
+                ->where('topProducts.1.total_gross', 44000)
+                ->etc()
+            )
+        );
+});
+
+test('monthly csv carries the discount block, and omits it entirely when nothing was discounted', function () {
+    [$hot] = twoProductsSharingAVariantName();
+
+    sellVariant($hot, qty: 2, subtotal: 16000, occurredAt: '2026-06-03 09:00:00', discountPerUnit: 2000, reason: 'Dekat kedaluwarsa');
+    sellVariant($hot, qty: 1, subtotal: 5000, occurredAt: '2026-06-05 09:00:00', discountPerUnit: 15000, reason: 'Kemasan rusak', belowFloor: true);
+    sellVariant($hot, qty: 1, subtotal: 20000, occurredAt: '2026-07-06 09:00:00');
+
+    $withDiscounts = $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly/export?month=2026-06')
+        ->streamedContent();
+
+    expect($withDiscounts)->toContain('POTONGAN HARGA')
+        ->toContain('"Harga normal barang terjual",40000')
+        ->toContain('"Total dipotong",19000')
+        ->toContain('"Tertagih setelah potongan",21000')
+        ->toContain('"Di bawah batas untung",15000')
+        // Baris rugi ikut lengkap dengan alasan dan siapa yang menyetujui —
+        // di situlah owner meninjau keputusannya sendiri.
+        ->toContain('PENJUALAN DI BAWAH LANTAI UNTUNG')
+        ->toContain('"Kemasan rusak"')
+        // Kolom potongan ikut ke tabel produk.
+        ->toContain('Peringkat,Produk,Varian,"Qty Terjual","Harga Normal",Potongan,Omzet');
+
+    // Bulan tanpa satu pun potongan: bloknya hilang seluruhnya, dan tabel
+    // produknya kembali ke empat kolom. Kolom nol bukan kejujuran.
+    $quiet = $this->actingAs($this->owner)
+        ->get('/owner/reports/monthly/export?month=2026-07')
+        ->streamedContent();
+
+    expect($quiet)->not->toContain('POTONGAN HARGA')
+        ->not->toContain('"Harga Normal"')
+        ->toContain('Peringkat,Produk,Varian,"Qty Terjual",Omzet');
 });

@@ -6,6 +6,7 @@ import MetricCard from '@/Components/MetricCard.vue';
 import MonthPicker from '@/Components/MonthPicker.vue';
 import TrendChart from '@/Components/TrendChart.vue';
 import TopProductsTable from '@/Components/TopProductsTable.vue';
+import DiscountSummaryCard from '@/Components/DiscountSummaryCard.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import { BUSINESS_TZ } from '@/support/date';
@@ -22,9 +23,11 @@ const props = defineProps({
     tax: { type: Object, default: () => ({ active: false, label: 'Pajak' }) },
     comparison: Object,
     dailySeries: Array,
-    // Ditunda ([BL-037]) — null sampai kedua rekapnya sampai.
+    // Ditunda ([BL-037]) — null sampai ketiga rekapnya sampai.
     paymentSummary: { type: Array, default: null },
     topProducts: { type: Array, default: null },
+    // Potongan sebulan ([BL-116] butir 1).
+    discountSummary: { type: Object, default: null },
 });
 
 const selectedMonth = ref(props.month);
@@ -276,6 +279,29 @@ const paymentTypeLabel = (type) => {
             </template>
 
         <TopProductsTable title="Top 10 Produk Terlaris Bulan Ini" :products="topProducts" />
+
+        </Deferred>
+
+        <!-- Potongan harga sebulan ([BL-116] butir 1). Kartunya sama dengan
+             rekap harian, dari pembaca yang sama, supaya "berapa yang kami
+             korbankan bulan ini" tidak lagi harus dijumlahkan dari 30 halaman
+             harian dengan tangan.
+
+             Hilang sama sekali untuk bulan tanpa satu pun potongan: kartu nol
+             bukan kejujuran, melainkan sesuatu yang harus dibaca ulang tiap
+             bulan oleh mayoritas yang tidak pernah mendiskon. -->
+        <Deferred data="discountSummary">
+            <template #fallback>
+                <SkeletonPanel label="Memuat rekap potongan…">
+                    <SkeletonTable :rows="2" :columns="3" :header="false" />
+                </SkeletonPanel>
+            </template>
+
+        <DiscountSummaryCard
+            v-if="discountSummary && discountSummary.items_discounted > 0"
+            title="Potongan Harga Bulan Ini"
+            :summary="discountSummary"
+        />
 
         </Deferred>
 

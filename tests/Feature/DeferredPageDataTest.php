@@ -219,7 +219,7 @@ test('halaman produk mengirim penyaringnya dulu, katalognya menyusul', function 
     );
 });
 
-test('rekap bulanan mengirim ringkasan dan tren dulu, dua rekapnya menyusul', function () {
+test('rekap bulanan mengirim ringkasan dan tren dulu, tiga rekapnya menyusul', function () {
     Transaction::factory()->create([
         'tenant_id' => $this->tenant->id,
         'user_id' => $this->owner->id,
@@ -238,9 +238,13 @@ test('rekap bulanan mengirim ringkasan dan tren dulu, dua rekapnya menyusul', fu
         ->has('dailySeries')
         ->missing('paymentSummary')
         ->missing('topProducts')
+        // Rekap potongan ikut ditunda ([BL-116]): ia menyisir item transaksi
+        // sebulan penuh, dan sama-sama tabel di bawah lipatan.
+        ->missing('discountSummary')
         ->loadDeferredProps('rekap', fn (Assert $reload) => $reload
             ->has('paymentSummary')
             ->has('topProducts')
+            ->has('discountSummary')
         )
     );
 });

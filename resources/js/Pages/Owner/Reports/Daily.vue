@@ -5,6 +5,7 @@ import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import DatePicker from '@/Components/DatePicker.vue';
 import TopProductsTable from '@/Components/TopProductsTable.vue';
+import DiscountSummaryCard from '@/Components/DiscountSummaryCard.vue';
 import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
 import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
@@ -184,10 +185,13 @@ const toggleTx = (id) => {
         </Deferred>
 
         <!-- Potongan harga ([BL-018]).
-             DUA angka, dan memisahkannya adalah inti bagian ini: berapa yang
-             dipotong seluruhnya, dan berapa yang benar-benar DIKORBANKAN di
-             bawah lantai untung. Tanpa pemisahan itu, sebuah penjualan rugi
-             terlihat persis seperti diskon 5% yang sehat. -->
+             TIGA angka sejak [BL-116]: harga normal barang, yang dipotong, dan
+             yang benar-benar DIKORBANKAN di bawah lantai untung. Tanpa
+             pemisahan terakhir itu, sebuah penjualan rugi terlihat persis
+             seperti diskon 5% yang sehat.
+
+             Kartunya milik bersama dengan rekap bulanan ([BL-116] butir 1) —
+             satu pembaca di server, satu tampilan di klien. -->
         <Deferred data="discountSummary">
             <template #fallback>
                 <SkeletonPanel label="Memuat rekap potongan…">
@@ -195,59 +199,10 @@ const toggleTx = (id) => {
                 </SkeletonPanel>
             </template>
 
-            <div v-if="discountSummary && discountSummary.items_discounted > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-                <h3 class="text-sm font-semibold text-gray-700 mb-3">Potongan Harga</h3>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="rounded-lg border border-gray-200 p-3">
-                        <p class="text-xs text-gray-500">Total dipotong</p>
-                        <p class="mt-0.5 text-lg font-bold text-gray-900">{{ formatCurrency(discountSummary.total_given) }}</p>
-                        <p class="text-xs text-gray-400">{{ discountSummary.items_discounted }} baris penjualan</p>
-                    </div>
-                    <div
-                        class="rounded-lg border p-3"
-                        :class="discountSummary.below_floor_items > 0 ? 'border-amber-200 bg-amber-50' : 'border-gray-200'"
-                    >
-                        <p class="text-xs" :class="discountSummary.below_floor_items > 0 ? 'text-amber-800' : 'text-gray-500'">
-                            Di bawah lantai untung
-                        </p>
-                        <p class="mt-0.5 text-lg font-bold" :class="discountSummary.below_floor_items > 0 ? 'text-amber-900' : 'text-gray-900'">
-                            {{ formatCurrency(discountSummary.below_floor_total) }}
-                        </p>
-                        <p class="text-xs" :class="discountSummary.below_floor_items > 0 ? 'text-amber-700' : 'text-gray-400'">
-                            {{ discountSummary.below_floor_items }} baris penjualan
-                        </p>
-                    </div>
-                </div>
-
-                <div v-if="discountSummary.below_floor_lines.length > 0" class="mt-4 overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-gray-100">
-                                <th class="text-left py-2 px-3 text-gray-500 font-medium">Varian</th>
-                                <th class="text-right py-2 px-3 text-gray-500 font-medium">Qty</th>
-                                <th class="text-right py-2 px-3 text-gray-500 font-medium">Dijual</th>
-                                <th class="text-right py-2 px-3 text-gray-500 font-medium">Lantai</th>
-                                <th class="text-left py-2 px-3 text-gray-500 font-medium">Alasan</th>
-                                <th class="text-left py-2 px-3 text-gray-500 font-medium">Disetujui</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(line, index) in discountSummary.below_floor_lines" :key="index" class="border-b border-gray-50">
-                                <td class="py-2.5 px-3 font-medium text-gray-800">{{ line.variant_name }}</td>
-                                <td class="py-2.5 px-3 text-right text-gray-700">{{ line.qty }}</td>
-                                <td class="py-2.5 px-3 text-right text-gray-900">
-                                    {{ formatCurrency(line.unit_price) }}
-                                    <span class="block text-xs text-gray-400 line-through">{{ formatCurrency(line.original_unit_price) }}</span>
-                                </td>
-                                <td class="py-2.5 px-3 text-right text-gray-500">{{ formatCurrency(line.floor) }}</td>
-                                <td class="py-2.5 px-3 text-gray-600">{{ line.reason }}</td>
-                                <td class="py-2.5 px-3 text-gray-600">{{ line.approved_by ?? '—' }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <DiscountSummaryCard
+                v-if="discountSummary && discountSummary.items_discounted > 0"
+                :summary="discountSummary"
+            />
         </Deferred>
 
         <!-- Transaction List. Bagian terberat halaman ini: tiap baris membawa

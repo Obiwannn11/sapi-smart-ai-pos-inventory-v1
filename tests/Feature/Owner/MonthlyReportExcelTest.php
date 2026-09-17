@@ -268,6 +268,38 @@ test('produk terlaris memuat tiap varian di bawah nama produknya sendiri', funct
         ->and((int) $sheet->getCell('D7')->getValue())->toBe(10);
 });
 
+test('lembar potongan hanya lahir kalau ada yang dipotong', function () {
+    $sale = monthlyExcelSale(65000, '2026-05-12 10:00:00');
+
+    expect(downloadedMonthlyWorkbook('2026-05')->getSheetNames())
+        ->not->toContain('Potongan Harga');
+
+    $variant = ProductVariant::factory()->create([
+        'product_id' => Product::factory()->create(['tenant_id' => $this->tenant->id])->id,
+        'name' => 'Teh Manis',
+    ]);
+
+    $sale->items()->create([
+        'product_variant_id' => $variant->id,
+        'variant_name' => 'Teh Manis',
+        'qty' => 2,
+        'unit_price' => 7000,
+        'original_unit_price' => 10000,
+        'discount_amount' => 3000,
+        'subtotal' => 14000,
+    ]);
+
+    $book = downloadedMonthlyWorkbook('2026-05');
+
+    expect($book->getSheetNames())->toContain('Potongan Harga');
+
+    $sheet = $book->getSheetByName('Potongan Harga');
+
+    expect((float) excelValueBesideLabel($sheet, 'Total dipotong'))->toBe(6000.0)
+        ->and((float) excelValueBesideLabel($sheet, 'Tertagih setelah potongan'))->toBe(14000.0)
+        ->and((float) excelValueBesideLabel($sheet, 'Harga normal barang terjual'))->toBe(20000.0);
+});
+
 test('bulan tanpa penjualan tetap menghasilkan buku kerja yang utuh', function () {
     $book = downloadedMonthlyWorkbook('2026-05');
 

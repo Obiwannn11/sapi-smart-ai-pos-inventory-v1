@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 /**
  * Produk terlaris, dengan pecahan variannya di bawah tiap baris.
@@ -18,6 +18,20 @@ const props = defineProps({
 });
 
 const formatCurrency = (value) => 'Rp ' + Math.round(Number(value)).toLocaleString('id-ID');
+
+/**
+ * Kolom harga normal dan potongan hanya muncul kalau periodenya memang punya
+ * potongan ([BL-116] butir 2).
+ *
+ * Dua kolom nol di setiap baris bukan kejujuran, melainkan derau yang harus
+ * dibaca ulang tiap bulan oleh mayoritas yang tidak pernah mendiskon — alasan
+ * yang sama dengan kolom pajak di rekap bulanan. Yang menentukan adalah ANGKA
+ * periodenya, bukan setelan tenant hari ini, supaya laporan bulan lalu tetap
+ * bisa menjelaskan dirinya sesudah aturan diskonnya dihapus.
+ */
+const hasDiscounts = computed(
+    () => props.products.some((product) => Number(product.total_discount ?? 0) > 0),
+);
 
 // Produk dengan satu varian tidak punya apa pun untuk dibuka — rinciannya
 // sudah sama dengan barisnya sendiri.
@@ -51,6 +65,10 @@ const variantSummary = (product) => {
                         <th class="text-left py-2 px-3 text-gray-500 font-medium w-8">#</th>
                         <th class="text-left py-2 px-3 text-gray-500 font-medium">Produk</th>
                         <th class="text-right py-2 px-3 text-gray-500 font-medium">Qty Terjual</th>
+                        <!-- Urutannya mengikuti aliran uang: harga normal ->
+                             potongan -> yang benar-benar tertagih. -->
+                        <th v-if="hasDiscounts" class="text-right py-2 px-3 text-gray-500 font-medium">Harga Normal</th>
+                        <th v-if="hasDiscounts" class="text-right py-2 px-3 text-gray-500 font-medium">Potongan</th>
                         <th class="text-right py-2 px-3 text-gray-500 font-medium">{{ revenueLabel }}</th>
                     </tr>
                 </thead>
@@ -88,6 +106,12 @@ const variantSummary = (product) => {
                                 </div>
                             </td>
                             <td class="py-2.5 px-3 text-right text-gray-700 tabular-nums">{{ product.total_qty }}</td>
+                            <td v-if="hasDiscounts" class="py-2.5 px-3 text-right text-gray-500 tabular-nums">
+                                {{ formatCurrency(product.total_gross) }}
+                            </td>
+                            <td v-if="hasDiscounts" class="py-2.5 px-3 text-right tabular-nums" :class="product.total_discount > 0 ? 'text-amber-700' : 'text-gray-300'">
+                                {{ product.total_discount > 0 ? '−' + formatCurrency(product.total_discount) : '—' }}
+                            </td>
                             <td class="py-2.5 px-3 text-right font-semibold text-gray-900 tabular-nums">
                                 {{ formatCurrency(product.total_revenue) }}
                             </td>
@@ -101,6 +125,12 @@ const variantSummary = (product) => {
                             <td />
                             <td class="py-1.5 px-3 pl-9 text-gray-600">{{ variant.variant_name }}</td>
                             <td class="py-1.5 px-3 text-right text-gray-600 tabular-nums">{{ variant.total_qty }}</td>
+                            <td v-if="hasDiscounts" class="py-1.5 px-3 text-right text-gray-400 tabular-nums">
+                                {{ formatCurrency(variant.total_gross) }}
+                            </td>
+                            <td v-if="hasDiscounts" class="py-1.5 px-3 text-right tabular-nums" :class="variant.total_discount > 0 ? 'text-amber-600' : 'text-gray-300'">
+                                {{ variant.total_discount > 0 ? '−' + formatCurrency(variant.total_discount) : '—' }}
+                            </td>
                             <td class="py-1.5 px-3 text-right text-gray-600 tabular-nums">
                                 {{ formatCurrency(variant.total_revenue) }}
                             </td>

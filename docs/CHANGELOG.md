@@ -71,6 +71,7 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
 | 2026-09-17 | DECISION | Kasir | Struk Berhenti Menyebut "Point of Sale", dan Dua Tombol Cetak Berhenti Bernama Sama |
 | 2026-09-16 | ADDITION | Platform | Harga Blok Kuota AI Berhenti Tinggal di Config — dan Satu-satunya Tarif yang Sengaja Tidak Di-Grandfather |
 | 2026-09-16 | DECISION | Kasir | Halaman Kas, Riwayat, dan Antrian: Istilah Inggris Dibuang, Pesan Kesalahan Bicara ke Kasir |
+| 2026-09-16 | ADDITION | Laporan | Potongan Harga Terbaca Sebulan, dan Produk Terlaris Memisahkan Harga Normal dari yang Tertagih (BL-116 Butir 1 dan 2) |
 | 2026-09-16 | ADDITION | Laporan | Rekap Bulanan Punya Unduhan Excel — Satu Lembar per Tabel, Angka yang Tetap Angka, dan CSV Tetap di Sebelahnya |
 | 2026-09-16 | HOTFIX | Kasir | Penjualan Offline Akhirnya Mencatat Jejak Potongannya — Diskon dan Harga Khusus Berhenti Hilang dari Laporan (BL-115) |
 | 2026-09-16 | ADDITION | Kasir | Struk Menampilkan Potongannya: Harga Normal, Baris Diskon, dan "Anda Hemat" (BL-103 Butir 2a) |
@@ -478,6 +479,35 @@ Satu baris per entri, urut dari terbaru — sama dengan urutan isinya di bawah. 
   - `resources/js/Pages/Cashier/{CashDrawer,CashDrawerClose,CashDrawerSummary,Queue,TransactionHistory}.vue`: teks UI
   - `tests/Feature/Cashier/CashierPagesCopyTest.php`: penjaga baru
 - **Catatan:** Istilah "kas negatif" sengaja TETAP di layar pemilik dan di nama kolom rekonsiliasi; yang dibuang hanya pemakaiannya dalam kalimat yang dibaca kasir. Penyeragaman istilah itu untuk pemilik belum diputuskan.
+
+### [ADDITION] Potongan Harga Terbaca Sebulan, dan Produk Terlaris Memisahkan Harga Normal dari yang Tertagih (BL-116 Butir 1 dan 2)
+- **Tanggal:** 2026-09-16
+- **Fase Terkait:** Di Luar Fase — `[BL-116]`, lahir dari pertanyaan pemilik: *"owner bisa liat penjualan produk murni dan di bagian lain dia dapat liat performa dari diskonnya, apakah banyak pakai, berapa total uang digunakan untuk diskon"*. Butir 1 dan 2 dari entri itu; butir 3 (performa per aturan diskon) tetap terbuka
+- **Dampak:** Controller laporan (`ReportController`), satu komponen Vue baru, tabel produk terlaris di rekap harian dan bulanan, blok baru di unduhan CSV, test.
+- **Breaking Change:** Tidak. Tidak ada kolom basis data baru, tidak ada kolom lama yang berubah arti, dan tidak ada angka lama yang bergeser — `total_revenue` tetap berarti yang benar-benar tertagih. Yang bertambah hanya angka di sebelahnya.
+- **Deskripsi:** Sejak `[BL-018]` tiap baris penjualan menyimpan jejak potongannya secara lengkap — harga normal, potongan per unit, aturan yang memotongnya, alasan, harga modal, lantai untung, dan siapa yang menyetujui penjualan rugi. Yang membaca jejak itu hanya **satu kartu di rekap harian**. Pertanyaan "berapa yang sudah kami korbankan bulan ini" karena itu hanya bisa dijawab dengan membuka tiga puluh halaman harian dan menjumlahkannya dengan tangan, dan pertanyaan "berapa penjualan produk murni, sebelum dipotong" tidak bisa dijawab sama sekali: produk terlaris dan laba per produk keduanya membaca `transaction_items.subtotal`, yang sudah bersih potongan. Angkanya benar, tapi tidak pernah ditanyakan.
+- **Yang berubah:**
+  - **`discountSummary()` menerima periode, bukan tanggal.** Bentuknya mengikuti `topProducts()` yang sudah ada: closure penyaring, dipakai rekap harian (sehari) dan rekap bulanan (sebulan). Dua salinan definisi "potongan" akan berbeda suatu hari, dan yang berbeda adalah definisi uang.
+  - **Dua angka baru di dalamnya: `gross_sales` dan `net_sales`.** Harga normal barang yang terjual, dan yang benar-benar tertagih. Bruto dihitung `net + total_given`, **bukan** dari `product_variants.price` hari ini — harga katalog berubah, dan bruto masa lalu yang dihitung dari harga sekarang adalah angka karangan yang terlihat pasti.
+  - **Empat kueri jadi dua.** Rekap harian dulu menyisir himpunan yang sama empat kali (total, jumlah baris, total di bawah lantai, jumlah barisnya); sekarang satu agregat untuk tiga angka pertama dan satu lagi untuk baris rugi. Yang mendorong perubahan ini bukan kerapian: himpunan yang sama di rekap bulanan adalah seluruh item transaksi sebulan.
+  - **Kartu potongan jadi komponen bersama** (`DiscountSummaryCard.vue`), dipakai rekap harian dan bulanan, dengan tiga petak yang mengikuti aliran uang: harga normal barang → total dipotong → di bawah lantai untung. Petak tengahnya menyebut bagiannya terhadap harga normal ("12,4% dari harga normal"), yang menjawab "banyak dipakai atau tidak" tanpa membandingkan dua angka besar di kepala.
+  - **Rekap bulanan mendapat kartu itu**, ditunda bersama rekap lain (`[BL-037]`) karena ia menyisir item sebulan penuh.
+  - **Tabel produk terlaris mendapat dua kolom:** Harga Normal dan Potongan, di kiri kolom Omzet. Ketiganya berjumlah tepat karena bruto diturunkan dari omzet + potongannya, bukan dari kolom harga yang lain.
+  - **Unduhan CSV mendapat dua blok:** `POTONGAN HARGA` (enam angka) dan `PENJUALAN DI BAWAH LANTAI UNTUNG` (barisnya sendiri, lengkap dengan alasan dan siapa yang menyetujui), plus dua kolom yang sama di blok produk.
+- **Yang sengaja TIDAK muncul untuk tenant yang tidak mendiskon:** kartunya, kedua blok CSV-nya, dan kedua kolom tabelnya — seluruhnya hilang, bukan tampil bernilai nol. Aturan yang sama sudah berlaku untuk pajak (`[BL-065]`) dan biaya layanan (`[BL-097]`) di layar ini: kolom nol di setiap baris bukan kejujuran, melainkan derau yang harus dibaca ulang tiap bulan oleh mayoritas yang tidak memakainya. Yang menentukan adalah ANGKA periodenya, bukan setelan tenant hari ini — tenant yang menghapus seluruh aturan diskonnya hari ini tetap bisa membaca laporan bulan lalu.
+- **Daftar baris rugi dibatasi 50 baris untuk rekap bulanan**, urut potongan terbesar lebih dulu, dan layarnya **mengaku** kalau terpotong ("Menampilkan 50 baris dengan potongan terbesar; 7 baris lainnya ada di unduhan CSV"). Tiap baris rugi butuh persetujuan owner satu per satu sehingga jumlahnya terbatas manusia — tapi "terbatas manusia" bukan "terbatas", dan daftar yang diam-diam terpotong membuat pemilik mengira sudah melihat seluruhnya.
+- **Hubungannya dengan dua pekerjaan lain hari itu:** `[BL-115]` (mendarat lebih dulu) yang membuat angka ini utuh untuk penjualan offline — sebelum itu potongan yang terjadi saat perangkat putus tidak pernah tercatat sebagai potongan. Unduhan Excel rekap bulanan yang mendarat pada hari yang sama membaca `discountSummaryFor()` yang sama untuk lembar `Potongan Harga`-nya; yang belum ikut ke sana hanya dua kolom per produk, dan itu tercatat di `[BL-116]` butir 1.
+- **Yang sengaja TIDAK dikerjakan:** performa per aturan diskon (`transaction_items.discount_rule_id` masih belum dibaca satu kueri pun) tetap terbuka sebagai `[BL-116]` butir 3, karena ia menuntut dua keputusan yang belum diambil — bagaimana menampilkan aturan yang sudah dihapus, dan di keranjang mana harga khusus yang diketik owner tanpa aturan harus berdiri. Potongan **paket** tidak disentuh sama sekali; ia belum punya wujud dan tetap milik `[BL-103]`.
+- **File Terdampak:**
+  - `app/Http/Controllers/Owner/ReportController.php` — `discountSummary()` menerima closure periode dan `$lineLimit`, dua angka baru; `discountSummaryFor()` baru; prop bulanan baru; blok CSV; dua kolom di `topProducts()`
+  - `resources/js/Components/DiscountSummaryCard.vue` — baru; kartu bersama harian dan bulanan
+  - `resources/js/Components/TopProductsTable.vue` — dua kolom bersyarat
+  - `resources/js/Pages/Owner/Reports/Monthly.vue` — kartu potongan
+  - `resources/js/Pages/Owner/Reports/Daily.vue` — memakai kartu bersama, markup lamanya dilepas
+  - `tests/Feature/Owner/ReportTest.php` — 4 test baru; `sellVariant()` bisa menjual berpotongan dan di bawah lantai
+  - `tests/Feature/DeferredPageDataTest.php` — prop ketiga yang ditunda ikut dipatok
+
+---
 
 ### [ADDITION] Rekap Bulanan Punya Unduhan Excel — Satu Lembar per Tabel, Angka yang Tetap Angka, dan CSV Tetap di Sebelahnya
 - **Tanggal:** 2026-09-16
