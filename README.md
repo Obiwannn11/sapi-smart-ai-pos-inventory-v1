@@ -1,154 +1,329 @@
-# SAPI Smart AI POS Inventory
+# SAPI — Smart AI POS & Inventory
 
-SAPI adalah aplikasi Point of Sale (POS) multi-tenant berbasis Laravel untuk kebutuhan inventory, transaksi kasir, dan operasional outlet.
+SAPI adalah aplikasi **Point of Sale dan manajemen inventori multi-tenant** untuk usaha kuliner skala kecil–menengah, dibangun di atas Laravel 12 + Inertia + Vue 3. Selain sisi operasional (kasir, stok, laporan), SAPI juga menyediakan **panel pemilik SaaS** untuk mengelola klien dan langganan, serta **analisis bisnis berbasis AI** untuk pemilik usaha.
 
-## Stack Utama
+> 📘 **Mencari kredensial demo, isi data contoh, atau urutan alur demo?** Semuanya ada di [PANDUAN-DEMO.md](PANDUAN-DEMO.md). Berkas ini fokus pada penjelasan garis besar sistem.
 
-- Backend: Laravel 12 (PHP)
-- Frontend: Inertia.js + Vite
-- Auth API: Laravel Sanctum
-- Database: MySQL/MariaDB (sesuai konfigurasi `.env`)
+---
 
-## Fitur Inti
+## Daftar Isi
 
-- Multi-tenant isolation (`tenant_id`) pada data bisnis.
-- Master data produk, kategori, modifier, dan payment method.
-- POS transaction flow (pending/completed/voided).
-- Cash drawer session (buka kas, tutup kas, rekap sesi).
-- Mobile API untuk operasional kasir.
-- MCP Server data bisnis (read-only) untuk AI client milik owner (mis. Claude Desktop).
+- [Gambaran Umum](#gambaran-umum)
+- [Stack Teknologi](#stack-teknologi)
+- [Arsitektur](#arsitektur)
+- [Fitur](#fitur)
+- [Model Bisnis & Langganan](#model-bisnis--langganan)
+- [Kontrol Akses](#kontrol-akses)
+- [API](#api)
+- [MCP Server](#mcp-server)
+- [Analisis AI](#analisis-ai)
+- [Instalasi](#instalasi)
+- [Pengujian](#pengujian)
+- [Struktur Direktori](#struktur-direktori)
+- [Dokumentasi](#dokumentasi)
 
-## Update Terbaru (2026-07-11)
+---
 
-Penambahan MCP Server (data bridge read-only):
+## Gambaran Umum
 
-- Endpoint `POST /mcp/business` mengekspos data agregat tenant (penjualan, profit, menu) ke AI client milik owner (mis. Claude Desktop) — app hanya menyediakan data, tidak memakai kuota AI aplikasi.
-- Akses via bearer token Sanctum yang dibuat/dicabut owner di Pengaturan; owner-only, tenant-scoped, tanpa data pelanggan, dan dibatasi rate limit anti-abuse.
-- Tata cara pemakaian ada di bagian [MCP Server](#mcp-server-akses-data-bisnis-untuk-ai-client) di bawah.
+SAPI melayani **tiga jenis pengguna** dengan kebutuhan yang berbeda:
 
-Lihat detail teknis di `docs/phases-2/PHASE-AI-4_MCP-Server.md` dan `docs/CHANGELOG.md`.
+| Pengguna | Area | Kebutuhan utama |
+|---|---|---|
+| **Kasir** | `/cashier/*` | Cepat, tahan gangguan jaringan, sesi kas yang bisa dipertanggungjawabkan |
+| **Pemilik usaha** | `/owner/*`, `/langganan` | Kendali menu & stok, laporan yang bisa dipercaya, wawasan bisnis, atur staf |
+| **Pemilik SaaS** | `/platform/*` | Kelola klien & langganan tanpa mengintip data operasional mereka |
 
-## Update Terbaru (2026-05-29)
+Pembagian ini bukan sekadar navigasi — ia tercermin di lapisan autentikasi, gerbang izin, dan bahkan keputusan tentang **data apa yang boleh dilihat siapa**.
 
-Perubahan besar pada API consumer dan dokumentasinya:
+---
 
-- Semua endpoint consumer dipindahkan ke prefix `/api/v1`.
-- Controller API dipindahkan ke namespace `App\Http\Controllers\Api\V1` agar versioning route dan implementasi konsisten.
-- Xendit webhook tetap non-versioned di `POST /api/xendit/webhook` agar callback eksternal tidak perlu diubah tiap versi API.
-- Ditambahkan halaman referensi API publik di `/api-docs` untuk dokumentasi endpoint mobile POS.
+## Stack Teknologi
 
-Lihat detail perubahan dan catatan migrasi di `docs/CHANGELOG.md`.
+| Lapis | Teknologi |
+|---|---|
+| Backend | Laravel 12, PHP 8.3 |
+| Frontend | Inertia.js v2 + Vue 3, Vite, Tailwind CSS v4 |
+| Database | MySQL / MariaDB |
+| Autentikasi API | Laravel Sanctum |
+| Izin (tenant) | spatie/laravel-permission (fitur *teams*, di-scope per tenant) |
+| Antrean & cache | driver `database` |
+| Pengujian | Pest 3 (452 uji dalam 55 berkas) |
+| AI | SumoPod (bawaan), OpenAI, Gemini, Anthropic |
+| MCP | laravel/mcp |
+| Offline | Service worker + `manifest.webmanifest` (PWA) |
 
-## Update Terbaru (2026-05-25)
+---
 
-Perubahan besar pada Mobile API Phase 2:
+## Arsitektur
 
-- Operasi cash drawer mobile:
-  - Buka kas (`open`)
-  - Tutup kas (`close`)
-  - Ringkasan sesi kas (`summary`)
-- Operasi transaksi mobile:
-  - List transaksi dengan filter (`index`)
-  - Bayar open bill (`pay`)
-  - Void transaksi (`void`, owner only)
-- Registrasi route API baru dengan proteksi role:
-  - `cashier,owner` untuk alur kasir harian
-  - `owner` khusus untuk void transaksi
+### Dua lapis autentikasi yang terpisah
 
-Lihat detail teknis dan alasan perubahan di `docs/CHANGELOG.md`.
+Ini keputusan struktural paling penting dalam sistem ini:
 
-## Update Terbaru (2026-05-28)
+```
+users              → /login           → tenant (pemilik usaha & stafnya)
+platform_users     → /platform/login  → pemilik SaaS
+```
 
-Penyegaran besar pada UI system dan alur kasir/owner:
+Akun platform **sengaja tidak punya `tenant_id`** dan tidak memakai spatie/permission. Alasannya bukan preferensi: pivot `model_has_roles` menuntut `tenant_id` non-null karena kolom itu bagian dari primary key, sementara akun platform tidak berada di dalam tenant mana pun. Izinnya karena itu dikelola lewat tabel tersendiri, `platform_user_modules`.
 
-- Theme system semantik baru berbasis design token (`primary`, `success`, `warning`, `destructive`) diterapkan lintas komponen dan halaman.
-- Komponen reusable baru:
-   - `CashierTopbar` untuk navigasi konsisten di halaman kasir
-   - `DatePicker` custom untuk filter laporan owner
-   - `useFlash` composable untuk notifikasi sukses/error/peringatan tanpa alert browser
-- Peningkatan UX kasir:
-   - Flow tutup kas 2 langkah dengan ringkasan sebelum konfirmasi
-   - Validasi stok menampilkan flash message (bukan alert blocking)
-   - Konsistensi copy untuk open bill/tagihan
-- Perbaikan role flow backend:
-   - Owner tidak lagi diwajibkan membuka sesi kas sebelum masuk POS
-   - Sesi cash drawer dibatasi untuk role kasir
-- Halaman login di-redesign agar konsisten dengan visual system baru.
+### Isolasi tenant
 
-Lihat detail lengkap file terdampak di `docs/CHANGELOG.md`.
+Data bisnis (produk, transaksi, stok, sesi kas, dst.) di-scope otomatis lewat trait `BelongsToTenant` + `TenantScope` berbasis `auth()->user()->tenant_id`.
 
-## Update Tambahan (2026-05-28)
+Tiga model **sengaja tidak** memakai trait itu: `Subscription`, `Invoice`, dan `TenantMonthlyMetric`. Ketiganya dibaca dari panel platform, dan akun platform bernilai `tenant_id = null` — kalau di-scope, hasilnya justru selalu kosong tepat di tempat yang membutuhkannya. Isolasi keduanya dijaga uji tersendiri: `tests/Feature/TenantIsolation/` dan `PlatformIsolationTest`.
 
-Perubahan incremental non-landing page:
+### Middleware bertenant sebagai grup, bukan alias
 
-- Owner Modifiers:
-   - Toggle cepat pengaturan group modifier (`wajib dipilih` dan `boleh pilih banyak`) langsung dari halaman list.
-   - Detail group menampilkan item modifier dan daftar produk yang menggunakan group tersebut.
-- Cashier Topbar:
-   - Menu akun berbasis dropdown (nama, email, logout) untuk navigasi yang lebih ringkas.
-- DatePicker:
-   - Popup calendar dipindah ke body (`Teleport`) dengan posisi adaptif agar tidak terpotong area scroll/layout.
-- UI Polish dan kompatibilitas request:
-   - Scrollbar custom untuk sidebar dan area konten owner.
-   - Penambahan meta CSRF token pada layout utama app.
+Grup `tenant` dan `tenant.api` menggabungkan tiga gerbang yang tak boleh terpisah:
 
-Rincian file dan konteks perubahan tersedia di `docs/CHANGELOG.md`.
+```
+EnsureTenant → EnsureEmailVerified → EnsureSubscriptionActive
+```
 
-## API Endpoints (v1)
+Urutannya disengaja: akun yang alamatnya belum terbukti tidak perlu sampai ke pertanyaan apakah langganannya masih berlaku. Dijadikan grup, bukan alias, agar tidak ada grup rute baru yang lupa menyertakan salah satunya.
 
-Base prefix endpoint consumer sekarang adalah `/api/v1`.
+---
 
-Endpoint utama:
+## Fitur
 
-- `POST /api/v1/mobile/login`
-- `POST /api/v1/mobile/logout`
-- `GET /api/v1/mobile/tenant/profile`
-- `GET /api/v1/mobile/products`
-- `GET /api/v1/mobile/cash-drawer/status`
-- `POST /api/v1/mobile/cash-drawer/open`
-- `POST /api/v1/mobile/cash-drawer/close`
-- `GET /api/v1/mobile/cash-drawer/{cashDrawer}/summary`
-- `POST /api/v1/mobile/transactions`
-- `GET /api/v1/mobile/transactions`
-- `POST /api/v1/mobile/transactions/{transaction}/pay`
-- `GET /api/v1/mobile/transactions/{transaction}/receipt`
-- `POST /api/v1/mobile/transactions/{transaction}/void` (owner only)
-- `GET /api/v1/products`
-- `POST /api/v1/orders`
-- `PATCH /api/v1/orders/{transaction}/fulfillment`
+### Kasir
 
-Endpoint non-versioned yang tetap dipertahankan:
+- **POS** dengan kategori, varian, dan modifier (wajib/opsional, pilihan tunggal/banyak, add-on berbayar)
+- **Open bill** — simpan sebagai pending, lunasi kemudian
+- **Multi metode bayar** — tunai (dengan perhitungan kembalian), QRIS statis, transfer bank
+- **Edit transaksi** yang sudah selesai, dengan **koreksi stok otomatis** dan jejak perubahan (`transaction_edits`)
+- **Sesi kas** — buka kas di satu halaman, **tutup kas di halamannya sendiri** (`[BL-086]`). Uang yang seharusnya ada di laci **disembunyikan secara bawaan** supaya hitungan fisik kasir jujur; ada tombol membukanya, dan setiap pembukaan meninggalkan jejak yang dibaca pemilik (`[BL-090]`). Hitungan yang sudah melihat ringkasannya terkunci — mengubahnya menuntut menghitung ulang dari nol.
+- **Umur sesi kas 24 jam** (`[BL-088]`) — kasir diperingatkan empat jam sebelum batas; yang lewat ditutup `cash-drawers:expire` **tanpa mengaku sudah dihitung** (`closing_amount` dan selisihnya tetap kosong, ditandai `closed_by_system`).
+- **Uang keluar / masuk laci di luar penjualan** (`[BL-087]`) — kasir selalu boleh mencatatnya dengan alasan wajib. Di bawah ambang tenant (bawaan **Rp 50.000**, diatur di *Cara Kerja Sistem*) langsung berlaku; di atasnya tercatat dan terlihat tapi **belum mengurangi uang seharusnya** sampai pemilik menyetujuinya.
+- **Mode offline (PWA)** — transaksi tetap bisa dibuat saat jaringan mati, lalu disinkronkan. Transaksi yang bermasalah saat sinkronisasi masuk ke **Review Offline** milik owner, bukan ditelan diam-diam.
+- **Void transaksi** (owner-only)
 
-- `POST /api/xendit/webhook`
+### Pemilik Usaha
 
-Referensi yang lebih lengkap tersedia di halaman `/api-docs`.
+- **Dashboard** — omzet, jumlah transaksi, rata-rata nota, produk terlaris, tren
+- **Master data** — produk, varian, kategori, group modifier, metode pembayaran
+- **Stok** — restock, penyesuaian, riwayat per varian, mutasi stok lengkap, badge stok rendah & mendekati kedaluwarsa
+- **Laporan** — laporan harian dengan filter tanggal, riwayat transaksi + detail, rekap sesi kas (termasuk **persetujuan uang keluar laci** dan jejak siapa yang membuka angka seharusnya)
+- **Profit** — perhitungan margin berbasis `cost_price` per varian, termasuk proyeksi periode berikutnya
+- **Staf & RBAC** — kelola staf, susun role dengan modul terpilih (lihat [Kontrol Akses](#kontrol-akses))
+- **Analisis AI** — lihat [Analisis AI](#analisis-ai)
+- **Token MCP** — sambungkan AI client milik sendiri ke data bisnis (lihat [MCP Server](#mcp-server))
 
-## MCP Server (Akses Data Bisnis untuk AI Client)
+### Pemilik SaaS (Platform Console)
 
-MCP Server memberi **AI client milik owner** (mis. Claude Desktop) akses **read-only** ke data bisnis tenant: ringkasan penjualan, profit, dan menu. Berbeda dengan fitur AI Analysis internal — di sini LLM yang memanggil adalah client milik owner, sehingga **tidak memakai kuota AI aplikasi**. App hanya berperan sebagai sumber data.
+- **Daftar tenant** — menampilkan **bracket omzet, bukan angka rupiah persis**. Angka persis hanya ada di halaman omzet per tenant, dan setiap kunjungan tercatat sebagai kejadian `sensitive` tanpa deduplikasi.
+- **Langganan** — keadaan, seat, periode tiap klien
+- **Tagihan** — verifikasi atau tolak bukti pembayaran
+- **Aturan harga** — plan dan bracket harga jalur subsidi
+- **Log audit** — dengan retensi dan pemangkasan terjadwal
+- **Kelola akun platform** — pemberian modul per staf, dijaga penanda `is_owner`
+- **Peringatan otomatis** — surel ke pemilik saat percobaan masuk gagal menumpuk; penandaan pendaftaran berulang dari IP yang sama
 
-Karakteristik:
+---
+
+## Model Bisnis & Langganan
+
+Langganan berjalan **dua jalur**: harga normal dan **harga subsidi untuk UMKM** yang mengikuti omzet.
+
+### Siklus hidup
+
+```
+trial (2 bulan) ──┐
+                  ├──> grace (bertingkat, 30 hari) ──> suspended
+active (periode) ─┘
+```
+
+Angka-angkanya kebijakan komersial, jadi tinggal di `config/subscription.php` (`trial_months`, `grace_days`, `grace_intensive_from_day`, `grace_readonly_from_day`), bukan sebagai konstanta di kode.
+
+Masa gratisnya dihitung dalam **bulan**, bukan hari, karena jangkar tanggal tagih diambil dari **tanggal daftar**: yang mendaftar tanggal 7 ditagih tiap tanggal 7. Menghitungnya dalam hari menggeser jangkarnya sekali dan permanen.
+
+Di keadaan `grace`, halaman tetap terbuka dan data lama tetap bisa dibuka serta diunduh — hanya permintaan yang **mengubah** data yang ditolak. Menyandera data pelanggan bukan alat penagihan yang sah; menahan layanan baru adalah. Halaman `/langganan` dan logout **selalu** terbuka di keadaan apa pun, karena menutup jalan keluar berarti tenant tak akan pernah bisa keluar dari keadaan itu — termasuk dengan membayar.
+
+### Prabayar, dan harganya dari bulan lalu
+
+**Bayar dulu, baru pakai.** Tagihan sebuah periode terbit **sebelum** periode itu dimulai (`invoice_lead_days`, H-7) dan dilunasi di awal, bukan ditagih di belakang atas pemakaian yang sudah lewat. Itu sekaligus menjelaskan kenapa tarifnya tidak bisa diambil dari bulan yang sedang ditagih: pada saat tagihannya terbit, bulan itu belum terjadi.
+
+Karena itu aturannya satu baris, dan berlaku untuk seluruh jalur harga:
+
+> **Tarif periode P dihitung dari omzet bulan sebelum P** — bukan dari omzet P, dan bukan dari omzet saat tagihannya dibayar.
+
+Contoh yang menjadi acuan (keputusan pemilik 2026-08-19, `[BL-056]`):
+
+| | |
+|---|---|
+| Daftar | Juli |
+| Bulan 1–2 | Juli & Agustus — **gratis**, tidak ada tagihan |
+| Bulan 3 | September — tagihan pertama, tarifnya dari **omzet Agustus** |
+| Bulan 4 | Oktober — tarifnya dari omzet September |
+
+Dua akibat yang sengaja dinyatakan, karena keduanya pernah ditanyakan:
+
+- **Pengajuan Harga Adaptif berlaku untuk periode berikutnya, bukan periode yang sedang ditagih.** Tagihan yang sudah terbit tidak pernah dihitung ulang; nominal dan `pricing_context`-nya membeku di saat terbit (`Invoice::amount`). Tenant yang mengajukan di tengah tenggat tetap melunasi tagihan yang ada, dan keringanannya muncul di tagihan berikutnya. Alternatifnya — pengajuan yang memotong tunggakan berjalan — akan menjadikan pengajuan sebagai jalan keluar dari tagihan mana pun.
+- **Omzet yang dinilai adalah omzet periode yang tertunggak, bukan bulan berjalan.** `pricingAsOf()` memakai awal bulan periode tagihan dan `current_period_end` membeku selama tenant belum membayar, jadi tenant yang menunggak dari Agustus tidak diperiksa dengan omzet Oktober.
+
+Penghitung omzetnya sendiri (`subscriptions:compute-revenue`) berjalan **tanggal 1 pukul 02:40** atas bulan yang baru saja tutup, lima puluh menit sebelum penerbit tagihan — lihat [Tugas terjadwal](#tugas-terjadwal). Urutan "hitung dulu, tagih kemudian" itu bagian dari aturan di atas, bukan detail penjadwalan yang bebas digeser, dan ketergantungan itu ditulis sebagai komentar di kedua sisi `routes/console.php` serta dijaga `tests/Feature/Subscription/ScheduleOrderTest.php`.
+
+#### Tagihan menunggu omzetnya, dan itu bagian dari aturannya
+
+Aturan satu baris di atas berlaku **tanpa pengecualian** — tapi menegakkannya menuntut satu perilaku yang perlu diketahui sebelum membaca kode penagihan.
+
+Dua penanggalan berjalan berdampingan di sini, dan keduanya tidak otomatis sepakat:
+
+| | Mengikuti | Berputar tiap |
+|---|---|---|
+| **Siklus tagih** | tanggal daftar tenant (`billing_anchor_day`) | tanggal D bulan M → tanggal D bulan M+1 |
+| **Ringkasan omzet** | bulan kalender (`tenant_monthly_metrics.period`, `YYYY-MM`) | ditulis sekali, tanggal 1, atas bulan yang baru tutup |
+
+Bagi tenant yang jangkar tagihnya **tanggal 8 ke atas**, keduanya berimpit: tagihan terbit H-7, yaitu tanggal 1 atau sesudahnya, saat ringkasan bulan lalu sudah ada. Bagi yang berjangkar **tanggal 1–7**, tagihannya jatuh di akhir bulan sebelumnya — sebelum bulan penentu tarifnya tutup, jadi ringkasannya belum mungkin ada.
+
+**Yang dilakukan sistem: menunggu, bukan menebak.** Selama ringkasan bulan penentu tarifnya belum ada, tagihan tenant jalur Adaptif **tidak diterbitkan**. `subscriptions:advance-lifecycle` berjalan harian, jadi tagihannya terbit sendiri di hari ringkasan itu ditulis. Akibatnya masa siap tenant berjangkar 1–7 menjadi **0–6 hari**, bukan 7 — `invoice_lead_days` adalah batas **tercepat**, bukan janji. Itu pertukaran yang disengaja (keputusan pemilik 2026-08-20, `[BL-080]`): masa siap yang lebih pendek dibayarkan untuk tarif yang dihitung dari bulan yang benar.
+
+Empat hal yang membuat penundaan itu aman, dan tak satu pun boleh dilepas:
+
+- **Diputuskan SEBELUM penetapan harga** (`MetricReadiness`), bukan disimpulkan dari hasilnya. `PricingService::resolveFor()` tidak pernah kehabisan jawaban — tanpa aturan yang cocok ia menjatuhkan tenant ke **paket penampung**, dan angka itu berupa harga yang sah. Tanpa penjaga di depan, tenant subsidi yang ringkasannya belum tiba akan ditagih tarif penampung, lazimnya paket termahal.
+- **Bersyarat.** Hanya jalur Adaptif. Jalur Harga Tetap tidak pernah punya baris ringkasan sama sekali dan tetap mendapat masa siap 7 hari penuh.
+- **Bulannya tegas** (`MonthlyMetricResolver::requiredPeriodFor()`). Ringkasan bulan lain — sekalipun lebih tua dan tersedia — tidak melepas penundaan. Ini yang dulu mengubah data yang belum ada menjadi angka yang salah alih-alih ketiadaan yang terlihat.
+- **Ada batasnya.** Lewat hari jatuh tempo, penundaan berhenti: tagihannya **tetap ditahan** (bukan diterbitkan dari paket penampung), dicatat sebagai `invoices.postponement-overdue`, dan satu surel peringatan dikirim. Tanpa batas ini, "tunda sampai ada" berubah diam-diam jadi "tidak pernah ditagih" — mencabut consent menghapus seluruh ringkasan omzet seketika, sementara jalur harganya baru kembali normal di akhir periode.
+
+Keluaran `subscriptions:advance-lifecycle` memisahkan keduanya: **"Menunggu ringkasan omzet"** adalah keadaan wajar yang berulang tiap bulan, sementara **"Ringkasan omzet tak kunjung ada"** adalah peringatan yang menuntut tindakan.
+
+> Yang sengaja **belum** dikerjakan: memindahkan omzet penentu tarif ke jendela 30 hari yang selalu penuh, yang akan mengembalikan masa siap 7 hari untuk semua tenant. Ongkosnya bukan di kode melainkan di persetujuan — dokumen consent subsidi yang sudah ditandatangani menyebut pengumpulannya "sekali sebulan, setelah bulan berjalan tutup", jadi ia menuntut versi consent baru dan persetujuan ulang setiap tenant Adaptif. Tercatat sebagai `[BL-081]` (`docs/BACKLOG.md`).
+
+### Seat
+
+Seat dihitung dari **pengguna aktif**, tetapi yang ditagih adalah `purchased_extra_seats` — seat yang benar-benar **dibeli**, bukan puncak pemakaian. Melepas seat berlaku di akhir periode, bukan seketika: kursinya masih boleh dipakai sampai tanggal itu, dan tenant diberi tahu tanggalnya.
+
+`seat_high_water` masih ada tapi perannya sudah bukan penagihan — ia hanya dimensi penetapan harga (`active_seats`), dan hari ini belum dipakai satu pun aturan harga.
+
+### Jalur subsidi
+
+Tenant yang memilih jalur subsidi memberi **persetujuan eksplisit** agar omzet bulanannya dihitung, lalu tarifnya mengikuti bracket harga yang berlaku. Aturan yang mengikat:
+
+- Mencabut persetujuan **menghapus metrik seketika**, tapi tarif subsidi tetap berlaku sampai akhir periode.
+- Pindah jalur harga dibatasi **minimum tiga bulan sekali**.
+- Retensi data omzet **24 bulan**, dipangkas otomatis.
+- Job penghitung omzet menyaring **dua** hal sekaligus: jalur harga tenant **dan** persetujuan yang masih aktif.
+
+Dokumen persetujuannya terpisah per jalur (`resources/consents/`) dan **tidak pernah disunting di tempat** — versi baru berarti berkas baru plus kenaikan nomor versi di config. Menyunting teks yang sudah disetujui akan membuat catatan persetujuan seseorang menunjuk ke kalimat yang tidak pernah mereka baca.
+
+### Tugas terjadwal
+
+| Perintah | Jadwal |
+|---|---|
+| `platform:prune-audit-logs` | harian, 03:10 |
+| `subscriptions:advance-lifecycle` | harian, 03:30 — **wajib sesudah** `compute-revenue` |
+| `platform:alert-failed-logins` | tiap jam |
+| `subscriptions:compute-revenue` | tanggal 1, 02:40 — **wajib sebelum** `advance-lifecycle` |
+| `subscriptions:prune-metrics` | tanggal 1, 04:30 |
+| `open-bills:expire` | tiap jam — tagihan terbuka lewat 24 jam jadi kas negatif (`[BL-031]`) |
+| `cash-drawers:expire` | tiap jam menit ke-5 — sesi kas lewat 24 jam ditutup sistem (`[BL-088]`) |
+| `payment-proofs:prune-unclaimed` | harian, 03:50 |
+| `stock:record-expired` | harian, **00:05** — stempel barang yang basi (`[BL-105]`). Jamnya bagian dari keputusannya: barang yang kedaluwarsa tanggal X masih sah dijual sepanjang hari X, jadi ia diamati tepat sesudah hari berganti. **Kalau harus digeser, geser lebih awal — tidak pernah lebih siang.** |
+
+`schedule:run` harus aktif di produksi agar semua ini berjalan.
+
+---
+
+## Kontrol Akses
+
+Ada **tiga mekanisme berbeda**, masing-masing untuk pertanyaan yang berbeda:
+
+| Mekanisme | Alias | Pertanyaan yang dijawab |
+|---|---|---|
+| `EnsureRole` | `role` | Apakah dia owner atau kasir? |
+| spatie permission | `permission`, `permission.api` | Apakah role-nya diberi modul ini? |
+| `EnsurePlatformModule` / `EnsurePlatformOwner` | `platform.can`, `platform.owner` | Apakah akun platform ini boleh membuka modul ini? |
+
+Perhatikan bahwa alias `role` **bukan** milik spatie — ia gerbang enum owner/kasir milik aplikasi. Gerbang modul memakai `permission:`.
+
+### Modul tenant
+
+`pos` · `cash_drawer` · `products` · `stock` · `reports` · `payment_methods` (sensitif) · `ai_analysis` (sensitif)
+
+Owner tidak dibatasi modul. Untuk staf, owner menyusun role sendiri dari daftar ini di halaman **Role & Modul**. Modul bertanda sensitif tidak dicentang otomatis di UI.
+
+### Modul platform
+
+`tenants` · `subscriptions` · `payments` · `pricing_rules` (sensitif) · `revenue_data` (sensitif) · `audit_logs` (sensitif)
+
+`tenants` (melihat daftar klien) sengaja dipisah dari `revenue_data` (melihat omzet klien jalur subsidi) — keduanya kewenangan yang berbeda.
+
+**Manajemen akun platform sendiri tidak ada di daftar ini.** Ia dijaga penanda `is_owner`, bukan modul yang bisa diberikan — kalau grantable, staf platform bisa mencentangkan `revenue_data` untuk dirinya sendiri.
+
+Katalog modul ada di `config/rbac.php` (tenant) dan `config/platform-rbac.php` (platform), masing-masing sebagai satu sumber kebenaran untuk gerbang route, factory, share Inertia, dan filter navigasi.
+
+---
+
+## API
+
+Prefix endpoint consumer adalah `/api/v1`. Autentikasi memakai bearer token Sanctum.
+
+### Mobile POS
+
+| Method | Endpoint |
+|---|---|
+| `POST` | `/api/v1/mobile/login` |
+| `POST` | `/api/v1/mobile/logout` |
+| `GET` | `/api/v1/mobile/tenant/profile` |
+| `GET` | `/api/v1/mobile/products` |
+| `GET` | `/api/v1/mobile/cash-drawer/status` |
+| `POST` | `/api/v1/mobile/cash-drawer/open` |
+| `POST` | `/api/v1/mobile/cash-drawer/close` |
+| `GET` | `/api/v1/mobile/cash-drawer/{cashDrawer}/summary` |
+| `POST` | `/api/v1/mobile/transactions` |
+| `GET` | `/api/v1/mobile/transactions` |
+| `POST` | `/api/v1/mobile/transactions/{transaction}/pay` |
+| `GET` | `/api/v1/mobile/transactions/{transaction}/receipt` |
+| `POST` | `/api/v1/mobile/transactions/{transaction}/void` (owner-only) |
+
+### Katalog & pesanan
+
+| Method | Endpoint |
+|---|---|
+| `GET` | `/api/v1/products` |
+| `POST` | `/api/v1/orders` |
+| `PATCH` | `/api/v1/orders/{transaction}/fulfillment` |
+
+### Non-versioned
+
+`POST /api/xendit/webhook` — sengaja tidak diversikan agar callback eksternal tidak perlu diubah setiap kali versi API naik.
+
+Referensi lengkap tersedia di halaman **`/api-docs`** dan di [docs/phases-2/API-DOCS-Mobile.md](docs/phases-2/API-DOCS-Mobile.md).
+
+### Izin di Mobile API
+
+Payload login dan `/api/v1/mobile/tenant/profile` menyertakan `permissions` (owner → `['*']`, staf → daftar modul), dihitung `User::modulePermissions()` — satu sumber untuk web dan mobile. Endpoint profil ikut memuatnya agar aplikasi bisa menyegarkan izin tanpa login ulang: token mobile bertahan berminggu-minggu, sementara owner bisa mengubah role kapan saja.
+
+Middleware `permission.api` tersedia dan teruji, tapi **belum menggerbang endpoint apa pun** — semua endpoint mobile yang ada saat ini adalah POS, laci kas, dan riwayat kasir, yang di web pun sengaja hanya digerbang `role:cashier,owner`. `pos` dan `cash_drawer` diputuskan tetap menjadi **penanda menu**, bukan gerbang rute, di kedua sisi. Rinciannya di `[BL-003]` pada [docs/BACKLOG.md](docs/BACKLOG.md).
+
+---
+
+## MCP Server
+
+MCP Server memberi **AI client milik owner** (misalnya Claude Desktop) akses **read-only** ke data bisnis tenantnya. Bedanya dengan fitur Analisis AI internal: di sini LLM yang memanggil adalah client milik owner, jadi **tidak memakai kuota AI aplikasi** — aplikasi hanya berperan sebagai sumber data.
 
 - **Endpoint:** `POST {APP_URL}/mcp/business`
-- **Auth:** bearer token Sanctum (`Authorization: Bearer <token>`), **hanya untuk owner**.
-- **Isolasi:** data otomatis ter-scope ke tenant pemilik token; hanya data agregat (tanpa data pelanggan).
-- **Rate limit:** 60 request/menit per user (anti-abuse).
+- **Auth:** bearer token Sanctum, **owner-only**
+- **Isolasi:** ter-scope otomatis ke tenant pemilik token; hanya data agregat, tanpa data pelanggan
+- **Rate limit:** 60 request/menit per pengguna
 
 ### Tool yang tersedia
 
 | Tool | Fungsi | Argumen |
 |---|---|---|
-| `get-sales-summary` | Revenue, jumlah transaksi, rata-rata nota, produk terlaris, tren harian | `from`, `to` (opsional, `YYYY-MM-DD`) |
+| `get-sales-summary` | Omzet, jumlah transaksi, rata-rata nota, produk terlaris, tren harian | `from`, `to` (opsional, `YYYY-MM-DD`) |
 | `get-profit` | Profit, margin, proyeksi periode berikutnya, margin per item | `from`, `to` (opsional, `YYYY-MM-DD`) |
-| `get-menu` | Daftar produk aktif + varian (harga, sisa stok) | — |
+| `get-menu` | Produk aktif + varian (harga, sisa stok) | — |
 
-> Tanpa `from`/`to`, rentang default adalah 30 hari terakhir.
+Tanpa `from`/`to`, rentang bawaannya 30 hari terakhir.
 
-### Tata Cara Pemakaian
+### Cara memakai
 
-1. Login sebagai **owner**, buka **Pengaturan**.
-2. Di bagian **Akses MCP (AI Client)**, klik **Generate Token**, lalu **salin token** (hanya ditampilkan sekali).
-3. Konfigurasikan AI client dengan URL endpoint + token. Contoh untuk Claude Desktop (`claude_desktop_config.json`), menggunakan jembatan `mcp-remote`:
+1. Masuk sebagai **owner**, buka **Pengaturan**.
+2. Di bagian **Akses MCP (AI Client)**, klik **Generate Token**, lalu **salin token** — hanya ditampilkan sekali.
+3. Konfigurasikan AI client. Contoh untuk Claude Desktop (`claude_desktop_config.json`), lewat jembatan `mcp-remote`:
 
    ```json
    {
@@ -166,43 +341,146 @@ Karakteristik:
    }
    ```
 
-4. Mulai percakapan di AI client, mis. "Berapa profit bulan ini?" atau "Produk mana yang paling laris minggu ini?" — client akan memanggil tool yang sesuai.
-5. **Rotasi/cabut token** kapan saja dari Pengaturan (klik **Buat Ulang Token** atau **Cabut**). Token yang dicabut langsung tidak berlaku.
+4. Mulai bertanya, misalnya "Berapa profit bulan ini?" — client akan memanggil tool yang sesuai.
+5. Rotasi atau cabut token kapan saja dari Pengaturan. Token yang dicabut langsung tidak berlaku.
 
-### Debug (opsional)
+Untuk debug, MCP Inspector bawaan bisa dipakai (sertakan header `Authorization: Bearer <token owner>` saat menyambung):
 
-Uji server dengan MCP Inspector bawaan:
-
-```
+```bash
 php artisan mcp:inspector mcp/business
 ```
 
-Sertakan header `Authorization: Bearer <token owner>` saat menyambung.
+---
 
-## Setup Singkat
+## Analisis AI
 
-1. Install dependency PHP:
-   - `composer install`
-2. Install dependency frontend:
-   - `npm install`
-3. Copy env:
-   - `cp .env.example .env`
-4. Generate app key:
-   - `php artisan key:generate`
-5. Migrasi database:
-   - `php artisan migrate`
-6. Jalankan server local:
-   - `php artisan serve`
-7. Jalankan Vite:
-   - `npm run dev`
+Pemilik usaha bisa meminta analisis bisnis atas datanya sendiri. Analisis dijalankan sebagai **job antrean** (`RunAiAnalysisJob`) — jadi **queue worker harus hidup**, kalau tidak hasilnya tidak akan pernah muncul.
+
+Provider yang didukung: **SumoPod** (bawaan), OpenAI, Gemini, Anthropic — dipilih lewat `AiProviderFactory`.
+
+Model kuota:
+
+- **Free tier** — memakai kunci bersama milik aplikasi (`AI_FREE_TIER_KEY`), dibatasi `AI_FREE_TIER_DAILY_LIMIT` (bawaan 5) analisis per hari per tenant, dilacak di tabel `ai_usages`.
+- **BYOK** — kolom `tenants.ai_provider`, `ai_api_key`, `ai_model` sudah tersedia untuk owner memakai kunci sendiri; alur UI-nya masih ditunda.
+
+Konteks data yang dikirim ke model disusun `AiContextService` — agregat penjualan, profit, dan stok, tanpa data pelanggan.
+
+---
+
+## Instalasi
+
+### Prasyarat
+
+PHP 8.3, Composer, Node.js, MySQL/MariaDB.
+
+### Langkah
+
+```bash
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+npm run build
+```
+
+Sesuaikan `.env` untuk koneksi database dan, kalau fitur AI dipakai, kunci provider.
+
+### Menjalankan (development)
+
+```bash
+composer run dev
+```
+
+Perintah ini menyalakan `artisan serve`, `queue:listen`, dan `npm run dev` sekaligus. **Queue worker wajib hidup** untuk Analisis AI; kalau `.env` diubah, worker perlu di-restart karena proses lama masih memegang konfigurasi lama.
+
+### Data awal
+
+- **Demo / lokal:** lihat [PANDUAN-DEMO.md](PANDUAN-DEMO.md) — di sana ada rincian tiap seeder, mana yang idempotent, dan urutan yang benar.
+- **Produksi:** `php artisan db:seed --class=ProductionSeeder` (membaca `ADMIN_EMAIL` dan `ADMIN_INITIAL_PASSWORD`), lalu `php artisan db:seed --class=PlatformUserSeeder` (membaca `PLATFORM_ADMIN_*`).
+
+### Prasyarat produksi yang mudah terlupakan
+
+- **Pengirim surel sungguhan.** Dengan `MAIL_MAILER=log`, verifikasi surel dan **kedua** alur reset kata sandi tidak berfungsi.
+- **`schedule:run` aktif**, agar siklus hidup langganan, perhitungan omzet, dan pemangkasan log berjalan.
+- **Queue worker berjalan sebagai layanan**, bukan hanya `queue:listen` di terminal.
+- Akun platform **belum punya 2FA** (`[BL-013]`) — pertimbangkan pembatasan akses di lapisan lain.
+
+---
+
+## Pengujian
+
+```bash
+php artisan test --compact
+```
+
+Filter satu berkas atau satu nama:
+
+```bash
+php artisan test --compact --filter=TransactionEdit
+```
+
+Suite-nya (452 uji dalam 55 berkas Pest) mencakup, di antaranya:
+
+- `tests/Feature/TenantIsolation/` — kebocoran data antar tenant
+- `tests/Feature/Platform/` — isolasi panel platform + arch test yang menjaga global scope tidak dibuang
+- `tests/Feature/Authorization/` — gerbang role & modul
+- `tests/Feature/Subscription/` — siklus hidup, seat, jalur harga
+- `tests/Feature/Security/` — rate limit, penjagaan pendaftaran
+- `tests/Feature/OfflineSyncTest.php` — sinkronisasi transaksi offline
+- `tests/Feature/Mcp/`, `tests/Feature/Ai/` — MCP server & analisis AI
+
+Format kode PHP:
+
+```bash
+vendor/bin/pint
+```
+
+---
+
+## Struktur Direktori
+
+```
+app/
+├── Console/Commands/     Perintah terjadwal (langganan, omzet, pemangkasan, peringatan)
+├── Http/
+│   ├── Controllers/
+│   │   ├── Api/V1/       API consumer (mobile, katalog, pesanan)
+│   │   ├── Auth/         Masuk, daftar, verifikasi surel, reset kata sandi
+│   │   ├── Billing/      Langganan, persetujuan subsidi, upgrade seat
+│   │   ├── Cashier/      POS, sesi kas, edit transaksi
+│   │   ├── Owner/        Master data, stok, laporan, staf, role, AI, pengaturan
+│   │   ├── Platform/     Panel pemilik SaaS
+│   │   └── Public/       Landing page, referensi API
+│   └── Middleware/       Gerbang tenant, verifikasi, langganan, modul
+├── Jobs/                 Analisis AI, perhitungan omzet bulanan
+├── Models/               Termasuk Scopes/TenantScope
+└── Services/
+    ├── Ai/               Abstraksi provider (SumoPod, OpenAI, Gemini, Anthropic)
+    └── ...               Transaksi, stok, profit, langganan, harga, consent, badge
+
+resources/js/Pages/       Halaman Inertia: Auth, Billing, Cashier, Owner, Platform, Errors
+config/rbac.php           Katalog modul tenant
+config/platform-rbac.php  Katalog modul platform
+docs/                     CHANGELOG, BACKLOG, dokumen teknis, dokumen fase
+```
+
+---
 
 ## Dokumentasi
 
-- Changelog: `docs/CHANGELOG.md`
-- Public API reference: `/api-docs`
-- MCP Server: `docs/phases-2/PHASE-AI-4_MCP-Server.md`
-- Technical docs: `docs/SAPI_Technical_Doc_v1.1.md`
-- Security audit: `docs/SAPI-Security-Audit_v1.0.md`
+| Berkas | Isi |
+|---|---|
+| [PANDUAN-DEMO.md](PANDUAN-DEMO.md) | Kredensial demo, isi data contoh, alur demo, batasan sebelum presentasi |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Riwayat perubahan dan keputusan arsitektur |
+| [docs/BACKLOG.md](docs/BACKLOG.md) | Isu terbuka dan hutang teknis yang dilacak |
+| [docs/SAPI_Technical_Doc_v1.1.md](docs/SAPI_Technical_Doc_v1.1.md) | Dokumentasi teknis |
+| [docs/SAPI-Security-Audit_v1.0.md](docs/SAPI-Security-Audit_v1.0.md) | Audit keamanan |
+| [docs/phases-2/API-DOCS-Mobile.md](docs/phases-2/API-DOCS-Mobile.md) | Referensi API mobile |
+| `docs/phases-1/`, `docs/phases-2/` | Dokumen perencanaan per fase |
+| `/api-docs` | Referensi API publik (halaman aplikasi) |
+
+---
 
 ## Lisensi
 

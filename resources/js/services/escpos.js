@@ -8,6 +8,10 @@
  * Chars-per-line: 58mm paper ≈ 32 cols, 80mm paper ≈ 48 cols (Font A).
  */
 
+import { BUSINESS_TZ } from '@/support/date';
+import { itemDiscount, receiptSavings } from '@/support/discount';
+import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
+
 // ── Low-level command bytes ──────────────────────────────────────────────
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -88,6 +92,7 @@ function formatCurrency(value) {
 function formatDate(date) {
     if (!date) return '';
     return new Date(date).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -97,6 +102,7 @@ function formatDate(date) {
 function formatTime(date) {
     if (!date) return '';
     return new Date(date).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });
@@ -129,7 +135,19 @@ export function buildReceipt(transaction, options = {}) {
     b.raw(CMD.doubleOff);
     b.raw(CMD.boldOff);
     if (options.subheader) b.line(options.subheader);
-    b.line('Point of Sale');
+
+    // ── Nomor antrian ──
+    // Hanya ada saat papan dapur hidup atau mode identitas "kode panggil"
+    // dipilih ([BL-026]), jadi struk outlet lain tidak berubah sama sekali.
+    // Dicetak besar: seluruh gunanya bertumpu pada nomor ini bisa dibaca
+    // pelanggan dari seberang meja lalu dipanggil.
+    if (transaction.queue_number) {
+        b.line(divider(width));
+        b.raw(CMD.boldOn).raw(CMD.doubleOn);
+        b.line(`NO. ANTRIAN ${transaction.queue_number}`);
+        b.raw(CMD.doubleOff).raw(CMD.boldOff);
+    }
+
     b.raw(CMD.alignLeft);
     b.line(divider(width));
 
@@ -139,13 +157,26 @@ export function buildReceipt(transaction, options = {}) {
     b.line(twoCols('Waktu', formatTime(transaction.created_at), width));
     if (transaction.user?.name) b.line(twoCols('Kasir', transaction.user.name, width));
     if (transaction.customer_name) b.line(twoCols('Pelanggan', transaction.customer_name, width));
+    if (transaction.table_number) b.line(twoCols('Meja', transaction.table_number, width));
     b.line(divider(width));
 
     // ── Items ──
     const items = transaction.items || [];
     for (const item of items) {
+        const discount = itemDiscount(item);
+
         b.line(item.variant_name || '-');
-        b.line(twoCols(`  ${item.qty} x ${formatCurrency(item.unit_price)}`, formatCurrency(item.subtotal), width));
+
+        // Baris berdiskon dicetak dengan harga NORMAL lalu potongannya
+        // ([BL-103] butir 2a), supaya kolom kanan bisa dijumlahkan menurun.
+        // Mencetak harga yang sudah dipotong saja membuat pelanggan melihat
+        // angka yang lebih kecil dari papan menu tanpa tahu sebabnya.
+        if (discount) {
+            b.line(twoCols(`  ${item.qty} x ${formatCurrency(discount.originalUnitPrice)}`, formatCurrency(discount.grossSubtotal), width));
+            b.line(twoCols(`  ${discount.label}`, `-${formatCurrency(discount.amount)}`, width));
+        } else {
+            b.line(twoCols(`  ${item.qty} x ${formatCurrency(item.unit_price)}`, formatCurrency(item.subtotal), width));
+        }
 
         for (const mod of item.modifiers || []) {
             const extra = Number(mod.extra_price) > 0 ? formatCurrency(mod.extra_price) : '';
@@ -156,11 +187,36 @@ export function buildReceipt(transaction, options = {}) {
     b.line(divider(width));
 
     // ── Totals ──
-    const subtotal = items.reduce((sum, it) => sum + Number(it.subtotal || 0), 0);
-    b.line(twoCols('Subtotal', formatCurrency(subtotal), width));
+    //
+    // Subtotal dibaca dari kolom transaksi, tidak dijumlahkan dari baris
+    // item ([BL-065]): di mode pajak inclusive `unit_price` sudah mengandung
+    // pajak, jadi jumlah baris adalah TOTAL. Kertas yang tidak bisa
+    // dijumlahkan ulang oleh pelanggan adalah keluhan yang paling cepat
+    // datang, dan di sini ia sudah terlanjur tercetak.
+    const totals = receiptTotals(transaction);
+    const tax = taxLine(totals);
+    const serviceCharge = serviceChargeLine(totals);
+
+    b.line(twoCols('Subtotal', formatCurrency(totals.subtotal), width));
+    // Sebelum pajak, karena pajak dipungut ATAS jumlah keduanya ([BL-097]).
+    if (serviceCharge) {
+        b.line(twoCols(serviceCharge.text, formatCurrency(serviceCharge.amount), width));
+    }
+    if (tax && tax.inline) {
+        b.line(twoCols(tax.text, formatCurrency(tax.amount), width));
+    }
     b.raw(CMD.boldOn);
-    b.line(twoCols('TOTAL', formatCurrency(transaction.total_amount), width));
+    b.line(twoCols('TOTAL', formatCurrency(totals.total), width));
     b.raw(CMD.boldOff);
+    if (tax && !tax.inline) {
+        b.line(twoCols(tax.text, formatCurrency(tax.amount), width));
+    }
+    // Keterangan, bukan baris hitungan: subtotal di atas sudah bersih dari
+    // potongan, jadi angka ini tidak dikurangkan lagi dari apa pun.
+    const savings = receiptSavings(transaction);
+    if (savings > 0) {
+        b.line(twoCols('Anda hemat', formatCurrency(savings), width));
+    }
     b.line(divider(width));
 
     // ── Payments ──
@@ -169,7 +225,7 @@ export function buildReceipt(transaction, options = {}) {
         b.line(twoCols(label, formatCurrency(p.amount), width));
     }
     if (Number(transaction.change_amount) > 0) {
-        b.line(twoCols('Kembali', formatCurrency(transaction.change_amount), width));
+        b.line(twoCols('Kembalian', formatCurrency(transaction.change_amount), width));
     }
     b.line(divider(width));
 

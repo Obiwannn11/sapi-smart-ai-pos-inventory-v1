@@ -10,35 +10,88 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Tenant
+        // 0. Katalog permission modul (global, idempotent)
+        $this->call(PermissionCatalogSeeder::class);
+
+        // 1. Tenant — demo dianggap sudah berlangganan, bukan trial, supaya
+        // tidak kedaluwarsa sebulan setelah seed dijalankan.
         $tenant = Tenant::create([
             'name' => 'Kopi Nusantara',
             'slug' => 'kopi-nusantara',
+            'status' => Tenant::STATUS_ACTIVE,
+            // Membuka tombol "simulasikan pembayaran" di halaman Langganan,
+            // supaya alur "bayar lalu akses pulih" bisa diperagakan tanpa
+            // transfer sungguhan ([BL-045]). Penanda ini tidak berarti apa-apa
+            // sendirian — di produksi tombolnya tetap tidak ada.
+            'is_demo' => true,
         ]);
 
+        // 1b. Langganan — seat dibuka untuk owner + dua kasir demo di bawah.
+        app(SubscriptionService::class)->startTrial($tenant)->update(['seats' => 5]);
+
         // 2. Users
+        // Akun demo ditandai terverifikasi: tanpa itu, seed di lingkungan lokal
+        // (MAIL_MAILER=log) berakhir dengan akun yang tak bisa dipakai sampai
+        // seseorang menggali tautannya dari berkas log.
         User::create([
             'tenant_id' => $tenant->id,
             'name' => 'Owner Demo',
             'email' => 'owner@sapi.test',
             'password' => Hash::make('password'),
             'role' => 'owner',
+            'email_verified_at' => now(),
         ]);
 
-        User::create([
+        $kasir = User::create([
             'tenant_id' => $tenant->id,
             'name' => 'Kasir Demo',
             'email' => 'kasir@sapi.test',
             'password' => Hash::make('password'),
             'role' => 'cashier',
+            'email_verified_at' => now(),
         ]);
+
+        // Kasir KEDUA, sengaja ada meski demo bisa berjalan tanpanya.
+        //
+        // Selama satu tenant hanya punya satu kasir, dua hal tidak pernah bisa
+        // terjadi di data demo: sesi laci yang tumpang-tindih, dan transaksi
+        // yang harus dipisahkan per laci. Keduanya adalah pokok `[BL-028]`
+        // Tahap B — cacatnya laten, dan cacat laten tidak bisa direproduksi
+        // pada data yang secara struktur tidak mampu memunculkannya.
+        //
+        // Ia juga membuat pemisahan hak akses terlihat: kasir pertama memegang
+        // `Kasir + Gudang`, yang kedua hanya `Kasir`. Satu-satunya pengguna
+        // ber-role tidak pernah membuktikan role itu membatasi apa pun.
+        $kasirKedua = User::create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Kasir Demo 2',
+            'email' => 'kasir2@sapi.test',
+            'password' => Hash::make('password'),
+            'role' => 'cashier',
+            'email_verified_at' => now(),
+        ]);
+
+        // 2b. Contoh role per-tenant + assign ke kedua kasir demo.
+        app(PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
+
+        $kasirPos = Role::findOrCreate('Kasir', 'web');
+        $kasirPos->syncPermissions(['pos', 'cash_drawer']);
+
+        $kasirGudang = Role::findOrCreate('Kasir + Gudang', 'web');
+        $kasirGudang->syncPermissions(['pos', 'cash_drawer', 'stock']);
+
+        $kasir->assignRole($kasirGudang);
+        $kasirKedua->assignRole($kasirPos);
 
         // 3. Categories
         $kopi = Category::create(['tenant_id' => $tenant->id, 'name' => 'Kopi']);

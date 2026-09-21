@@ -1,10 +1,19 @@
 <script setup>
 import { computed } from 'vue';
+import { BUSINESS_TZ } from '@/support/date';
+import { receiptTotals, serviceChargeLine, taxLine } from '@/support/tax';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
     transaction: Object,
 });
+
+// Layar konfirmasi kasir menampilkan pembagian yang sama dengan struknya
+// ([BL-065]) — kasir yang ditanya pelanggan "kok segini?" harus melihat
+// angka yang sama dengan yang dipegang penanya.
+const totals = computed(() => receiptTotals(props.transaction));
+const tax = computed(() => taxLine(totals.value));
+const serviceCharge = computed(() => serviceChargeLine(totals.value));
 
 const emit = defineEmits(['close', 'print']);
 
@@ -14,6 +23,7 @@ const formatCurrency = (value) => {
 
 const formatTime = (date) => {
     return new Date(date).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });
@@ -25,6 +35,29 @@ const totalPaid = computed(() => {
 });
 
 const changeAmount = computed(() => Number(props.transaction?.change_amount || 0));
+
+/**
+ * Identitas pesanan, satu baris saja ([BL-026]).
+ *
+ * Urutannya bukan selera: nomor panggil menang karena hanya ia yang menuntut
+ * tindakan berikutnya (memanggil), sedangkan nama dan meja sekadar keterangan.
+ * Satu transaksi memang bisa membawa lebih dari satu — self-order mengirim nama
+ * DAN meja — tapi menampilkan tiga baris berarti tidak ada yang menonjol.
+ */
+const identity = computed(() => {
+    const tx = props.transaction;
+    if (!tx) return null;
+
+    if (tx.queue_number) return { label: 'No. Panggil', value: tx.queue_number };
+    if (tx.table_number) return { label: 'Meja', value: tx.table_number };
+    if (tx.customer_name) return { label: 'Pelanggan', value: tx.customer_name };
+
+    return null;
+});
+
+const hasIdentity = computed(() => identity.value !== null);
+const identityLabel = computed(() => identity.value?.label ?? '');
+const identityValue = computed(() => identity.value?.value ?? '');
 
 const itemCount = computed(() => {
     if (!props.transaction?.items) return 0;
@@ -63,6 +96,19 @@ const print = () => emit('print');
                             <span class="font-semibold text-gray-600">{{ transaction.code }}</span>
                             · {{ formatTime(transaction.created_at) }}
                         </p>
+                    </div>
+
+                    <!--
+                        ===== IDENTITAS PESANAN =====
+                        Di atas kembalian dan dicetak besar: ini satu-satunya
+                        angka yang harus dibacakan kasir ke pelanggan, dan ia
+                        hilang begitu modal ditutup ([BL-026]).
+                    -->
+                    <div v-if="hasIdentity" class="px-6 pb-3">
+                        <div class="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-center">
+                            <p class="text-[11px] uppercase tracking-widest text-amber-700">{{ identityLabel }}</p>
+                            <p class="text-3xl font-bold text-amber-900 leading-tight mt-0.5">{{ identityValue }}</p>
+                        </div>
                     </div>
 
                     <!-- ===== CHANGE (most important for cashier) ===== -->
@@ -110,9 +156,30 @@ const print = () => emit('print');
 
                         <!-- Totals -->
                         <div class="pt-3 mt-1 border-t border-dashed border-gray-200 space-y-1.5">
+                            <!-- Biaya layanan ikut membuka pembagian ini
+                                 ([BL-097]): toko yang memungutnya tanpa pajak
+                                 tetap harus menunjukkan subtotalnya. -->
+                            <template v-if="tax || serviceCharge">
+                                <div class="flex justify-between text-xs text-gray-500">
+                                    <span>Subtotal</span>
+                                    <span>{{ formatCurrency(totals.subtotal) }}</span>
+                                </div>
+                                <div v-if="serviceCharge" class="flex justify-between text-xs text-gray-500">
+                                    <span>{{ serviceCharge.text }}</span>
+                                    <span>{{ formatCurrency(serviceCharge.amount) }}</span>
+                                </div>
+                                <div v-if="tax && tax.inline" class="flex justify-between text-xs text-gray-500">
+                                    <span>{{ tax.text }}</span>
+                                    <span>{{ formatCurrency(tax.amount) }}</span>
+                                </div>
+                            </template>
                             <div class="flex justify-between text-base font-bold text-gray-800">
                                 <span>Total</span>
                                 <span>{{ formatCurrency(transaction.total_amount) }}</span>
+                            </div>
+                            <div v-if="tax && !tax.inline" class="flex justify-between text-xs text-gray-500">
+                                <span>{{ tax.text }}</span>
+                                <span>{{ formatCurrency(tax.amount) }}</span>
                             </div>
                             <div
                                 v-for="payment in transaction.payments"

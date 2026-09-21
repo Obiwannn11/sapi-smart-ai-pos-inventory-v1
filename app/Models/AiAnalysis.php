@@ -26,11 +26,17 @@ class AiAnalysis extends Model
 
     public const STATUS_FAILED = 'failed';
 
-    protected $fillable = ['tenant_id', 'user_id', 'type', 'status', 'params', 'prompt', 'result', 'error', 'tokens_used'];
+    protected $fillable = ['tenant_id', 'user_id', 'type', 'status', 'params', 'prompt', 'result', 'error', 'tokens_used', 'context_variants'];
 
     protected function casts(): array
     {
-        return ['params' => 'array'];
+        return [
+            'params' => 'array',
+            // Nama varian yang benar-benar disodorkan ke model pada analisis
+            // ini ([BL-100] tahap 2). Dipakai sebagai penjaga: hanya nama yang
+            // ada di sini yang boleh ditautkan atau ditandai di hasilnya.
+            'context_variants' => 'array',
+        ];
     }
 
     // --- Relationships ---

@@ -2,6 +2,7 @@
 
 use App\Models\Tenant;
 use App\Models\User;
+
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
@@ -74,7 +75,9 @@ test('owner can access cashier routes', function () {
 
     actingAs($owner);
 
-    get('/cashier/cash-drawer')->assertStatus(200);
+    // Owner melewati gerbang role kasir dan boleh membuka POS.
+    // (Rute /cashier/cash-drawer sengaja mengalihkan owner ke POS — lihat CashDrawerController@index.)
+    get('/cashier/pos')->assertStatus(200);
 });
 
 test('unauthenticated user is redirected to login', function () {
@@ -88,4 +91,74 @@ test('logout clears session', function () {
     post('/logout')->assertRedirect('/login');
 
     get('/owner/dashboard')->assertRedirect('/login');
+});
+
+test('register page is accessible', function () {
+    get('/register')->assertStatus(200);
+});
+
+test('a new user can register a tenant and is sent to verify their email', function () {
+    // Sejak [BL-014] pendaftaran mendarat di halaman verifikasi, bukan di
+    // dashboard: alamat yang belum terbukti tidak boleh langsung dipakai.
+    post('/register', [
+        'business_name' => 'Warung Sapi',
+        'name' => 'Budi',
+        'email' => 'budi@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ])->assertRedirect('/verifikasi-email');
+
+    $user = User::where('email', 'budi@example.com')->first();
+
+    expect($user)->not->toBeNull();
+    expect($user->role)->toBe('owner');
+    expect($user->tenant)->not->toBeNull();
+    expect($user->tenant->name)->toBe('Warung Sapi');
+});
+
+test('registration fails with mismatched password confirmation', function () {
+    post('/register', [
+        'business_name' => 'Warung Sapi',
+        'name' => 'Budi',
+        'email' => 'budi@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'different',
+    ])->assertSessionHasErrors('password');
+});
+
+test('registration fails with duplicate email', function () {
+    ['owner' => $owner] = makeAuthContext();
+
+    post('/register', [
+        'business_name' => 'Warung Baru',
+        'name' => 'Budi',
+        'email' => $owner->email,
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ])->assertSessionHasErrors('email');
+});
+
+test('two tenants with the same business name get unique slugs', function () {
+    post('/register', [
+        'business_name' => 'Warung Sapi',
+        'name' => 'Budi',
+        'email' => 'budi@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ]);
+
+    post('/logout');
+
+    post('/register', [
+        'business_name' => 'Warung Sapi',
+        'name' => 'Ani',
+        'email' => 'ani@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ]);
+
+    $tenants = Tenant::where('name', 'Warung Sapi')->pluck('slug');
+
+    expect($tenants)->toHaveCount(2);
+    expect($tenants->unique())->toHaveCount(2);
 });

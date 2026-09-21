@@ -59,13 +59,20 @@ return [
     | Application Timezone
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | Zona waktu bisnis aplikasi ini, dan satu-satunya jawaban atas "hari
+    | ini" ([BL-082]). Bukan UTC: laporan harian, kartu dashboard, dan rekap
+    | bulanan semuanya mengelompokkan per HARI, dan hari yang dipakai harus
+    | hari toko — bukan hari server. Batas hari UTC jatuh pukul 08.00 WITA,
+    | jadi penjualan jam pertama tiap pagi akan tercatat di hari kemarin.
+    |
+    | Nilainya dibaca dari env supaya produksi bisa berbeda dari lokal tanpa
+    | mengubah kode. Satu zona untuk seluruh aplikasi (keputusan pemilik
+    | 2026-08-22); bila suatu hari dibutuhkan per tenant, BusinessClock
+    | adalah satu-satunya tempat yang perlu berubah.
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Asia/Makassar'),
 
     /*
     |--------------------------------------------------------------------------
@@ -78,8 +85,16 @@ return [
     |
     */
 
-    'locale' => env('APP_LOCALE', 'en'),
+    // Default 'id', bukan 'en': seluruh antarmuka aplikasi ini berbahasa
+    // Indonesia, jadi pesan validasi bawaan Laravel pun harus mengikutinya.
+    // Ditaruh sebagai default di config — bukan hanya di .env — supaya berlaku
+    // juga saat test berjalan dan di pemasangan yang lupa mengisinya.
+    'locale' => env('APP_LOCALE', 'id'),
 
+    // Fallback tetap 'en'. Bila suatu saat ada kunci terjemahan yang terlewat,
+    // pengguna melihat kalimat bahasa Inggris — janggal, tapi masih terbaca.
+    // Tanpa fallback, yang muncul adalah kunci mentahnya seperti
+    // "validation.required".
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
 
     'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),

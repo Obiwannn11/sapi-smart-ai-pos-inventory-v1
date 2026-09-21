@@ -2,11 +2,16 @@
 import { router, Head } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
+import { BUSINESS_TZ } from '@/support/date';
 
 const props = defineProps({
     cashDrawer: Object,
     paymentSummary: Array,
     transactionCount: Number,
+    // Tagihan terbuka yang lewat 24 jam di tengah sesi ini ([BL-031]).
+    unsettledCash: { type: Number, default: 0 },
+    unsettledCount: { type: Number, default: 0 },
 });
 
 const formatCurrency = (value) => {
@@ -15,6 +20,7 @@ const formatCurrency = (value) => {
 
 const formatDate = (date) => {
     return new Date(date).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -27,9 +33,15 @@ const goToCashDrawer = () => {
     router.get('/cashier/cash-drawer');
 };
 
-const logout = () => {
-    router.post('/logout');
-};
+// Tombol ini duduk tepat di bawah "Buka Sesi Baru" dan seukuran dengannya.
+// Salah tekan di akhir sif berarti kasir berikutnya harus mencari sandinya.
+// Dialognya sudah dipasang oleh <CashierTopbar> di atas.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    title: 'Keluar dari kasir?',
+    message: 'Katalog yang tersimpan di perangkat ini akan dihapus. Penjualan offline yang belum terkirim tetap aman dan terkirim setelah Anda login lagi.',
+});
 </script>
 
 <template>
@@ -75,7 +87,7 @@ const logout = () => {
 
                     <!-- Rekap per Payment Method -->
                     <div v-if="paymentSummary.length > 0" class="border-t border-gray-200 pt-4">
-                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Pendapatan per Metode Pembayaran</h3>
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Rekap per Metode Pembayaran</h3>
                         <div class="space-y-2">
                             <div
                                 v-for="pm in paymentSummary"
@@ -104,11 +116,11 @@ const logout = () => {
                     <!-- Expected vs Actual -->
                     <div class="border-t border-gray-200 pt-4 space-y-3">
                         <div class="flex justify-between text-sm">
-                            <span class="text-gray-500">Expected Cash (uang tunai di laci)</span>
+                            <span class="text-gray-500">Seharusnya di laci</span>
                             <span class="font-medium">{{ formatCurrency(cashDrawer.expected_amount) }}</span>
                         </div>
                         <div class="flex justify-between text-sm">
-                            <span class="text-gray-500">Closing Amount (aktual)</span>
+                            <span class="text-gray-500">Uang fisik aktual</span>
                             <span class="font-medium">{{ formatCurrency(cashDrawer.closing_amount) }}</span>
                         </div>
                         <div class="flex justify-between text-sm font-semibold border-t border-gray-200 pt-3">
@@ -120,6 +132,21 @@ const logout = () => {
                                 {{ Number(cashDrawer.difference) >= 0 ? '+' : '' }}{{ formatCurrency(cashDrawer.difference) }}
                             </span>
                         </div>
+                    </div>
+
+                    <!-- Kas negatif: di bawah Selisih dan terpisah darinya.
+                         Uang ini tidak pernah masuk laci, jadi ia bukan
+                         selisih laci — ia utang yang berhenti bisa ditagih
+                         ([BL-031]). -->
+                    <div v-if="Number(unsettledCash) > 0" class="border-t border-gray-200 pt-4">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Kas negatif</span>
+                            <span class="font-medium text-destructive">−{{ formatCurrency(unsettledCash) }}</span>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-400">
+                            {{ unsettledCount }} tagihan terbuka lewat 24 jam dan berhenti bisa ditagih. Tidak dihitung sebagai selisih laci.
+                            Hanya pemilik yang bisa membereskannya.
+                        </p>
                     </div>
 
                     <!-- Notes -->
@@ -141,7 +168,7 @@ const logout = () => {
                         @click="logout"
                         class="w-full py-3 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition"
                     >
-                        Logout
+                        Keluar
                     </button>
                 </div>
             </div>

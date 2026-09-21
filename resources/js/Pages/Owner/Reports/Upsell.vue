@@ -1,0 +1,547 @@
+<script setup>
+import { computed, ref } from 'vue';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
+import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import MetricCard from '@/Components/MetricCard.vue';
+import DateRangePicker from '@/Components/DateRangePicker.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+
+defineOptions({ layout: OwnerLayout });
+
+const props = defineProps({
+    filters: Object,
+    summary: Object,
+    // Gabungan vs mesin vs aturan sendiri ([BL-092]).
+    sources: { type: Object, default: () => ({ auto: null, manual: null }) },
+    // Ditunda ([BL-037]) — null selama rinciannya masih dimuat.
+    byType: { type: Array, default: null },
+    bySurface: { type: Array, default: null },
+    topSuggestions: { type: Array, default: null },
+    // Jenis yang saat ini tidak menghasilkan apa pun ([BL-099]). Tanpa ini,
+    // nol pada baris jenis yang sudah dimatikan terbaca sebagai jenis yang
+    // gagal — dan owner mematikan sesuatu yang sudah mati.
+    inactiveTypes: { type: Array, default: () => [] },
+    // Penyelamat Stok ([BL-105]).
+    rescue: {
+        type: Object,
+        default: () => ({
+            rescued: { amount: 0, accepted: 0, shown: 0 },
+            spoiled: { amount: 0, variants: 0, units: 0 },
+            soldExpired: { amount: 0, units: 0, lines: 0, unconfirmed: 0, items: [] },
+        }),
+    },
+});
+
+const from = ref(props.filters.from);
+const to = ref(props.filters.to);
+
+const formatCurrency = (value) => 'Rp ' + Number(value ?? 0).toLocaleString('id-ID');
+
+const rate = (accepted, shown) => (shown > 0 ? Math.round((accepted / shown) * 1000) / 10 : 0);
+
+/** Persentase berformat Indonesia: "12,5", bukan "12.5". */
+const formatPercent = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 });
+
+const TYPE_LABELS = {
+    attach: 'Tambah add-on',
+    pressed_stock: 'Barang tertekan',
+    upsize: 'Naik ukuran',
+    // Tanpa baris ini tabelnya menampilkan kata "manual" mentah — satu-satunya
+    // jenis yang owner tulis sendiri justru yang paling tidak dikenali.
+    manual: 'Aturan Anda',
+};
+
+/**
+ * Perjalanan satu saran, dari muncul sampai dibeli.
+ *
+ * Menggantikan empat kartu dan satu strip abu-abu yang memuat DUA persentase
+ * berpenyebut berbeda — `accepted/shown` dan `accepted/offered` — beserta
+ * paragraf yang mencoba menerangkan bedanya. Dua penyebut yang harus diingat
+ * adalah dua penyebut yang tertukar; di sini masing-masing menempel pada
+ * batang yang menjadi penyebutnya, dan selisih "tampil tanpa dijawab" terbaca
+ * sebagai penyempitan batang, bukan sebagai kalimat. ([BL-025])
+ */
+const funnel = computed(() => {
+    const { shown, offered, accepted, rejected, offer_rate: offerRate } = props.summary;
+
+    const width = (value) => (shown > 0 ? (value / shown) * 100 : 0) + '%';
+
+    return [
+        {
+            key: 'shown',
+            label: 'Tampil',
+            value: shown,
+            width: '100%',
+            tone: 'bg-gray-200 text-gray-700',
+            rate: null,
+        },
+        {
+            // `offered` = diterima + ditolak. Sistem hanya tahu kasir menekan
+            // jawaban, bukan apakah tawarannya benar-benar diucapkan.
+            key: 'offered',
+            label: 'Dijawab kasir',
+            value: offered,
+            width: width(offered),
+            tone: 'bg-gray-300 text-gray-800',
+            rate: shown > 0 ? `${formatPercent(rate(offered, shown))}% dari yang tampil` : null,
+        },
+        {
+            key: 'accepted',
+            label: 'Diterima',
+            value: accepted,
+            width: width(accepted),
+            tone: 'bg-success/20 text-success',
+            rate: offered > 0 ? `${formatPercent(offerRate)}% dari yang dijawab · ${rejected} ditolak` : null,
+        },
+    ];
+});
+
+/**
+ * Dua kolom perbandingan ([BL-092]).
+ *
+ * Kolom "Gabungan" dibuang: isinya salinan persis corong di atasnya, dan
+ * angka yang sama muncul dua kali di satu layar membuat pembacanya mencari
+ * beda yang tidak ada.
+ */
+const sourceColumns = computed(() => [
+    {
+        key: 'auto',
+        title: 'Otomatis',
+        href: null,
+        accent: 'text-sky-700',
+        summary: props.sources?.auto,
+    },
+    {
+        key: 'manual',
+        title: 'Aturan Anda',
+        href: '/owner/upsell-rules',
+        accent: 'text-emerald-700',
+        summary: props.sources?.manual,
+    },
+].filter((column) => column.summary));
+
+const SURFACE_LABELS = {
+    pos: 'Kasir (POS)',
+    self_order: 'Self-order',
+};
+
+const bucketLabel = (bucket, map) => map[bucket] ?? bucket;
+
+const applyFilter = () => {
+    router.get('/owner/reports/upsell', { from: from.value, to: to.value }, {
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
+/**
+ * Penyelamat Stok — dua angka yang menjawab pertanyaan pemilik, bukan
+ * pertanyaan analis ([BL-105]).
+ *
+ * Keduanya BERPERIODE BEDA dengan sengaja, dan subtitle-nya yang memikul beda
+ * itu: yang kiri mengikuti filter tanggal di kepala halaman, yang kanan potret
+ * hari ini karena `stock` tidak menyimpan sejarah. Dua angka berperiode beda
+ * yang dipajang berdampingan TANPA label pembeda adalah angka yang berbohong —
+ * pembaca akan menghitung selisihnya, dan selisih itu tidak berarti apa-apa.
+ */
+/**
+ * Barang kedaluwarsa yang keluar lewat penjualan ([BL-108]).
+ *
+ * Fallback kosong: halaman yang dimuat dari server sebelum kolom ini ada tidak
+ * boleh pecah hanya karena satu kunci belum dikirim.
+ */
+const soldExpired = computed(() => props.rescue.soldExpired
+    ?? { amount: 0, units: 0, lines: 0, unconfirmed: 0, items: [] });
+
+/** "2026-09-15" jadi "15 Sep 2026", tanpa bergeser zona waktu perangkat. */
+const formatDay = (value) => (value
+    ? new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '-');
+
+const rescueCards = computed(() => {
+    const { rescued, spoiled } = props.rescue;
+
+    return [
+        {
+            key: 'rescued',
+            title: 'Omzet dari barang tertekan',
+            value: formatCurrency(rescued.amount),
+            color: 'success',
+            subtitle: rescued.shown > 0
+                ? `${rescued.accepted} dari ${rescued.shown} saran diterima pelanggan`
+                : 'Belum ada saran barang tertekan pada rentang ini',
+        },
+        {
+            key: 'spoiled',
+            title: 'Modal hangus',
+            value: formatCurrency(spoiled.amount),
+            color: 'warning',
+            // "Per hari ini" wajib tetap ada: kartu sebelahnya mengikuti
+            // rentang tanggal, kartu ini tidak.
+            subtitle: spoiled.variants > 0
+                ? `Per hari ini: ${spoiled.variants} varian, ${spoiled.units} pcs kedaluwarsa`
+                : 'Tidak ada barang kedaluwarsa di rak',
+        },
+        {
+            key: 'soldExpired',
+            title: 'Terjual kedaluwarsa',
+            value: formatCurrency(soldExpired.value.amount),
+            color: 'warning',
+            // Pendamping "Modal hangus" ([BL-108]). Tanpa kartu ini, angka di
+            // sebelahnya MEMBAIK tepat saat barang basi dijual, dan tidak ada
+            // yang menyebut ke mana unitnya pergi. Berperiode seperti kartu
+            // pertama, bukan potret hari ini.
+            subtitle: soldExpired.value.units > 0
+                ? `${soldExpired.value.units} pcs pada rentang ini${soldExpired.value.unconfirmed > 0 ? `, ${soldExpired.value.unconfirmed} baris tanpa konfirmasi` : ''}`
+                : 'Tidak ada barang kedaluwarsa terjual pada rentang ini',
+        },
+    ];
+});
+
+/** Tenant yang tidak pernah mengisi tanggal kedaluwarsa tidak perlu melihat tiga nol. */
+const showRescue = computed(
+    () => props.rescue.rescued.shown > 0
+        || props.rescue.spoiled.variants > 0
+        || soldExpired.value.lines > 0,
+);
+</script>
+
+<template>
+    <Head title="Laporan Saran Jual" />
+
+    <div class="max-w-6xl mx-auto space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Laporan Saran Jual</h1>
+            </div>
+            <div class="flex items-end gap-2">
+                <DateRangePicker v-model:from="from" v-model:to="to" @change="applyFilter" />
+            </div>
+        </div>
+
+        <!-- Penyelamat Stok ([BL-105]). Ditaruh PALING ATAS, di atas corong,
+             karena inilah satu-satunya bagian halaman ini yang bisa diceritakan
+             pemilik ke orang lain: corong menerangkan seberapa baik mesinnya
+             bekerja, dua angka ini menerangkan apa gunanya. -->
+        <section v-if="showRescue" class="space-y-3">
+            <div>
+                <h2 class="text-sm font-semibold text-gray-800">Penyelamat Stok</h2>
+                <!-- Menyebut ketiga tahapnya, bukan cuma tahap terakhir
+                     ([BL-105] butir 4). Owner memasang potongan di satu layar
+                     dan membaca hasilnya di layar lain; kalimat ini
+                     satu-satunya tempat yang menyebutkan bahwa keduanya ujung
+                     dari rantai yang sama. -->
+                <p class="mt-0.5 text-xs text-gray-500">
+                    Barang yang hampir kedaluwarsa atau tak terjual sebulan diberi
+                    <Link href="/owner/discount-rules" class="text-primary hover:underline">potongan</Link>,
+                    lalu ditawarkan kasir. Hasilnya dihitung di sini.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <MetricCard
+                    v-for="card in rescueCards"
+                    :key="card.key"
+                    :title="card.title"
+                    :value="card.value"
+                    :subtitle="card.subtitle"
+                    icon="currency"
+                    :color="card.color"
+                />
+            </div>
+
+            <!-- Tempat pemilik meninjau konfirmasi kasir ([BL-108]). Keputusan
+                 pemilik 2026-09-15: kasir boleh menjual barang kedaluwarsa
+                 dengan alasan, dan pemilik membaca alasannya sesudahnya. -->
+            <div v-if="soldExpired.items.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div class="px-5 py-3 border-b border-gray-100">
+                    <h3 class="text-sm font-semibold text-gray-800">Penjualan barang kedaluwarsa</h3>
+                    <p class="mt-0.5 text-xs text-gray-500">
+                        Kasir menulis alasan sebelum menjual. Baris tanpa nama kasir terjual saat offline tanpa alasan, atau lewat pesanan mandiri.
+                    </p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[640px] text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Waktu</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Barang</th>
+                                <th class="text-right py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kedaluwarsa</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kasir</th>
+                                <th class="text-left py-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Alasan</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="item in soldExpired.items" :key="item.id">
+                                <td class="py-2.5 px-4 whitespace-nowrap">
+                                    <p class="text-gray-700 tabular-nums">{{ formatDay(item.sold_at) }} {{ item.sold_at?.slice(11, 16) }}</p>
+                                    <p class="text-xs text-gray-400 font-mono">{{ item.code }}</p>
+                                </td>
+                                <td class="py-2.5 px-4 text-gray-800">{{ item.label }}</td>
+                                <td class="py-2.5 px-4 text-right text-gray-800 tabular-nums">{{ item.qty }}</td>
+                                <td class="py-2.5 px-4 text-destructive tabular-nums whitespace-nowrap">{{ formatDay(item.expiry_date) }}</td>
+                                <td
+                                    class="py-2.5 px-4 whitespace-nowrap"
+                                    :class="item.confirmed_by ? 'text-gray-700' : 'font-medium text-warning-foreground'"
+                                >
+                                    {{ item.confirmed_by ?? 'Tanpa konfirmasi' }}
+                                </td>
+                                <td class="py-2.5 px-4 text-gray-600">{{ item.reason ?? '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bentuknya sendiri yang menjelaskan: batang yang menyempit ADALAH
+             saran yang hilang di tiap tahap, dan tiap persentase menempel pada
+             batang yang jadi penyebutnya. ([BL-025]) -->
+        <div v-if="summary.shown > 0" class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 lg:col-span-2">
+                <div class="space-y-2.5">
+                    <div v-for="stage in funnel" :key="stage.key" class="flex items-start gap-3">
+                        <span class="w-24 shrink-0 pt-1.5 text-sm text-gray-600 sm:w-32">{{ stage.label }}</span>
+
+                        <!-- Persentasenya turun ke bawah batang di layar sempit.
+                             Ia tidak boleh dipaksa satu baris: "25% dari yang
+                             ditawarkan · 3 ditolak" lebih panjang daripada sisa
+                             ruang di sebelah batang 375px, dan yang meluber
+                             keluar kartu tidak terbaca sama sekali. -->
+                        <div class="flex min-w-0 flex-1 flex-col gap-1 lg:flex-row lg:items-center lg:gap-3">
+                            <!-- Batang hidup di relnya sendiri. Kalau ia dibiarkan
+                                 jadi anak langsung baris ini, batang 100% memakan
+                                 seluruh lebar dan persentase di sebelahnya diperas
+                                 jadi kolom selebar satu huruf yang meluber keluar
+                                 kartu. Rel ini juga membuat semua batang diukur
+                                 terhadap lebar yang sama, jadi antar baris masih
+                                 bisa dibandingkan. -->
+                            <div class="min-w-0 flex-1">
+                                <div
+                                    :class="['flex h-8 items-center justify-end rounded-md px-2.5', stage.tone]"
+                                    :style="{ width: stage.width, minWidth: '3rem' }"
+                                >
+                                    <span class="text-sm font-semibold">{{ stage.value }}</span>
+                                </div>
+                            </div>
+                            <!-- Jatah lebarnya tetap walau barisnya tak punya
+                                 persentase, supaya rel batang sama panjang. -->
+                            <span
+                                :class="['text-xs text-gray-500 lg:w-52 lg:shrink-0', stage.rate ? '' : 'hidden lg:block']"
+                            >
+                                {{ stage.rate }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <MetricCard
+                title="Tambahan Omzet"
+                :value="formatCurrency(summary.extra_revenue)"
+                icon="currency"
+                color="success"
+            />
+        </div>
+
+        <!-- Mesin vs aturan sendiri ([BL-092]). Berdampingan, bukan bergantian:
+             perbandingan yang menuntut owner mengingat angka dari layar
+             sebelumnya adalah perbandingan yang tidak pernah terjadi. -->
+        <div v-if="summary.shown > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-semibold text-gray-800">Otomatis vs Aturan Anda</h2>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+                <div v-for="column in sourceColumns" :key="column.key" class="p-5">
+                    <!-- Tautan, bukan keterangan: pertanyaan yang menyusul angka
+                         ini selalu "di mana saya mengubahnya". -->
+                    <a
+                        v-if="column.href"
+                        :href="column.href"
+                        :class="['text-sm font-semibold underline decoration-transparent hover:decoration-current', column.accent]"
+                    >{{ column.title }}</a>
+                    <p v-else :class="['text-sm font-semibold', column.accent]">{{ column.title }}</p>
+
+                    <div v-if="column.summary.shown === 0" class="mt-3 text-xs text-gray-400">
+                        Belum ada saran dari sumber ini pada rentang ini.
+                    </div>
+
+                    <dl v-else class="mt-3 space-y-1.5 text-sm">
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Tampil</dt>
+                            <dd class="font-medium text-gray-800">{{ column.summary.shown }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Dijawab</dt>
+                            <dd class="font-medium text-gray-800">{{ column.summary.offered }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Diterima</dt>
+                            <dd class="font-medium text-gray-800">{{ column.summary.accepted }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-gray-500">Tingkat terima</dt>
+                            <dd class="font-semibold text-gray-900">
+                                {{ column.summary.offered > 0 ? formatPercent(column.summary.offer_rate) + '%' : '—' }}
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-2 pt-1.5 border-t border-gray-100">
+                            <dt class="text-gray-500">Tambahan omzet</dt>
+                            <dd class="font-semibold text-gray-900">{{ formatCurrency(column.summary.extra_revenue) }}</dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <!-- Angka nol bukan kegagalan sistem; bedakan supaya owner tidak
+             menyimpulkan fiturnya rusak. -->
+        <div
+            v-if="summary.shown === 0"
+            class="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center"
+        >
+            <p class="text-sm font-medium text-gray-700">Belum ada saran yang tercatat pada rentang ini.</p>
+            <p class="mt-1 text-xs text-gray-500">
+                Saran dihitung setelah transaksinya selesai. Keranjang yang dikosongkan dan transaksi void tidak ikut.
+            </p>
+        </div>
+
+        <template v-else>
+            <!-- Rincian ditunda ([BL-037]): ringkasan di atas sudah terbaca,
+                 ketiga tabel ini menyusul dalam dua permintaan. -->
+            <Deferred :data="['byType', 'bySurface']">
+                <template #fallback>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <SkeletonPanel flush label="Memuat rekap per jenis saran…">
+                            <SkeletonTable :rows="4" :columns="4" />
+                        </SkeletonPanel>
+                        <SkeletonPanel flush label="Memuat rekap per saluran…">
+                            <SkeletonTable :rows="4" :columns="4" />
+                        </SkeletonPanel>
+                    </div>
+                </template>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <!-- Kesimpulan dan tindakannya bersebelahan ([BL-099]): tabel
+                         inilah yang memperlihatkan jenis mana yang tidak pernah
+                         diterima, dan sampai sekarang tempat mematikannya tidak
+                         punya jalan dari sini. -->
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
+                        <h2 class="text-sm font-semibold text-gray-800">Per Jenis Saran</h2>
+                        <Link
+                            href="/owner/settings/operations"
+                            class="text-xs text-primary hover:underline font-medium shrink-0"
+                        >
+                            Nyalakan/matikan jenis
+                        </Link>
+                    </div>
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 text-xs text-gray-500">
+                            <tr>
+                                <th class="px-5 py-2 text-left font-medium">Jenis</th>
+                                <th class="px-3 py-2 text-right font-medium">Tampil</th>
+                                <th class="px-3 py-2 text-right font-medium">Diterima</th>
+                                <th class="px-5 py-2 text-right font-medium">Tambahan omzet</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="row in byType" :key="row.bucket">
+                                <td class="px-5 py-2.5 text-gray-800">
+                                    {{ bucketLabel(row.bucket, TYPE_LABELS) }}
+                                    <span
+                                        v-if="inactiveTypes.includes(row.bucket)"
+                                        class="ml-1.5 align-middle rounded px-1.5 py-0.5 bg-muted text-muted-foreground text-[10px] font-medium"
+                                    >
+                                        dimatikan
+                                    </span>
+                                </td>
+                                <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
+                                <td class="px-3 py-2.5 text-right text-gray-600">
+                                    {{ row.accepted }}
+                                    <span class="text-xs text-gray-400">({{ formatPercent(rate(row.accepted, row.shown)) }}%)</span>
+                                </td>
+                                <td class="px-5 py-2.5 text-right font-medium text-gray-800">
+                                    {{ formatCurrency(row.extra_revenue) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-100">
+                        <h2 class="text-sm font-semibold text-gray-800">Per Saluran</h2>
+                    </div>
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 text-xs text-gray-500">
+                            <tr>
+                                <th class="px-5 py-2 text-left font-medium">Saluran</th>
+                                <th class="px-3 py-2 text-right font-medium">Tampil</th>
+                                <th class="px-3 py-2 text-right font-medium">Diterima</th>
+                                <th class="px-5 py-2 text-right font-medium">Tambahan omzet</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="row in bySurface" :key="row.bucket">
+                                <td class="px-5 py-2.5 text-gray-800">{{ bucketLabel(row.bucket, SURFACE_LABELS) }}</td>
+                                <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
+                                <td class="px-3 py-2.5 text-right text-gray-600">
+                                    {{ row.accepted }}
+                                    <span class="text-xs text-gray-400">({{ formatPercent(rate(row.accepted, row.shown)) }}%)</span>
+                                </td>
+                                <td class="px-5 py-2.5 text-right font-medium text-gray-800">
+                                    {{ formatCurrency(row.extra_revenue) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            </Deferred>
+
+            <Deferred data="topSuggestions">
+                <template #fallback>
+                    <SkeletonPanel flush label="Memuat saran yang paling sering muncul…">
+                        <SkeletonTable :rows="6" :columns="5" />
+                    </SkeletonPanel>
+                </template>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-5 py-3 border-b border-gray-100">
+                    <h2 class="text-sm font-semibold text-gray-800">Saran Paling Sering Muncul</h2>
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 text-xs text-gray-500">
+                        <tr>
+                            <th class="px-5 py-2 text-left font-medium">Saran</th>
+                            <th class="px-3 py-2 text-left font-medium">Jenis</th>
+                            <th class="px-3 py-2 text-right font-medium">Tampil</th>
+                            <th class="px-3 py-2 text-right font-medium">Diterima</th>
+                            <th class="px-5 py-2 text-right font-medium">Tambahan omzet</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <tr v-for="row in topSuggestions" :key="row.type + row.label">
+                            <td class="px-5 py-2.5 text-gray-800">{{ row.label }}</td>
+                            <td class="px-3 py-2.5 text-gray-500">{{ bucketLabel(row.type, TYPE_LABELS) }}</td>
+                            <td class="px-3 py-2.5 text-right text-gray-600">{{ row.shown }}</td>
+                            <td class="px-3 py-2.5 text-right text-gray-600">
+                                {{ row.accepted }}
+                                <span class="text-xs text-gray-400">({{ formatPercent(rate(row.accepted, row.shown)) }}%)</span>
+                            </td>
+                            <td class="px-5 py-2.5 text-right font-medium text-gray-800">
+                                {{ formatCurrency(row.extra_revenue) }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            </Deferred>
+        </template>
+    </div>
+</template>

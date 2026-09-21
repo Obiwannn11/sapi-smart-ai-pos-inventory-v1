@@ -6,6 +6,8 @@
     <title>API Reference — SAPI Mobile POS</title>
     <meta name="description" content="Dokumentasi lengkap REST API Mobile POS SAPI. Referensi endpoint, autentikasi Sanctum, request/response JSON.">
 
+    @include('public.partials.favicon')
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -14,35 +16,11 @@
 
     @vite(['resources/css/app.css'])
 
-    <!-- Tailwind CDN (same as landing) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
-                    colors: { primary: '#0e9f6e', brand: '#34d399' },
-                }
-            }
-        }
-    </script>
+    @include('public.partials.theme')
 
     <style>
-        /* ─── PALETTE (same as landing) ─────────────────── */
+        /* Token khusus permukaan ini; paletnya dari `partials/theme`. */
         :root {
-            --bg:            oklch(0.97 0.006 150);
-            --bg-card:       oklch(0.993 0.004 150);
-            --bg-surface:    oklch(0.94 0.008 150);
-            --green:         oklch(0.58 0.128 162);
-            --green-cta:     oklch(0.51 0.12 162);
-            --green-hover:   oklch(0.46 0.115 162);
-            --green-faint:   oklch(0.93 0.035 162);
-            --text:          oklch(0.23 0.015 160);
-            --text-muted:    oklch(0.48 0.012 160);
-            --text-dim:      oklch(0.62 0.010 155);
-            --border:        oklch(0.88 0.010 150);
-            --border-faint:  oklch(0.92 0.008 150);
-            --red-soft:      oklch(0.58 0.18 27);
             /* method badge colors */
             --badge-get:     oklch(0.93 0.06 162);
             --badge-get-text:oklch(0.38 0.10 162);
@@ -548,7 +526,6 @@
             flex-wrap: wrap;
             gap: 12px;
         }
-        .footer-brand { font-weight: 700; color: var(--green); font-size: 0.9rem; }
         .footer-copy { font-size: 0.8rem; color: var(--text-dim); }
 
         @media (prefers-reduced-motion: reduce) {
@@ -565,7 +542,7 @@
                 <!-- Brand -->
                 <div class="flex-shrink-0">
                     <a href="/" class="flex items-center gap-3 group">
-                        <span class="font-extrabold text-xl md:text-2xl tracking-tighter text-gray-900 group-hover:text-primary transition-colors">SAPI</span>
+                        @include('public.partials.wordmark', ['size' => 'md', 'interactive' => true])
                     </a>
                 </div>
 
@@ -1390,7 +1367,7 @@ Accept: application/json</pre>
                                     <tr><td><span class="param-name">items[].notes</span> <span class="param-optional">OPSIONAL</span></td><td><code>string</code></td><td>Catatan item (maks 500 karakter)</td></tr>
                                     <tr><td><span class="param-name">items[].modifiers</span> <span class="param-optional">OPSIONAL</span></td><td><code>array</code></td><td>Modifier/topping item</td></tr>
                                     <tr><td><span class="param-name">items[].modifiers[].id</span> <span class="param-required">WAJIB*</span></td><td><code>integer</code></td><td>ID modifier</td></tr>
-                                    <tr><td><span class="param-name">is_open_bill</span> <span class="param-optional">OPSIONAL</span></td><td><code>boolean</code></td><td>Jika <code>true</code>, field <code>payments</code> tidak diperlukan</td></tr>
+                                    <tr><td><span class="param-name">is_open_bill</span> <span class="param-optional">OPSIONAL</span></td><td><code>boolean</code></td><td>Jika <code>true</code>, field <code>payments</code> tidak diperlukan. Ditolak <code>422</code> bila outlet mematikan setelan "izinkan tagihan terbuka"; tagihan yang sudah terbuka tetap bisa dilunasi</td></tr>
                                     <tr><td><span class="param-name">order_type</span> <span class="param-optional">OPSIONAL</span></td><td><code>string</code></td><td><code>dine_in</code> atau <code>takeaway</code></td></tr>
                                     <tr><td><span class="param-name">customer_name</span> <span class="param-optional">OPSIONAL</span></td><td><code>string</code></td><td>Nama pelanggan (maks 255)</td></tr>
                                     <tr><td><span class="param-name">table_number</span> <span class="param-optional">OPSIONAL</span></td><td><code>string</code></td><td>Nomor meja (maks 50)</td></tr>
@@ -1651,6 +1628,7 @@ Content-Type: application/json</pre>
                     </div>
                     <div class="endpoint-body">
                         <p class="endpoint-desc">Mengembalikan data struk lengkap: informasi tenant, detail transaksi, item dengan modifier, dan rincian pembayaran. Digunakan untuk mencetak struk.</p>
+                        <p class="endpoint-desc"><code>price</code> adalah harga yang dibayar per unit, <code>original_price</code> harga normal saat penjualan, dan <code>discount_amount</code> potongan per unit (<code>0</code> bila tanpa potongan). Cetak baris berdiskon sebagai harga normal lalu baris <em>Diskon</em>. <code>discount_total</code> adalah jumlah potongan untuk baris "Anda hemat" &mdash; keterangan saja, subtotal sudah bersih dari potongan. <code>original_price</code> bernilai <code>null</code> pada transaksi tanpa jejak potongan (penjualan offline).</p>
 
                         <div class="param-section">
                             <div class="param-label">Path Parameter</div>
@@ -1687,6 +1665,7 @@ Accept: application/json</pre>
       <span class="tok-key">"date"</span>: <span class="tok-str">"29/05/2026 14:30"</span>,
       <span class="tok-key">"cashier"</span>: <span class="tok-str">"Budi Santoso"</span>,
       <span class="tok-key">"total_amount"</span>: <span class="tok-num">36000</span>,
+      <span class="tok-key">"discount_total"</span>: <span class="tok-num">0</span>,
       <span class="tok-key">"change_amount"</span>: <span class="tok-num">4000</span>,
       <span class="tok-key">"status"</span>: <span class="tok-str">"completed"</span>,
       <span class="tok-key">"order_type"</span>: <span class="tok-str">"dine_in"</span>,
@@ -1699,6 +1678,8 @@ Accept: application/json</pre>
         <span class="tok-key">"name"</span>: <span class="tok-str">"Kopi Susu Regular"</span>,
         <span class="tok-key">"qty"</span>: <span class="tok-num">2</span>,
         <span class="tok-key">"price"</span>: <span class="tok-num">18000</span>,
+        <span class="tok-key">"original_price"</span>: <span class="tok-num">18000</span>,
+        <span class="tok-key">"discount_amount"</span>: <span class="tok-num">0</span>,
         <span class="tok-key">"subtotal"</span>: <span class="tok-num">36000</span>,
         <span class="tok-key">"notes"</span>: <span class="tok-str">"Gula sedikit"</span>,
         <span class="tok-key">"modifiers"</span>: [
@@ -1780,7 +1761,7 @@ Accept: application/json</pre>
                 <!-- FOOTER -->
                 <div class="docs-footer">
                     <div class="docs-footer-inner">
-                        <span class="footer-brand">SAPI</span>
+                        @include('public.partials.wordmark', ['size' => 'sm'])
                         <span class="footer-copy">© {{ date('Y') }} SAPI — Kasir Pintar untuk UMKM Indonesia</span>
                     </div>
                 </div>

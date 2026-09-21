@@ -1,0 +1,97 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Invoice extends Model
+{
+    /** @use HasFactory<\Database\Factories\InvoiceFactory> */
+    use HasFactory;
+
+    /** Terbit, belum ada bukti bayar yang diunggah. */
+    public const STATUS_UNPAID = 'unpaid';
+
+    /** Bukti transfer sudah diunggah, menunggu diperiksa pemilik SaaS. */
+    public const STATUS_AWAITING_VERIFICATION = 'awaiting_verification';
+
+    /** Bukti diterima. */
+    public const STATUS_PAID = 'paid';
+
+    /** Bukti ditolak — palsu, nominal kurang, atau salah unggah. */
+    public const STATUS_REJECTED = 'rejected';
+
+    /** Tagihan langganan berkala. */
+    public const KIND_SUBSCRIPTION = 'subscription';
+
+    /** Tagihan penambahan seat di tengah periode. */
+    public const KIND_UPGRADE = 'upgrade';
+
+    protected $fillable = [
+        'tenant_id', 'subscription_id', 'period', 'kind', 'grants_seats',
+        'previous_seats', 'amount', 'pricing_rule_id', 'pricing_context', 'amount_reason', 'status', 'due_date',
+        'proof_path', 'submitted_at', 'paid_at', 'verified_by', 'verified_at',
+        'settled_via', 'rejection_reason',
+    ];
+
+    protected $attributes = ['kind' => self::KIND_SUBSCRIPTION];
+
+    /**
+     * `pricing_context` memuat data bisnis untuk tenant jalur subsidi (omzet,
+     * cacah transaksi). Ia disembunyikan dari serialisasi supaya tidak ikut
+     * terbawa oleh `toArray()` mana pun; `InvoiceResource` adalah daftar putih
+     * dan tak pernah menyebutnya, tapi lapis kedua ini murah dan menutup jalur
+     * yang tidak lewat resource.
+     */
+    protected $hidden = ['pricing_context'];
+
+    protected function casts(): array
+    {
+        return [
+            'amount' => 'decimal:2',
+            'pricing_context' => 'array',
+            'due_date' => 'date',
+            'submitted_at' => 'datetime',
+            'paid_at' => 'datetime',
+            'verified_at' => 'datetime',
+        ];
+    }
+
+    // --- Relationships ---
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function subscription(): BelongsTo
+    {
+        return $this->belongsTo(Subscription::class);
+    }
+
+    /**
+     * Akun platform yang memeriksa bukti bayar — pemilik SaaS, bukan pengguna
+     * tenant.
+     */
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(PlatformUser::class, 'verified_by');
+    }
+
+    // --- Helpers ---
+    public function isPaid(): bool
+    {
+        return $this->status === self::STATUS_PAID;
+    }
+
+    public function isAwaitingVerification(): bool
+    {
+        return $this->status === self::STATUS_AWAITING_VERIFICATION;
+    }
+
+    public function isUpgrade(): bool
+    {
+        return $this->kind === self::KIND_UPGRADE;
+    }
+}

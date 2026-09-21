@@ -224,10 +224,37 @@ Vue components must have a single root element.
 - Make atomic commits: each commit is one logical, self-contained change that builds and passes tests on its own.
   - Do not bundle unrelated changes into a single commit; split them into separate commits.
   - Stage only the files relevant to that change (avoid a blanket `git add .` when the working tree has unrelated edits).
+  - **A class and its callers go in the same commit, or the class goes first — never the other way round.** This is the rule that `[BL-072]` was opened for; read the warning below before assuming it is theoretical.
+  - Verify it before committing: `composer run check:boot`. It boots the framework and then scans every top-level import in `app/`, `database/`, `routes/`, and `config/` for a class that cannot be loaded — the exact shape of `[BL-072]`. Note that `php artisan route:list` alone does **not** catch this (tried, and it exits 0): a `use` statement is a compile-time alias and never reaches the autoloader until the class is actually used.
 - Use a single author only. Do not add a `Co-Authored-By` trailer (or any other co-author) to commit messages.
 
-# Changelog
+## History warning — commits `2ffd393`..`329f592` cannot boot (`[BL-072]`)
+
+Six consecutive commits reference `PaymentAttempt`, `AdaptiveEligibility`, and `PaymentGatewayManager` before those files existed; all three landed together in `342082c`. Because `HandleInertiaRequests` is on every request, **no Inertia page renders anywhere in that range** — verified, not inferred (`c0add23` + `tests/Feature/Subscription` = 25 failures, all `Class "App\Models\PaymentAttempt" not found`).
+
+`HEAD` is healthy. The trap is only sprung by someone walking the history:
+
+- **Do not `git bisect` across the range.** Every commit in it fails for a reason unrelated to whatever you are hunting, so bisect will confidently name the wrong commit. Use `git bisect skip 2ffd393..329f592`, or start from `342082c..HEAD`.
+- **Do not `git revert 342082c`.** It would take those three classes away from the commits below it and **kill `HEAD`**, not just remove the payment gateway. To drop the gateway, write a new commit that removes its callers first.
+
+Rewriting the range was considered and declined by the owner in 2026-08-08: reconstructing the intermediate states means guessing the intent of someone else's hunks, and history rewritten from guesses is not more trustworthy history. The range stays broken on purpose — this warning is the fix.
+
+# Changelog & Backlog
 
 - The project changelog lives at `docs/CHANGELOG.md`. Record out-of-phase changes and architecture decisions there.
 - Write a changelog entry only when the change is actually applied (implemented in the codebase), not while it is still being planned or proposed. Add the entry as part of the same work that lands the change.
+- Every new changelog entry must also add **one row at the top of the `## Indeks Entri` table** in `docs/CHANGELOG.md`. An entry with no index row will not be found.
+- Open issues and technical debt live in `docs/BACKLOG.md`. When an entry is finished, move its full text to `docs/BACKLOG-ARCHIVE.md` and leave one row in the "Riwayat Selesai (Arsip)" table in `docs/BACKLOG.md`.
+
+## Reading these files (do not read them in full)
+
+`docs/CHANGELOG.md` is append-only and already ~1,475 lines / ~37k tokens. Reading it whole is never the right move — it costs more context than the rest of a typical task combined. Use this order instead:
+
+1. **Read the index, not the file.** `Read docs/CHANGELOG.md offset=58 limit=78` returns the whole `## Indeks Entri` table (~2k tokens) — date, type, area, and exact title of every entry.
+2. **Jump to the one entry you need.** `Grep` the title from the index to get its line number, then `Read` with `offset`/`limit` around it. Entries are 15–35 lines each.
+3. **Fallback that never goes stale.** If the index looks incomplete, list headings directly: `Grep` pattern `^### ` on the file with `-n`. That derives the table of contents from the file itself.
+
+Same protocol for `docs/BACKLOG.md` (open issues only) and `docs/BACKLOG-ARCHIVE.md` (finished ones): grep `^### \[BL-` to locate an entry, then read only its range. Whether a `BL-xxx` is already done can be answered from the "Riwayat Selesai (Arsip)" table in `docs/BACKLOG.md` without opening the archive at all.
+
+The same applies to the large phase documents under `docs/phases-1/` and `docs/phases-2/` — grep for the relevant section rather than reading the file end to end.
 

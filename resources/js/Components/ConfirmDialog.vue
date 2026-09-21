@@ -4,7 +4,7 @@ import { ref, watch, onMounted } from 'vue';
 const props = defineProps({
     show: { type: Boolean, default: false },
     title: { type: String, default: 'Konfirmasi' },
-    message: { type: String, default: 'Apakah Anda yakin ingin melakukan tindakan ini?' },
+    message: { type: String, default: 'Tindakan ini tidak bisa dibatalkan.' },
     confirmText: { type: String, default: 'Hapus' },
     cancelText: { type: String, default: 'Batal' },
     variant: { type: String, default: 'danger' }, // danger | warning
@@ -46,7 +46,7 @@ const cancel = () => {
                 <div class="absolute inset-0 bg-black/50" @click="cancel" />
 
                 <!-- Dialog -->
-                <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                <div class="relative bg-card border border-border rounded-xl shadow-2xl max-w-md w-full p-6">
                     <div class="flex items-start gap-4">
                         <!-- Icon -->
                         <div :class="[
@@ -59,15 +59,15 @@ const cancel = () => {
                         </div>
 
                         <div class="flex-1">
-                            <h3 class="text-lg font-semibold text-gray-900">{{ title }}</h3>
-                            <p class="mt-1 text-sm text-gray-600">{{ message }}</p>
+                            <h3 class="text-lg font-semibold text-foreground">{{ title }}</h3>
+                            <p class="mt-1 text-sm text-muted-foreground leading-relaxed">{{ message }}</p>
                         </div>
                     </div>
 
                     <div class="mt-6 flex justify-end gap-3">
                         <button
                             @click="cancel"
-                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
+                            class="px-4 py-2 text-sm font-medium text-foreground bg-card border border-border rounded-lg hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-ring"
                         >
                             {{ cancelText }}
                         </button>

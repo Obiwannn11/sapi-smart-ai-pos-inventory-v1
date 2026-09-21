@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Merakit context array ringkas & deterministik yang jadi base knowledge LLM.
@@ -33,25 +34,36 @@ class AiContextService
     public function buildContext(Tenant $tenant, Carbon $from, Carbon $to): array
     {
         $completed = Transaction::where('status', Transaction::STATUS_COMPLETED)
-            ->whereBetween('created_at', [$from, $to]);
+            ->whereEffectiveBetween($from, $to);
 
         $revenue = (float) (clone $completed)->sum('total_amount');
         $count = (clone $completed)->count();
 
+        // Dikelompokkan per produk DAN varian, bukan per `variant_name` saja.
+        // Kolom itu hanya berisi nama variannya ("Hot", "Single", "Plain"),
+        // dan nama yang sama dipakai ulang lintas produk — mengelompokkan
+        // padanya menjumlahkan Cafe Latte "Hot" dengan Kopi Susu "Hot" jadi
+        // satu baris. Model lalu menalar di atas angka gabungan itu dan
+        // menyebut "Hot" sebagai barang terlaris, sesuatu yang tidak ada di
+        // katalog mana pun.
         $topProducts = TransactionItem::query()
+            ->join('product_variants', 'product_variants.id', '=', 'transaction_items.product_variant_id')
+            ->join('products', 'products.id', '=', 'product_variants.product_id')
             ->whereHas('transaction', function ($q) use ($from, $to) {
                 $q->where('status', Transaction::STATUS_COMPLETED)
-                    ->whereBetween('created_at', [$from, $to]);
+                    ->whereEffectiveBetween($from, $to);
             })
-            ->selectRaw('variant_name, SUM(qty) as qty, SUM(subtotal) as revenue')
-            ->groupBy('variant_name')
+            ->selectRaw('products.name as product_name, transaction_items.variant_name')
+            ->selectRaw('SUM(transaction_items.qty) as qty, SUM(transaction_items.subtotal) as revenue')
+            ->groupBy('products.name', 'transaction_items.variant_name')
             ->orderByDesc('qty')
             ->take(10)
             ->get();
 
+        $effectiveDate = Transaction::effectiveDateSql();
         $dailyTrend = (clone $completed)
-            ->selectRaw('DATE(created_at) as date, COUNT(*) as count, SUM(total_amount) as revenue')
-            ->groupByRaw('DATE(created_at)')
+            ->selectRaw("DATE({$effectiveDate}) as date, COUNT(*) as count, SUM(total_amount) as revenue")
+            ->groupByRaw("DATE({$effectiveDate})")
             ->orderBy('date')
             ->get();
 
@@ -67,10 +79,81 @@ class AiContextService
             ],
             'profit' => $this->profitService->overallProfit($from, $to),
             'projection' => $this->profitService->projection($from, $to),
-            'profit_by_item' => $this->profitService->profitByProduct($from, $to),
+            'profit_by_item' => $this->cappedProfitByItem($from, $to),
             'top_products' => $topProducts,
             'daily_trend' => $dailyTrend,
             'inventory' => $this->badgeHelper->generate($tenant),
+        ];
+    }
+
+    /**
+     * `profit_by_item` dengan jumlah barisnya dibatasi (`[BL-069]`).
+     *
+     * Satu-satunya bagian konteks yang tumbuh mengikuti ukuran tenant. Sisa
+     * konteks sudah teragregasi — `top_products` di-`take(10)`, `daily_trend`
+     * sepanjang periode — sehingga tenant 3.367 transaksi dan tenant 4.476
+     * transaksi sama-sama berhenti di kisaran 1.850 token. Yang tidak berhenti
+     * adalah daftar per produk, dan tanpa batas ini harga kuota AI ditetapkan
+     * atas ongkos yang tidak punya atap.
+     *
+     * Yang tidak muat TIDAK dibuang diam-diam. Daftar yang dipotong tanpa tanda
+     * akan terbaca model sebagai seluruh katalog, dan jawabannya akan menyebut
+     * "produk paling merugi Anda" untuk produk yang kebetulan lolos batas.
+     * Karena itu sisanya diringkas jadi satu baris agregat beserta jumlah
+     * variannya.
+     *
+     * Urutannya tetap qty menurun, sama seperti sebelum ada batas ini: yang
+     * dipotong adalah produk bervolume paling kecil. Konsekuensinya disadari —
+     * penjual lambat yang marginnya buruk bisa jatuh ke ringkasan — dan itu
+     * sebabnya `others` membawa `margin_pct`-nya sendiri, supaya model masih
+     * bisa melihat kalau ekor katalognya secara keseluruhan tidak sehat.
+     *
+     * @return array{items: list<array<string, mixed>>, shown: int, total: int, others: array<string, mixed>|null}
+     */
+    private function cappedProfitByItem(Carbon $from, Carbon $to): array
+    {
+        $limit = max(1, (int) config('ai.context.profit_by_item_limit', 20));
+        $rows = $this->profitService->profitByProduct($from, $to);
+
+        $items = $rows->take($limit)->values()->all();
+        $rest = $rows->slice($limit);
+
+        return [
+            'items' => $items,
+            'shown' => count($items),
+            'total' => $rows->count(),
+            'others' => $rest->isEmpty() ? null : $this->summarize($rest),
+        ];
+    }
+
+    /**
+     * Ringkas baris yang tidak muat jadi satu agregat berbentuk sama.
+     *
+     * Bentuknya sengaja meniru baris biasa — `qty`, `revenue`, `net_revenue`,
+     * `cogs`, `margin`, `margin_pct` — supaya model tidak perlu diajari
+     * membaca dua bentuk yang berbeda untuk data yang sama. Marginnya
+     * diturunkan dari `net_revenue`, sama seperti barisnya ([BL-065]):
+     * agregat yang memakai dasar berbeda dari barisnya akan terbaca seperti
+     * ekor katalog yang lebih sehat daripada isinya.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<string, mixed>
+     */
+    private function summarize(Collection $rows): array
+    {
+        $revenue = (float) $rows->sum('revenue');
+        $netRevenue = (float) $rows->sum('net_revenue');
+        $cogs = (float) $rows->sum('cogs');
+        $margin = $netRevenue - $cogs;
+
+        return [
+            'variants' => $rows->count(),
+            'qty' => (int) $rows->sum('qty'),
+            'revenue' => $revenue,
+            'net_revenue' => $netRevenue,
+            'cogs' => $cogs,
+            'margin' => $margin,
+            'margin_pct' => $netRevenue > 0 ? round($margin / $netRevenue * 100, 2) : 0.0,
         ];
     }
 }

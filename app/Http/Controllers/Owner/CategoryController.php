@@ -13,10 +13,10 @@ class CategoryController extends Controller
 {
     public function index(): Response
     {
-        $categories = Category::withCount('products')->latest()->get();
-
         return Inertia::render('Owner/Categories/Index', [
-            'categories' => $categories,
+            // Ditunda ([BL-037]): daftarnya menyusul sementara tombol tambah dan
+            // formulirnya sudah bisa dipakai sejak cat pertama.
+            'categories' => Inertia::defer(fn () => Category::withCount('products')->latest()->get()),
         ]);
     }
 

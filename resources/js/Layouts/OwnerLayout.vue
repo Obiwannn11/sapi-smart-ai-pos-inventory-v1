@@ -1,7 +1,13 @@
 <script setup>
-import { usePage, router, Link } from '@inertiajs/vue3';
+import { usePage, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
-import { ref, computed, h, defineComponent } from 'vue';
+import SubscriptionBanner from '@/Components/SubscriptionBanner.vue';
+import GraceModal from '@/Components/GraceModal.vue';
+import LogoutConfirmDialog from '@/Components/LogoutConfirmDialog.vue';
+import BrandMark from '@/Components/BrandMark.vue';
+import { ref, computed, h, onMounted, onBeforeUnmount, defineComponent } from 'vue';
+import { useLogoutConfirm } from '@/composables/useLogoutConfirm';
+import { BUSINESS_TZ } from '@/support/date';
 
 const page = usePage();
 const { auth } = page.props;
@@ -45,6 +51,7 @@ const iconPaths = {
     receipt:
         'M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z',
     cash: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
+    tag: 'M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 10V5a2 2 0 012-2z',
     'credit-card':
         'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
     'office-building': [
@@ -53,6 +60,16 @@ const iconPaths = {
     ],
     sparkles:
         'M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L19 12l-3.714 2.143L13 21l-2.286-6.857L7 12l3.714-2.143L13 5z',
+    clipboard:
+        'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+    'trending-up': 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6',
+    cog: [
+        'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+        'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+    ],
+    key: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z',
+    cart: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z',
+    logout: 'M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1',
 };
 
 const NavIcon = defineComponent({
@@ -84,41 +101,143 @@ const NavIcon = defineComponent({
 });
 
 // ── Navigation ─────────────────────────────────────────────────────────────
+// Each item carries either `perm` (spatie module permission) or `ownerOnly`
+// (routes still gated by role:owner). Owner sees everything; staff only sees
+// items whose permission they hold (Keputusan A: shared filtered sidebar).
+//
+// A third key, `feature`, gates on a tenant capability flag rather than on the
+// user: it answers "does this outlet have the feature?" instead of "is this
+// person allowed?". Both can appear on the same item — they are independent
+// questions and each must answer yes.
 const sidebarGroups = [
     {
         label: null,
-        items: [{ name: 'Beranda', href: '/owner/dashboard', icon: 'home' }],
+        items: [
+            { name: 'Beranda', href: '/owner/dashboard', icon: 'home', ownerOnly: true },
+            { name: 'Antrian Dapur', href: '/cashier/queue', icon: 'clipboard', feature: 'kitchen_queue' },
+        ],
     },
     {
         label: 'Atur Menu',
         items: [
-            { name: 'Kategori', href: '/owner/categories', icon: 'folder' },
-            { name: 'Produk', href: '/owner/products', icon: 'cube' },
-            { name: 'Stok', href: '/owner/stock', icon: 'archive' },
-            { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments' },
+            { name: 'Kategori', href: '/owner/categories', icon: 'folder', perm: 'products' },
+            { name: 'Produk', href: '/owner/products', icon: 'cube', perm: 'products' },
+            { name: 'Stok', href: '/owner/stock', icon: 'archive', perm: 'stock' },
+            { name: 'Modifier', href: '/owner/modifiers', icon: 'adjustments', perm: 'products' },
+        ],
+    },
+    // Tempat owner MENYUSUN cara berjualan, bukan tempat ia membaca hasilnya
+    // ([BL-085]). Ketiganya menulis aturan yang berlaku ke depan — "Saran Jual"
+    // ikut ke sini meski ia laporan, karena ia laporan TENTANG dua di bawahnya
+    // dan memisahkannya berarti owner membaca hasil di satu grup lalu
+    // membetulkan sebabnya di grup lain.
+    {
+        label: 'Penjualan & Promosi',
+        items: [
+            { name: 'Saran Jual', href: '/owner/reports/upsell', icon: 'sparkles', perm: 'reports' },
+            { name: 'Aturan Saran Jual', href: '/owner/upsell-rules', icon: 'adjustments', ownerOnly: true },
+            { name: 'Aturan Diskon', href: '/owner/discount-rules', icon: 'tag', ownerOnly: true },
         ],
     },
     {
         label: 'Keuangan',
         items: [
-            { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report' },
-            { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt' },
-            { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash' },
-            { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card' },
-            { name: 'AI Analysis', href: '/owner/ai-analysis', icon: 'sparkles' },
+            { name: 'Laporan Harian', href: '/owner/reports/daily', icon: 'report', perm: 'reports' },
+            { name: 'Laporan Bulanan', href: '/owner/reports/monthly', icon: 'trending-up', perm: 'reports' },
+            { name: 'Transaksi', href: '/owner/transactions', icon: 'receipt', perm: 'reports' },
+            { name: 'Sesi Kas', href: '/owner/cash-drawers', icon: 'cash', perm: 'reports' },
+            { name: 'Koreksi Offline', href: '/owner/offline-review', icon: 'archive', ownerOnly: true },
+            { name: 'Pembayaran', href: '/owner/payment-methods', icon: 'credit-card', perm: 'payment_methods' },
+            { name: 'AI Analysis', href: '/owner/ai-analysis', icon: 'sparkles', perm: 'ai_analysis' },
+        ],
+    },
+    {
+        label: 'Tim & Akses',
+        items: [
+            { name: 'Staf', href: '/owner/staff', icon: 'office-building', ownerOnly: true },
+            { name: 'Role', href: '/owner/roles', icon: 'adjustments', ownerOnly: true },
         ],
     },
     {
         label: 'Pengaturan',
         items: [
-            { name: 'Profil Usaha', href: '/owner/settings', icon: 'office-building' },
+            // Tiga halaman, bukan satu "Profil Usaha" yang memuat lima urusan
+            // sekaligus ([BL-039]). Namanya pun ikut diperbaiki: yang dulu
+            // disebut profil sebagian besar bukan profil.
+            { name: 'Profil & Merek', href: '/owner/settings', icon: 'office-building', ownerOnly: true },
+            { name: 'Cara Kerja Sistem', href: '/owner/settings/operations', icon: 'cog', ownerOnly: true },
+            { name: 'Integrasi & Kredensial', href: '/owner/settings/integrations', icon: 'key', ownerOnly: true },
+            // Rutenya sendiri TIDAK digerbang role:owner — halaman langganan
+            // sengaja terbuka untuk semua pengguna tenant, karena begitu tenant
+            // ditangguhkan setiap halaman lain mengarah ke sana dan kasir yang
+            // sedang bekerja tidak boleh mendarat di 403. Yang `ownerOnly` di
+            // sini hanya PINTU MASUK tetapnya: tagihan adalah urusan owner
+            // dengan penyedia layanan, bukan bagian dari pekerjaan kasir.
+            { name: 'Langganan & Tagihan', href: '/langganan', icon: 'credit-card', ownerOnly: true },
         ],
     },
 ];
 
+// Permission gate mirrored from the backend. Owner carries ['*'].
+const isOwner = computed(() => auth.user?.role === 'owner');
+const can = (perm) =>
+    auth.user?.permissions?.includes('*') || auth.user?.permissions?.includes(perm);
+// Tenant capability flags, shared from HandleInertiaRequests.
+const hasFeature = (feature) => auth.tenant?.features?.[feature] === true;
+const canShowItem = (item) => {
+    if (item.feature && !hasFeature(item.feature)) return false;
+    if (item.ownerOnly) return isOwner.value;
+    if (!item.perm) return true;
+    return can(item.perm);
+};
+
+// Groups/items filtered to what the current user may open.
+const visibleGroups = computed(() =>
+    sidebarGroups
+        .map((g) => ({ ...g, items: g.items.filter(canShowItem) }))
+        .filter((g) => g.items.length),
+);
+
+// ── Keadaan ditangguhkan ───────────────────────────────────────────────────
+// EnsureSubscriptionActive hanya meloloskan `billing.*` dan `logout`; sisanya
+// diarahkan balik ke halaman langganan. Jadi di keadaan ini sidebar penuh
+// tautan yang semuanya bermuara ke satu halaman yang sama. Item-nya tetap
+// ditampilkan — menyembunyikannya membuat aplikasi tampak menyusut, bukan
+// terkunci — tapi dirender mati supaya tidak ada klik yang berakhir memantul.
+const isSuspended = computed(() => auth.tenant?.is_suspended === true);
+
+// ── Merek di kepala sidebar ────────────────────────────────────────────────
+// Nama TOKO, bukan nama produk ([BL-084]). Cadangannya `SAPI POS` dan bukan
+// string kosong: shell ini juga dirender sesaat sebelum props tenant sampai,
+// dan kepala sidebar yang kosong terbaca sebagai halaman rusak. Pola dan
+// cadangannya sengaja sama persis dengan `CashierTopbar.vue` — dua permukaan
+// yang menjawab pertanyaan sama ("saya sedang di toko mana") tidak boleh
+// menjawabnya dengan dua cara.
+const tenantName = computed(() => auth.tenant?.name || 'SAPI POS');
+// Logo usaha bila pemiliknya sudah mengunggahnya di Profil & Merek. Kalau
+// belum, BrandMark jatuh kembali ke inisial nama toko — glyph `S` di sebelah
+// "Kopi Nusantara" akan terbaca sebagai merek yang salah, jadi inisialnya ikut
+// nama toko, bukan nama produk.
+const tenantLogo = computed(() => auth.tenant?.logo_url ?? null);
+const isLocked = (item) => isSuspended.value && item.href !== '/langganan';
+
+// Tautan yang jadi awalan tautan lain di sidebar — `/owner/settings` terhadap
+// `/owner/settings/operations` ([BL-039]). Untuk yang seperti ini `startsWith`
+// menyalakan induk DAN anaknya sekaligus, dan breadcrumb mengambil yang pertama
+// ketemu, yaitu yang salah. Daftarnya diturunkan dari sidebar itu sendiri,
+// bukan ditulis tangan, supaya halaman bersarang berikutnya tidak mengulang
+// bug yang sama diam-diam.
+const parentHrefs = new Set(
+    sidebarGroups.flatMap((group) => group.items).flatMap((item, _, all) =>
+        all.some((other) => other.href !== item.href && other.href.startsWith(`${item.href}/`))
+            ? [item.href]
+            : [],
+    ),
+);
+
 const isActive = (href) => {
     const url = page.url;
-    if (href === '/owner/dashboard') return url === '/owner/dashboard';
+    if (href === '/owner/dashboard' || parentHrefs.has(href)) return url === href;
     return url.startsWith(href);
 };
 
@@ -134,6 +253,7 @@ const breadcrumb = computed(() => {
 
 const todayLabel = computed(() =>
     new Date().toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         weekday: 'long',
         day: 'numeric',
         month: 'long',
@@ -150,7 +270,39 @@ const roleLabel = computed(() => {
     return map[auth.user?.role] ?? auth.user?.role ?? '';
 });
 
-const logout = () => router.post('/logout');
+// ── Menu akun di topbar ────────────────────────────────────────────────────
+// Nama pengguna, tautan ke kasir, dan tombol keluar tinggal di SATU tempat di
+// sini, bukan tersebar antara kaki sidebar dan topbar. Pola dan markupnya
+// sengaja kembar dengan dropdown di `CashierTopbar.vue`: kedua cangkang
+// menjawab pertanyaan yang sama ("saya login sebagai siapa, dan ke mana lagi
+// saya bisa pergi"), jadi jawabannya tidak boleh berbeda bentuk. Sebagai bonus,
+// mode rel (sidebar tertutup) tidak lagi menyembunyikan tombol keluar.
+const userName = computed(() => auth.user?.name ?? '');
+const userEmail = computed(() => auth.user?.email ?? '');
+
+const dropdownOpen = ref(false);
+const dropdownRef = ref(null);
+
+const toggleDropdown = () => { dropdownOpen.value = !dropdownOpen.value; };
+
+const handleClickOutside = (e) => {
+    if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
+        dropdownOpen.value = false;
+    }
+};
+
+onMounted(() => document.addEventListener('mousedown', handleClickOutside));
+onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside));
+
+// Ditanya dulu, sama seperti di cangkang kasir. Owner memakai perangkat yang
+// sama dengan kasirnya, jadi cache miliknya juga ikut dibersihkan — itu
+// terjadi di dalam aksi yang sudah dijawab.
+const { requestLogout } = useLogoutConfirm();
+
+const logout = () => requestLogout({
+    title: 'Keluar dari akun?',
+    message: 'Katalog yang tersimpan di perangkat ini akan dihapus. Penjualan offline yang belum terkirim tetap aman dan terkirim setelah Anda login lagi.',
+});
 </script>
 
 <template>
@@ -192,18 +344,18 @@ const logout = () => router.post('/logout');
                 :class="sidebarOpen ? 'justify-between px-4' : 'justify-center px-0'"
             >
                 <div class="flex items-center gap-2.5">
-                    <!-- S glyph (always visible) -->
-                    <div
-                        class="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0"
-                        aria-hidden="true"
-                    >
-                        <span class="text-primary-foreground text-[11px] font-bold tracking-tight select-none">S</span>
-                    </div>
-                    <!-- SAPI text — hidden in icon-only rail mode -->
+                    <!-- Logo usaha, atau inisialnya bila belum diunggah (always visible) -->
+                    <BrandMark
+                        :src="tenantLogo"
+                        :name="tenantName"
+                        class="w-7 h-7 rounded-lg text-[11px]"
+                    />
+                    <!-- Store name — hidden in icon-only rail mode ([BL-084]) -->
                     <span
                         v-show="sidebarOpen"
-                        class="text-[1.0625rem] font-bold text-brand tracking-tight select-none whitespace-nowrap"
-                    >SAPI</span>
+                        :title="tenantName"
+                        class="text-[1.0625rem] font-bold text-brand tracking-tight select-none truncate max-w-[10.5rem]"
+                    >{{ tenantName }}</span>
                 </div>
 
                 <!-- Close button — hidden in icon-only rail mode -->
@@ -221,7 +373,14 @@ const logout = () => router.post('/logout');
 
             <!-- Nav items -->
             <nav class="flex-1 overflow-y-auto py-3 px-3 scrollbar-sidebar" aria-label="Navigasi utama">
-                <template v-for="(group, gIdx) in sidebarGroups" :key="gIdx">
+                <p
+                    v-if="isSuspended && sidebarOpen"
+                    class="mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] leading-relaxed text-foreground"
+                >
+                    Akses ditangguhkan. Hanya halaman langganan yang masih terbuka.
+                </p>
+
+                <template v-for="(group, gIdx) in visibleGroups" :key="gIdx">
                     <!-- Group label — collapsible toggle; hidden in icon-only rail mode -->
                     <button
                         v-if="group.label && sidebarOpen"
@@ -246,62 +405,32 @@ const logout = () => router.post('/logout');
                         class="overflow-hidden transition-[max-height] duration-200 ease-in-out"
                         :class="group.label && collapsedGroups[group.label] && sidebarOpen ? 'max-h-0' : 'max-h-96'"
                     >
-                        <Link
+                        <component
+                            :is="isLocked(item) ? 'span' : Link"
                             v-for="item in group.items"
                             :key="item.href"
-                            :href="item.href"
-                            @click="handleNavClick"
-                            :title="!sidebarOpen ? item.name : undefined"
+                            :href="isLocked(item) ? undefined : item.href"
+                            :aria-disabled="isLocked(item) ? 'true' : undefined"
+                            @click="isLocked(item) ? undefined : handleNavClick()"
+                            :title="isLocked(item)
+                                ? `${item.name} — terkunci selama langganan ditangguhkan`
+                                : (!sidebarOpen ? item.name : undefined)"
                             :class="[
                                 'flex items-center rounded-md text-sm transition-colors duration-150 mb-0.5 h-9',
                                 sidebarOpen ? 'gap-2.5 px-3' : 'justify-center px-0',
-                                isActive(item.href)
-                                    ? 'bg-primary/10 text-primary font-medium'
-                                    : 'text-foreground/60 font-normal hover:bg-muted hover:text-foreground',
+                                isLocked(item)
+                                    ? 'text-muted-foreground/40 font-normal cursor-not-allowed select-none'
+                                    : isActive(item.href)
+                                        ? 'bg-primary/10 text-primary font-medium'
+                                        : 'text-foreground/60 font-normal hover:bg-muted hover:text-foreground',
                             ]"
                         >
                             <NavIcon :name="item.icon" />
                             <span v-show="sidebarOpen" class="whitespace-nowrap">{{ item.name }}</span>
-                        </Link>
+                        </component>
                     </div>
                 </template>
             </nav>
-
-            <!-- User footer -->
-            <div class="flex-shrink-0 border-t border-border p-3">
-                <div
-                    class="flex items-center min-w-0"
-                    :class="sidebarOpen ? 'gap-2.5 px-1' : 'justify-center px-0'"
-                >
-                    <!-- Avatar (always visible) -->
-                    <div
-                        class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"
-                        :title="!sidebarOpen ? auth.user.name : undefined"
-                        aria-hidden="true"
-                    >
-                        <span class="text-primary text-sm font-semibold leading-none select-none">{{ userInitial }}</span>
-                    </div>
-
-                    <!-- Name + role — hidden in icon-only rail mode -->
-                    <div v-show="sidebarOpen" class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-foreground truncate leading-snug">{{ auth.user.name }}</p>
-                        <p class="text-[11px] text-muted-foreground leading-snug">{{ roleLabel }}</p>
-                    </div>
-
-                    <!-- Logout — hidden in icon-only rail mode -->
-                    <button
-                        v-show="sidebarOpen"
-                        @click="logout"
-                        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
-                        title="Keluar"
-                        aria-label="Keluar dari akun"
-                    >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
         </aside>
 
         <!-- ── Main area ─────────────────────────────────────────────────── -->
@@ -333,23 +462,97 @@ const logout = () => router.post('/logout');
                         </nav>
                     </div>
 
-                    <!-- Right: date + Kasir shortcut -->
+                    <!-- Right: date + menu akun -->
                     <div class="flex items-center gap-3 flex-shrink-0">
                         <span class="hidden md:block text-xs text-muted-foreground">{{ todayLabel }}</span>
-                        <Link
-                            href="/cashier/pos"
-                            class="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md border border-border text-foreground/60 hover:bg-muted hover:text-foreground transition-colors duration-150"
-                        >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                            Kasir
-                        </Link>
+
+                        <!-- Menu akun — kembar dengan dropdown di CashierTopbar -->
+                        <div ref="dropdownRef" class="relative">
+                            <button
+                                @click="toggleDropdown"
+                                :class="[
+                                    'inline-flex items-center gap-1.5 px-2 sm:px-3 h-8 text-xs font-medium rounded-md border transition-colors duration-150',
+                                    dropdownOpen ? 'bg-muted border-border text-foreground' : 'border-border text-foreground/60 hover:bg-muted hover:text-foreground',
+                                ]"
+                                :aria-expanded="dropdownOpen"
+                                aria-haspopup="true"
+                                aria-label="Menu akun"
+                            >
+                                <span class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                                    <span class="text-primary text-xs font-semibold leading-none select-none">{{ userInitial }}</span>
+                                </span>
+                                <span class="hidden sm:inline max-w-[120px] truncate">{{ userName }}</span>
+                                <svg
+                                    class="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 transition-transform duration-150"
+                                    :class="{ 'rotate-180': dropdownOpen }"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+                                >
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+
+                            <Transition
+                                enter-active-class="transition duration-100 ease-out"
+                                enter-from-class="opacity-0 scale-95"
+                                enter-to-class="opacity-100 scale-100"
+                                leave-active-class="transition duration-75 ease-in"
+                                leave-from-class="opacity-100 scale-100"
+                                leave-to-class="opacity-0 scale-95"
+                            >
+                                <div
+                                    v-if="dropdownOpen"
+                                    class="absolute right-0 top-full mt-1.5 w-56 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden origin-top-right"
+                                    role="menu"
+                                >
+                                    <!-- Akun yang sedang login -->
+                                    <div class="px-3 py-2.5 border-b border-border">
+                                        <p class="text-sm font-medium text-foreground truncate">{{ userName }}</p>
+                                        <p v-if="userEmail" class="text-xs text-muted-foreground truncate mt-0.5">{{ userEmail }}</p>
+                                        <p class="text-[11px] text-muted-foreground mt-0.5">{{ roleLabel }}</p>
+                                    </div>
+
+                                    <!--
+                                        Selama ditangguhkan setiap rute selain
+                                        langganan memantul balik, jadi pintunya
+                                        disembunyikan — tapi tombol keluar di
+                                        bawah tetap ada.
+                                    -->
+                                    <Link
+                                        v-if="!isSuspended"
+                                        href="/cashier/pos"
+                                        class="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-muted flex items-center gap-2 transition-colors duration-150"
+                                        role="menuitem"
+                                        @click="dropdownOpen = false"
+                                    >
+                                        <NavIcon name="cart" />
+                                        Buka Kasir
+                                    </Link>
+
+                                    <button
+                                        @click="logout"
+                                        class="w-full text-left px-3 py-2 text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2 transition-colors duration-150"
+                                        role="menuitem"
+                                    >
+                                        <NavIcon name="logout" />
+                                        Keluar
+                                    </button>
+                                </div>
+                            </Transition>
+                        </div>
                     </div>
                 </div>
             </header>
 
+            <!--
+                Di luar <main>, tepat di bawah topbar: <main> yang menggulir,
+                dan peringatan yang ikut tergulir keluar layar adalah peringatan
+                yang tidak dibaca siapa pun ([BL-045]).
+            -->
+            <SubscriptionBanner />
+            <GraceModal />
+
             <FlashMessage />
+            <LogoutConfirmDialog />
 
             <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7 scrollbar-main">
                 <slot />

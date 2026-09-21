@@ -6,6 +6,8 @@
     <title>SAPI - Smart AI POS & Inventory untuk UMKM</title>
     <meta name="description" content="Aplikasi Kasir (POS) cerdas dengan AI. Dilengkapi prediksi stok personal dan asisten finansial otomatis tanpa perlu bayar konsultan mahal.">
 
+    @include('public.partials.favicon')
+
     <!-- Fonts: Plus Jakarta Sans -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,31 +16,10 @@
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @vite(['resources/css/app.css'])
 
-    <!-- Fallback Tailwind CSS if Vite is not running locally -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
-                    },
-                    colors: {
-                        // Brand tokens — selaras dengan --primary / --brand di resources/css/app.css.
-                        // (Fallback CDN saja; render utama memakai token oklch dari app.css via Vite.)
-                        primary: '#0e9f6e',
-                        brand: '#34d399',
-                    },
-                    borderRadius: {
-                        '4xl': '2rem',
-                        '5xl': '3rem',
-                    }
-                }
-            }
-        }
-    </script>
+    @include('public.partials.theme')
+
     <style>
         .glass-nav {
             background: rgba(255, 255, 255, 0.7);
@@ -115,7 +96,7 @@
                 <!-- Left: Brand Name -->
                 <div class="flex-shrink-0">
                     <a href="/" class="flex items-center gap-3 group">
-                        <span class="font-extrabold text-xl md:text-2xl tracking-tighter text-gray-900 group-hover:text-primary transition-colors">SAPI</span>
+                        @include('public.partials.wordmark', ['size' => 'md', 'interactive' => true])
                     </a>
                 </div>
 
@@ -126,6 +107,7 @@
                         <a href="#fitur" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Fitur AI</a>
                         <a href="#demo" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Demo</a>
                         <a href="#pricing" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Harga</a>
+                        <a href="{{ route('docs.index') }}" class="text-[14px] font-bold text-gray-500 hover:text-primary transition-all">Dokumentasi</a>
                     </div>
                     <div class="h-6 w-px bg-gray-100 hidden md:block"></div>
                     <a href="/login" class="hidden sm:block bg-primary text-white px-8 py-3 rounded-full text-[14px] font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/10 hover:shadow-primary/20 hover:-translate-y-0.5">
@@ -154,8 +136,17 @@
             <a @click="open = false" href="#fitur" class="block text-lg font-black text-gray-900 hover:text-primary">Fitur AI</a>
             <a @click="open = false" href="#demo" class="block text-lg font-black text-gray-900 hover:text-primary">Demo</a>
             <a @click="open = false" href="#pricing" class="block text-lg font-black text-gray-900 hover:text-primary">Harga</a>
-            <div class="pt-4 border-t border-gray-100">
-                <a @click="open = false" href="/login" class="block w-full bg-primary text-white text-center py-4 rounded-2xl font-black shadow-xl shadow-primary/10">Login / Daftar Gratis</a>
+            <a @click="open = false" href="{{ route('docs.index') }}" class="block text-lg font-black text-gray-900 hover:text-primary">Dokumentasi</a>
+            <div class="pt-4 border-t border-gray-100 space-y-3">
+                {{--
+                    Dulu satu tombol "Login / Daftar Gratis" yang menuju
+                    `/login` saja. Dipecah dua karena keduanya memang dua
+                    tujuan, dan labelnya menyebut lama masa gratisnya
+                    (`[BL-071]`) alih-alih "gratis" yang menyembunyikan bahwa
+                    ia berakhir.
+                --}}
+                <a @click="open = false" href="{{ route('register') }}" class="block w-full bg-primary text-white text-center py-4 rounded-2xl font-black shadow-xl shadow-primary/10">Coba Gratis {{ $pricing['trial_months'] }} Bulan</a>
+                <a @click="open = false" href="/login" class="block w-full text-center py-3 text-gray-900 font-black">Masuk</a>
             </div>
         </div>
     </nav>
@@ -172,11 +163,18 @@
                         Dengan AI.
                     </h1>
                     <p class="text-lg sm:text-xl text-gray-600 mb-10 leading-relaxed max-w-lg font-medium">
-                        SAPI bukan sekadar aplikasi kasir biasa. SAPI bisa memprediksi stok Anda, menganalisis pola penjualan, dan memberikan Anda saran aksi nyata secara otomatis.
+                        SAPI menandai stok yang menipis dan barang yang berhenti laku, menganalisis pola penjualan Anda, dan menurunkan saran jual yang menyebut barangnya.
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4 sm:gap-5">
-                        <a href="/login" class="px-8 sm:px-10 py-4 sm:py-5 bg-primary text-white rounded-[1.2rem] sm:rounded-[1.5rem] font-extrabold text-base sm:text-lg hover:bg-primary/90 shadow-2xl shadow-primary/20 transition-all transform hover:-translate-y-1 text-center">
-                            Daftar Gratis
+                        {{--
+                            "Daftar Gratis" tidak salah — dua bulan memang
+                            gratis — tapi ia menyembunyikan bagian yang paling
+                            menentukan: masa itu berakhir dengan perpindahan ke
+                            paket berbayar. Lamanya dibacakan dari config lewat
+                            `PublicPricing`, tidak diketik di sini (`[BL-071]`).
+                        --}}
+                        <a href="{{ route('register') }}" class="px-8 sm:px-10 py-4 sm:py-5 bg-primary text-white rounded-[1.2rem] sm:rounded-[1.5rem] font-extrabold text-base sm:text-lg hover:bg-primary/90 shadow-2xl shadow-primary/20 transition-all transform hover:-translate-y-1 text-center">
+                            Coba Gratis {{ $pricing['trial_months'] }} Bulan
                         </a>
                         <a href="#fitur" class="px-8 sm:px-10 py-4 sm:py-5 bg-white text-gray-900 border-2 border-gray-100 rounded-[1.2rem] sm:rounded-[1.5rem] font-extrabold text-base sm:text-lg hover:border-gray-200 transition-all text-center">
                             Lihat Fitur
@@ -186,18 +184,28 @@
                 <div class="lg:col-span-6 relative reveal-right">
                     <!-- Main Mockup -->
                     <div class="relative z-10 bg-gray-50 rounded-[3rem] p-4 border border-gray-100 shadow-2xl">
-                        <img src="{{ asset('Dashboard-owner.png') }}" alt="Mockup SAPI" class="rounded-[2.5rem] w-full">
+                        <img src="{{ asset('Dashboard-owner.webp') }}" alt="Dashboard pemilik SAPI" width="2160" height="1350" class="rounded-[2.5rem] w-full">
                     </div>
 
                     <!-- Floating Elements -->
+                    {{--
+                        Kartu ini dulu berbunyi "Prediksi Stok — Aman Hingga 14
+                        Hari", dan itu menyebut horizon yang tidak pernah
+                        dihitung di mana pun: `BadgeHelperService` membandingkan
+                        ambang tetap, bukan meramal. Kalimatnya sekarang meminjam
+                        pesan badge `low_stock` apa adanya — "{n} varian mendekati
+                        habis" — dan warnanya mengikuti `severity: warning` yang
+                        sama, supaya yang dijanjikan di sini persis yang dilihat
+                        orang setelah masuk (`[BL-083]`).
+                    --}}
                     <div class="absolute -top-10 -right-5 z-20 float-animation hidden sm:block">
                         <div class="bg-white p-5 rounded-3xl shadow-2xl border border-gray-100 flex items-center gap-4">
-                            <div class="w-12 h-12 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center">
-                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                            <div class="w-12 h-12 bg-amber-100 text-amber-500 rounded-2xl flex items-center justify-center">
+                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                             </div>
                             <div>
-                                <p class="text-xs font-bold text-gray-400 uppercase">Prediksi Stok</p>
-                                <p class="text-sm font-black text-gray-900">Aman Hingga 14 Hari</p>
+                                <p class="text-xs font-bold text-gray-400 uppercase">Stok Kritis</p>
+                                <p class="text-sm font-black text-gray-900">3 varian mendekati habis</p>
                             </div>
                         </div>
                     </div>
@@ -211,7 +219,15 @@
                             <p class="text-sm text-gray-600 font-medium leading-tight">
                                 "Kopi Susu Gula Aren mulai <br> sepi, beri diskon 15%?"
                             </p>
-                            <button class="mt-4 w-full py-2 bg-primary/5 text-primary rounded-xl text-xs font-black">Eksekusi Sekarang</button>
+                            {{--
+                                Dulu sebuah tombol "Eksekusi Sekarang". Tidak ada
+                                jalan satu tekan dari saran ke diskon terpasang:
+                                `BadgeCard.vue` hanya membuka-tutup, dan aturan
+                                diskon punya layarnya sendiri. Diturunkan jadi
+                                keterangan tempat, bukan janji tindakan
+                                (`[BL-083]` butir (b)).
+                            --}}
+                            <p class="mt-4 text-xs font-black text-gray-400 uppercase tracking-wide">Muncul di dashboard Anda</p>
                         </div>
                     </div>
                 </div>
@@ -328,23 +344,23 @@
                             <div class="w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
                             </div>
-                            <p class="text-lg font-bold">"Stok Anda aman untuk 10 hari ke depan."</p>
+                            <p class="text-lg font-bold">"3 varian mendekati habis, ini daftarnya."</p>
                         </li>
                         <li class="flex items-start gap-4">
                             <div class="w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
                             </div>
-                            <p class="text-lg font-bold">"Laba bersih Anda naik 20% bulan ini."</p>
+                            <p class="text-lg font-bold">"Laba bersih bulan ini sudah terhitung, bukan dikira-kira."</p>
                         </li>
                         <li class="flex items-start gap-4">
                             <div class="w-6 h-6 bg-brand text-white rounded-full flex items-center justify-center flex-shrink-0 mt-1">
                                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
                             </div>
-                            <p class="text-lg font-bold">"Promo bundling A & B efektif tingkatkan penjualan."</p>
+                            <p class="text-lg font-bold">"Saran jual kemarin: 12 ditawarkan, 5 diterima."</p>
                         </li>
                     </ul>
                     <div class="mt-12 text-center md:text-left">
-                        <a href="/login" class="inline-block px-8 py-4 bg-white text-primary rounded-2xl font-black hover:bg-primary/5 transition-all">Ganti ke SAPI Sekarang</a>
+                        <a href="{{ route('register') }}" class="inline-block px-8 py-4 bg-white text-primary rounded-2xl font-black hover:bg-primary/5 transition-all">Ganti ke SAPI Sekarang</a>
                     </div>
                 </div>
             </div>
@@ -355,38 +371,60 @@
     <section id="fitur" class="py-24 lg:py-32 bg-white">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Segala yang Anda Butuhkan untuk <span class="text-primary">Scale-up</span></h3>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Fitur yang Sudah <span class="text-primary">Jalan Hari Ini</span></h3>
             </div>
 
             <div class="bg-gray-50 rounded-[4rem] p-10 lg:p-16 border border-gray-100 reveal">
                 <div class="grid lg:grid-cols-2 gap-16 items-center">
                     <div class="order-2 lg:order-1">
                         <div class="space-y-8">
-                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm reveal stagger-1">
+                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-1">
                                 <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
                                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                                 </div>
-                                <h4 class="text-2xl font-black text-gray-900 mb-4">Core POS System</h4>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Kasir & Sesi Kas</h4>
                                 <p class="text-lg text-gray-600 font-medium leading-relaxed">
-                                    Transaksi super cepat dengan dukungan multi-pembayaran (QRIS, Tunai, Transfer). Manajemen produk dan varian yang fleksibel untuk segala jenis bisnis UMKM.
+                                    Split bill, banyak metode bayar, dan modifier per item. Tagihan terbuka menunggu di topbar kasir sampai dilunasi,
+                                    dan tiap shift dibuka-tutup lewat sesi kas dengan ringkasan selisihnya.
                                 </p>
                             </div>
-                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm reveal stagger-2">
+                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-2">
                                 <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
                                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                 </div>
-                                <h4 class="text-2xl font-black text-gray-900 mb-4">Smart Layer AI</h4>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Analisis AI & Saran Jual</h4>
                                 <p class="text-lg text-gray-600 font-medium leading-relaxed">
-                                    Bukan sekadar data. AI kami mempelajari pola unik di toko Anda dan memberikan saran aksi nyata melalui Badge Helper yang intuitif.
+                                    Analisis penjualan yang bisa dibaca, dengan jatah harian yang selalu terlihat sisanya.
+                                    Stok yang menumpuk berubah jadi saran jual di layar kasir — dan kunci API Anda sendiri melepas batasnya.
                                 </p>
                             </div>
-                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm reveal stagger-3">
+                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-3">
                                 <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
                                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                                 </div>
-                                <h4 class="text-2xl font-black text-gray-900 mb-4">Inventory Prediction</h4>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Stok, Antrian, & Peran</h4>
                                 <p class="text-lg text-gray-600 font-medium leading-relaxed">
-                                    Hindari Dead Stock. SAPI memprediksi kebutuhan stok Anda berdasarkan tren historis, memastikan Anda selalu punya barang saat pelanggan mencari.
+                                    Stok per varian dengan riwayat pergerakan dan opname. Papan antrian dapur untuk yang memasak per pesanan.
+                                    Tiap staf hanya membuka modul yang memang haknya.
+                                </p>
+                            </div>
+
+                            {{--
+                                Kapabilitas yang nyata tapi BUKAN halaman siap
+                                pakai: pesan mandiri dan MCP berbentuk API, dan
+                                POS mobile punya referensinya sendiri. Disebut
+                                apa adanya sebagai antarmuka program — memajangnya
+                                seolah layar yang tinggal dibuka persis jenis
+                                karangan yang dibersihkan `[BL-032]`.
+                            --}}
+                            <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-xs reveal stagger-4">
+                                <div class="w-12 h-12 bg-primary/5 text-primary rounded-2xl flex items-center justify-center mb-6">
+                                    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                                </div>
+                                <h4 class="text-2xl font-black text-gray-900 mb-4">Terbuka lewat API</h4>
+                                <p class="text-lg text-gray-600 font-medium leading-relaxed">
+                                    Pesan mandiri, POS mobile, dan asisten AI Anda sendiri lewat MCP — semuanya berbentuk API, bukan layar bawaan,
+                                    dan <a href="{{ route('api-docs') }}" class="text-primary hover:underline">referensinya terbuka</a> untuk dibaca sebelum Anda memutuskan.
                                 </p>
                             </div>
                         </div>
@@ -396,9 +434,9 @@
                             <div class="relative">
                                 <div class="absolute -inset-4 bg-primary/10 rounded-[3rem] rotate-3 opacity-50"></div>
                                 <div class="relative bg-white rounded-[2.5rem] p-4 shadow-2xl border border-gray-100 transform -rotate-2 transition-transform hover:rotate-0 duration-500">
-                                    <img src="{{ asset('POS-Interface.png') }}" alt="Fitur SAPI" class="rounded-[2rem] w-full shadow-inner">
+                                    <img src="{{ asset('POS-Interface.webp') }}" alt="Layar kasir SAPI dengan keranjang berisi" width="2160" height="1350" loading="lazy" class="rounded-[2rem] w-full shadow-inner">
                                     <div class="absolute -bottom-6 -right-6 bg-primary text-white px-6 py-3 rounded-2xl font-black text-sm shadow-xl">
-                                        Interface Kasir
+                                        Layar Kasir
                                     </div>
                                 </div>
                             </div>
@@ -413,8 +451,8 @@
     <section class="py-24 lg:py-32 bg-gray-50 overflow-hidden">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900">Bukti Nyata Sistem SAPI</h3>
-                <p class="text-lg text-gray-600 font-medium mt-4">Kami tidak hanya bicara fitur, inilah tampilan asli dashboard dan manajemen SAPI yang digunakan ribuan UMKM.</p>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900">Layar yang Dipakai Sehari-hari</h3>
+                <p class="text-lg text-gray-600 font-medium mt-4">Diambil dari aplikasi yang berjalan, bukan gambar rancangan.</p>
             </div>
 
             <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -422,11 +460,11 @@
                 <div class="group reveal stagger-1">
                     <div class="bg-white rounded-[2.5rem] p-4 shadow-lg border border-gray-100 transition-all group-hover:-translate-y-2 group-hover:shadow-2xl">
                         <div class="relative rounded-[1.5rem] overflow-hidden mb-6 aspect-video">
-                            <img src="{{ asset('Reports-Daily.png') }}" alt="Laporan Harian" class="w-full h-full object-cover">
+                            <img src="{{ asset('Reports-Daily.webp') }}" alt="Laporan Harian" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <h4 class="text-xl font-black text-gray-900 px-2">Laporan Harian Pintar</h4>
-                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Analisis penjualan real-time tanpa ribet.</p>
+                        <h4 class="text-xl font-black text-gray-900 px-2">Laporan Harian</h4>
+                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Omzet, laba, dan rekap metode bayar hari itu.</p>
                     </div>
                 </div>
 
@@ -434,11 +472,11 @@
                 <div class="group reveal stagger-2">
                     <div class="bg-white rounded-[2.5rem] p-4 shadow-lg border border-gray-100 transition-all group-hover:-translate-y-2 group-hover:shadow-2xl">
                         <div class="relative rounded-[1.5rem] overflow-hidden mb-6 aspect-video">
-                            <img src="{{ asset('Stock-Management.png') }}" alt="Manajemen Stok" class="w-full h-full object-cover">
+                            <img src="{{ asset('Stock-Management.webp') }}" alt="Manajemen Stok" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <h4 class="text-xl font-black text-gray-900 px-2">Kontrol Inventori Akurat</h4>
-                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Pantau pergerakan barang setiap detik.</p>
+                        <h4 class="text-xl font-black text-gray-900 px-2">Manajemen Stok</h4>
+                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Tiap pergerakan stok tercatat beserta alasannya.</p>
                     </div>
                 </div>
 
@@ -446,11 +484,11 @@
                 <div class="group reveal stagger-3">
                     <div class="bg-white rounded-[2.5rem] p-4 shadow-lg border border-gray-100 transition-all group-hover:-translate-y-2 group-hover:shadow-2xl">
                         <div class="relative rounded-[1.5rem] overflow-hidden mb-6 aspect-video">
-                            <img src="{{ asset('Product-List.png') }}" alt="Daftar Produk" class="w-full h-full object-cover">
+                            <img src="{{ asset('Product-List.webp') }}" alt="Daftar Produk" width="2160" height="1350" loading="lazy" class="w-full h-full object-cover">
                             <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         </div>
-                        <h4 class="text-xl font-black text-gray-900 px-2">Katalog Produk Modern</h4>
-                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Kelola ribuan SKU dengan sangat mudah.</p>
+                        <h4 class="text-xl font-black text-gray-900 px-2">Katalog Produk</h4>
+                        <p class="text-sm text-gray-500 font-bold px-2 mt-2">Produk, varian, dan modifier dalam satu tempat.</p>
                     </div>
                 </div>
             </div>
@@ -473,7 +511,7 @@
             <div class="flex flex-wrap justify-center gap-4 mb-10 reveal stagger-1">
                 <button onclick="showTab('pos')" id="tab-pos" class="demo-tab active-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Simulasi Kasir</button>
                 <button onclick="showTab('badge')" id="tab-badge" class="demo-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Badge Helper AI</button>
-                <button onclick="showTab('predict')" id="tab-predict" class="demo-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Prediksi Stok</button>
+                <button onclick="showTab('upsell')" id="tab-upsell" class="demo-tab px-8 py-3 rounded-2xl font-black text-base transition-all">Saran Jual</button>
             </div>
 
             <!-- TAB 1: POS KASIR -->
@@ -524,20 +562,30 @@
                 </div>
             </div>
 
-            <!-- TAB 3: PREDIKSI STOK -->
-            <div id="panel-predict" class="demo-panel hidden">
+            {{--
+                Tab ini dulu "Prediksi Stok (Machine Learning)" dan memperagakan
+                sisa hari per produk. Tidak ada model, tidak ada pustaka ML, dan
+                tidak ada satu pun perhitungan horizon di basis kode. Diganti
+                Saran Jual, yang sungguh ada dan justru belum punya peragaan
+                (`[BL-089]`). Isinya mengikuti bentuk `Suggestion`: label, catatan
+                alasan, dan tambahan rupiah — dengan kode alasan yang memang
+                dipakai `UpsellEvent`.
+            --}}
+            <!-- TAB 3: SARAN JUAL -->
+            <div id="panel-upsell" class="demo-panel hidden">
                 <div class="bg-white rounded-[3rem] shadow-xl border border-gray-100 overflow-hidden">
                     <div class="bg-gray-900 px-8 py-5 flex items-center justify-between">
-                        <span class="text-white font-black text-lg">Prediksi Stok (Machine Learning)</span>
+                        <span class="text-white font-black text-lg">Saran Jual</span>
+                        <span class="text-white/50 font-bold text-xs uppercase tracking-widest">Muncul di layar kasir</span>
                     </div>
                     <div class="p-8 lg:p-12">
-                        <div class="grid md:grid-cols-3 gap-6 mb-10" id="predict-cards"></div>
-                        <div class="mt-8 flex items-center justify-center">
-                            <button onclick="runPrediction()" class="px-10 py-4 bg-primary text-white rounded-2xl font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 flex items-center gap-3">
-                                <svg class="w-5 h-5 animate-spin hidden" id="predict-spinner" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                Jalankan Ulang Prediksi AI
-                            </button>
-                        </div>
+                        <p class="text-gray-600 font-medium leading-relaxed mb-8">
+                            Saat kasir menambahkan barang, SAPI menurunkan saran yang menyebut barangnya — bukan grafik yang harus ditafsirkan sendiri. Keranjang di bawah berisi <span class="font-black text-gray-900">Espresso - Single</span>.
+                        </p>
+                        <div class="space-y-4" id="upsell-list"></div>
+                        <p class="mt-8 text-xs text-gray-400 font-bold text-center">
+                            Owner bisa menambahkan aturannya sendiri, dan aturan owner selalu menang slot.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -550,10 +598,10 @@
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
                 <div class="inline-flex items-center gap-2 px-4 py-2 bg-primary/5 text-primary rounded-full text-xs font-black uppercase tracking-widest mb-6">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
-                    AI-Powered Setup
+                    Mulai Cepat
                 </div>
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Mulai Berjualan Lebih Cerdas Hanya dalam <span class="text-primary">3 Menit</span></h3>
-                <p class="text-lg text-gray-600 font-medium mt-6">Lupakan input manual yang melelahkan. Biarkan AI kami yang menyiapkan segalanya untuk Anda.</p>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Tiga Langkah sampai <span class="text-primary">Kasir Siap Dipakai</span></h3>
+                <p class="text-lg text-gray-600 font-medium mt-6">Daftar, susun katalog, buka sesi kas. Tidak ada yang disiapkan diam-diam untuk Anda.</p>
             </div>
 
             <div class="relative">
@@ -565,20 +613,11 @@
                     <div class="relative grid lg:grid-cols-2 gap-12 items-center reveal">
                         <div class="lg:text-right lg:pr-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">1</div>
-                            <h4 class="text-2xl font-black text-gray-900 mb-4">Daftar / Login Cepat</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Cukup hubungkan akun Google Anda atau daftar dengan email. Tanpa formulir panjang yang membosankan.</p>
+                            <h4 class="text-2xl font-black text-gray-900 mb-4">Daftar dengan Email</h4>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Empat isian: nama usaha, jenis usaha, email, dan kata sandi. Verifikasi emailnya, lalu masuk.</p>
                         </div>
-                        <div class="lg:pl-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-sm group transition-all hover:bg-primary/5">
+                        <div class="lg:pl-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center gap-4">
-                                <div class="w-full h-12 border border-gray-100 rounded-xl flex items-center justify-center gap-3 font-bold text-gray-600 text-sm">
-                                    <svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                                    Lanjutkan dengan Google
-                                </div>
-                                <div class="w-full flex items-center gap-2 px-10">
-                                    <div class="flex-1 h-px bg-gray-100"></div>
-                                    <span class="text-[10px] font-bold text-gray-300 uppercase">Atau</span>
-                                    <div class="flex-1 h-px bg-gray-100"></div>
-                                </div>
                                 <div class="w-full space-y-2">
                                     <div class="h-10 bg-gray-50 rounded-lg w-full"></div>
                                     <div class="h-10 bg-primary rounded-lg w-full"></div>
@@ -591,10 +630,10 @@
                     <div class="relative grid lg:grid-cols-2 gap-12 items-center reveal pt-24 lg:pt-32">
                         <div class="lg:order-2 lg:pl-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">2</div>
-                            <h4 class="text-2xl font-black text-gray-900 mb-4">Setup AI Bisnis Anda</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Cukup masukkan nama toko dan pilih kategori usaha Anda. AI SAPI akan langsung mengenali kebutuhan bisnis Anda.</p>
+                            <h4 class="text-2xl font-black text-gray-900 mb-4">Masa Gratis Langsung Berjalan</h4>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Dua bulan, semua fitur terbuka, tanpa kartu kredit. Sesudahnya akun berpindah sendiri ke paket berbayar — tidak berhenti mendadak.</p>
                         </div>
-                        <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-sm group transition-all hover:bg-primary/5">
+                        <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 space-y-4">
                                 <div>
                                     <label class="text-[10px] font-black text-gray-400 uppercase mb-2 block">Nama Toko</label>
@@ -615,16 +654,16 @@
                     <div class="relative grid lg:grid-cols-2 gap-12 items-center reveal pt-24 lg:pt-32">
                         <div class="lg:text-right lg:pr-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">3</div>
-                            <h4 class="text-2xl font-black text-gray-900 mb-4">AI Menyiapkan Toko Anda</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Berdasarkan kategori, SAPI otomatis membuatkan kategori produk, daftar menu populer, dan saran stok awal.</p>
+                            <h4 class="text-2xl font-black text-gray-900 mb-4">Susun Katalog Anda</h4>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md lg:ml-auto">Produk, varian, dan modifier disusun sendiri lewat halaman Katalog — sesuai menu yang benar-benar Anda jual, bukan tebakan.</p>
                         </div>
-                        <div class="lg:pl-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-sm group transition-all hover:bg-primary/5">
+                        <div class="lg:pl-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center text-center">
                                 <div class="w-16 h-16 bg-primary/5 text-primary rounded-full flex items-center justify-center mb-4 animate-pulse">
                                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
                                 </div>
                                 <h5 class="font-black text-gray-900 mb-1 text-sm">Menyiapkan Toko...</h5>
-                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Membuat Katalog Produk Kopi</p>
+                                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Katalog · Produk & Varian</p>
                                 <div class="w-full bg-gray-100 h-1.5 rounded-full mt-6 overflow-hidden">
                                     <div class="bg-primary h-full w-2/3"></div>
                                 </div>
@@ -637,11 +676,11 @@
                         <div class="lg:order-2 lg:pl-24">
                             <div class="inline-flex items-center justify-center w-12 h-12 bg-primary text-white rounded-2xl font-black text-xl mb-6 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 shadow-xl shadow-primary/20">4</div>
                             <h4 class="text-2xl font-black text-gray-900 mb-4">Siap Digunakan!</h4>
-                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Hanya dalam hitungan detik, dashboard dan sistem kasir Anda sudah siap. Langsung mulai transaksi pertama Anda.</p>
+                            <p class="text-gray-600 font-medium leading-relaxed max-w-md">Buka sesi kas, dan kasir siap dipakai. Laporan harian, rekap bulanan, dan analisis AI mengikuti dari transaksi yang masuk.</p>
                         </div>
-                        <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-sm group transition-all hover:bg-primary/5">
+                        <div class="lg:order-1 lg:pr-24 bg-white rounded-[3rem] p-6 sm:p-8 border border-gray-100 shadow-xs group transition-all hover:bg-primary/5">
                             <div class="bg-white p-3 rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
-                                <img src="{{ asset('POS-Interface.png') }}" class="w-full opacity-30 blur-[2px] rounded-lg">
+                                <img src="{{ asset('POS-Interface.webp') }}" alt="" width="2160" height="1350" loading="lazy" class="w-full opacity-30 blur-[2px] rounded-lg">
                                 <div class="absolute inset-0 flex items-center justify-center">
                                     <div class="bg-white px-8 py-4 rounded-2xl shadow-2xl border border-primary/15 flex items-center gap-4 animate-bounce">
                                         <div class="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
@@ -688,110 +727,283 @@
                 <p class="text-lg text-gray-600 font-medium leading-relaxed">Pilih paket yang sesuai dengan skala bisnis Anda. Tidak ada biaya tersembunyi.</p>
             </div>
 
-            <div class="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-                <!-- Basic -->
-                <div class="bg-gray-50 p-12 rounded-[3.5rem] border border-gray-100 flex flex-col hover:shadow-2xl transition-all reveal stagger-1">
-                    <h4 class="text-2xl font-black text-gray-900 mb-2">Core POS</h4>
-                    <p class="text-gray-500 font-bold mb-8 italic">Untuk operasional harian.</p>
-                    <div class="flex items-baseline gap-2 mb-10">
-                        <span class="text-5xl font-black text-gray-900">Rp 149k</span>
-                        <span class="text-gray-400 font-bold">/bulan</span>
-                    </div>
-                    <ul class="space-y-5 mb-12 flex-1 text-[15px] font-bold text-gray-600">
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-primary/5 text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            Transaksi Kasir & Multi-payment
-                        </li>
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-primary/5 text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            Manajemen Produk & Varian
-                        </li>
-                    </ul>
-                    <a href="/login" class="w-full py-5 bg-white border-2 border-gray-100 text-gray-900 rounded-[1.5rem] font-black text-center hover:bg-gray-50 transition-all">Pilih Paket</a>
-                </div>
+            {{--
+                Kartu paket dibangun dari `plans`, bukan diketik di sini. Yang
+                dipajang wajib sama dengan yang ditagihkan — halaman harga yang
+                berbeda dari tagihan sungguhan adalah cacat terburuk yang bisa
+                dimiliki halaman harga (`[BL-032]` butir 2, `[BL-041]`(c)).
 
-                <!-- Pro -->
-                <div class="bg-primary p-12 rounded-[3.5rem] flex flex-col shadow-2xl shadow-primary/20 transform md:-translate-y-4 reveal stagger-2">
-                    <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand text-white text-[10px] font-black uppercase mb-6 self-start tracking-wider">Paling Populer</div>
-                    <h4 class="text-2xl font-black text-white mb-2">Smart SAPI</h4>
-                    <p class="text-primary/40 font-bold mb-8 italic">Asisten AI Aktif.</p>
-                    <div class="flex items-baseline gap-2 mb-10">
-                        <span class="text-5xl font-black text-white">Rp 299k</span>
-                        <span class="text-primary/40 font-bold">/bulan</span>
+                Paket yang disorot adalah `is_post_trial_target` — paket yang
+                benar-benar dihuni tenant setelah masa gratisnya habis, bukan
+                paket yang dipilih karena terlihat paling menarik.
+            --}}
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto items-stretch">
+                @foreach ($pricing['plans'] as $plan)
+                    @php($highlighted = $plan['is_post_trial_target'])
+                    <div @class([
+                        'p-8 rounded-[2.5rem] flex flex-col transition-all reveal',
+                        'stagger-'.min($loop->iteration, 4),
+                        'bg-primary shadow-2xl shadow-primary/20 lg:-translate-y-4' => $highlighted,
+                        'bg-gray-50 border border-gray-100 hover:shadow-2xl' => ! $highlighted,
+                    ])>
+                        @if ($highlighted)
+                            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand text-white text-[10px] font-black uppercase mb-6 self-start tracking-wider">Paling Banyak Dipakai</div>
+                        @endif
+
+                        <h4 @class(['text-2xl font-black mb-2', 'text-white' => $highlighted, 'text-gray-900' => ! $highlighted])>{{ $plan['name'] }}</h4>
+
+                        <div class="flex items-baseline gap-2 mt-6 mb-4">
+                            @if ($plan['is_free'])
+                                <span @class(['text-4xl font-black', 'text-white' => $highlighted, 'text-gray-900' => ! $highlighted])>Gratis</span>
+                            @else
+                                <span @class(['text-4xl font-black', 'text-white' => $highlighted, 'text-gray-900' => ! $highlighted])>Rp {{ number_format($plan['price'], 0, ',', '.') }}</span>
+                                <span @class(['font-bold', 'text-primary/40' => $highlighted, 'text-gray-400' => ! $highlighted])>/bulan</span>
+                            @endif
+                        </div>
+
+                        @if ($plan['is_free'])
+                            <p @class(['text-sm font-bold mb-6', 'text-primary/40' => $highlighted, 'text-gray-500' => ! $highlighted])>
+                                {{ $pricing['trial_months'] }} bulan pertama, lalu pindah ke paket berbayar.
+                            </p>
+                        @endif
+
+                        {{--
+                            Isi paket, dari `plans` (`[BL-067]`(a)). Istilahnya
+                            mengikuti label yang sudah dipakai `/langganan`
+                            — "pengguna", bukan "seat", yang tidak pernah muncul
+                            di satu pun layar tenant (`[BL-067]`(c)).
+                        --}}
+                        <ul @class([
+                            'space-y-2.5 mb-8 text-[14px] font-bold',
+                            'text-white/90' => $highlighted,
+                            'text-gray-600' => ! $highlighted,
+                        ])>
+                            <li>{{ $plan['included_seats'] }} pengguna termasuk</li>
+                            <li>
+                                @if ($plan['ai_daily'] === null)
+                                    Analisis AI ikut bawaan platform
+                                @else
+                                    {{ $plan['ai_daily'] }} analisis AI/hari
+                                @endif
+                            </li>
+                            <li>
+                                @if ($plan['extra_seat_price'] <= 0)
+                                    Pengguna tambahan gratis
+                                @else
+                                    Pengguna tambahan Rp {{ number_format($plan['extra_seat_price'], 0, ',', '.') }}/bulan
+                                @endif
+                            </li>
+                        </ul>
+
+                        <a href="{{ route('register') }}" @class([
+                            'w-full mt-auto py-4 rounded-[1.5rem] font-black text-center transition-all',
+                            'bg-white text-primary hover:bg-primary/5 shadow-xl' => $highlighted,
+                            'bg-white border-2 border-gray-100 text-gray-900 hover:bg-gray-50' => ! $highlighted,
+                        ])>Mulai Sekarang</a>
                     </div>
-                    <ul class="space-y-5 mb-12 flex-1 text-[15px] font-bold text-white">
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-white text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            Semua Fitur Core POS
-                        </li>
-                        <li class="flex items-center gap-3">
-                            <div class="w-5 h-5 bg-white text-primary rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M5 13l4 4L19 7" /></svg>
-                            </div>
-                            AI Prediksi Stok & Badge Helper
-                        </li>
-                    </ul>
-                    <a href="/login" class="w-full py-5 bg-white text-primary rounded-[1.5rem] font-black text-center hover:bg-primary/5 transition-all shadow-xl">Mulai Sekarang</a>
-                </div>
+                @endforeach
             </div>
+
+            {{--
+                Kartu di atas sengaja hanya menjawab "berapa". Jalur Harga
+                Adaptif, tangga bracketnya, dan syarat berpindah jalur ada di
+                `/harga` — memuatnya di landing berarti menulis tabel kedua yang
+                harus dijaga tetap sama (`[BL-041]`(c)).
+            --}}
+            <p class="text-center mt-12 reveal">
+                <a href="{{ route('pricing') }}" class="font-black text-primary hover:underline">
+                    Lihat rincian harga & jalur Harga Adaptif &rarr;
+                </a>
+            </p>
         </div>
     </section>
 
-    <!-- Testimonials Section -->
+    {{--
+        "Bagaimana harga Anda dihitung" (`[BL-066]`).
+
+        Mekanisme inilah pembeda produk ini, dan sampai sekarang tidak satu kata
+        pun tentangnya ada di permukaan publik — penjelasan yang benar hidup di
+        dokumen pitching internal, bukan di halaman yang dibaca orang.
+
+        Angkanya dari `pricing_rules` lewat `PublicPricing`, tidak diketik di
+        sini (`[BL-066]`(c)). Istilah yang dipakai "Harga Adaptif", BUKAN
+        "dynamic pricing": nama itu bertabrakan dengan `[BL-018]` yang memakai
+        "harga dinamis" untuk diskon barang mendekati kedaluwarsa (`[BL-066]`(e)).
+    --}}
+    @if ($pricing['adaptive']['ladder'] !== [])
+        <section id="harga-adaptif" class="py-24 lg:py-32 bg-gray-50">
+            <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
+                <div class="text-center max-w-2xl mx-auto mb-16 reveal">
+                    <h2 class="text-primary font-black tracking-widest uppercase text-sm mb-4">Harga Adaptif</h2>
+                    <h3 class="text-4xl lg:text-5xl font-black text-gray-900 mb-6 leading-tight">Bagaimana Harga Anda Dihitung</h3>
+                    <p class="text-lg text-gray-600 font-medium leading-relaxed">
+                        Usaha yang omzetnya masih kecil tidak membayar seperti usaha yang sudah besar.
+                        Tarifnya mengikuti, dan begini urutannya.
+                    </p>
+                </div>
+
+                <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto mb-16">
+                    <div class="reveal stagger-1">
+                        <div class="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-lg mb-5">1</div>
+                        <h4 class="text-lg font-black text-gray-900 mb-2">Omzet bulan lalu dihitung</h4>
+                        <p class="text-[15px] text-gray-600 font-medium leading-relaxed">
+                            Sistem menjumlahkannya sendiri dari transaksi yang tercatat di aplikasi. Anda tidak mengisi laporan apa pun.
+                        </p>
+                    </div>
+                    <div class="reveal stagger-2">
+                        <div class="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-lg mb-5">2</div>
+                        <h4 class="text-lg font-black text-gray-900 mb-2">Angkanya jatuh ke satu kelas</h4>
+                        <p class="text-[15px] text-gray-600 font-medium leading-relaxed">
+                            Ada {{ count($pricing['adaptive']['ladder']) }} kelas, dan batas tiap kelas terbuka untuk dibaca — bukan penilaian yang ditentukan orang.
+                        </p>
+                    </div>
+                    <div class="reveal stagger-3">
+                        <div class="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-lg mb-5">3</div>
+                        <h4 class="text-lg font-black text-gray-900 mb-2">Tarif bulan itu mengikuti</h4>
+                        <p class="text-[15px] text-gray-600 font-medium leading-relaxed">
+                            Omzet turun, tarif ikut turun bulan berikutnya. Dihitung ulang tiap bulan, bukan sekali saat mendaftar.
+                        </p>
+                    </div>
+                </div>
+
+                {{-- Tangganya disebut angkanya apa adanya (`[BL-066]`(a)): ia
+                     memang daftar harga yang sesungguhnya, jadi menyembunyikannya
+                     tidak ada gunanya. --}}
+                <div class="max-w-3xl mx-auto bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden reveal">
+                    <div class="grid grid-cols-2 gap-px bg-gray-100">
+                        <div class="bg-white px-6 py-4 text-[11px] font-black uppercase tracking-widest text-gray-400">Omzet bulan lalu</div>
+                        <div class="bg-white px-6 py-4 text-[11px] font-black uppercase tracking-widest text-gray-400">Tarif bulan ini</div>
+                        @foreach ($pricing['adaptive']['ladder'] as $bracket)
+                            <div class="bg-white px-6 py-4 text-[15px] font-bold text-gray-600">
+                                @if ($bracket['min'] === null && $bracket['max'] === null)
+                                    Semua omzet
+                                @elseif ($bracket['min'] === null)
+                                    Di bawah Rp {{ number_format($bracket['max'], 0, ',', '.') }}
+                                @elseif ($bracket['max'] === null)
+                                    Rp {{ number_format($bracket['min'], 0, ',', '.') }} ke atas
+                                @else
+                                    Rp {{ number_format($bracket['min'], 0, ',', '.') }} – di bawah Rp {{ number_format($bracket['max'], 0, ',', '.') }}
+                                @endif
+                            </div>
+                            <div class="bg-white px-6 py-4 text-[15px] font-black text-gray-900">Rp {{ number_format($bracket['price'], 0, ',', '.') }}</div>
+                        @endforeach
+                    </div>
+                    @if ($pricing['adaptive']['ceiling'] !== null)
+                        <div class="px-6 py-4 bg-gray-50 text-[14px] font-bold text-gray-500 border-t border-gray-100">
+                            Di atas Rp {{ number_format($pricing['adaptive']['ceiling'], 0, ',', '.') }} per bulan, jalur yang berlaku adalah Harga Tetap.
+                        </div>
+                    @endif
+                </div>
+
+                {{--
+                    Apa yang TIDAK terjadi (`[BL-066]`(b)). Tiga kalimat ini
+                    menjawab keberatan yang pasti muncul lebih baik daripada satu
+                    halaman fitur.
+
+                    Butir ketiga yang diminta entrinya — "tarif yang sudah
+                    dibayar terkunci (`price_locked`)" — TIDAK ditulis, karena
+                    tidak benar. Penerbit tagihan tidak pernah membaca
+                    `price_locked`; `issueDuePeriodInvoices()` selalu menghitung
+                    ulang lewat `resolveFor()` (`SubscriptionService.php:486`),
+                    dan `[BL-041]` sendiri sudah mengoreksi klaim itu pada
+                    2026-08-07. Yang benar dan dipakai sebagai gantinya: tagihan
+                    yang SUDAH terbit membekukan dasar perhitungannya di
+                    `invoices.pricing_context`, jadi ia tidak berubah surut.
+                --}}
+                <div class="max-w-3xl mx-auto mt-12 grid sm:grid-cols-3 gap-6 reveal">
+                    <div class="bg-white rounded-[1.75rem] border border-gray-100 p-6">
+                        <p class="text-[15px] font-bold text-gray-900 mb-1.5">Isi transaksi tidak dilihat</p>
+                        <p class="text-[14px] text-gray-500 font-medium leading-relaxed">
+                            Yang tersimpan untuk penetapan tarif hanya dua angka per bulan: total omzet dan jumlah transaksi. Bukan barangnya, bukan pembelinya, bukan labanya.
+                        </p>
+                    </div>
+                    <div class="bg-white rounded-[1.75rem] border border-gray-100 p-6">
+                        <p class="text-[15px] font-bold text-gray-900 mb-1.5">Tidak ada laporan mandiri</p>
+                        <p class="text-[14px] text-gray-500 font-medium leading-relaxed">
+                            Angkanya dihitung sistem dari transaksi Anda sendiri. Tidak ada kolom yang bisa diisi terlalu rendah, dan tidak ada yang perlu Anda buktikan.
+                        </p>
+                    </div>
+                    <div class="bg-white rounded-[1.75rem] border border-gray-100 p-6">
+                        <p class="text-[15px] font-bold text-gray-900 mb-1.5">Tagihan terbit tidak berubah surut</p>
+                        <p class="text-[14px] text-gray-500 font-medium leading-relaxed">
+                            Dasar perhitungan setiap tagihan dibekukan saat ia terbit. Aturan tarif yang berubah kemudian hanya berlaku ke depan.
+                        </p>
+                    </div>
+                </div>
+
+                <p class="text-center mt-12 reveal">
+                    <a href="{{ route('docs.show', ['track' => 'panduan', 'page' => 'langganan']) }}" class="font-black text-primary hover:underline">
+                        Selengkapnya: panduan langganan &amp; harga &rarr;
+                    </a>
+                </p>
+            </div>
+        </section>
+    @endif
+
+    <!-- Audience Section -->
     <section class="py-24 lg:py-32 bg-gray-50 overflow-hidden">
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div class="text-center max-w-3xl mx-auto mb-20 reveal">
-                <h2 class="text-primary font-black tracking-widest uppercase text-sm mb-4">Testimoni</h2>
-                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Cerita Sukses <br> Bersama SAPI</h3>
+                <h2 class="text-primary font-black tracking-widest uppercase text-sm mb-4">Cocok Untuk</h2>
+                <h3 class="text-4xl lg:text-5xl font-black text-gray-900 leading-tight">Untuk Siapa <br> SAPI Dibuat</h3>
+                <p class="text-gray-600 leading-relaxed font-medium mt-6">
+                    Tiga bentuk usaha yang alur hariannya sudah ditangani SAPI hari ini — bukan yang direncanakan, melainkan yang sudah jalan di aplikasinya.
+                </p>
             </div>
 
             <div class="grid md:grid-cols-3 gap-8">
-                <!-- Testimonial 1 -->
-                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 reveal stagger-1">
-                    <p class="text-xl text-gray-900 font-bold leading-relaxed mb-8">
-                        "SAPI sangat membantu café saya. Dulu sering kehabisan biji kopi di jam sibuk, sekarang AI-nya selalu kasih tau 2 hari sebelumnya."
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_andi.png') }}" alt="Andi" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
-                        <div>
-                            <p class="font-black text-gray-900">Andi</p>
-                            <p class="text-sm font-bold text-gray-400">Owner Senja Coffee</p>
+                <!-- Audience 1 -->
+                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 group hover:shadow-2xl transition-all reveal stagger-1">
+                    <div class="mb-8">
+                        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8h13v5a5 5 0 01-5 5H8a5 5 0 01-5-5V8zm13 1h2a2 2 0 010 4h-2M5 21h12" /></svg>
                         </div>
                     </div>
+                    <h4 class="text-2xl font-black text-gray-900 mb-4">Kafe &amp; Kedai Kopi</h4>
+                    <p class="text-gray-600 leading-relaxed font-medium mb-6">
+                        Pesanan yang jarang selesai sekali jalan: satu meja menambah terus sampai pulang, dan tiap gelas punya pilihannya sendiri.
+                    </p>
+                    <ul class="space-y-2 text-sm font-bold text-gray-500">
+                        <li>Tagihan terbuka per meja, dengan umur yang dijaga</li>
+                        <li>Modifier per varian — ukuran, gula, topping</li>
+                        <li>Papan antrian pesanan untuk dapur</li>
+                    </ul>
                 </div>
 
-                <!-- Testimonial 2 -->
-                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 reveal stagger-2">
-                    <p class="text-xl text-gray-900 font-bold leading-relaxed mb-8">
-                        "Badge Helper-nya beneran ajaib. Saya nggak perlu lagi pusing liat grafik rumit, tinggal eksekusi saran dari SAPI."
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_santi.png') }}" alt="Santi" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
-                        <div>
-                            <p class="font-black text-gray-900">Santi</p>
-                            <p class="text-sm font-bold text-gray-400">Manajer Roti Enak</p>
+                <!-- Audience 2 -->
+                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 group hover:shadow-2xl transition-all reveal stagger-2">
+                    <div class="mb-8">
+                        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" /></svg>
                         </div>
                     </div>
+                    <h4 class="text-2xl font-black text-gray-900 mb-4">Toko Kelontong &amp; Retail</h4>
+                    <p class="text-gray-600 leading-relaxed font-medium mb-6">
+                        Barang banyak, perputaran cepat, dan modal gampang tertimbun di rak yang salah tanpa ada yang memberi tahu.
+                    </p>
+                    <ul class="space-y-2 text-sm font-bold text-gray-500">
+                        <li>Peringatan stok kritis, habis, dan dead stock</li>
+                        <li>Saran jual yang menyebut barang dan alasannya</li>
+                        <li>Katalog bervarian dengan SKU dan foto</li>
+                    </ul>
                 </div>
 
-                <!-- Testimonial 3 -->
-                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 reveal stagger-3">
-                    <p class="text-xl text-gray-900 font-bold leading-relaxed mb-8">
-                        "Fitur prediksi stoknya akurat banget. Modal saya jadi nggak tertimbun di barang yang nggak laku."
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <img src="{{ asset('avatar_budi.png') }}" alt="Budi" class="w-12 h-12 rounded-full border-2 border-white shadow-md object-cover">
-                        <div>
-                            <p class="font-black text-gray-900">Budi</p>
-                            <p class="text-sm font-bold text-gray-400">Toko Kelontong Modern</p>
+                <!-- Audience 3 -->
+                <div class="bg-white p-10 rounded-[2.5rem] border border-gray-100 group hover:shadow-2xl transition-all reveal stagger-3">
+                    <div class="mb-8">
+                        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center">
+                            <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a5 5 0 00-10 0v2M5 9h14l1 12H4L5 9z" /></svg>
                         </div>
                     </div>
+                    <h4 class="text-2xl font-black text-gray-900 mb-4">Usaha dengan Beberapa Kasir</h4>
+                    <p class="text-gray-600 leading-relaxed font-medium mb-6">
+                        Begitu yang menjaga kasir bukan Anda sendiri, pertanyaannya berubah: uang di laci ini milik shift siapa, dan siapa yang mengubah apa.
+                    </p>
+                    <ul class="space-y-2 text-sm font-bold text-gray-500">
+                        <li>Sesi kas per kasir, buka sampai tutup</li>
+                        <li>Hak akses per modul untuk tiap peran</li>
+                        <li>Pesan mandiri untuk pelanggan, lewat MCP</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -813,18 +1025,18 @@
                         <svg id="faq-icon-1" class="w-6 h-6 text-gray-400 group-hover:text-primary transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div id="faq-ans-1" class="hidden px-8 pb-6 text-gray-600 font-medium leading-relaxed">
-                        SAPI berbasis cloud untuk memastikan sinkronisasi AI yang akurat, namun kami memiliki mode cache terbatas untuk transaksi kasir saat internet tidak stabil.
+                        Bisa. Saat internet putus, kasir tetap melayani memakai salinan katalog dan harga di perangkat, dan penjualannya disimpan di perangkat lalu terkirim sendiri begitu koneksi kembali. Yang memang butuh koneksi: pembayaran non-tunai dan tagihan terbuka, karena keduanya diperiksa di server.
                     </div>
                 </div>
 
                 <!-- FAQ 2 -->
                 <div class="bg-gray-50 rounded-[2rem] border border-gray-100 overflow-hidden reveal stagger-2">
                     <button onclick="toggleFaq(2)" class="w-full px-8 py-6 flex items-center justify-between text-left hover:bg-white transition-all group">
-                        <span class="text-lg font-black text-gray-900">Bagaimana cara AI memprediksi stok saya?</span>
+                        <span class="text-lg font-black text-gray-900">Bagaimana SAPI tahu stok saya bermasalah?</span>
                         <svg id="faq-icon-2" class="w-6 h-6 text-gray-400 group-hover:text-primary transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div id="faq-ans-2" class="hidden px-8 pb-6 text-gray-600 font-medium leading-relaxed">
-                        AI kami menganalisis data transaksi historis toko Anda selama 90 hari terakhir untuk menemukan pola musiman dan tren harian unik toko Anda.
+                        SAPI memeriksa katalog Anda terus-menerus dan menandai empat hal: stok yang turun di bawah ambang, stok yang sudah habis, barang yang tidak terjual 30 hari terakhir, dan barang yang lewat tanggal kedaluwarsa. Aturannya sederhana dan bisa Anda periksa sendiri — bukan tebakan, dan bukan ramalan berapa hari lagi stok akan habis.
                     </div>
                 </div>
 
@@ -835,7 +1047,7 @@
                         <svg id="faq-icon-3" class="w-6 h-6 text-gray-400 group-hover:text-primary transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div id="faq-ans-3" class="hidden px-8 pb-6 text-gray-600 font-medium leading-relaxed">
-                        Sangat aman. Kami menggunakan enkripsi standar industri dan data Anda tidak akan pernah dibagikan ke tenant lain. AI dilatih khusus per-toko.
+                        Data tiap toko terpisah dan tidak pernah dibagikan ke toko lain. Untuk analisis AI, yang dikirim ke penyedia model hanya ringkasan penjualan Anda, dan hanya saat Anda meminta analisis — Anda juga bisa memakai kunci API sendiri supaya kiriman itu memakai akun Anda. Setiap pembukaan angka omzet oleh pengelola layanan tercatat di jejak audit.
                     </div>
                 </div>
             </div>
@@ -854,16 +1066,39 @@
         { id: 6, name: 'Lemon Tea', price: 15000, emoji: '🍋', stock: 60 },
     ];
 
+    {{--
+        Peragaan ini dulu memajang tiga tombol aksi — "Pesan ke Supplier",
+        "Promo Diskon", "Buat Bundle" — dan tak satu pun punya jalan. Dua di
+        antaranya menunjuk fitur yang nol kode: pencarian `supplier` dan `bundle`
+        di seluruh `app/` dan `database/migrations/` tidak mengembalikan apa pun.
+        Ketiganya diturunkan jadi pil hitungan, bentuk yang memang dipakai
+        `BadgeCard.vue` (`[BL-089]` butir (c)).
+
+        Isinya ikut diluruskan ke apa yang benar-benar dihasilkan:
+          - "Habis dalam 2-3 hari" adalah ramalan, sama seperti kartu hero yang
+            dicabut `[BL-083]`. `BadgeHelperService` hanya membandingkan ambang.
+          - Warna mengikuti `severityClasses` di `BadgeCard.vue`: stok kritis
+            `warning` (amber), dead stock `info` (primary) — bukan merah/kuning.
+          - Badge "Upsell" bukan keluaran Badge Helper, dan contohnya dulu
+            "Bundle dengan Croissant?" padahal tidak ada bundling. Diganti
+            `UpsizeVariantStrategy`, satu dari empat strategi yang sungguh ada.
+    --}}
     const badgeTemplates = [
-        { type: 'danger', icon: '🔴', title: 'Stok Kritis', product: 'Croissant', detail: 'Sisa 8 pcs. Habis dalam 2-3 hari.', action: 'Pesan ke Supplier', actionClass: 'bg-red-100 text-red-700' },
-        { type: 'warning', icon: '🟡', title: 'Dead Stock', product: 'Lychee Soda', detail: 'Tidak laku 28 hari.', action: 'Promo Diskon', actionClass: 'bg-yellow-100 text-yellow-700' },
-        { type: 'info', icon: '🔵', title: 'Upsell', product: 'Kopi Susu', detail: 'Bundle dengan Croissant?', action: 'Buat Bundle', actionClass: 'bg-blue-100 text-blue-700' },
+        { icon: '🟡', title: 'Stok Kritis', detail: 'Croissant — sisa 3, di bawah ambang 5.', count: '3 varian', countClass: 'bg-amber-100 text-amber-800' },
+        { icon: '🔵', title: 'Dead Stock', detail: 'Lychee Soda — tidak terjual 28 hari terakhir.', count: '1 varian', countClass: 'bg-primary/10 text-primary' },
+        { icon: '✨', title: 'Saran Jual', detail: 'Espresso Single — tawarkan Double.', count: 'Upsize varian', countClass: 'bg-primary/10 text-primary' },
     ];
 
-    const predictData = [
-        { name: 'Kopi Susu', emoji: '☕', current: 45, predicted: 7, days: 6, status: 'warning' },
-        { name: 'Matcha Latte', emoji: '🍵', current: 12, predicted: 4, days: 3, status: 'danger' },
-        { name: 'Croissant', emoji: '🥐', current: 8, predicted: 3, days: 2, status: 'danger' },
+    {{--
+        Empat saran, satu per strategi yang benar-benar ada di
+        `app/Services/Upsell/Strategies/`. `reason` memakai kode `UpsellEvent`
+        apa adanya, dan `extra` adalah `extra_amount` pada `Suggestion`.
+    --}}
+    const upsellData = [
+        { label: 'Espresso - Double', note: 'Naik ukuran dari Single', reason: 'price_step', extra: 7000 },
+        { label: 'Tambah Extra Shot', note: 'Sering diambil bersama', reason: 'cooccurrence', extra: 5000 },
+        { label: 'Lychee Soda', note: 'Belum terjual 30 hari', reason: 'dead_stock', extra: 18000 },
+        { label: 'Kopi Susu Botol', note: 'Aturan owner: dorong bulan ini', reason: 'owner_rule', extra: 22000 },
     ];
 
     let cart = {};
@@ -945,22 +1180,22 @@
             <div class="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center gap-4">
                 <span class="text-2xl">${b.icon}</span>
                 <div class="flex-1"><p class="font-black text-gray-900 text-sm">${b.title}</p><p class="text-xs text-gray-500">${b.detail}</p></div>
-                <button class="${b.actionClass} px-4 py-2 rounded-xl font-black text-xs">${b.action}</button>
+                <span class="${b.countClass} px-4 py-2 rounded-xl font-black text-xs">${b.count}</span>
             </div>
         `).join('');
     }
 
-    function renderPrediction() {
-        const grid = document.getElementById('predict-cards');
-        if(!grid) return;
-        grid.innerHTML = predictData.map(d => `
-            <div class="p-6 rounded-3xl border-2 bg-white flex flex-col gap-3">
-                <span class="text-2xl">${d.emoji}</span>
-                <p class="font-black text-gray-900 text-sm">${d.name}</p>
-                <div class="bg-gray-50 p-3 rounded-xl">
-                    <p class="text-[10px] font-black text-gray-400 uppercase">Estimasi Habis</p>
-                    <p class="text-sm font-black text-gray-900">${d.days} Hari</p>
+    function renderUpsell() {
+        const list = document.getElementById('upsell-list');
+        if(!list) return;
+        list.innerHTML = upsellData.map(u => `
+            <div class="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center gap-5">
+                <div class="flex-1">
+                    <p class="font-black text-gray-900 text-sm">${u.label}</p>
+                    <p class="text-xs text-gray-500">${u.note}</p>
                 </div>
+                <span class="bg-white border border-gray-200 text-gray-400 px-3 py-1 rounded-lg font-black text-[10px] uppercase tracking-wide">${u.reason}</span>
+                <span class="font-black text-primary text-sm whitespace-nowrap">+${formatRupiah(u.extra)}</span>
             </div>
         `).join('');
     }
@@ -974,7 +1209,7 @@
         renderProducts();
         renderCart();
         renderBadges();
-        renderPrediction();
+        renderUpsell();
         setInterval(updateClock, 1000);
         updateClock();
 
@@ -994,7 +1229,6 @@
     }
 
     function refreshBadges() { renderBadges(); }
-    function runPrediction() { renderPrediction(); }
     </script>
 
     <!-- Final CTA Section -->
@@ -1006,9 +1240,9 @@
 
                 <div class="relative z-10">
                     <h3 class="text-3xl lg:text-5xl font-black text-white mb-6">Siap Membuat Bisnis Anda Lebih Pintar?</h3>
-                    <p class="text-white/70 font-medium text-lg mb-10 max-w-xl mx-auto">Mulai gratis hari ini. Tidak perlu kartu kredit.</p>
+                    <p class="text-white/70 font-medium text-lg mb-10 max-w-xl mx-auto">{{ $pricing['trial_months'] }} bulan pertama gratis, lalu lanjut ke paket berbayar. Tidak perlu kartu kredit.</p>
                     <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                        <a href="/login" class="px-12 py-5 bg-white text-primary rounded-[1.5rem] font-black text-lg hover:bg-gray-50 transition shadow-2xl transform hover:-translate-y-1">Daftar Sekarang</a>
+                        <a href="{{ route('register') }}" class="px-12 py-5 bg-white text-primary rounded-[1.5rem] font-black text-lg hover:bg-gray-50 transition shadow-2xl transform hover:-translate-y-1">Coba Gratis {{ $pricing['trial_months'] }} Bulan</a>
                         <a href="#demo" class="px-12 py-5 bg-white/10 text-white border-2 border-white/30 rounded-[1.5rem] font-black text-lg hover:bg-white/20 transition transform hover:-translate-y-1">Lihat Demo</a>
                     </div>
                 </div>
@@ -1021,12 +1255,18 @@
         <div class="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 text-center">
             <div class="flex flex-col items-center gap-6 mb-12">
                 <div class="flex items-center gap-3">
-                    <span class="font-extrabold text-2xl tracking-tighter text-gray-900">SAPI</span>
+                    @include('public.partials.wordmark', ['size' => 'lg'])
                 </div>
                 <p class="text-gray-400 font-bold text-lg max-w-md">Smart AI POS & Inventory. Dibuat khusus untuk kemajuan UMKM Indonesia.</p>
             </div>
 
-            <div class="flex justify-center gap-10 mb-12 text-gray-500 font-black text-sm uppercase tracking-widest">
+            <div class="flex flex-wrap justify-center gap-x-10 gap-y-4 mb-8 text-gray-500 font-black text-sm uppercase tracking-widest">
+                <a href="{{ route('docs.show', ['track' => 'panduan']) }}" class="hover:text-primary transition-all">Panduan Penggunaan</a>
+                <a href="{{ route('docs.show', ['track' => 'developer']) }}" class="hover:text-primary transition-all">Dokumentasi Developer</a>
+                <a href="{{ route('api-docs') }}" class="hover:text-primary transition-all">Referensi API</a>
+            </div>
+
+            <div class="flex justify-center gap-10 mb-12 text-gray-400 font-black text-sm uppercase tracking-widest">
                 <a href="#" class="hover:text-primary transition-all">Instagram</a>
                 <a href="#" class="hover:text-primary transition-all">Twitter</a>
                 <a href="#" class="hover:text-primary transition-all">LinkedIn</a>

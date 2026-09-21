@@ -1,0 +1,303 @@
+<?php
+
+return [
+
+    /*
+    |--------------------------------------------------------------------------
+    | Siklus Hidup Langganan
+    |--------------------------------------------------------------------------
+    |
+    | Angka-angka yang menentukan kapan tenant berpindah keadaan. Ditaruh di
+    | config, bukan sebagai konstanta di kode, karena keduanya adalah kebijakan
+    | komersial yang wajar berubah — dan mengubah kebijakan sebaiknya tidak
+    | menuntut membaca kelas mana pun.
+    |
+    | Alurnya:
+    |
+    |   trial ──(trial_months habis)──> grace ──(grace_days habis)──> suspended
+    |   active ──(periode lewat)──────> grace ──(grace_days habis)──> suspended
+    |
+    | `grace` sengaja ada di antaranya, dan sejak keputusan pemilik 2026-08-07 ia
+    | BERTINGKAT. Prinsip lamanya — tenggat mencabut kemampuan menulis sejak hari
+    | pertama — dicabut sendiri: warung yang tidak bisa berjualan tidak punya
+    | uang untuk membayar, jadi mematikan kasirnya di hari pertama menagih dengan
+    | merusak sumber pembayarannya. Yang menggantikannya adalah tangga tekanan
+    | yang naik pelan, dengan kasir tetap hidup sampai dua pertiga tenggat lewat.
+    | Yang TIDAK pernah dicabut di tahap mana pun: membaca data yang sudah ada.
+    |
+    | Ketiga angka di bawah menggambarkan satu tangga, jadi ketiganya tinggal
+    | berdampingan di sini — bukan satu di config dan dua tertanam di middleware.
+    | Kebijakan tenggat harus bisa diubah tanpa membaca kelas mana pun.
+    |
+    */
+
+    /**
+     * Panjang masa gratis tenant baru, dalam BULAN — bukan hari.
+     *
+     * Bulan, karena jangkar tanggal tagih diambil dari tanggal daftar: yang
+     * daftar tanggal 7 ditagih tiap tanggal 7. Menghitungnya dalam hari
+     * menggeser jangkarnya (60 hari dari 7 Agustus mendarat di 6 Oktober), dan
+     * pergeseran itu permanen karena jangkar hanya ditulis sekali.
+     */
+    'trial_months' => 2,
+
+    'grace_days' => 30,
+
+    /**
+     * Hari tenggat ke berapa notifikasi berubah dari pemberitahuan biasa menjadi
+     * peringatan yang sengaja mengganggu. Hari 1 sampai sehari sebelum ini
+     * bersikap halus.
+     */
+    'grace_intensive_from_day' => 15,
+
+    /**
+     * Hari tenggat ke berapa tenant kehilangan kemampuan menulis — termasuk
+     * mencatat transaksi kasir. Sesudah ini yang tersisa hanya membaca:
+     * dashboard tetap terbuka, menu lain menampilkan halaman "selesaikan
+     * tagihan dulu" beserta tautan ke pembayaran.
+     *
+     * Inilah angka yang benar-benar menentukan nasib tenant, bukan `grace_days`
+     * — sesudah hari ini ia sudah tidak bisa berdagang, dan sisa harinya tinggal
+     * ruang tunggu. Keduanya harus dibaca bersama.
+     */
+    'grace_lock_from_day' => 20,
+
+    /**
+     * Berapa hari sebelum periode berakhir tagihan periode berikutnya terbit.
+     *
+     * Tagihan yang terbit tepat di hari periodenya habis sampai bersamaan
+     * dengan hilangnya kemampuan menulis — tenant membaca angkanya dan
+     * mendapati aplikasinya sudah setengah terkunci di menit yang sama.
+     * Menerbitkannya lebih awal membuat "berapa yang harus dibayar" tiba
+     * sebagai pemberitahuan, bukan sebagai penjelasan setelah kejadian.
+     *
+     * **Ini batas TERCEPAT, bukan janji** — sejak `[BL-080]` opsi (i). Tenant
+     * jalur Adaptif tidak ditagih sebelum ringkasan omzet bulan penentu
+     * tarifnya ada, dan bagi yang berjangkar tanggal 1–7 ringkasan itu baru
+     * ditulis tanggal 1, setelah tagihannya seharusnya terbit. Tagihan mereka
+     * karena itu terbit belakangan, dengan masa siap 0–6 hari, bukan 7. Yang
+     * ditukar disengaja: masa siap yang lebih pendek dibayarkan untuk tarif
+     * yang dihitung dari bulan yang benar.
+     */
+    'invoice_lead_days' => 7,
+
+    /**
+     * Berapa hari sebelum masa gratis habis tenant disodori pilihan jalurnya.
+     *
+     * **Wajib lebih besar dari `invoice_lead_days`,** dan itu seluruh alasan
+     * angka ini ada. Tagihan berbayar pertama terbit H-7 dan nominalnya
+     * dibekukan di sana; pilihan yang baru disodorkan di hari yang sama tiba
+     * setelah keputusannya sudah diambilkan — tenant memilih Harga Adaptif lalu
+     * tetap menerima tagihan harga penuh, dan keringanannya baru berlaku sebulan
+     * kemudian. Selisih tujuh hari di sini adalah waktu untuk memutuskan
+     * sebelum angkanya mengeras.
+     */
+    'trial_choice_lead_days' => 14,
+
+    /**
+     * Umur minimum tenant terbengkalai sebelum boleh dipangkas, dalam hari.
+     *
+     * "Terbengkalai" bermakna sempit dan sengaja: pemiliknya tidak pernah
+     * memverifikasi alamat surelnya, DAN tidak ada satu pun transaksi. Dua
+     * syarat itu bersama-sama berarti akunnya tidak pernah benar-benar dipakai.
+     *
+     * Pemangkasannya TIDAK dijadwalkan — lihat `platform:prune-abandoned-tenants`.
+     */
+    'abandoned_after_days' => 30,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dokumen Persetujuan
+    |--------------------------------------------------------------------------
+    |
+    | Satu dokumen per jalur harga — sengaja terpisah, bukan satu dokumen dengan
+    | pasal bersyarat. Dokumen bersyarat justru mengaburkan hal terpentingnya:
+    | jalur normal tidak membuka data bisnis sama sekali, jalur subsidi membuka
+    | omset. Dipisah membuat masing-masing pendek dan benar-benar terbaca.
+    |
+    | Teksnya tinggal di `resources/consents/` dan TIDAK PERNAH disunting di
+    | tempat. Versi baru = berkas baru + naikkan `version` di sini. Menyunting
+    | teks yang sudah disetujui orang akan membuat catatan persetujuannya
+    | menunjuk ke kalimat yang tidak pernah mereka baca.
+    |
+    */
+
+    'consents' => [
+        'normal' => ['version' => '1', 'file' => 'normal-v1.md'],
+        'subsidized' => ['version' => '1', 'file' => 'subsidized-v1.md'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Jalur Subsidi UMKM
+    |--------------------------------------------------------------------------
+    |
+    | `revenue_brackets` — SUDAH TIDAK DIBACA aplikasi. Sumber aturan harga kini
+    | tabel `pricing_rules`, yang di-CRUD pemilik SaaS dari platform console.
+    | Daftar di bawah tinggal sebagai benih migrasi `create_pricing_rules_table`
+    | — dibiarkan agar pemasangan baru tetap punya bracket awal yang masuk akal.
+    | Mengubah angka di sini tidak berpengaruh apa pun pada pemasangan yang
+    | tabelnya sudah terisi.
+    |
+    | `metrics_retention_months` — omset lebih tua dari ini dipangkas. Dua tahun
+    | cukup untuk membuktikan penetapan harga bila disengketakan; lebih dari itu
+    | hanya menumpuk data yang harus dijaga tanpa ada yang membacanya.
+    |
+    | `track_switch_minimum_months` — jarak minimum antar perpindahan jalur.
+    | Tanpa jarak ini, tenant bisa pindah ke subsidi tiap bulan sepi lalu balik
+    | ke normal, dan perhitungan bracket kehilangan artinya.
+    |
+    */
+
+    /**
+     * Tangga diskon Harga Adaptif, sebagai benih pemasangan baru.
+     *
+     * Dibaca sebagai persentase potongan terhadap `paid-1`, bukan sebagai daftar
+     * harga yang berdiri sendiri — itulah arti "Adaptif = paid 1 yang didiskon"
+     * (keputusan pemilik 2026-08-07): 90% / 75% / 50% / 25%, lalu berhenti.
+     *
+     * Bracket D dulu Rp 100.000 tanpa batas atas, yang berarti diskon **0%**:
+     * tenant menyerahkan data penjualannya dan tidak menerima apa pun. Sekarang
+     * ia diskon 25% dan tangganya ditutup di Rp 50 juta — di atas itu tidak ada
+     * keringanan lagi, dan tenant dipindahkan ke `paid-1` harga penuh.
+     */
+    'revenue_brackets' => [
+        ['label' => 'A', 'min' => 0, 'max' => 2_000_000, 'price' => 10_000],
+        ['label' => 'B', 'min' => 2_000_000, 'max' => 5_000_000, 'price' => 25_000],
+        ['label' => 'C', 'min' => 5_000_000, 'max' => 15_000_000, 'price' => 50_000],
+        ['label' => 'D', 'min' => 15_000_000, 'max' => 50_000_000, 'price' => 75_000],
+    ],
+
+    'metrics_retention_months' => 24,
+
+    'track_switch_minimum_months' => 3,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Kuota AI Tambahan
+    |--------------------------------------------------------------------------
+    |
+    | Keputusan pemilik 2026-08-19 (`[BL-069]`): kuota AI dijual persis seperti
+    | seat — komponen bulanan yang berulang, dibeli dan dilepas dari halaman
+    | langganan, pelepasannya berlaku satu periode penuh ke depan.
+    |
+    | Yang dijual adalah PLAFON HARIAN, bukan kredit habis-pakai: satu blok
+    | menaikkan `ai_daily` sebesar `block_size` selama blok itu dimiliki. Pilihan
+    | ini menolak saran paket kredit di entri backlognya, dan penolakannya sadar
+    | — keseragaman pola pembelian (satu panel, satu cara melepas, satu komponen
+    | tagihan) dinilai lebih berharga daripada penghematan kredit. Akibatnya
+    | harus disebut di layar, bukan disembunyikan: sebagian pembeli membayar
+    | penuh untuk kapasitas yang mereka pakai beberapa hari saja.
+    |
+    | Harganya SERAGAM antar paket — berbeda dari `extra_seat_price` yang
+    | bertangga per paket — karena ongkos satu analisis tidak berbeda menurut
+    | paket pembelinya, dan tangga yang tak berdasar hanya menambah angka yang
+    | harus dijelaskan. Karena seragam, ia tinggal di sini, bukan sebagai kolom
+    | di `plans`.
+    |
+    | **Marginnya bergantung pada MODEL, bukan pada angka di bawah.** 150
+    | analisis/bulan berongkos ± Rp 1.350 pada `gpt-4o-mini` (margin 91%), tapi
+    | ± Rp 20.100 pada model kelas Sonnet — di atas harga jualnya sendiri.
+    | Periksa tabel ongkos di `[BL-069]` sebelum mengganti `AI_SUMOPOD_MODEL`,
+    | bukan sesudahnya.
+    |
+    */
+
+    'ai_quota' => [
+
+        /**
+         * Berapa analisis per hari yang ditambahkan satu blok.
+         */
+        'block_size' => 5,
+
+        /**
+         * Harga satu blok per bulan, rupiah. Seragam untuk semua paket.
+         *
+         * **Hanya bawaan, bukan lagi sumbernya.** Sejak 2026-09-16 angkanya
+         * disunting pemilik SaaS dari `/platform/pricing-rules` dan disimpan di
+         * tabel `ai_block_prices`; nilai di sini yang berlaku hanya selama tabel
+         * itu masih kosong. Mengubahnya di pemasangan yang sudah pernah
+         * disunting tidak berpengaruh apa pun — baca lewat
+         * `AiBlockPrice::current()`, jangan lewat config.
+         *
+         * Yang disunting di panel berlaku juga untuk blok yang SUDAH dibeli,
+         * pada tagihan berikutnya. Itu keputusan pemilik, bukan kelalaian:
+         * tidak ada grandfathering untuk komponen ini.
+         */
+        'block_price' => 15_000,
+
+        /**
+         * Paling banyak berapa blok yang boleh dimiliki satu langganan.
+         *
+         * Ada batasnya karena plafon harian yang dibeli tidak pernah ditinjau
+         * ulang oleh siapa pun: tanpa atap, satu salah ketik di formulir
+         * ("100" alih-alih "1") jadi tagihan Rp 1.500.000 sekaligus paparan
+         * ongkos 500 analisis/hari yang menetap sampai ada yang menyadarinya.
+         */
+        'max_blocks' => 20,
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payment Gateway
+    |--------------------------------------------------------------------------
+    |
+    | Menumpang di sini, bukan di berkas config sendiri, karena isinya kebijakan
+    | penagihan yang sama: berapa lama sebuah instruksi bayar berlaku, dan lewat
+    | siapa uangnya masuk.
+    |
+    | `driver` — penyedia yang aktif. Hari ini hanya ada `fake`, gateway tiruan
+    | untuk development dan peragaan. Ia GAGAL DI-RESOLVE di lingkungan produksi
+    | (lihat PaymentGatewayManager); menyetel nilai ini ke `fake` di sana bukan
+    | konfigurasi yang salah, melainkan jalur yang melunasi tagihan tanpa uang.
+    | Sumopod menyusul sebagai driver kedua — lihat `[BL-060]`.
+    |
+    */
+
+    'payment' => [
+
+        'driver' => env('PAYMENT_DRIVER', 'fake'),
+
+        /**
+         * Umur satu instruksi bayar, dalam menit.
+         *
+         * Ada tenggatnya supaya nomor VA yang terbit hari ini tidak dianggap
+         * masih berlaku bulan depan, dan supaya tenant bisa menerbitkan
+         * instruksi baru tanpa menunggu yang lama dibereskan seseorang.
+         */
+        'attempt_ttl_minutes' => 60,
+
+        'fake' => [
+            /**
+             * Kunci tanda tangan notifikasi gateway tiruan.
+             *
+             * Punya nilai bawaan, dan itu tidak apa-apa: yang dijaganya bukan
+             * uang, melainkan bentuk alurnya. Yang penting adalah jalur
+             * verifikasinya benar-benar dilewati saat peragaan, sehingga
+             * penyedia sungguhan nanti tidak menemukan jalur yang belum pernah
+             * dipakai.
+             */
+            'secret' => env('PAYMENT_FAKE_SECRET', 'sapi-fake-gateway'),
+
+            /**
+             * Detik sejak instruksi terbit sampai "pembayaran" datang sendiri.
+             *
+             * Inilah yang membuat alurnya bisa diperagakan: penonton melihat
+             * nomor VA atau QR, penantian sebentar, lalu layarnya berubah jadi
+             * lunas — tanpa siapa pun menekan tombol bernama "Bayar penuh" di
+             * depan calon klien.
+             *
+             * Delapan detik, bukan dua: yang sedang diperagakan adalah orang
+             * membayar dari aplikasi lain, dan pembayaran yang masuk seketika
+             * justru terbaca sebagai tombol, bukan sebagai pembayaran.
+             *
+             * `0` mematikannya — pakai saat yang sedang diuji adalah keadaan
+             * yang TIDAK berakhir berhasil.
+             */
+            'auto_settle_seconds' => (int) env('PAYMENT_FAKE_AUTO_SETTLE_SECONDS', 8),
+        ],
+
+    ],
+
+];

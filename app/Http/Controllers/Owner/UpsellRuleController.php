@@ -1,0 +1,356 @@
+<?php
+
+namespace App\Http\Controllers\Owner;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreUpsellRuleRequest;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\Tenant;
+use App\Models\UpsellEvent;
+use App\Models\UpsellRule;
+use App\Services\Upsell\RuleOutcomeResolver;
+use App\Services\Upsell\UpsellIndexBuilder;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use Inertia\Response;
+
+/**
+ * Aturan saran jual yang ditulis owner ([BL-074]).
+ *
+ * **Halamannya berdiri sendiri, bukan ditambahkan ke Pengaturan.** Editornya
+ * butuh tabel, pencarian produk, dan jendela tanggal; menjejalkannya ke formulir
+ * Pengaturan akan mengulang persis keluhan `[BL-039]` yang baru saja dibereskan
+ * dengan memecah "Profil Usaha" jadi tiga halaman.
+ *
+ * **Owner-eksklusif, bukan modul RBAC baru.** Memilih barang mana yang didorong
+ * adalah keputusan pemilik usaha, bukan tugas yang dilimpahkan — dan
+ * menggantungkannya pada permission `reports` akan memberi kuasa MENULIS kepada
+ * siapa pun yang hanya diberi hak MEMBACA laporan.
+ */
+class UpsellRuleController extends Controller
+{
+    /**
+     * Indeks saran untuk permintaan INI, dirakit paling banyak sekali.
+     *
+     * Dua prop tunda berbeda memerlukannya — pratinjau slot dan status per
+     * aturan — dan keduanya berada dalam satu grup tunda, jadi keduanya
+     * diselesaikan dalam permintaan yang sama. Tanpa memo ini, permintaan itu
+     * menelusuri seluruh katalog, stok, dan riwayat penjualan dua kali untuk
+     * jawaban yang identik.
+     */
+    private ?array $suggestionIndex = null;
+
+    public function __construct(
+        private UpsellIndexBuilder $upsellIndexBuilder,
+        private RuleOutcomeResolver $ruleOutcomeResolver,
+    ) {}
+
+    public function index(Request $request): Response
+    {
+        return Inertia::render('Owner/UpsellRules/Index', [
+            // Ditunda ([BL-037]): tombol tambah dan formulirnya sudah bisa
+            // dipakai sejak cat pertama, daftarnya menyusul.
+            'rules' => Inertia::defer(fn () => UpsellRule::with([
+                'triggerVariant:id,product_id,name',
+                'triggerVariant.product:id,name',
+                'suggestedVariant:id,product_id,name,price,stock',
+                'suggestedVariant.product:id,name',
+            ])
+                ->orderByDesc('priority')
+                ->orderByDesc('id')
+                ->get()),
+
+            // Daftar varian untuk kedua pemilihnya. Dikirim sekali dan dipakai
+            // dua kali — pemicu dan yang disarankan — supaya tidak ada endpoint
+            // pencarian tersendiri untuk katalog yang seukuran ini.
+            'variants' => Inertia::defer(fn () => Product::where('is_active', true)
+                ->with('variants:id,product_id,name,price,stock')
+                ->orderBy('name')
+                ->get()
+                ->flatMap(fn (Product $product) => $product->variants->map(fn ($variant) => [
+                    'id' => $variant->id,
+                    'label' => $product->name.' - '.$variant->name,
+                    'price' => (float) $variant->price,
+                    'stock' => $variant->stock,
+                ]))
+                ->values()),
+
+            // Kelompok tersendiri, bukan menumpang daftar aturan ([BL-092]):
+            // merakit indeks menelusuri seluruh katalog, stok, dan riwayat
+            // penjualan — menyatukannya dengan tabel aturan berarti tabelnya
+            // ikut menunggu pekerjaan yang tidak ada hubungannya dengannya.
+            'preview' => Inertia::defer(fn () => $this->slotPreview($request->user()->tenant), 'pratinjau'),
+
+            // Status hidup per aturan, di grup tunda yang SAMA dengan pratinjau
+            // — bukan menumpang `rules`.
+            //
+            // Kenapa bukan di `rules`: menjawabnya menuntut indeks penuh, dan
+            // tabel aturan adalah satu-satunya hal di halaman ini yang bisa
+            // tampil tanpa menunggunya. Menggabungkan keduanya akan mengulangi
+            // persis keputusan yang sudah dibayar di atas.
+            //
+            // Kenapa bukan di klien: nomor slot dan "kalah dari siapa" hanya ada
+            // di dalam indeks, lengkap dengan skor seluruh pesaingnya. Klien
+            // tidak memegangnya, dan perhitungan tiruan akan berselisih dengan
+            // pratinjau pada hari pertama stok berubah.
+            'outcomes' => Inertia::defer(
+                fn () => $this->ruleOutcomeResolver->resolve(
+                    $request->user()->tenant,
+                    $this->suggestionIndex($request->user()->tenant),
+                ),
+                'pratinjau',
+            ),
+        ]);
+    }
+
+    /**
+     * @return array{by_variant: array<int, list<array<string, mixed>>>, cart_level: list<array<string, mixed>>, max_per_transaction: int, mandatory: bool, generated_at: string}
+     */
+    private function suggestionIndex(Tenant $tenant): array
+    {
+        return $this->suggestionIndex ??= $this->upsellIndexBuilder->build($tenant);
+    }
+
+    /**
+     * Apa yang BENAR-BENAR muncul di kasir hari ini, beserta yang tergeser.
+     *
+     * Halaman ini sebelumnya hanya memperlihatkan separuh kenyataan: aturan
+     * yang owner tulis sendiri, tanpa satu pun saran yang ditemukan mesin dari
+     * stok. Owner jadi tidak punya cara melihat siapa yang sedang mengisi tiga
+     * slot kasir — dan aturan yang tidak muncul terbaca sebagai fitur rusak,
+     * padahal ia hanya kalah skor atau stoknya habis ([BL-092]).
+     *
+     * Pemilihan slotnya memakai `UpsellIndexBuilder`, kode yang sama persis
+     * dengan yang dipakai kasir; yang berbeda hanya keranjang yang diandaikan.
+     *
+     * @return array{enabled: bool, max_per_transaction: int, disabled_types: list<string>, unavailable_types: list<string>, cart_level: list<array<string, mixed>>, triggers: list<array<string, mixed>>, triggers_truncated: int}
+     */
+    private function slotPreview(Tenant $tenant): array
+    {
+        $index = $this->suggestionIndex($tenant);
+        $max = (int) $index['max_per_transaction'];
+
+        // Keranjang tanpa satu pun barang pemicu: hanya kandidat tanpa-pemicu
+        // yang berebut. Diurutkan di sini, bukan lewat `rankForCart()`, karena
+        // fungsi itu sengaja mengembalikan kosong untuk keranjang kosong —
+        // keranjang kosong memang tidak boleh memicu saran apa pun.
+        $cartLevel = $index['cart_level'];
+        usort($cartLevel, fn (array $a, array $b) => $b['score'] <=> $a['score']);
+
+        $triggerIds = array_map('intval', array_keys($index['by_variant']));
+
+        $labels = $this->variantLabels($triggerIds);
+
+        $triggers = [];
+
+        foreach ($triggerIds as $triggerId) {
+            $triggers[] = [
+                'variant_id' => $triggerId,
+                'label' => $labels[$triggerId] ?? "Varian #{$triggerId}",
+                'slots' => $this->asSlots($this->upsellIndexBuilder->rankForCart($index, [$triggerId]), $max),
+            ];
+        }
+
+        usort($triggers, fn (array $a, array $b) => strcmp($a['label'], $b['label']));
+
+        // Katalog besar bisa punya ratusan pemicu. Daftar sepanjang itu tidak
+        // dibaca siapa pun; jumlah sisanya tetap disebut supaya owner tahu
+        // yang dilihatnya belum seluruhnya.
+        $limit = 25;
+
+        return [
+            'enabled' => (bool) config('upsell.enabled', true),
+            'max_per_transaction' => $max,
+            // Dua daftar, bukan satu, karena hanya salah satunya punya tombol
+            // ([BL-099]). Menggabungkannya memaksa layar memilih antara
+            // menawarkan jalan yang tidak ada dan diam soal jalan yang ada.
+            'disabled_types' => $this->disabledTypes($tenant),
+            'unavailable_types' => $this->unavailableTypes(),
+            'cart_level' => $this->asSlots($cartLevel, $max),
+            'triggers' => array_slice($triggers, 0, $limit),
+            'triggers_truncated' => max(0, count($triggers) - $limit),
+        ];
+    }
+
+    /**
+     * Tandai mana yang dapat slot dan mana yang tergeser batas tampilan.
+     *
+     * @param  list<array<string, mixed>>  $ranked
+     * @return list<array<string, mixed>>
+     */
+    private function asSlots(array $ranked, int $max): array
+    {
+        $ranked = array_values($ranked);
+
+        // Penghuni slot TERAKHIR yang masih tampil — lawan yang harus dilewati
+        // sebuah saran untuk ikut masuk. Bukan yang di puncak, yang bagi saran
+        // di urutan kelima bukan lawan yang bisa dikejar.
+        $lastWinner = $ranked[$max - 1]['label'] ?? null;
+
+        return array_values(array_map(fn (array $suggestion, int $position) => [
+            'key' => $suggestion['key'],
+            'type' => $suggestion['type'],
+            'reason' => $suggestion['reason'],
+            'label' => $suggestion['label'],
+            'note' => $suggestion['note'],
+            'extra_amount' => $suggestion['extra_amount'],
+            'is_manual' => $suggestion['type'] === UpsellEvent::TYPE_MANUAL,
+            'wins_slot' => $position < $max,
+            // "Tergeser" saja menyisakan pertanyaan berikutnya tanpa jawaban;
+            // nama lawannya sekaligus memberi tahu urutan mana yang harus
+            // digeser untuk menukar posisinya.
+            'lost_to' => $position < $max ? null : $lastWinner,
+        ], $ranked, array_keys($ranked)));
+    }
+
+    /**
+     * Nama varian pemicu, sekali query untuk seluruh daftar.
+     *
+     * @param  list<int>  $ids
+     * @return array<int, string>
+     */
+    private function variantLabels(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return ProductVariant::whereIn('id', $ids)
+            ->with('product:id,name')
+            ->get(['id', 'product_id', 'name'])
+            ->mapWithKeys(fn (ProductVariant $variant) => [
+                $variant->id => $variant->product !== null
+                    ? $variant->product->name.' - '.$variant->name
+                    : $variant->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * Jenis saran yang DIMATIKAN OWNER SENDIRI di Setelan ([BL-099]).
+     *
+     * Yang masih hidup secara global saja yang dihitung: jenis yang sudah
+     * dimatikan pemilik SaaS tidak akan menyala walau saklar tenant-nya
+     * hidup, dan menyebutnya di sini akan mengarahkan owner ke saklar yang
+     * tidak mengubah apa pun.
+     *
+     * @return list<string>
+     */
+    private function disabledTypes(Tenant $tenant): array
+    {
+        return array_values(array_filter(
+            array_keys(Tenant::upsellTypeColumns()),
+            fn (string $type) => config("upsell.types.{$type}", true)
+                && ! $tenant->upsellTypeEnabled($type),
+        ));
+    }
+
+    /**
+     * Jenis yang dimatikan untuk SELURUH toko lewat `config/upsell.php`.
+     *
+     * Disebutkan di layar tanpa menyebut berkasnya dan tanpa tautan ke mana
+     * pun. Owner tetap perlu tahu kenapa jenis itu tidak pernah muncul —
+     * tanpa keterangan ia akan menyimpulkan aturannya sendiri yang rusak —
+     * tapi menunjukkan jalan yang tidak bisa ia tempuh lebih buruk daripada
+     * diam, karena terbaca seperti izin ([BL-099]).
+     *
+     * @return list<string>
+     */
+    private function unavailableTypes(): array
+    {
+        return array_values(array_filter(
+            array_keys(Tenant::upsellTypeColumns()),
+            fn (string $type) => ! config("upsell.types.{$type}", true),
+        ));
+    }
+
+    public function store(StoreUpsellRuleRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+
+        // Aturan baru mendarat DI ATAS daftar, bukan di dasarnya. Slot kasir
+        // hanya tiga; aturan yang lahir di urutan terakhir tidak muncul di mana
+        // pun, dan owner yang baru saja menuliskannya menyimpulkan fiturnya
+        // rusak. Nilai yang dikirim eksplisit tetap dihormati.
+        $data['priority'] ??= (int) UpsellRule::max('priority') + 1;
+
+        UpsellRule::create($data);
+
+        return back()->with('success', 'Aturan saran jual ditambahkan.');
+    }
+
+    public function update(StoreUpsellRuleRequest $request, UpsellRule $upsellRule): RedirectResponse
+    {
+        $upsellRule->update($request->validated());
+
+        return back()->with('success', 'Aturan saran jual diperbarui.');
+    }
+
+    /**
+     * Nyalakan/matikan satu aturan.
+     *
+     * Terpisah dari `update()` dengan sengaja: mematikan aturan adalah tindakan
+     * satu klik dari tabel, dan memaksanya melewati validasi formulir penuh
+     * berarti aturan yang produknya sudah terhapus tidak bisa dimatikan sama
+     * sekali — persis saat owner paling ingin mematikannya.
+     */
+    public function toggle(UpsellRule $upsellRule): RedirectResponse
+    {
+        $upsellRule->update(['is_active' => ! $upsellRule->is_active]);
+
+        return back()->with('success', $upsellRule->is_active
+            ? 'Aturan dinyalakan.'
+            : 'Aturan dimatikan — kasir tidak lagi melihatnya.');
+    }
+
+    /**
+     * Geser satu aturan satu langkah ke atas atau ke bawah.
+     *
+     * Menggantikan kolom isian "Urutan" berisi angka 0–999. Angka prioritas
+     * adalah cara MESIN mengurutkan; owner yang ingin sebuah aturan tampil
+     * lebih dulu tidak sedang memikirkan bilangan, ia sedang menunjuk baris.
+     *
+     * Seluruh prioritas DITULIS ULANG, bukan ditukar dua-dua: nilai bawaannya
+     * 0, jadi aturan yang belum pernah disentuh semuanya seri dan urutannya
+     * jatuh ke `id`. Menukar dua angka nol tidak memindahkan apa pun di layar.
+     */
+    public function move(Request $request, UpsellRule $upsellRule): RedirectResponse
+    {
+        $direction = $request->validate([
+            'direction' => ['required', 'in:up,down'],
+        ])['direction'];
+
+        // Urutan yang sama persis dengan yang dipakai `index()` — kalau kedua
+        // urutan ini berbeda, panahnya akan memindahkan baris yang tidak
+        // ditunjuk owner.
+        $rules = UpsellRule::orderByDesc('priority')->orderByDesc('id')->get()->values();
+
+        $from = $rules->search(fn (UpsellRule $rule) => $rule->is($upsellRule));
+        $to = $direction === 'up' ? $from - 1 : $from + 1;
+
+        if ($from === false || $to < 0 || $to >= $rules->count()) {
+            return back();
+        }
+
+        $ordered = $rules->all();
+        [$ordered[$from], $ordered[$to]] = [$ordered[$to], $ordered[$from]];
+
+        DB::transaction(function () use ($ordered) {
+            foreach ($ordered as $position => $rule) {
+                $rule->update(['priority' => count($ordered) - $position]);
+            }
+        });
+
+        return back();
+    }
+
+    public function destroy(UpsellRule $upsellRule): RedirectResponse
+    {
+        $upsellRule->delete();
+
+        return back()->with('success', 'Aturan saran jual dihapus.');
+    }
+}

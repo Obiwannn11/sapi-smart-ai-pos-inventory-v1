@@ -1,13 +1,15 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\ApiOrderController;
 use App\Http\Controllers\Api\V1\ApiProductController;
+use App\Http\Controllers\Api\V1\ApiUpsellController;
+use App\Http\Controllers\Api\V1\ConnectorSummaryController;
 use App\Http\Controllers\Api\V1\Mobile\MobileAuthController;
-use App\Http\Controllers\Api\V1\Mobile\MobileTenantController;
 use App\Http\Controllers\Api\V1\Mobile\MobileCashDrawerController;
+use App\Http\Controllers\Api\V1\Mobile\MobileTenantController;
 use App\Http\Controllers\Api\V1\Mobile\MobileTransactionController;
 use App\Http\Controllers\Api\XenditWebhookController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,22 +28,55 @@ Route::post('/xendit/webhook', [XenditWebhookController::class, 'handle']);
 // ─────────────────────────────────────────────────────────────────
 Route::prefix('v1')->group(function () {
 
+    // Setiap grup bertoken menyebut ability permukaannya tepat sesudah
+    // `auth:sanctum` ([BL-112]). Tanpa itu token apa pun yang sah diterima di
+    // semua rute — token MCP yang hanya-baca pernah bisa mem-void transaksi.
+    // Token login mobile dibuat tanpa daftar ability, jadi `*`, dan tetap lolos;
+    // yang tertolak adalah token yang lingkupnya memang dibuat sempit.
+
     // --- Self Order / n8n (Sanctum) ---
-    Route::middleware(['auth:sanctum'])->group(function () {
+    // 'subscription' dipasang sebagai alias, BUKAN grup 'tenant.api': gerbang
+    // langganan wajib berlaku di sini — pesanan lewat n8n/Telegram adalah
+    // layanan baru, persis yang ditahan saat 'grace'/'suspended' — sementara
+    // EnsureEmailVerified yang ikut di grup itu tidak masuk akal untuk token
+    // mesin. Lihat [BL-020].
+    Route::middleware(['auth:sanctum', 'ability:self-order:use', 'subscription'])->group(function () {
+        // Katalog sengaja di LUAR gerbang fitur: katalog bukan pemesanan, dan
+        // endpoint yang sama dipakai jalur mobile.
         Route::get('/products', [ApiProductController::class, 'index']);
-        Route::post('/orders', [ApiOrderController::class, 'store'])
-            ->middleware('throttle:60,1');
+
+        Route::middleware('feature.api:self_order')->group(function () {
+            // Saran upsell ikut digerbang — ia hanya berguna untuk permukaan
+            // self-order, dan saat pemesanan mati ia tetap akan membocorkan
+            // barang mana yang sedang tertekan stoknya kepada pemegang token.
+            Route::post('/upsell/suggestions', [ApiUpsellController::class, 'suggestions'])
+                ->middleware('throttle:120,1');
+            Route::post('/orders', [ApiOrderController::class, 'store'])
+                ->middleware('throttle:60,1');
+        });
+    });
+
+    // Memajukan status pesanan SENGAJA di luar gerbang langganan. Ini
+    // menyelesaikan kewajiban atas pesanan yang uangnya sudah diterima, bukan
+    // membuka layanan baru — dan middleware-nya sendiri menulis bahwa
+    // menyandera data pelanggan bukan alat penagihan yang sah. Menutupnya akan
+    // membuat dapur berhenti di tengah antrean pada hari langganan lewat jatuh
+    // tempo. Kebijakan antrean seutuhnya diputuskan di [BL-019].
+    Route::middleware(['auth:sanctum', 'ability:self-order:use', 'feature.api:self_order'])->group(function () {
         Route::patch('/orders/{transaction}/fulfillment', [ApiOrderController::class, 'updateFulfillment']);
     });
 
     // ─── Mobile App POS ───────────────────────────────────────────
 
-    // Login (public, throttled)
+    // Login (public, throttled). Limiter bernama, bukan `throttle:5,1`: yang
+    // terakhir mengunci per IP saja, sehingga beberapa perangkat kasir di balik
+    // satu IP publik saling menghabiskan jatah. `mobile-login` mengunci per
+    // email + IP — lihat AppServiceProvider.
     Route::post('/mobile/login', [MobileAuthController::class, 'login'])
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:mobile-login');
 
     // Protected: auth + tenant
-    Route::middleware(['auth:sanctum', 'tenant.api'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api'])->group(function () {
         Route::post('/mobile/logout', [MobileAuthController::class, 'logout']);
         Route::get('/mobile/tenant/profile', [MobileTenantController::class, 'profile']);
         Route::get('/mobile/products', [ApiProductController::class, 'index']);
@@ -51,7 +86,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Kasir + Owner: operasi kas & transaksi
-    Route::middleware(['auth:sanctum', 'tenant.api', 'role:cashier,owner'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api', 'role:cashier,owner'])->group(function () {
         Route::post('/mobile/cash-drawer/open', [MobileCashDrawerController::class, 'open']);
         Route::post('/mobile/cash-drawer/close', [MobileCashDrawerController::class, 'close']);
         Route::get('/mobile/cash-drawer/{cashDrawer}/summary', [MobileCashDrawerController::class, 'summary']);
@@ -60,8 +95,17 @@ Route::prefix('v1')->group(function () {
     });
 
     // Owner only: void transaksi
-    Route::middleware(['auth:sanctum', 'tenant.api', 'role:owner'])->group(function () {
+    Route::middleware(['auth:sanctum', 'ability:mobile:use', 'tenant.api', 'role:owner'])->group(function () {
         Route::post('/mobile/transactions/{transaction}/void', [MobileTransactionController::class, 'void']);
     });
+
+    // ─── Link data untuk AI ([BL-102]) ────────────────────────────
+
+    // Tokennya datang dari `?token=`, bukan header (lihat AppServiceProvider).
+    // `connector.text` sengaja paling luar: ia yang membuat penolakan gerbang
+    // di dalamnya terbaca AI sebagai penolakan, bukan halaman login. Sisanya
+    // gerbang yang sama dengan /mcp/business.
+    Route::middleware(['connector.text', 'auth:sanctum', 'ability:connector:read', 'tenant.api', 'feature.api:ai', 'role:owner', 'throttle:connector'])
+        ->get('/connector/summary', ConnectorSummaryController::class);
 
 });

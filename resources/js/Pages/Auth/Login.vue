@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { useForm, Head, Link } from '@inertiajs/vue3';
 
 const form = useForm({
     email: '',
@@ -22,35 +22,40 @@ const submit = () => {
     <div class="min-h-screen flex flex-col md:flex-row">
 
         <!-- Mobile brand strip -->
-        <div
-            class="md:hidden flex-shrink-0 h-12 bg-primary flex items-center px-6 gap-2"
-            aria-hidden="true"
-        >
-            <span class="text-primary-foreground font-bold text-lg tracking-tight leading-none">SAPI</span>
-            <span class="text-primary-foreground/40 text-[0.65rem] font-semibold uppercase tracking-widest mt-px">POS</span>
+        <div class="md:hidden flex-shrink-0 h-12 bg-primary flex items-center px-6 gap-2">
+            <a
+                href="/"
+                class="flex items-center gap-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/50"
+            >
+                <span class="text-primary-foreground font-bold text-lg tracking-tight leading-none">SAPI</span>
+                <span class="text-primary-foreground/40 text-[0.65rem] font-semibold uppercase tracking-widest mt-px">POS</span>
+            </a>
         </div>
 
         <!-- Brand panel — desktop only -->
         <div
             class="hidden md:flex md:w-[400px] lg:w-[460px] flex-shrink-0 bg-primary relative overflow-hidden flex-col justify-between p-10 lg:p-12"
-            aria-hidden="true"
         >
             <!-- Watermark letterform — purely decorative depth -->
             <span
+                aria-hidden="true"
                 class="absolute -bottom-24 -right-10 text-[20rem] font-black leading-none tracking-tighter
                        text-primary-foreground/[0.055] select-none pointer-events-none"
             >S</span>
 
             <!-- Identity block -->
             <div class="relative z-10">
-                <div class="flex items-baseline gap-2">
+                <a
+                    href="/"
+                    class="flex items-baseline gap-2 w-fit rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground/50"
+                >
                     <span class="text-[1.625rem] font-bold text-primary-foreground tracking-tight leading-none">
                         SAPI
                     </span>
                     <span class="text-[0.65rem] font-semibold text-primary-foreground/40 uppercase tracking-widest">
                         POS
                     </span>
-                </div>
+                </a>
                 <p class="mt-4 text-[0.9375rem] text-primary-foreground/70 leading-relaxed max-w-[200px]">
                     Kelola kasir, stok, dan laporan dari satu tempat.
                 </p>
@@ -186,6 +191,15 @@ const submit = () => {
                         >
                             {{ form.errors.password }}
                         </p>
+
+                        <div class="mt-2 text-right">
+                            <Link
+                                href="/forgot-password"
+                                class="text-sm text-muted-foreground hover:text-foreground transition-colors duration-150"
+                            >
+                                Lupa kata sandi?
+                            </Link>
+                        </div>
                     </div>
 
                     <!-- Submit -->
@@ -221,6 +235,17 @@ const submit = () => {
                     </button>
 
                 </form>
+
+                <!-- Link to Register -->
+                <p class="mt-6 text-center text-sm text-muted-foreground">
+                    Belum punya akun?
+                    <Link
+                        href="/register"
+                        class="font-medium text-primary hover:text-primary/80 transition-colors duration-150"
+                    >
+                        Daftar
+                    </Link>
+                </p>
             </div>
         </main>
 

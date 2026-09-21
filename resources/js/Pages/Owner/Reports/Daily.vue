@@ -1,18 +1,29 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Deferred, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import MetricCard from '@/Components/MetricCard.vue';
 import DatePicker from '@/Components/DatePicker.vue';
+import TopProductsTable from '@/Components/TopProductsTable.vue';
+import DiscountSummaryCard from '@/Components/DiscountSummaryCard.vue';
+import SkeletonPanel from '@/Components/Skeleton/SkeletonPanel.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import SkeletonList from '@/Components/Skeleton/SkeletonList.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
     date: String,
     summary: Object,
+    // Konteks pajak ([BL-065]): `active` false untuk mayoritas tenant yang
+    // tidak memungut, dan bagian pajaknya tidak muncul sama sekali.
+    tax: { type: Object, default: () => ({ active: false, label: 'Pajak' }) },
     transactions: Array,
     paymentSummary: Array,
     topProducts: Array,
+    // Potongan harga hari itu ([BL-018]). Ditunda bersama rekap lain.
+    discountSummary: Object,
 });
 
 const selectedDate = ref(props.date);
@@ -23,6 +34,7 @@ const formatCurrency = (value) => {
 
 const formatTime = (datetime) => {
     return new Date(datetime).toLocaleTimeString('id-ID', {
+        timeZone: BUSINESS_TZ,
         hour: '2-digit',
         minute: '2-digit',
     });
@@ -68,6 +80,7 @@ const toggleTx = (id) => {
             <MetricCard
                 title="Total Pendapatan"
                 :value="formatCurrency(summary.total_revenue)"
+                :subtitle="tax.active ? `termasuk ${tax.label} yang dipungut` : null"
                 icon="currency"
                 color="success"
             />
@@ -87,7 +100,41 @@ const toggleTx = (id) => {
             />
         </div>
 
+        <!-- Pajak terpungut ([BL-065] butir (e)).
+             Dua angka yang dipisah dari omzet: yang jadi pendapatan toko, dan
+             yang hanya dititipkan pelanggan untuk disetorkan. -->
+        <div v-if="tax.active" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-4">{{ tax.label }} Hari Ini</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <p class="text-xs text-gray-500">Omzet Sebelum Pajak</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.net_revenue) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">pendapatan toko</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">{{ tax.label }} Terpungut</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.tax_collected) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">dititipkan untuk disetorkan</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500">Dibayar Pelanggan</p>
+                    <p class="mt-1 text-lg font-bold text-gray-900">{{ formatCurrency(summary.total_revenue) }}</p>
+                    <p class="mt-0.5 text-xs text-gray-400">uang yang masuk</p>
+                </div>
+            </div>
+            <p class="mt-4 text-xs text-gray-400">
+                Struk kasir bukan faktur pajak. Angka ini membantu menyiapkan setoran, bukan menggantikan e-Faktur.
+            </p>
+        </div>
+
         <!-- Rekap per Payment Method -->
+        <Deferred data="paymentSummary">
+            <template #fallback>
+                <SkeletonPanel label="Memuat rekap metode pembayaran…">
+                    <SkeletonTable :rows="3" :columns="3" :header="false" />
+                </SkeletonPanel>
+            </template>
+
         <div v-if="paymentSummary.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <h3 class="text-sm font-semibold text-gray-700 mb-3">Rekap per Metode Pembayaran</h3>
             <div class="overflow-x-auto">
@@ -100,7 +147,7 @@ const toggleTx = (id) => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="pm in paymentSummary" :key="pm.name" class="border-b border-gray-50">
+                        <tr v-for="pm in paymentSummary" :key="pm.id" class="border-b border-gray-50">
                             <td class="py-2.5 px-3 font-medium text-gray-800">{{ pm.name }}</td>
                             <td class="py-2.5 px-3">
                                 <span
@@ -120,33 +167,53 @@ const toggleTx = (id) => {
                 </table>
             </div>
         </div>
+        </Deferred>
 
         <!-- Top Products -->
-        <div v-if="topProducts.length > 0" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Top 10 Produk Terlaris</h3>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-gray-100">
-                            <th class="text-left py-2 px-3 text-gray-500 font-medium">#</th>
-                            <th class="text-left py-2 px-3 text-gray-500 font-medium">Varian</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">Qty Terjual</th>
-                            <th class="text-right py-2 px-3 text-gray-500 font-medium">Revenue</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="(product, index) in topProducts" :key="product.variant_name" class="border-b border-gray-50">
-                            <td class="py-2.5 px-3 text-gray-400">{{ index + 1 }}</td>
-                            <td class="py-2.5 px-3 font-medium text-gray-800">{{ product.variant_name }}</td>
-                            <td class="py-2.5 px-3 text-right text-gray-700">{{ product.total_qty }}</td>
-                            <td class="py-2.5 px-3 text-right font-semibold text-gray-900">{{ formatCurrency(product.total_revenue) }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <Deferred data="topProducts">
+            <template #fallback>
+                <SkeletonPanel label="Memuat produk terlaris…">
+                    <SkeletonTable :rows="5" :columns="4" :header="false" />
+                </SkeletonPanel>
+            </template>
 
-        <!-- Transaction List -->
+        <TopProductsTable
+            title="Top 10 Produk Terlaris"
+            :products="topProducts"
+            revenue-label="Revenue"
+        />
+        </Deferred>
+
+        <!-- Potongan harga ([BL-018]).
+             TIGA angka sejak [BL-116]: harga normal barang, yang dipotong, dan
+             yang benar-benar DIKORBANKAN di bawah lantai untung. Tanpa
+             pemisahan terakhir itu, sebuah penjualan rugi terlihat persis
+             seperti diskon 5% yang sehat.
+
+             Kartunya milik bersama dengan rekap bulanan ([BL-116] butir 1) —
+             satu pembaca di server, satu tampilan di klien. -->
+        <Deferred data="discountSummary">
+            <template #fallback>
+                <SkeletonPanel label="Memuat rekap potongan…">
+                    <SkeletonTable :rows="2" :columns="3" :header="false" />
+                </SkeletonPanel>
+            </template>
+
+            <DiscountSummaryCard
+                v-if="discountSummary && discountSummary.items_discounted > 0"
+                :summary="discountSummary"
+            />
+        </Deferred>
+
+        <!-- Transaction List. Bagian terberat halaman ini: tiap baris membawa
+             item dan pembayarannya, jadi ia yang paling lama sampai. -->
+        <Deferred data="transactions">
+            <template #fallback>
+                <SkeletonPanel flush label="Memuat daftar transaksi…">
+                    <SkeletonList :rows="6" :leading="false" />
+                </SkeletonPanel>
+            </template>
+
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-100">
                 <h3 class="text-sm font-semibold text-gray-700">Daftar Transaksi</h3>
@@ -201,5 +268,6 @@ const toggleTx = (id) => {
                 Tidak ada transaksi pada tanggal ini
             </div>
         </div>
+        </Deferred>
     </div>
 </template>

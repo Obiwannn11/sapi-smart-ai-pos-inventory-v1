@@ -1,13 +1,17 @@
 <script setup>
 import { ref, nextTick } from 'vue';
-import { useForm, Head, router } from '@inertiajs/vue3';
+import { Deferred, useForm, Head, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
+import Accordion from '@/Components/Accordion.vue';
+import SkeletonGrid from '@/Components/Skeleton/SkeletonGrid.vue';
+import SkeletonCard from '@/Components/Skeleton/SkeletonCard.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    modifierGroups: Array,
+    // Ditunda ([BL-037]) — null selama daftar grupnya masih dimuat.
+    modifierGroups: { type: Array, default: null },
 });
 
 // --- Form State ---
@@ -147,7 +151,7 @@ const onExtraPriceBlur = (i, event) => {
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <div>
-                <h1 class="text-2xl font-bold text-gray-900">Modifier Groups</h1>
+                <h1 class="text-2xl font-bold text-gray-900">Grup Modifier</h1>
                 <p class="text-sm text-gray-500 mt-1">Kelola modifier/tambahan untuk produk</p>
             </div>
             <button
@@ -276,7 +280,20 @@ const onExtraPriceBlur = (i, event) => {
             </Transition>
         </Teleport>
 
-        <!-- Card Grid -->
+        <!-- Card Grid. Ditunda ([BL-037]) — grid dan jarak kartunya disalin
+             apa adanya supaya kartunya tidak bergeser saat data tiba. -->
+        <Deferred data="modifierGroups">
+            <template #fallback>
+                <SkeletonGrid
+                    :count="4"
+                    columns="grid-cols-1 lg:grid-cols-2"
+                    gap="gap-5"
+                    label="Memuat grup modifier…"
+                >
+                    <SkeletonCard :lines="3" footer padding="p-5" />
+                </SkeletonGrid>
+            </template>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div
                 v-for="group in modifierGroups"
@@ -390,11 +407,11 @@ const onExtraPriceBlur = (i, event) => {
                     </div>
 
                     <!-- Section 3: Produk yang Menggunakan -->
-                    <div>
-                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                            Digunakan oleh Produk
-                            <span class="ml-1.5 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium normal-case tracking-normal">{{ group.products_count }}</span>
-                        </h4>
+                    <Accordion :count="group.products_count">
+                        <template #title>
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Digunakan oleh Produk</span>
+                        </template>
+
                         <div v-if="group.products?.length" class="flex flex-wrap gap-2">
                             <span
                                 v-for="product in group.products"
@@ -408,7 +425,7 @@ const onExtraPriceBlur = (i, event) => {
                             </span>
                         </div>
                         <p v-else class="text-sm text-gray-400 italic">Belum digunakan oleh produk manapun</p>
-                    </div>
+                    </Accordion>
 
                 </div>
             </div>
@@ -424,13 +441,14 @@ const onExtraPriceBlur = (i, event) => {
                 </button>
             </div>
         </div>
+        </Deferred>
     </div>
 
     <!-- Delete confirm -->
     <ConfirmDialog
         :show="!!deleteTarget"
         title="Hapus Modifier Group"
-        :message="`Apakah Anda yakin ingin menghapus group '${deleteTarget?.name}'? Semua modifier di dalamnya juga akan dihapus.`"
+        :message="`Semua modifier di dalam “${deleteTarget?.name}” ikut dihapus.`"
         confirmText="Hapus"
         @confirm="doDelete"
         @cancel="cancelDelete"

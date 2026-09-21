@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\CashDrawer;
 use App\Models\Transaction;
 use App\Models\TransactionPayment;
+use App\Services\PaymentMethodRecap;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MobileCashDrawerController extends Controller
 {
+    public function __construct(private PaymentMethodRecap $paymentRecap) {}
+
     public function status(): JsonResponse
     {
         $drawer = CashDrawer::where('user_id', auth()->id())
@@ -18,7 +21,7 @@ class MobileCashDrawerController extends Controller
             ->first();
 
         return response()->json([
-            'is_open'   => (bool) $drawer,
+            'is_open' => (bool) $drawer,
             'drawer_id' => $drawer?->id,
             'opened_at' => $drawer?->opened_at,
         ]);
@@ -41,14 +44,14 @@ class MobileCashDrawerController extends Controller
         }
 
         $drawer = CashDrawer::create([
-            'tenant_id'      => $user->tenant_id,
-            'user_id'        => $user->id,
+            'tenant_id' => $user->tenant_id,
+            'user_id' => $user->id,
             'opening_amount' => $request->opening_amount,
-            'opened_at'      => now(),
+            'opened_at' => now(),
         ]);
 
         return response()->json([
-            'message'   => 'Kas berhasil dibuka.',
+            'message' => 'Kas berhasil dibuka.',
             'drawer_id' => $drawer->id,
             'opened_at' => $drawer->opened_at,
         ], 201);
@@ -58,19 +61,19 @@ class MobileCashDrawerController extends Controller
     {
         $request->validate([
             'closing_amount' => 'required|numeric|min:0',
-            'notes'          => 'nullable|string|max:500',
+            'notes' => 'nullable|string|max:500',
         ]);
 
         $drawer = CashDrawer::where('user_id', auth()->id())
             ->whereNull('closed_at')
             ->first();
 
-        if (!$drawer) {
+        if (! $drawer) {
             return response()->json(['message' => 'Tidak ada sesi kas yang terbuka.'], 422);
         }
 
         $expectedCashFromPayments = TransactionPayment::query()
-            ->whereHas('paymentMethod', fn($q) => $q->where('type', 'cash'))
+            ->whereHas('paymentMethod', fn ($q) => $q->where('type', 'cash'))
             ->whereHas('transaction', function ($q) use ($drawer) {
                 $q->where('tenant_id', $drawer->tenant_id)
                     ->where('status', 'completed')
@@ -86,22 +89,22 @@ class MobileCashDrawerController extends Controller
             ->sum('change_amount');
 
         $expectedAmount = $drawer->opening_amount + $expectedCashFromPayments - $totalChangeGiven;
-        $closingAmount  = $request->closing_amount;
+        $closingAmount = $request->closing_amount;
 
         $drawer->update([
-            'closing_amount'  => $closingAmount,
+            'closing_amount' => $closingAmount,
             'expected_amount' => $expectedAmount,
-            'difference'      => $closingAmount - $expectedAmount,
-            'notes'           => $request->notes,
-            'closed_at'       => now(),
+            'difference' => $closingAmount - $expectedAmount,
+            'notes' => $request->notes,
+            'closed_at' => now(),
         ]);
 
         return response()->json([
-            'message'         => 'Kas berhasil ditutup.',
-            'drawer_id'       => $drawer->id,
+            'message' => 'Kas berhasil ditutup.',
+            'drawer_id' => $drawer->id,
             'expected_amount' => $expectedAmount,
-            'closing_amount'  => $closingAmount,
-            'difference'      => $drawer->difference,
+            'closing_amount' => $closingAmount,
+            'difference' => $drawer->difference,
         ]);
     }
 
@@ -118,39 +121,38 @@ class MobileCashDrawerController extends Controller
             return response()->json(['message' => 'Anda tidak memiliki akses ke sesi kas ini.'], 403);
         }
 
-        $paymentSummary = TransactionPayment::query()
-            ->selectRaw('payment_methods.name, payment_methods.type, SUM(transaction_payments.amount) as total')
-            ->join('payment_methods', 'transaction_payments.payment_method_id', '=', 'payment_methods.id')
-            ->whereHas('transaction', function ($q) use ($cashDrawer) {
-                $q->where('tenant_id', $cashDrawer->tenant_id)
-                    ->where('status', 'completed')
-                    ->where('created_at', '>=', $cashDrawer->opened_at)
-                    ->where('created_at', '<=', $cashDrawer->closed_at ?? now());
-            })
-            ->groupBy('payment_methods.name', 'payment_methods.type')
-            ->get();
-
-        $transactionCount = Transaction::where('tenant_id', $cashDrawer->tenant_id)
+        // Satu kueri transaksi untuk dua jawaban: rekapnya dan jumlahnya.
+        // Sebelumnya keduanya menulis penyaring sesinya masing-masing, dan
+        // rekapnya menjumlahkan uang yang diserahkan — kembalian ikut terhitung
+        // sebagai pendapatan tunai ([BL-109]). `close()` di berkas ini tidak
+        // pernah punya cacat itu; ia sudah mengurangkan `change_amount` sendiri.
+        $sessionTransactions = Transaction::where('tenant_id', $cashDrawer->tenant_id)
             ->where('status', 'completed')
             ->where('created_at', '>=', $cashDrawer->opened_at)
-            ->where('created_at', '<=', $cashDrawer->closed_at ?? now())
-            ->count();
+            ->where('created_at', '<=', $cashDrawer->closed_at ?? now());
+
+        $paymentSummary = $this->paymentRecap->for(
+            clone $sessionTransactions,
+            $cashDrawer->tenant_id
+        );
+
+        $transactionCount = (clone $sessionTransactions)->count();
 
         return response()->json([
             'data' => [
                 'drawer' => [
-                    'id'              => $cashDrawer->id,
-                    'opening_amount'  => $cashDrawer->opening_amount,
-                    'closing_amount'  => $cashDrawer->closing_amount,
+                    'id' => $cashDrawer->id,
+                    'opening_amount' => $cashDrawer->opening_amount,
+                    'closing_amount' => $cashDrawer->closing_amount,
                     'expected_amount' => $cashDrawer->expected_amount,
-                    'difference'      => $cashDrawer->difference,
-                    'notes'           => $cashDrawer->notes,
-                    'opened_at'       => $cashDrawer->opened_at,
-                    'closed_at'       => $cashDrawer->closed_at,
-                    'is_open'         => is_null($cashDrawer->closed_at),
+                    'difference' => $cashDrawer->difference,
+                    'notes' => $cashDrawer->notes,
+                    'opened_at' => $cashDrawer->opened_at,
+                    'closed_at' => $cashDrawer->closed_at,
+                    'is_open' => is_null($cashDrawer->closed_at),
                 ],
                 'transaction_count' => $transactionCount,
-                'payment_summary'   => $paymentSummary,
+                'payment_summary' => $paymentSummary,
             ],
         ]);
     }

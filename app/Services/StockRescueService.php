@@ -1,0 +1,390 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\ExpiredStockRecord;
+use App\Models\ProductVariant;
+use App\Models\Tenant;
+use App\Models\Transaction;
+use App\Models\TransactionItem;
+use App\Models\UpsellEvent;
+use App\Services\Upsell\Strategies\PressedStockStrategy;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Dua angka yang menutup rantai barang tertekan ([BL-105]).
+ *
+ * Rantainya sudah utuh sejak `[BL-017]` dan `[BL-018]`: sinyal stok melahirkan
+ * potongan yang mendalam ke arah hari kedaluwarsa, potongan itu sampai ke
+ * mulut kasir lewat `PressedStockStrategy`, dan nasib tiap saran tercatat di
+ * `upsell_events`. Yang tidak pernah ada adalah **angkanya** — `pressed_stock`
+ * berhenti sebagai satu baris berlabel "Barang tertekan" di tabel rekap per
+ * jenis, dan tidak ada satu pun tempat di `app/` yang menilai barang basi
+ * dalam rupiah.
+ *
+ * Kelas ini menjawab keduanya, dan sengaja menaruhnya berdampingan supaya
+ * definisinya tidak berselisih di dua layar.
+ *
+ * **Kedua angkanya TIDAK berperiode sama, dan itu bukan kelalaian.** Yang satu
+ * rentang tanggal, yang satu potret hari ini — alasannya ada di
+ * {@see self::spoiled()}. Permukaan yang memakainya wajib menamai bedanya;
+ * menyandingkan keduanya dengan label yang tidak membedakannya adalah angka
+ * yang berbohong.
+ */
+class StockRescueService
+{
+    public function __construct(
+        private PressedStockStrategy $pressedStock,
+        private DiscountService $discounts,
+    ) {}
+
+    /**
+     * Sinyal pagi: apa yang harus keluar hari ini, dan apakah mesinnya siap
+     * membantu mengeluarkannya ([BL-105] butir 3).
+     *
+     * **Kenapa ini bukan lencana ketujuh.** Dashboard sudah punya "Hampir
+     * Kedaluwarsa" dan "Dead Stock", dan keduanya menjawab *apa keadaannya*. Yang
+     * tidak pernah dijawab siapa pun adalah *apakah ada yang akan
+     * mengeluarkannya*: barang tertekan tanpa aturan diskon tetap disarankan
+     * kasir, tapi pada HARGA KATALOG — saran yang sama, dengan peluang jauh
+     * lebih kecil untuk laku. Kolom `armed` itulah isi sebenarnya kartu ini,
+     * dan tidak ada satu pun layar hari ini yang menyebutnya.
+     *
+     * **Daftarnya diambil dari `PressedStockStrategy`, bukan dikueri ulang.**
+     * Ini syarat, bukan kenyamanan: owner yang memasang potongan untuk barang
+     * yang ternyata tidak pernah muncul di layar kasir akan berhenti
+     * mempercayai kedua layar itu sekaligus. Satu definisi "barang tertekan",
+     * dua pembaca.
+     *
+     * Nilainya modal (`stock * cost_price`), satuan yang sama dengan
+     * {@see self::spoiled()} — supaya "Rp 340.000 sedang tertekan" dan
+     * "Rp 180.000 sudah mati" bisa dibaca berdampingan sebagai satu cerita.
+     *
+     * @param  int  $limit  banyaknya barang yang disebut namanya; ringkasannya tetap menghitung semua
+     * @return array{count: int, value: float, armed: int, unarmed: int, items: list<array<string, mixed>>}
+     */
+    public function pressedToday(Tenant $tenant, int $limit = 6): array
+    {
+        $variants = $this->pressedStock->pressedVariants($tenant);
+
+        if ($variants->isEmpty()) {
+            return ['count' => 0, 'value' => 0.0, 'armed' => 0, 'unarmed' => 0, 'items' => []];
+        }
+
+        $nearExpiryDays = (int) config('upsell.pressed_stock.near_expiry_days', 7);
+        $deadStockDays = (int) config('upsell.pressed_stock.dead_stock_days', 30);
+
+        // Satu kueri untuk seluruh daftar, sama seperti jalur POS.
+        $rules = $this->discounts->rulesFor($tenant, $variants->pluck('id')->all());
+
+        $rows = [];
+        $value = 0.0;
+        $armed = 0;
+
+        foreach ($variants as $variant) {
+            [$reason, $note, $score] = $this->pressedStock->classify($variant, $nearExpiryDays, $deadStockDays);
+
+            $isArmed = $rules->has($variant->id);
+            $modal = $variant->stock * (float) $variant->cost_price;
+
+            $value += $modal;
+            $armed += $isArmed ? 1 : 0;
+
+            $rows[] = [
+                'variant_id' => $variant->id,
+                'label' => $this->pressedStock->displayName($variant),
+                'reason' => $reason,
+                'note' => $note,
+                'stock' => $variant->stock,
+                'value' => $modal,
+                'armed' => $isArmed,
+                'score' => $score,
+            ];
+        }
+
+        // Urutan yang sama dengan strip kasir: yang paling mendesak di atas.
+        usort($rows, fn (array $a, array $b) => $b['score'] <=> $a['score']);
+
+        return [
+            'count' => $variants->count(),
+            'value' => $value,
+            'armed' => $armed,
+            'unarmed' => $variants->count() - $armed,
+            'items' => array_slice($rows, 0, $limit),
+        ];
+    }
+
+    /**
+     * Saran yang boleh ikut dihitung: yang tidak menempel pada transaksi batal.
+     *
+     * Transaksi yang di-void bukan penjualan, jadi upsell di dalamnya bukan
+     * upsell yang berhasil ([BL-092]). Sebelum aturan itu ada, kasir yang
+     * membatalkan lalu memasukkan ulang satu transaksi membuat saran yang sama
+     * terhitung DUA KALI — sekali pada transaksi yang sudah dibatalkan, sekali
+     * lagi pada penggantinya.
+     *
+     * `whereDoesntHave` sengaja, bukan join: `transaction_id` boleh NULL karena
+     * transaksi yang benar-benar dihapus melepasnya, dan migrasinya memilih itu
+     * justru supaya menghapus transaksi tidak diam-diam memperbaiki angka
+     * konversi.
+     *
+     * Dipakai bersama Laporan Saran Jual supaya angka utama di kepala halaman
+     * dan tabel di bawahnya tidak pernah menghitung himpunan yang berbeda.
+     *
+     * Tenantnya disebut eksplisit, tidak menumpang `TenantScope`: scope itu
+     * mati begitu tidak ada yang login (lihat `TenantScope::apply()`), jadi
+     * pemanggil tanpa sesi — tugas terjadwal, perintah artisan — akan diam-diam
+     * menghitung SELURUH tenant. Di dalam permintaan owner, saringan ini cuma
+     * mengulang apa yang sudah dilakukan scope, dan itu murah.
+     *
+     * @return Builder<UpsellEvent>
+     */
+    public function countableEvents(Tenant $tenant, string $from, string $to): Builder
+    {
+        return UpsellEvent::query()
+            ->where('upsell_events.tenant_id', $tenant->id)
+            ->whereDate('created_at', '>=', $from)
+            ->whereDate('created_at', '<=', $to)
+            ->whereDoesntHave('transaction', fn ($query) => $query->where('status', Transaction::STATUS_VOIDED));
+    }
+
+    /**
+     * Omzet yang lahir dari saran barang tertekan yang benar-benar diambil.
+     *
+     * Ini **omzet, bukan modal yang diselamatkan**. `extra_amount` adalah harga
+     * efektif yang dibayar pelanggan (sudah termasuk potongan `near_expiry`
+     * bila ada), dicatat `UpsellEventRecorder` hanya untuk saran berstatus
+     * `accepted`. Menyebutnya "kerugian yang dicegah" akan melebih-lebihkan:
+     * sebagian dari angka ini adalah barang yang mungkin laku juga tanpa
+     * disarankan. Yang dijanjikan angka ini cuma satu hal, dan itu benar —
+     * sekian rupiah masuk lewat saran yang muncul karena barangnya tertekan.
+     *
+     * @return array{amount: float, accepted: int, shown: int}
+     */
+    public function rescued(Tenant $tenant, string $from, string $to): array
+    {
+        $row = $this->countableEvents($tenant, $from, $to)
+            ->where('type', UpsellEvent::TYPE_PRESSED_STOCK)
+            ->selectRaw('COUNT(*) as shown')
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as accepted', [UpsellEvent::STATUS_ACCEPTED])
+            ->selectRaw('SUM(CASE WHEN status = ? THEN extra_amount ELSE 0 END) as amount', [UpsellEvent::STATUS_ACCEPTED])
+            ->first();
+
+        return [
+            'amount' => (float) ($row->amount ?? 0),
+            'accepted' => (int) ($row->accepted ?? 0),
+            'shown' => (int) ($row->shown ?? 0),
+        ];
+    }
+
+    /**
+     * Modal yang sudah tidak bisa kembali: barang kedaluwarsa yang masih di rak.
+     *
+     * Dinilai pada `cost_price`, bukan `price`. Barang yang tidak pernah terjual
+     * tidak pernah menghasilkan margin, jadi yang hilang adalah uang yang sudah
+     * dikeluarkan untuk membelinya — menilainya pada harga jual akan melaporkan
+     * kerugian yang lebih besar daripada yang benar-benar terjadi.
+     *
+     * **Ini POTRET HARI INI, bukan angka periode, dan tidak bisa jadi angka
+     * periode dengan data yang ada hari ini.** `stock` adalah nilai sekarang,
+     * bukan sejarah: begitu owner membuang barangnya dan menyesuaikan stok jadi
+     * nol, kerugian itu lenyap tanpa jejak. `stock_movements` tidak menolong —
+     * kelima jenisnya (`sale`, `restock`, `adjustment`, `void`, `edit`) tidak
+     * ada yang berarti "dibuang", jadi pembuangan tersamar sebagai `adjustment`
+     * bersama koreksi hitung dan barang pecah.
+     *
+     * Angka periodenya ada di {@see self::spoiledInPeriod()}, dan ia dibaca dari
+     * tabel lain: `expired_stock_records`, yang distempel pencatat harian
+     * `ExpiredStockRecorder`. Keduanya menjawab pertanyaan berbeda dan tidak
+     * boleh saling menggantikan — yang satu "apa yang ada di rak sekarang",
+     * yang satu "berapa yang basi sepanjang bulan ini".
+     *
+     * @return array{amount: float, variants: int, units: int}
+     */
+    public function spoiled(Tenant $tenant): array
+    {
+        // Yang dihitung hanya unit di batch yang basi, bukan seluruh stok
+        // variannya ([BL-111]). Varian yang menyimpan 20 unit basi April dan 30
+        // unit segar Agustus kehilangan modal 20 unit, bukan 50.
+        $variants = $this->expiredOnShelf($tenant)->get();
+
+        return [
+            'amount' => (float) $variants->sum(fn (ProductVariant $variant) => (int) $variant->expired_units * (float) $variant->cost_price),
+            'variants' => $variants->count(),
+            'units' => (int) $variants->sum('expired_units'),
+        ];
+    }
+
+    /**
+     * Barang basi yang keluar lewat PENJUALAN — pendamping {@see self::spoiled()}
+     * ([BL-108] butir 4).
+     *
+     * Tanpa angka ini, "modal hangus" MEMBAIK tepat ketika hal terburuk
+     * terjadi: menjual croissant basi menurunkan stok basi di rak, dan layar
+     * tidak menyebut ke mana perginya. Owner yang melihat angkanya menyusut
+     * akan mengira barangnya dibuang.
+     *
+     * Berperiode, mengikuti rentang tanggal laporan — berbeda dari `spoiled()`.
+     * Nilainya modal saat penjualan (`cost_price_at_sale`), jatuh ke harga
+     * modal varian hari ini untuk baris offline yang tidak membekukannya.
+     *
+     * Daftar barisnya ikut dikirim karena inilah tempat owner MENINJAU
+     * konfirmasi kasir (keputusan pemilik 2026-09-15, preseden `[BL-087]`):
+     * siapa, kapan, barang apa, dan alasannya. `unconfirmed` menghitung baris
+     * yang terjual basi tanpa nama pengonfirmasi — penjualan offline tanpa
+     * alasan dan pesanan mandiri — yang paling perlu dilihat.
+     *
+     * Transaksi yang di-void tidak ikut: unitnya sudah kembali ke batch basinya.
+     *
+     * @return array{amount: float, units: int, lines: int, unconfirmed: int, items: list<array<string, mixed>>}
+     */
+    public function soldExpired(Tenant $tenant, string $from, string $to, int $limit = 20): array
+    {
+        $effectiveDate = Transaction::effectiveDateSql();
+
+        $lines = fn () => TransactionItem::query()
+            ->join('transactions', 'transactions.id', '=', 'transaction_items.transaction_id')
+            ->leftJoin('product_variants', 'product_variants.id', '=', 'transaction_items.product_variant_id')
+            ->where('transactions.tenant_id', $tenant->id)
+            ->where('transactions.status', '!=', Transaction::STATUS_VOIDED)
+            ->where('transaction_items.expired_qty', '>', 0)
+            ->whereRaw("DATE({$effectiveDate}) >= ?", [$from])
+            ->whereRaw("DATE({$effectiveDate}) <= ?", [$to]);
+
+        $row = $lines()
+            ->selectRaw('COUNT(*) as line_count')
+            ->selectRaw('COALESCE(SUM(transaction_items.expired_qty), 0) as units')
+            ->selectRaw('COALESCE(SUM(transaction_items.expired_qty * COALESCE(transaction_items.cost_price_at_sale, product_variants.cost_price, 0)), 0) as amount')
+            ->selectRaw('SUM(CASE WHEN transaction_items.expired_sale_confirmed_by IS NULL THEN 1 ELSE 0 END) as unconfirmed')
+            ->toBase()
+            ->first();
+
+        $items = $lines()
+            ->leftJoin('users', 'users.id', '=', 'transaction_items.expired_sale_confirmed_by')
+            ->orderByRaw("{$effectiveDate} desc")
+            ->orderByDesc('transaction_items.id')
+            ->limit($limit)
+            ->toBase()
+            ->get([
+                'transaction_items.id',
+                'transactions.code',
+                DB::raw("{$effectiveDate} as sold_at"),
+                'transaction_items.variant_name',
+                'transaction_items.expired_qty',
+                'transaction_items.expiry_date_at_sale',
+                'transaction_items.expired_sale_reason',
+                'users.name as confirmed_by_name',
+            ])
+            ->map(fn (object $item) => [
+                'id' => (int) $item->id,
+                'code' => $item->code,
+                'sold_at' => substr((string) $item->sold_at, 0, 16),
+                'label' => $item->variant_name,
+                'qty' => (int) $item->expired_qty,
+                'expiry_date' => $item->expiry_date_at_sale === null ? null : substr((string) $item->expiry_date_at_sale, 0, 10),
+                'reason' => $item->expired_sale_reason,
+                'confirmed_by' => $item->confirmed_by_name,
+            ])
+            ->all();
+
+        return [
+            'amount' => (float) ($row->amount ?? 0),
+            'units' => (int) ($row->units ?? 0),
+            'lines' => (int) ($row->line_count ?? 0),
+            'unconfirmed' => (int) ($row->unconfirmed ?? 0),
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Modal yang mati SEPANJANG SEBUAH PERIODE — pembaca pertama tabel
+     * `expired_stock_records` ([BL-105], butir yang tersisa).
+     *
+     * Bedanya dengan {@see self::spoiled()} bukan soal rentang tanggal saja.
+     * `spoiled()` membaca rak: barang basi yang sudah dibuang pemilik lenyap
+     * dari angkanya. Yang di sini membaca catatan pengamatan yang tidak pernah
+     * diubah sesudah ditulis, jadi ia TETAP menghitung barang yang sudah dibuang
+     * — dan justru itu yang membuatnya bisa dibandingkan antarbulan.
+     *
+     * Hanya baris `measured` yang ikut. Baris `pre_existing` adalah barang yang
+     * sudah basi sebelum pencatatnya lahir: `qty`-nya tidak diketahui, dan
+     * memasukkannya berarti "12 varian basi bulan ini" yang diam-diam memuat
+     * barang basi tahun lalu.
+     *
+     * @param  string  $from  tanggal mulai (inklusif), format Y-m-d
+     * @param  string  $to  tanggal akhir (inklusif), format Y-m-d
+     * @return array{amount: float, variants: int, units: int}
+     */
+    public function spoiledInPeriod(Tenant $tenant, string $from, string $to): array
+    {
+        $row = ExpiredStockRecord::query()
+            ->where('tenant_id', $tenant->id)
+            ->measured()
+            ->whereDate('recorded_on', '>=', $from)
+            ->whereDate('recorded_on', '<=', $to)
+            ->selectRaw('COUNT(*) as variants')
+            ->selectRaw('COALESCE(SUM(qty), 0) as units')
+            ->selectRaw('COALESCE(SUM(value), 0) as amount')
+            ->first();
+
+        return [
+            'amount' => (float) ($row->amount ?? 0),
+            'variants' => (int) ($row->variants ?? 0),
+            'units' => (int) ($row->units ?? 0),
+        ];
+    }
+
+    /**
+     * Hari pertama tabel `expired_stock_records` punya baris untuk tenant ini.
+     *
+     * Dipakai permukaannya untuk membedakan dua keadaan yang terlihat sama
+     * persis di layar — "bulan ini tidak ada yang basi" dan "pencatatnya belum
+     * cukup lama berjalan untuk tahu". Rp 0 tanpa pembeda itu adalah angka yang
+     * akan dipercaya pemilik padahal ia hanya berarti tabelnya masih kosong.
+     *
+     * Baris `pre_existing` ikut dihitung di sini, berbeda dengan
+     * {@see self::spoiledInPeriod()}: yang ditanyakan bukan berapa yang basi
+     * melainkan sejak kapan ada yang mengamati, dan sapuan pertama itulah
+     * jawabannya.
+     */
+    public function recordingStartedOn(Tenant $tenant): ?string
+    {
+        $first = ExpiredStockRecord::query()
+            ->where('tenant_id', $tenant->id)
+            ->min('recorded_on');
+
+        return $first === null ? null : (string) $first;
+    }
+
+    /**
+     * Varian yang masih menyimpan batch yang sudah lewat tanggal kedaluwarsa.
+     *
+     * Satu definisi untuk dua pembaca: Badge "Kedaluwarsa" di dashboard yang
+     * mendaftar barangnya, dan {@see self::spoiled()} yang menjumlahkan
+     * rupiahnya. Dua definisi yang berselisih hanya akan terlihat sebagai
+     * daftar berisi lima baris dengan nilai total milik enam barang, jauh
+     * setelah penyebabnya dilupakan.
+     *
+     * Dibaca dari batch, bukan dari `product_variants.expiry_date` ([BL-111]).
+     * Setiap baris membawa `expired_units` (unit basi saja, bukan seluruh
+     * stok) dan `expired_since` (tanggal basi paling lama).
+     *
+     * `BusinessClock::today()` dan bukan `now()` mentah: batas harinya harus
+     * hari toko, sama dengan seluruh laporan lain ([BL-082]).
+     *
+     * @return Builder<ProductVariant>
+     */
+    public function expiredOnShelf(Tenant $tenant): Builder
+    {
+        $today = BusinessClock::today();
+        $expired = fn (Builder $query) => $query->expiredOn($today);
+
+        return ProductVariant::query()
+            ->whereHas('product', fn ($query) => $query->where('tenant_id', $tenant->id))
+            ->whereHas('stockBatches', $expired)
+            ->where('stock', '>', 0)
+            ->withSum(['stockBatches as expired_units' => $expired], 'qty_remaining')
+            ->withMin(['stockBatches as expired_since' => $expired], 'expiry_date');
+    }
+}

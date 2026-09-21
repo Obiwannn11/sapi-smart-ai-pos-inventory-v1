@@ -8,6 +8,8 @@ use App\Models\StockMovement;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Str;
+
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
@@ -80,22 +82,22 @@ test('checkout creates transaction and deducts stock', function () {
     actingAs($cashier);
 
     post('/cashier/transactions', [
-            'items' => [
-                [
-                    'variant_id' => $variant->id,
-                    'variant_name' => $variant->name,
-                    'qty' => 2,
-                    'unit_price' => $variant->price,
-                    'modifiers' => [],
-                ],
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 2,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
             ],
-            'payments' => [
-                [
-                    'payment_method_id' => $paymentMethod->id,
-                    'amount' => 50000,
-                ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 50000,
             ],
-        ])
+        ],
+    ])
         ->assertSessionHas('success');
 
     // Verify transaction created
@@ -128,26 +130,101 @@ test('checkout fails when stock is insufficient', function () {
     actingAs($cashier);
 
     post('/cashier/transactions', [
-            'items' => [
-                [
-                    'variant_id' => $variant->id,
-                    'variant_name' => $variant->name,
-                    'qty' => 999,
-                    'unit_price' => $variant->price,
-                    'modifiers' => [],
-                ],
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 999,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
             ],
-            'payments' => [
-                [
-                    'payment_method_id' => $paymentMethod->id,
-                    'amount' => 999 * 25000,
-                ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 999 * 25000,
             ],
-        ])
+        ],
+    ])
         ->assertSessionHas('error');
 
     // Stock unchanged
     expect($variant->fresh()->stock)->toBe(50);
+});
+
+test('checkout is idempotent for a repeated client_uuid', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    $clientUuid = (string) Str::uuid();
+
+    $payload = [
+        'client_uuid' => $clientUuid,
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 2,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 50000,
+            ],
+        ],
+    ];
+
+    post('/cashier/transactions', $payload)->assertSessionHas('success');
+    post('/cashier/transactions', $payload)->assertSessionHas('success');
+
+    // Only one transaction persisted for this client_uuid
+    expect(Transaction::query()->where('client_uuid', $clientUuid)->count())->toBe(1);
+
+    // Stock deducted exactly once (50 - 2), not twice
+    expect($variant->fresh()->stock)->toBe(48);
+});
+
+test('checkout rejects a malformed client_uuid', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'client_uuid' => 'not-a-uuid',
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 25000,
+            ],
+        ],
+    ])->assertSessionHasErrors('client_uuid');
+
+    expect(Transaction::query()->count())->toBe(0);
 });
 
 test('checkout with modifiers includes modifier extra price', function () {
@@ -171,28 +248,28 @@ test('checkout with modifiers includes modifier extra price', function () {
     actingAs($cashier);
 
     post('/cashier/transactions', [
-            'items' => [
-                [
-                    'variant_id' => $variant->id,
-                    'variant_name' => $variant->name,
-                    'qty' => 1,
-                    'unit_price' => $variant->price,
-                    'modifiers' => [
-                        [
-                            'id' => $modifier->id,
-                            'name' => $modifier->name,
-                            'extra_price' => $modifier->extra_price,
-                        ],
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => $variant->price,
+                'modifiers' => [
+                    [
+                        'id' => $modifier->id,
+                        'name' => $modifier->name,
+                        'extra_price' => $modifier->extra_price,
                     ],
                 ],
             ],
-            'payments' => [
-                [
-                    'payment_method_id' => $paymentMethod->id,
-                    'amount' => 30000, // 25000 + 5000
-                ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 30000, // 25000 + 5000
             ],
-        ])
+        ],
+    ])
         ->assertSessionHas('success');
 
     // Total = unit_price (25000) + modifier (5000) = 30000
@@ -200,4 +277,621 @@ test('checkout with modifiers includes modifier extra price', function () {
         'tenant_id' => $tenant->id,
         'total_amount' => 30000,
     ])->exists())->toBeTrue();
+});
+
+/**
+ * [BL-022] StoreTransactionRequest menghitung "cukup bayar" dari `unit_price`
+ * kiriman klien. Perangkat yang memakai katalog offline basi mengirim harga
+ * lama, lolos validasi, lalu checkout menghitung ulang dari harga DB — dan
+ * dulu tetap menyelesaikannya sebagai `completed` dengan kurang bayar.
+ *
+ * **Lapisan yang menolaknya berpindah pada 2026-08-19 (`[BL-018]`).** Dulu
+ * validasi menjumlahkan `items.*.unit_price` kiriman KLIEN, jadi payload ini
+ * lolos ke service dan ditolak di sana sebagai galat flash. Sekarang validasi
+ * menghitung totalnya dari harga SERVER, jadi ia gugur satu lapis lebih awal —
+ * sebelum satu baris pun ditulis — dan berbunyi sebagai galat pada `payments`.
+ * Yang diuji tetap sama: harga basi dari klien tidak pernah bisa menurunkan
+ * jumlah yang harus dibayar.
+ */
+test('checkout rejects payment that is short against DB prices, not client prices', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    // Owner menaikkan harga setelah perangkat memanen katalognya.
+    $variant->update(['price' => 40000]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => 25000, // harga basi dari snapshot
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 25000,
+            ],
+        ],
+    ])->assertSessionHasErrors('payments');
+
+    expect(Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->count())->toBe(0);
+});
+
+test('checkout still succeeds when payment covers the DB price', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    $variant->update(['price' => 40000]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 1,
+                'unit_price' => 40000,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            [
+                'payment_method_id' => $paymentMethod->id,
+                'amount' => 50000,
+            ],
+        ],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->sole();
+
+    expect((float) $transaction->total_amount)->toBe(40000.0)
+        ->and((float) $transaction->change_amount)->toBe(10000.0);
+});
+
+/**
+ * [BL-021] Split bill. Modal-nya dulu membekukan nominal non-tunai saat metode
+ * dipilih, sehingga koreksi pada baris tunai meninggalkan angka QRIS yang basi.
+ * Test ini menjaga sisi yang benar-benar tersimpan: tiap metode membawa
+ * nominalnya sendiri, bukan hanya totalnya yang kebetulan cocok.
+ */
+test('split payment records each method with its own amount', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $cash] = makePOSContext();
+
+    $qris = PaymentMethod::factory()->qris()->create(['tenant_id' => $tenant->id]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 4, // 4 x 25000 = 100000
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            ['payment_method_id' => $cash->id, 'amount' => 60000],
+            ['payment_method_id' => $qris->id, 'amount' => 40000],
+        ],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::query()->where('status', Transaction::STATUS_COMPLETED)->sole();
+
+    expect((float) $transaction->total_amount)->toBe(100000.0)
+        ->and((float) $transaction->change_amount)->toBe(0.0)
+        ->and((float) $transaction->payments()->where('payment_method_id', $cash->id)->value('amount'))->toBe(60000.0)
+        ->and((float) $transaction->payments()->where('payment_method_id', $qris->id)->value('amount'))->toBe(40000.0);
+});
+
+test('split payment that falls short of the total is rejected', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $cash] = makePOSContext();
+
+    $qris = PaymentMethod::factory()->qris()->create(['tenant_id' => $tenant->id]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 4,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => [
+            ['payment_method_id' => $cash->id, 'amount' => 60000],
+            ['payment_method_id' => $qris->id, 'amount' => 30000], // total 90rb dari 100rb
+        ],
+    ])->assertSessionHasErrors('payments');
+
+    expect(Transaction::query()->count())->toBe(0);
+});
+
+test('open bill can be settled with a split payment', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $cash] = makePOSContext();
+
+    $qris = PaymentMethod::factory()->qris()->create(['tenant_id' => $tenant->id]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 4,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => null,
+        'is_open_bill' => true,
+        'customer_name' => 'Meja 3',
+    ])->assertSessionHas('success');
+
+    $bill = Transaction::query()->where('status', Transaction::STATUS_PENDING)->sole();
+
+    post("/cashier/transactions/{$bill->id}/pay", [
+        'payments' => [
+            ['payment_method_id' => $cash->id, 'amount' => 70000],
+            ['payment_method_id' => $qris->id, 'amount' => 30000],
+        ],
+    ])->assertSessionHas('success');
+
+    $bill->refresh();
+
+    expect($bill->status)->toBe(Transaction::STATUS_COMPLETED)
+        ->and($bill->payments)->toHaveCount(2)
+        ->and((float) $bill->payments->sum('amount'))->toBe(100000.0);
+});
+
+/**
+ * [BL-027] Riwayat kasir dulu membuka SELURUH riwayat akun karena filter
+ * tanggal bersifat opsional dan tanpa nilai bawaan.
+ */
+test('history is limited to the cashier open drawer session', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'opened_at' => now()->subHours(3),
+        'closed_at' => null,
+    ]);
+
+    $thisShift = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subHour(),
+    ]);
+
+    $lastWeek = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subWeek(),
+    ]);
+
+    actingAs($cashier);
+
+    get('/cashier/transactions')
+        ->assertInertia(fn ($page) => $page
+            ->component('Cashier/TransactionHistory')
+            // Cakupannya eager, daftarnya ditunda ([BL-037]).
+            ->where('scope.can_filter_date', false)
+            ->missing('transactions')
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->where('transactions.data.0.id', $thisShift->id)
+                ->count('transactions.data', 1)
+            )
+        );
+
+    expect($lastWeek->exists)->toBeTrue();
+});
+
+test('history falls back to today when the cashier has no open drawer', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    $today = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now(),
+    ]);
+
+    Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subDays(2),
+    ]);
+
+    actingAs($cashier);
+
+    get('/cashier/transactions')
+        ->assertInertia(fn ($page) => $page
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->count('transactions.data', 1)
+                ->where('transactions.data.0.id', $today->id)
+            )
+        );
+});
+
+test('cashier cannot widen the history with a date parameter', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'opened_at' => now()->subHours(2),
+        'closed_at' => null,
+    ]);
+
+    Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'occurred_at' => now()->subWeek(),
+    ]);
+
+    actingAs($cashier);
+
+    // Tanggal diselundupkan lewat query string — harus diabaikan, bukan
+    // sekadar disembunyikan tombolnya di UI.
+    get('/cashier/transactions?date='.now()->subWeek()->toDateString())
+        ->assertInertia(fn ($page) => $page
+            ->where('filters.date', null)
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->count('transactions.data', 0)
+            )
+        );
+});
+
+test('owner may still pick a date on the cashier history', function () {
+    ['tenant' => $tenant] = makePOSContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    $old = Transaction::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+        'occurred_at' => now()->subWeek(),
+    ]);
+
+    actingAs($owner);
+
+    get('/cashier/transactions?date='.now()->subWeek()->toDateString())
+        ->assertInertia(fn ($page) => $page
+            ->where('scope.can_filter_date', true)
+            ->loadDeferredProps(fn ($reload) => $reload
+                ->count('transactions.data', 1)
+                ->where('transactions.data.0.id', $old->id)
+            )
+        );
+});
+
+/**
+ * [BL-023] Tagihan terbuka pindah dari dalam gulir keranjang POS ke topbar,
+ * dan karena itu datanya harus tersedia di SEMUA halaman kasir — bukan hanya
+ * di props POS.
+ */
+test('open bills are shared with every cashier page', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'variant_name' => $variant->name,
+                'qty' => 2,
+                'unit_price' => $variant->price,
+                'modifiers' => [],
+            ],
+        ],
+        'payments' => null,
+        'is_open_bill' => true,
+        'customer_name' => 'Meja 7',
+    ])->assertSessionHas('success');
+
+    foreach (['/cashier/pos', '/cashier/transactions', '/cashier/cash-drawer'] as $url) {
+        get($url)->assertInertia(fn ($page) => $page
+            ->count('cashier.openBills', 1)
+            ->where('cashier.openBills.0.customer_name', 'Meja 7')
+            ->count('cashier.openBills.0.items', 1)
+        );
+    }
+});
+
+test('open bills are not shared outside the cashier shell', function () {
+    ['tenant' => $tenant] = makePOSContext();
+
+    $owner = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'owner']);
+
+    Transaction::factory()->pending()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $owner->id,
+    ]);
+
+    actingAs($owner);
+
+    // Halaman owner tidak punya topbar kasir — menghitungnya di sana adalah
+    // query yang tidak pernah dibaca siapa pun.
+    get('/owner/dashboard')->assertInertia(fn ($page) => $page->where('cashier', null));
+});
+
+test('another cashier open bills stay out of this cashier topbar', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    $other = User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'cashier']);
+
+    Transaction::factory()->pending()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $other->id,
+    ]);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    get('/cashier/pos')->assertInertia(fn ($page) => $page->count('cashier.openBills', 0));
+});
+
+/**
+ * Pajak di kasir ([BL-065]).
+ *
+ * Yang dijaga di kedua tes berikut bukan cuma besar pajaknya, melainkan
+ * SIAPA yang menanggungnya — itulah satu-satunya beda nyata antara kedua
+ * mode, dan satu-satunya yang bisa membuat pemilik toko marah kalau keliru.
+ */
+function enableTax(Tenant $tenant, string $mode, float $rate = 11): void
+{
+    $tenant->update([
+        'tax_enabled' => true,
+        'tax_mode' => $mode,
+        'tax_rate' => $rate,
+        'tax_label' => 'PPN',
+    ]);
+}
+
+test('mode exclusive menaikkan yang dibayar pelanggan, bukan pendapatan toko', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_EXCLUSIVE);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // 2 x 25.000 = 50.000, ditambah PPN 11% = 5.500.
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 55500,
+        ]],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::where('tenant_id', $tenant->id)->firstOrFail();
+
+    expect((float) $transaction->subtotal_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(5500.0)
+        ->and((float) $transaction->total_amount)->toBe(55500.0)
+        // Konteksnya dibekukan, supaya struk bisa dicetak ulang dengan angka
+        // yang sama walau tarifnya berubah nanti.
+        ->and((float) $transaction->tax_rate)->toBe(11.0)
+        ->and($transaction->tax_mode)->toBe(Tenant::TAX_MODE_EXCLUSIVE)
+        ->and($transaction->tax_label)->toBe('PPN');
+});
+
+test('mode inclusive tidak mengubah yang dibayar pelanggan', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_INCLUSIVE);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 50000,
+        ]],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::where('tenant_id', $tenant->id)->firstOrFail();
+
+    // Pelanggan tetap membayar 50.000 — yang berubah adalah berapa dari
+    // angka itu yang benar-benar milik toko.
+    expect((float) $transaction->total_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(4955.0)
+        ->and((float) $transaction->subtotal_amount)->toBe(45045.0)
+        ->and((float) $transaction->subtotal_amount + (float) $transaction->tax_amount)
+        ->toBe((float) $transaction->total_amount);
+});
+
+test('tenant tanpa pajak tidak membekukan konteks apa pun', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 50000,
+        ]],
+    ])->assertSessionHas('success');
+
+    $transaction = Transaction::where('tenant_id', $tenant->id)->firstOrFail();
+
+    expect((float) $transaction->total_amount)->toBe(50000.0)
+        ->and((float) $transaction->subtotal_amount)->toBe(50000.0)
+        ->and((float) $transaction->tax_amount)->toBe(0.0)
+        ->and($transaction->tax_mode)->toBeNull()
+        // Dan karena tidak ada konteks beku, tenant ini belum terkunci.
+        ->and($tenant->taxLocked())->toBeFalse();
+});
+
+test('kurang bayar diukur terhadap total yang sudah berpajak', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier, 'variant' => $variant, 'paymentMethod' => $paymentMethod] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_EXCLUSIVE);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // Membayar 50.000 untuk tagihan yang kini 55.500 harus DITOLAK. Kalau
+    // pemeriksaannya memakai angka sebelum pajak, kasir menerima kurang
+    // bayar tanpa pernah tahu.
+    post('/cashier/transactions', [
+        'items' => [[
+            'variant_id' => $variant->id,
+            'variant_name' => $variant->name,
+            'qty' => 2,
+            'unit_price' => $variant->price,
+            'modifiers' => [],
+        ]],
+        'payments' => [[
+            'payment_method_id' => $paymentMethod->id,
+            'amount' => 50000,
+        ]],
+    ])->assertSessionHas('error');
+
+    expect(Transaction::where('tenant_id', $tenant->id)->where('status', 'completed')->exists())
+        ->toBeFalse();
+});
+
+test('layar kasir menerima konteks pajak toko', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    enableTax($tenant, Tenant::TAX_MODE_INCLUSIVE, 10);
+    $tenant->update(['tax_label' => 'PB1']);
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // Eager, bukan ditunda, dan ikut snapshot katalog: kasir offline harus
+    // menghitung total yang sama dengan yang akan dihitung server saat
+    // sinkronisasi, atau tiap penjualan offline mendarat needs_review.
+    get('/cashier/pos')
+        ->assertStatus(200)
+        ->assertInertia(fn ($page) => $page
+            ->where('tax.enabled', true)
+            ->where('tax.mode', Tenant::TAX_MODE_INCLUSIVE)
+            // 10, bukan 10.0: tarif bulat menyeberang JSON sebagai integer.
+            // Klien membungkusnya dengan Number(), jadi keduanya sama saja di
+            // sana — tapi tesnya harus menyatakan yang benar-benar dikirim.
+            ->where('tax.rate', 10)
+            ->where('tax.label', 'PB1')
+        );
+});
+
+test('layar kasir tetap menerima konteks pajak saat pajak mati', function () {
+    ['tenant' => $tenant, 'cashier' => $cashier] = makePOSContext();
+
+    CashDrawer::factory()->create([
+        'tenant_id' => $tenant->id,
+        'user_id' => $cashier->id,
+        'closed_at' => null,
+    ]);
+
+    actingAs($cashier);
+
+    // Propnya tetap ada dengan enabled=false, bukan hilang — snapshot katalog
+    // yang menyimpan `tax: null` tidak bisa dibedakan dari snapshot lama yang
+    // memang belum pernah punya kolomnya.
+    get('/cashier/pos')
+        ->assertStatus(200)
+        ->assertInertia(fn ($page) => $page->where('tax.enabled', false));
 });

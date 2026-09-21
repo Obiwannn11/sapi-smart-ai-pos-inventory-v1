@@ -1,0 +1,2146 @@
+<?php
+
+namespace App\Services;
+
+use App\Jobs\ComputeTenantMonthlyRevenue;
+use App\Models\AiBlockPrice;
+use App\Models\Invoice;
+use App\Models\Plan;
+use App\Models\PlatformAuditLog;
+use App\Models\Subscription;
+use App\Models\Tenant;
+use App\Models\TenantMonthlyMetric;
+use App\Models\User;
+use App\Services\Pricing\AdaptiveEligibility;
+use App\Services\Pricing\MetricReadiness;
+use App\Services\Pricing\MonthlyMetricResolver;
+use App\Services\Pricing\SubsidyEstimator;
+use Illuminate\Support\Carbon;
+
+class SubscriptionService
+{
+    /** Tagihan bisa disusun — `attributes` terisi penuh. */
+    private const DRAFT_OK = 'ok';
+
+    /** Tak ada tarif yang bisa dipakai; lihat `PricingService::fallbackPlanFor()`. */
+    private const DRAFT_UNPRICED = 'unpriced';
+
+    /** Tarifnya ada, tapi totalnya nol — tak ada yang perlu ditransfer. */
+    private const DRAFT_FREE = 'free';
+
+    /** Tagihan pemulihan terbit — `[BL-051]`. */
+    public const REACTIVATION_ISSUED = 'issued';
+
+    /** Tenantnya tidak sedang ditangguhkan, jadi tak ada yang perlu dipulihkan. */
+    public const REACTIVATION_NOT_SUSPENDED = 'not_suspended';
+
+    /** Sudah ada tagihan langganan untuk periode beku itu — bayar yang itu. */
+    public const REACTIVATION_ALREADY_INVOICED = 'already_invoiced';
+
+    /** Tarifnya tak bisa dihitung; yang menghalangi bukan uang. */
+    public const REACTIVATION_UNPRICED = 'unpriced';
+
+    /** Totalnya nol; tak ada yang bisa dibayar untuk pulih. */
+    public const REACTIVATION_FREE = 'free';
+
+    /** Ringkasan omzet penentu tarifnya belum ada — menagih sekarang berarti menagih terlalu mahal. */
+    public const REACTIVATION_NOT_READY = 'not_ready';
+
+    public function __construct(
+        private readonly PricingService $pricing,
+        private readonly AdaptiveEligibility $eligibility,
+        private readonly SubsidyEstimator $estimator,
+        private readonly MetricReadiness $readiness,
+        private readonly PlatformAlertService $alerts,
+    ) {}
+
+    /**
+     * Panjang masa gratis untuk tenant baru, dalam bulan.
+     */
+    public static function trialMonths(): int
+    {
+        return (int) config('subscription.trial_months');
+    }
+
+    /**
+     * Panjang masa tenggang sebelum penangguhan, dalam hari.
+     */
+    public static function graceDays(): int
+    {
+        return (int) config('subscription.grace_days');
+    }
+
+    /**
+     * Hari tenggat ke berapa peringatan berubah jadi mengganggu.
+     */
+    public static function graceIntensiveFromDay(): int
+    {
+        return (int) config('subscription.grace_intensive_from_day');
+    }
+
+    /**
+     * Hari tenggat ke berapa kemampuan menulis dicabut.
+     */
+    public static function graceLockFromDay(): int
+    {
+        return (int) config('subscription.grace_lock_from_day');
+    }
+
+    /**
+     * Berapa hari sebelum periode habis tagihan berikutnya terbit.
+     */
+    public static function invoiceLeadDays(): int
+    {
+        return (int) config('subscription.invoice_lead_days');
+    }
+
+    /**
+     * Berapa hari sebelum masa gratis habis pilihan jalur mulai disodorkan.
+     */
+    public static function trialChoiceLeadDays(): int
+    {
+        return (int) config('subscription.trial_choice_lead_days');
+    }
+
+    /**
+     * Titik waktu penetapan harga untuk periode tagihan `Y-m`.
+     *
+     * Awal bulan periodenya, bukan akhirnya: aturan yang mulai berlaku di
+     * tengah bulan tidak boleh mengubah harga bulan yang sudah berjalan. Yang
+     * dipakai adalah aturan yang sudah berdiri saat periodenya dibuka — itulah
+     * yang akan dikatakan kepada tenant bila ia bertanya.
+     *
+     * Tinggal di sini supaya penerbit otomatis dan penerbit manual di
+     * `Platform\InvoiceController` memakai titik waktu yang sama. Dua tanggal
+     * penetapan harga yang berbeda akan melahirkan dua nominal untuk periode
+     * yang sama, dan yang menang tinggal soal siapa yang menekan tombol.
+     *
+     * Tanggalnya ditulis eksplisit (`-01`), dan itu bukan kerapian belaka:
+     * `createFromFormat('Y-m', ...)` mengisi satuan yang tidak disebut
+     * formatnya dari **hari ini**. Dijalankan pada tanggal 31 atas bulan
+     * berisi 30 hari, `2026-06` meluber jadi `2026-07-01` — dan tagihan Juni
+     * akan dihargai dengan aturan yang baru berdiri di bulan Juli.
+     */
+    public static function pricingAsOf(string $period): Carbon
+    {
+        return Carbon::createFromFormat('Y-m-d', $period.'-01')->startOfMonth();
+    }
+
+    /**
+     * Tanggal akses ditutup sepenuhnya, bila tenant sedang di masa tenggang.
+     *
+     * Dihitung, bukan disimpan: menyimpannya berarti ada dua kebenaran yang
+     * bisa berselisih begitu `grace_days` diubah. Dipakai bersama halaman
+     * langganan dan ringkasan di dashboard — dua perhitungan yang mirip pasti
+     * bercabang begitu salah satunya diperbaiki.
+     *
+     * Mengembalikan null untuk status selain `grace`, karena di luar masa
+     * tenggang tanggal ini tidak punya arti apa pun.
+     */
+    public function suspensionDateFor(Tenant $tenant): ?Carbon
+    {
+        if ($tenant->status !== Tenant::STATUS_GRACE) {
+            return null;
+        }
+
+        return $this->ensureFor($tenant)
+            ->current_period_end
+            ?->copy()
+            ->addDays(self::graceDays());
+    }
+
+    /**
+     * Pastikan tenant punya langganan, buatkan trial bila belum.
+     *
+     * Idempoten dan sengaja dipanggil dari beberapa tempat — registrasi,
+     * pemeriksaan batas seat, halaman langganan. Alasannya: batas seat yang
+     * bersandar pada `$tenant->subscription` akan diam-diam TERBUKA LEBAR untuk
+     * tenant yang lahir lewat jalur lain (seeder, impor, pembuatan manual di
+     * database). Menjamin barisnya ada jauh lebih aman daripada memperlakukan
+     * ketiadaannya sebagai "tanpa batas".
+     */
+    public function ensureFor(Tenant $tenant): Subscription
+    {
+        $existing = $tenant->subscription()->first();
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        return $this->startTrial($tenant);
+    }
+
+    /**
+     * Buka masa gratis di paket `free`, jalur harga normal.
+     *
+     * Jalur normal adalah default yang disengaja: tenant belum menyetujui apa
+     * pun soal pembukaan data omset, jadi jalur adaptif tidak boleh menjadi
+     * keadaan awal siapa pun.
+     *
+     * **Panjangnya dihitung dalam bulan, bukan hari** (keputusan pemilik
+     * 2026-08-07). `addMonthsNoOverflow()` dan bukan `addMonths()`: dua bulan
+     * dari 31 Desember tanpa penjaga luberan mendarat di 3 Maret dan melewatkan
+     * Februari sama sekali.
+     */
+    public function startTrial(Tenant $tenant): Subscription
+    {
+        $plan = Plan::default();
+        $mulai = now();
+        $trialEndsAt = $mulai->copy()->addMonthsNoOverflow(self::trialMonths());
+
+        return $tenant->subscription()->create([
+            'plan_id' => $plan->id,
+            'pricing_track' => Subscription::TRACK_NORMAL,
+            'seats' => $plan->included_seats,
+            'seat_high_water' => 1,
+            'price_locked' => null,
+            'trial_ends_at' => $trialEndsAt,
+            'current_period_start' => $mulai->toDateString(),
+            'current_period_end' => $trialEndsAt->toDateString(),
+            // Jangkar tanggal tagih lahir di sini dan tidak pernah berubah lagi.
+            // Ia harus ditulis sekarang, bukan disimpulkan belakangan: begitu
+            // sebuah periode berakhir di bulan pendek, tanggalnya sudah terjepit
+            // dan hari aslinya tak bisa dipulihkan dari data mana pun.
+            //
+            // Diambil dari tanggal DAFTAR, bukan tanggal masa gratis berakhir:
+            // keduanya hampir selalu sama, kecuali ketika akhir masa gratis
+            // terjepit bulan pendek. Yang daftar 31 Desember berakhir 28
+            // Februari — mengambil jangkar dari situ mengunci tanggal tagihnya
+            // di 28 selamanya, padahal yang ia minta tanggal 31.
+            'billing_anchor_day' => $mulai->day,
+        ]);
+    }
+
+    /**
+     * Tanggal periode berbayar berikutnya, sebagai atribut siap-simpan.
+     *
+     * Satu-satunya tempat periode langganan dimajukan. Dituliskan di sini dan
+     * bukan di pemanggilnya karena aturannya bukan aritmetika tanggal biasa,
+     * melainkan tiga keputusan yang harus jalan bersama — dan tiga keputusan
+     * yang disalin ke pemanggil kedua pasti bercabang.
+     *
+     * **Menyambung, bukan mulai dari hari verifikasi.** Titik mulainya adalah
+     * akhir periode sebelumnya, bukan `now()`. Tanpa itu tenant yang telat bayar
+     * lima hari menggeser tanggal tagihnya maju lima hari, permanen — dan
+     * tanggal 29/30/31 bisa menjadi titik mulai periode hanya karena kebetulan
+     * bukti bayarnya diperiksa pada tanggal itu.
+     *
+     * **Mengikuti jangkar, bukan menambah satu bulan.** Lihat
+     * `Subscription::anchoredDateIn()`: penjepitan bulan pendek tidak menular ke
+     * bulan sesudahnya.
+     *
+     * **Tunggakan tidak ditumpuk.** Bila periode yang tersambung ternyata sudah
+     * lewat seluruhnya — tenant membayar setelah berbulan-bulan tertangguh —
+     * periodenya dimajukan sampai berakhir di masa depan. Satu pembayaran
+     * memulihkan satu periode ke depan, bukan menyeret tenant ke periode yang
+     * sudah usai lalu langsung menangguhkannya lagi.
+     *
+     * **Ditinjau ulang 2026-08-07, setelah `[BL-044]`(b) berjalan — aturannya
+     * tetap.** Kekhawatirannya waktu itu: begitu tagihan terbit otomatis tiap
+     * periode, tiap bulan yang terlewat punya tagihannya sendiri, jadi
+     * "melompati" periode berarti melompati tagihan. Itu tidak terjadi, karena
+     * `issueDuePeriodInvoices()` hanya menerbitkan satu tagihan per pelanggaran:
+     * `current_period_end` tidak pernah maju selama tenant belum membayar, jadi
+     * kunci `Y-m` periodenya membeku dan penjaga periode-ganda menolak semua
+     * penerbitan sesudahnya. Satu pembayaran memulihkan satu periode, dan hanya
+     * pernah ada satu tagihan langganan terbuka untuk dipulihkan — kedua aturan
+     * itu bertemu, bukan bertabrakan.
+     *
+     * Yang akan mematahkannya, bila kelak ditulis: penerbit yang menagih tiap
+     * bulan terlewat secara terpisah. Ia melahirkan tagihan kedua, dan sejak
+     * saat itu melompati periode berarti benar-benar melompati uang.
+     *
+     * **Yang kedua sudah ditulis, dan sengaja tidak mematahkannya.** Sejak
+     * 2026-08-31 tenant `suspended` bisa meminta tagihan pemulihannya sendiri
+     * (`issueReactivationInvoice()`, `[BL-051]` opsi (ii)) — penerbitan untuk
+     * status yang periodenya beku, persis yang diperingatkan di sini. Ia aman
+     * karena periodenya diambil dari `current_period_end` yang beku itu juga,
+     * sehingga kunci `Y-m`-nya sama dengan yang sudah dijaga, dan penjaga
+     * periode-ganda di dalamnya menolak tagihan kedua. Tetap SATU tagihan per
+     * pelanggaran, tetap satu periode per pembayaran.
+     *
+     * @return array{current_period_start: string, current_period_end: string, billing_anchor_day: int}
+     */
+    public function renewPeriod(Subscription $subscription): array
+    {
+        $today = now()->startOfDay();
+        $start = $subscription->current_period_end?->copy()->startOfDay() ?? $today->copy();
+        $end = $subscription->nextAnchoredDateAfter($start);
+
+        while ($end->lte($today)) {
+            $start = $end;
+            $end = $subscription->nextAnchoredDateAfter($start);
+        }
+
+        return [
+            'current_period_start' => $start->toDateString(),
+            'current_period_end' => $end->toDateString(),
+            // Ditulis ulang tiap kali supaya baris lama yang jangkarnya masih
+            // kosong mendapatkannya pada pembaruan periode pertamanya, bukan
+            // menunggu backfill kedua.
+            'billing_anchor_day' => $subscription->billingAnchorDay(),
+        ];
+    }
+
+    /**
+     * Pindahkan tenant yang masa gratisnya hampir habis ke paket berbayar
+     * tujuannya — `[BL-052]`.
+     *
+     * Sampai sekarang `trial_ends_at` ditulis di `startTrial()` dan tidak pernah
+     * dibaca lagi. Akibatnya paket `free` tidak bisa hidup: tarifnya Rp 0,
+     * penerbit tagihan melewatinya tanpa memperpanjang periode, lalu periodenya
+     * lewat dan tenant turun ke masa tenggang — tiap periode, selamanya. Yang
+     * hilang bukan penyempurnaan melainkan penggeraknya; `changePlan()` sudah
+     * ada sejak lama, tak ada yang memanggilnya.
+     *
+     * **Dipindahkan pada jendela yang sama dengan penerbitan tagihan**
+     * (`invoice_lead_days`), bukan sehari setelah masa gratisnya habis. Dua
+     * sebabnya:
+     *
+     *   - Tagihan periode berbayar pertama terbit H-7. Menunggu sampai
+     *     `trial_ends_at` benar-benar lewat berarti penerbit sudah melihat
+     *     tenant ini seharga Rp 0 dan melewatinya — tepat kegagalan yang
+     *     hendak ditutup. Pemindahan HARUS mendahului penerbitan, dan urutan itu
+     *     dijaga di `advanceLifecycle()`, bukan di jadwal.
+     *   - `[BL-052]`(c) meminta tenant tahu sebelum hari-H. Tagihan yang tiba
+     *     tujuh hari lebih awal, dengan nama paket barunya tertulis di halaman
+     *     langganan, adalah pemberitahuan itu.
+     *
+     * **Sisa hari gratisnya tidak berkurang, dan batasnya tidak menyempit.**
+     * Periode berjalan tidak disentuh — tenant tetap tidak ditagih sampai
+     * `current_period_end`. Yang berubah hanya paketnya, dan paket tujuannya
+     * selalu lebih longgar daripada `free` (jatah pengguna dan kuota AI naik).
+     * Bila kelak ada paket tujuan yang lebih sempit dari paket gratis, jendela
+     * ini harus dipikirkan ulang — bukan angkanya, melainkan arahnya.
+     *
+     * **Tanpa paket tujuan, pemindahannya berhenti dan bersuara.** Tidak jatuh
+     * diam-diam ke paket termurah: menebak berarti memindahkan tenant ke tarif
+     * yang tak seorang pun putuskan, lalu menagihkannya. Tenantnya dihitung
+     * sebagai `stranded` dan dicatat sebagai kejadian sensitif — ini salah
+     * setel, bukan kebijakan.
+     *
+     * `suspended` di luar jangkauan, mengikuti penerbit tagihan: aksesnya sudah
+     * tertutup, dan memindahkan paket tenant yang tak bisa memakainya hanya
+     * mengubah angka tanpa ada yang melihatnya.
+     *
+     * @return array{graduated: int, stranded: int}
+     */
+    public function graduateExpiredTrials(bool $dryRun = false): array
+    {
+        $horizon = now()->startOfDay()->addDays(self::invoiceLeadDays());
+        $freePlan = Plan::default();
+
+        $due = Tenant::query()
+            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE, Tenant::STATUS_GRACE])
+            ->whereHas('subscription', fn ($query) => $query
+                // Paketnya, bukan tarifnya. Tenant berbayar yang tarifnya
+                // kebetulan Rp 0 hari ini — keringanan, atau paket yang
+                // angkanya belum ditetapkan — bukan tenant yang masa gratisnya
+                // habis, dan memindahkannya berarti mencabut kesepakatan.
+                ->where('plan_id', $freePlan->id)
+                // Baris tanpa tenggat masa gratis (seeder, impor, pembuatan
+                // manual) sengaja dibiarkan. Memindahkan tenant yang tak pernah
+                // dijanjikan tanggal berakhir berarti menagihnya karena datanya
+                // tidak lengkap.
+                ->whereNotNull('trial_ends_at')
+                ->whereDate('trial_ends_at', '<=', $horizon))
+            ->with('subscription')
+            ->get();
+
+        if ($due->isEmpty()) {
+            return ['graduated' => 0, 'stranded' => 0];
+        }
+
+        $target = Plan::postTrialTarget();
+
+        // Paket tujuan yang menunjuk paket gratis itu sendiri ditolak seperti
+        // ketiadaan penunjukan. Ia akan "memindahkan" tenant ke tempat yang
+        // sama, tiap hari, dan lingkaran yang berjalan mulus jauh lebih sulit
+        // dikenali daripada perpindahan yang berhenti dan mengeluh.
+        if ($target === null || $target->is($freePlan)) {
+            if (! $dryRun) {
+                PlatformAuditLog::record('subscriptions.post-trial-target-missing', null, [
+                    'tenant_ids' => $due->pluck('id')->all(),
+                    'target_plan_id' => $target?->id,
+                ]);
+            }
+
+            return ['graduated' => 0, 'stranded' => $due->count()];
+        }
+
+        if (! $dryRun) {
+            foreach ($due as $tenant) {
+                $subscription = $tenant->subscription;
+                $sebelum = $subscription->plan_id;
+
+                $this->changePlan($subscription, $target);
+
+                PlatformAuditLog::record('subscriptions.trial-graduated', $tenant, [
+                    'tenant_id' => $tenant->id,
+                    'trial_ends_at' => $subscription->trial_ends_at?->toDateString(),
+                    'from_plan_id' => $sebelum,
+                    'to_plan' => $target->slug,
+                    'seats' => $subscription->seats,
+                ]);
+            }
+        }
+
+        return ['graduated' => $due->count(), 'stranded' => 0];
+    }
+
+    /**
+     * Komponen seat pada tagihan langganan periode berjalan.
+     *
+     * Seat tambahan adalah biaya BULANAN, bukan sekali bayar (keputusan pemilik
+     * 2026-08-07, `[BL-053]`). Sampai 2026-08-07 ia ditagih sekali lewat
+     * `KIND_UPGRADE` lalu melekat permanen — artinya Rp 20.000 berbunyi "sekali,
+     * seat itu milik Anda selamanya". Angkanya benar, satuannya salah.
+     *
+     * Jumlahnya dari `entitledExtraSeats()` — hak yang DIBELI, bukan pemakaian
+     * yang diamati (keputusan pemilik kedua 2026-08-07, yang mengoreksi butir
+     * (a) entri itu). Usul semula memakai `seat_high_water − included_seats`;
+     * puncak pemakaian kini tidak menentukan nominal apa pun.
+     *
+     * `$periodStart` adalah awal periode yang DITAGIH, bukan hari ini. Tagihan
+     * terbit `invoice_lead_days` sebelum periode berjalan habis, jadi menanyakan
+     * hak "sekarang" akan menagih periode depan dengan keadaan hari ini — dan
+     * pelepasan yang sudah dijadwalkan tepat di antara keduanya akan tertagih
+     * satu periode lebih lama daripada yang dijanjikan.
+     *
+     * **Tarif per seat selalu dari PAKET, termasuk untuk tenant Adaptif**
+     * (keputusan pemilik 2026-08-07). Yang didiskon jalur Adaptif adalah harga
+     * langganannya, bukan harga penggunanya: tenant Adaptif di `paid-1` membayar
+     * Rp 15.000 per seat meski langganannya turun ke Rp 10.000 oleh bracket. Itu
+     * konsisten dengan "Adaptif = `paid-1` yang didiskon", dan ia disengaja —
+     * bukan efek samping dari `resolveFor()` yang kebetulan tidak menyentuh seat.
+     *
+     * @return array{seats: int, unit_price: float, amount: float}
+     */
+    public function seatChargeFor(Subscription $subscription, ?Carbon $periodStart = null): array
+    {
+        $subscription->loadMissing('plan');
+
+        $seats = $subscription->entitledExtraSeats($periodStart);
+        $unitPrice = (float) ($subscription->plan?->extra_seat_price ?? 0);
+
+        return [
+            'seats' => $seats,
+            'unit_price' => $unitPrice,
+            'amount' => $seats * $unitPrice,
+        ];
+    }
+
+    /**
+     * Prorata seat: hari-hari yang sudah jadi hak tenant tapi belum tertutup
+     * tagihan penuh mana pun (`[BL-070]`, bentuk (a), keputusan pemilik
+     * 2026-09-07).
+     *
+     * Sebelum ini seat yang dibeli tanggal berapa pun gratis sampai periode
+     * habis. Itu pilihan sadar, bukan cacat — yang mengubahnya adalah keputusan
+     * memilih bentuk (a) setelah ternyata penyimpanannya, bukan aritmetikanya,
+     * yang jadi ongkos sebenarnya: bentuk (b) yang "lebih murah" membutuhkan
+     * state yang sama persis dan hanya menghemat beberapa baris hitungan.
+     *
+     * **Yang ditagih adalah hari yang tak tertutup, bukan sisa periode.** Kedua
+     * rumus itu sama untuk kasus biasa dan berbeda untuk kasus yang justru
+     * paling merugikan: tagihan periode berikutnya terbit `invoice_lead_days`
+     * SEBELUM periode berjalan habis, dan seat yang dibeli di dalam jendela itu
+     * tidak ikut tagihan yang sudah terbit — sementara penjaga periode-ganda
+     * menolak tagihan kedua untuk periode yang sama. Seat itu baru tertagih
+     * penuh DUA periode kemudian. Menghitung "sisa periode berjalan" akan
+     * menagih beberapa hari dan membiarkan sisanya lewat; menghitung dari
+     * tanggal beli sampai awal periode yang benar-benar menagihnya menutup
+     * seluruhnya, dan menghasilkan pecahan di atas 1 justru ketika memang
+     * seharusnya. Celah ini tidak tercatat di entri `[BL-070]` — ia mengklaim
+     * kerugiannya "paling banyak satu periode per seat".
+     *
+     * **Penyebutnya dibaca dari entri, tidak dihitung ulang.** `period_days`
+     * dibekukan saat pembelian karena periode yang mengandungnya sudah lewat
+     * saat tagihan disusun, dan mengukurnya dengan jangkar hari ini meleset tiap
+     * kali bulan pendek ada di antaranya. Entri lama tanpa `period_days` jatuh
+     * ke panjang bulan periode yang ditagih — hampiran, dan hanya berlaku untuk
+     * data yang tidak bisa lahir dari `grantSeats()`.
+     *
+     * `entries` dikembalikan supaya pemanggilnya bisa mengosongkan PERSIS yang
+     * ikut tertagih. Mengosongkan seluruh kolom akan menghanguskan pembelian
+     * yang menyelip antara penyusunan dan penyimpanan tagihan.
+     *
+     * @return array{days: int, seats: int, unit_price: float, amount: float, entries: list<array<string, mixed>>}
+     */
+    public function seatProrataFor(Subscription $subscription, ?Carbon $periodStart = null): array
+    {
+        $subscription->loadMissing('plan');
+
+        $billedFrom = ($periodStart ?? now())->copy()->startOfDay();
+        $unitPrice = (float) ($subscription->plan?->extra_seat_price ?? 0);
+
+        $days = 0;
+        $seats = 0;
+        $amount = 0.0;
+        $entries = [];
+
+        foreach ($subscription->pending_seat_prorata ?? [] as $entry) {
+            $on = Carbon::parse($entry['on'])->startOfDay();
+            $entrySeats = (int) ($entry['seats'] ?? 0);
+            $periodDays = (int) ($entry['period_days'] ?? 0);
+
+            if ($periodDays <= 0) {
+                $periodDays = $billedFrom->daysInMonth;
+            }
+
+            // Pembelian yang jatuh pada atau sesudah awal periode yang ditagih
+            // sudah tertutup penuh oleh komponen seat tagihan ini. Ia tetap
+            // DIKONSUMSI dengan nominal nol — dibiarkan menggantung, ia akan
+            // tertagih lagi sebagai satu periode penuh di tagihan berikutnya,
+            // untuk hari-hari yang sudah dibayar. Keadaan ini nyata pada tenant
+            // yang periodenya beku di masa lalu (`suspended`, `[BL-051]`).
+            $uncovered = $on->lt($billedFrom) ? (int) $on->diffInDays($billedFrom) : 0;
+
+            $days = max($days, $uncovered);
+            $seats += $entrySeats;
+            $amount += $entrySeats * $unitPrice * $uncovered / $periodDays;
+            $entries[] = $entry;
+        }
+
+        return [
+            'days' => $days,
+            'seats' => $seats,
+            'unit_price' => $unitPrice,
+            // Dibulatkan ke rupiah utuh sekali di sini, bukan per entri:
+            // membulatkan tiap entri lalu menjumlahkannya menggeser total
+            // sebesar jumlah entrinya, dan selisih itu muncul di tagihan yang
+            // harus bisa dijelaskan pecahannya.
+            'amount' => round($amount),
+            'entries' => $entries,
+        ];
+    }
+
+    /**
+     * Komponen kuota AI tambahan untuk satu periode (`[BL-069]`).
+     *
+     * Kembaran `seatChargeFor()` sampai ke perkara `$periodStart`-nya, dan
+     * kemiripan itu disengaja: keputusan pemilik 2026-08-19 menetapkan kuota AI
+     * dijual PERSIS seperti seat — komponen bulanan yang berulang, bukan
+     * pembelian sekali bayar. Dua alur beli untuk satu bentuk yang sama akan
+     * berselisih pada hal yang paling mahal untuk salah: apa yang berhak
+     * ditagih.
+     *
+     * **Tarifnya seragam, bukan per paket,** dan di sinilah ia berpisah dari
+     * seat. `extra_seat_price` bertangga per paket karena seat adalah hak yang
+     * nilainya berbeda menurut ukuran tenant; ongkos satu analisis tidak
+     * berbeda menurut paket pembelinya, sehingga tangga di sana hanya akan jadi
+     * angka yang harus dijelaskan tanpa punya dasar.
+     *
+     * Dibaca SETIAP periode dari `AiBlockPrice`, tidak pernah dibekukan di
+     * langganan — keputusan pemilik 2026-09-16: blok yang sudah dibeli ikut
+     * harga baru. Yang membekukannya tetap ada, tapi di hilir, pada tagihan
+     * yang sudah terbit (`pricing_context.billing_breakdown.ai_block_price`),
+     * sehingga tagihan lama tetap bisa dijelaskan sementara tagihan berikutnya
+     * memakai tarif yang berlaku hari ini.
+     *
+     * @return array{blocks: int, block_size: int, unit_price: float, amount: float}
+     */
+    public function aiQuotaChargeFor(Subscription $subscription, ?Carbon $periodStart = null): array
+    {
+        $blocks = $subscription->entitledAiBlocks($periodStart);
+        $unitPrice = AiBlockPrice::current();
+
+        return [
+            'blocks' => $blocks,
+            'block_size' => (int) config('subscription.ai_quota.block_size', 0),
+            'unit_price' => $unitPrice,
+            'amount' => $blocks * $unitPrice,
+        ];
+    }
+
+    /**
+     * Kosongkan entri prorata yang baru saja ikut tertagih (`[BL-070]`).
+     *
+     * Dipanggil SESUDAH tagihannya tersimpan, tidak pernah saat disusun.
+     * `draftSubscriptionInvoice()` sengaja tidak menyimpan apa pun, dan entri
+     * yang hangus untuk tagihan yang batal terbit adalah hari-hari yang tidak
+     * akan pernah tertagih kepada siapa pun.
+     *
+     * Yang dibuang dicocokkan per entri, bukan dengan mengosongkan kolomnya:
+     * pembelian yang menyelip antara penyusunan dan penyimpanan harus tetap
+     * menunggu tagihan berikutnya.
+     *
+     * @param  list<array<string, mixed>>  $consumed
+     */
+    private function consumeSeatProrata(Subscription $subscription, array $consumed): void
+    {
+        if ($consumed === []) {
+            return;
+        }
+
+        $remaining = [];
+
+        foreach ($subscription->pending_seat_prorata ?? [] as $entry) {
+            $index = array_search($entry, $consumed, strict: true);
+
+            if ($index === false) {
+                $remaining[] = $entry;
+
+                continue;
+            }
+
+            // Dibuang sekali per kecocokan: dua pembelian identik di hari yang
+            // sama adalah dua entri yang sama persis, dan membuang keduanya
+            // karena satu cocok akan menggratiskan yang satunya.
+            unset($consumed[$index]);
+        }
+
+        $subscription->update([
+            'pending_seat_prorata' => $remaining === [] ? null : $remaining,
+        ]);
+    }
+
+    /**
+     * Terbitkan tagihan periode berikutnya untuk tenant yang periodenya hampir
+     * habis.
+     *
+     * Sebelum ini, satu-satunya cara tagihan bulanan lahir adalah pemilik SaaS
+     * mengetiknya sendiri untuk tiap tenant, tiap bulan. Tenant tidak pernah
+     * diberi tahu berapa yang harus dibayar — ia hanya menemukan aplikasinya
+     * berubah jadi hanya-baca. Lihat `[BL-044]`.
+     *
+     * Nominalnya keluar dari `PricingService::resolveFor()`, resolver yang sama
+     * dengan penerbit manual, supaya keduanya tidak pernah bercabang.
+     *
+     * **Yang tidak bisa ditagih tidak menghentikan apa pun** (keputusan pemilik
+     * 2026-08-05). Tenant tanpa tarif tetap menempuh siklus hidupnya seperti
+     * biasa; perintah ini hanya menolak menerbitkan tagihan dan melaporkan
+     * jumlahnya. Dua sebabnya dipisah karena obatnya berbeda:
+     *
+     *   - **nominal nol** — paket `free` berharga Rp 0. Menerbitkan tagihan Rp 0
+     *     akan menuntut tenant mengunggah bukti transfer nol rupiah
+     *     (`[BL-049]`), jadi tidak diterbitkan sama sekali. Menyembuhkan dirinya
+     *     sendiri: begitu tarifnya ditetapkan, tagihan mulai terbit tanpa satu
+     *     baris kode pun berubah — termasuk untuk tenant yang keburu turun ke
+     *     masa tenggang sementara tarifnya masih nol; lihat catatan `grace` di
+     *     bawah.
+     *     Yang diperiksa adalah **totalnya**, bukan tarif paketnya saja
+     *     (`[BL-053]`): tenant di paket Rp 0 yang membeli seat tambahan punya
+     *     nominal yang benar-benar harus dibayar, dan melewatinya berarti
+     *     memberikan seat berbayar itu cuma-cuma.
+     *   - **tarif tidak ada** — `resolveFor()` mengembalikan `null` untuk tenant
+     *     Adaptif tanpa bracket yang cocok dan tanpa paket penampung, persis
+     *     keadaan "menghilang dari penagihan tanpa satu pun tanda" yang
+     *     diperingatkan `PricingService::fallbackPlanFor()`. Ia dicatat sebagai
+     *     kejadian sensitif, karena ia salah setel, bukan kebijakan.
+     *
+     * **Masa tenggang ikut ditagih; penangguhan tidak.** Awalnya `grace`
+     * dikecualikan dengan alasan "tagihannya sudah terbit saat ia masih aktif" —
+     * benar untuk tenant yang memang sudah ditagih, dan justru tidak berlaku
+     * untuk tenant yang kedua sebabnya di atas membuatnya lewat tanpa tagihan.
+     * Bagi mereka pengecualian itu permanen: `current_period_end` tidak pernah
+     * maju selama tenant belum membayar, jadi ia tak akan pernah kembali ke
+     * `active` sendiri, dan menetapkan tarifnya besok tidak menerbitkan apa pun.
+     * Satu-satunya jalan keluar adalah pemilik SaaS mengetiknya manual — persis
+     * keadaan yang `[BL-044]` tutup. Alasan sebenarnya sudah dipegang penjaga
+     * periode-ganda di bawah, yang menolak tagihan kedua tanpa peduli status
+     * tenantnya, jadi pengecualian statusnya bisa dilepas tanpa membuka apa pun.
+     *
+     * `suspended` tetap di luar, dan tetap dengan alasan yang sama: aksesnya
+     * sudah tertutup penuh, dan menerbitkan tagihan atas bulan yang tak bisa
+     * dipakai berarti menumbuhkan utang yang tak pernah diminta siapa pun.
+     *
+     * Sisi lainnya — tenant yang ingin KEMBALI dan tak punya apa pun untuk
+     * dibayar — dijawab 2026-08-31 dengan penerbit terpisah yang dipicu tenant
+     * sendiri, bukan dengan melonggarkan daftar status di sini. Lihat
+     * `issueReactivationInvoice()` dan `[BL-051]`. Menambahkan
+     * `Tenant::STATUS_SUSPENDED` ke saringan di bawah akan mengembalikan tepat
+     * keadaan yang ditolak di alinea ini.
+     *
+     * @return array{issued: int, free: int, unpriced: int, skipped: int}
+     */
+    public function issueDuePeriodInvoices(bool $dryRun = false): array
+    {
+        $today = now()->startOfDay();
+        $horizon = $today->copy()->addDays(self::invoiceLeadDays());
+
+        $issued = 0;
+        $free = 0;
+        $unpriced = 0;
+        $skipped = 0;
+        $postponed = 0;
+        $overdue = 0;
+
+        $due = Tenant::query()
+            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE, Tenant::STATUS_GRACE])
+            ->whereHas('subscription', fn ($query) => $query->whereDate('current_period_end', '<=', $horizon))
+            ->with('subscription')
+            ->get();
+
+        foreach ($due as $tenant) {
+            $subscription = $tenant->subscription;
+
+            // Akhir periode berjalan adalah awal periode berikutnya — periode
+            // itulah yang ditagih di sini.
+            $periodStart = $subscription?->current_period_end;
+
+            if ($periodStart === null) {
+                continue;
+            }
+
+            $period = $periodStart->format('Y-m');
+
+            // Penjaga yang sama dengan penerbit manual. Siklus berjangkar selalu
+            // membuka tepat satu periode per bulan kalender, jadi kunci `Y-m`
+            // tidak pernah bertabrakan dengan dirinya sendiri — yang ditolaknya
+            // adalah tagihan yang sudah diketik pemilik SaaS untuk periode itu.
+            //
+            // **`kind` wajib ikut disaring** (`[BL-058]`). Tanpa itu, satu
+            // tagihan penambahan seat di bulan X — yang memakai `period` yang
+            // sama — membatalkan tagihan LANGGANAN bulan X, dan tenantnya lolos
+            // sebulan penuh. Saringan ini menyelaraskan penjaga aplikasi dengan
+            // indeks uniknya, yang sejak awal sudah `(tenant_id, period, kind)`;
+            // sebelumnya keduanya menjaga dua hal yang berbeda.
+            $sudahAda = Invoice::where('tenant_id', $tenant->id)
+                ->where('period', $period)
+                ->where('kind', Invoice::KIND_SUBSCRIPTION)
+                ->exists();
+
+            if ($sudahAda) {
+                // Dihitung, bukan sekadar dilewati. Tiga penghitung lainnya
+                // menjelaskan KENAPA sebuah tagihan tidak terbit; yang ini dulu
+                // satu-satunya yang tidak, dan justru itu yang membuat
+                // `[BL-058]` tak terlihat selama ada: keluaran perintahnya
+                // terbaca normal sementara satu tenant hilang dari hitungan.
+                $skipped++;
+
+                continue;
+            }
+
+            $asOf = self::pricingAsOf($period);
+
+            // PENUNDAAN PENERBITAN — `[BL-080]` butir (b), opsi (i).
+            //
+            // Tenant Adaptif berjangkar tanggal 1–7 sampai di sini pada hari
+            // ketika ringkasan omzet bulan sebelumnya belum ditulis: tagihannya
+            // terbit H-7, jadi di akhir bulan sebelumnya, sementara bulan itu
+            // sendiri baru tutup keesokan harinya. Menerbitkan sekarang berarti
+            // menagih dari angka yang tidak berhak dipakai.
+            //
+            // Diperiksa SEBELUM `resolveFor()`, dan itu seluruh alasan
+            // `MetricReadiness` ada: penetapan harga tidak pernah kehabisan
+            // jawaban — tanpa ringkasan ia menjatuhkan tenant ke paket
+            // penampung, dan tagihan yang terbit di jalur itu bukan tagihan
+            // yang tertunda melainkan tagihan yang terlalu mahal.
+            //
+            // Tidak dicatat ke jejak audit selama masih dalam tenggat: bagi
+            // tenant berjangkar awal bulan, tertunda beberapa hari adalah
+            // keadaan yang WAJAR dan berulang tiap bulan. Angkanya dilaporkan
+            // perintahnya, dan itu tempat yang benar untuk hal yang normal.
+            if (! $this->readiness->isReadyFor($tenant, $asOf)) {
+                if ($today->lt($periodStart)) {
+                    $postponed++;
+
+                    continue;
+                }
+
+                // BATAS PENUNDAAN. Tanpa baris ini "tunda sampai ringkasannya
+                // ada" berubah diam-diam jadi "tidak pernah ditagih" — dan itu
+                // bukan kemungkinan teoretis: dokumen persetujuan subsidi
+                // menjanjikan seluruh ringkasan omzet DIHAPUS seketika saat
+                // consent dicabut, sementara jalur harganya baru kembali normal
+                // di akhir periode. Di sela itu tenant masih Adaptif dan
+                // ringkasannya sudah tidak ada lagi.
+                //
+                // Tetap TIDAK diterbitkan, dan itu disengaja. Menerbitkan dari
+                // paket penampung berarti menagih tenant subsidi dengan tarif
+                // termahal karena sebuah cron gagal — persis arah kesalahan yang
+                // paling merugikan tenant, dan yang paling akan diadukan.
+                // Tagihan yang tertahan menunda uang; tagihan yang salah
+                // mengambilnya.
+                $overdue++;
+
+                if (! $dryRun) {
+                    PlatformAuditLog::record('invoices.postponement-overdue', $tenant, [
+                        'tenant_id' => $tenant->id,
+                        'period' => $period,
+                        'required_metric_period' => MonthlyMetricResolver::requiredPeriodFor($asOf),
+                        'pricing_track' => $subscription->pricing_track,
+                    ]);
+
+                    // Jejak audit menjawab "apa yang terjadi" bagi yang sempat
+                    // membukanya; keadaan ini butuh seseorang yang belum tahu
+                    // harus membuka apa pun.
+                    $this->alerts->send(
+                        key: 'invoices.postponement-overdue',
+                        subject: 'Tagihan langganan tertahan: ringkasan omzet tidak pernah tiba',
+                        summary: 'Satu atau lebih tenant Harga Adaptif sudah melewati hari jatuh tempo periodenya tanpa tagihan, karena ringkasan omzet bulan penentu tarifnya tidak ada. Tagihannya sengaja TIDAK diterbitkan agar tidak memakai tarif paket penampung.',
+                        lines: [
+                            "Tenant: {$tenant->name}",
+                            "Periode tagihan: {$period}",
+                            'Ringkasan yang dibutuhkan: '.MonthlyMetricResolver::requiredPeriodFor($asOf),
+                            'Periksa apakah `subscriptions:compute-revenue` berjalan, atau apakah tenant ini mencabut persetujuan subsidinya.',
+                        ],
+                    );
+                }
+
+                continue;
+            }
+
+            $draft = $this->draftSubscriptionInvoice($tenant, $subscription, $periodStart, $today);
+
+            if ($draft['status'] === self::DRAFT_UNPRICED) {
+                $unpriced++;
+
+                if (! $dryRun) {
+                    PlatformAuditLog::record('invoices.unpriced', $tenant, [
+                        'tenant_id' => $tenant->id,
+                        'period' => $period,
+                        'pricing_track' => $subscription->pricing_track,
+                    ]);
+                }
+
+                continue;
+            }
+
+            if ($draft['status'] === self::DRAFT_FREE) {
+                // Tidak dicatat ke jejak audit: selama tarifnya belum
+                // ditetapkan, keadaan ini berlaku untuk SETIAP tenant setiap
+                // bulan, dan jejak yang terisi hal yang sama tiap hari
+                // menenggelamkan kejadian yang benar-benar perlu terlihat.
+                // Angkanya dilaporkan perintahnya, dan itu cukup.
+                $free++;
+
+                continue;
+            }
+
+            $issued++;
+
+            if (! $dryRun) {
+                $invoice = Invoice::create($draft['attributes']);
+
+                $this->consumeSeatProrata($subscription, $draft['prorata']);
+
+                PlatformAuditLog::record('invoices.auto-create', $invoice, $draft['audit']);
+            }
+        }
+
+        return [
+            'issued' => $issued,
+            'free' => $free,
+            'unpriced' => $unpriced,
+            'skipped' => $skipped,
+            'postponed' => $postponed,
+            'overdue' => $overdue,
+        ];
+    }
+
+    /**
+     * Susun tagihan langganan satu periode — nominalnya, pecahannya, dan
+     * seluruh atribut siap-simpannya. TIDAK menyimpan apa pun.
+     *
+     * Diangkat keluar dari `issueDuePeriodInvoices()` saat penerbit KEDUA lahir
+     * (`[BL-051]`, tombol "aktifkan kembali"). Yang dijaga di sini bukan
+     * kerapian melainkan uang: dua penerbit yang menyalin urutan tarif → seat →
+     * kuota AI → pecahan pasti bercabang begitu salah satunya diperbaiki, dan
+     * cabang di jalur uang adalah jenis kesalahan yang paling lama tidak
+     * terlihat. Yang TIDAK ikut ke sini adalah hal-hal yang memang berbeda
+     * antar penerbit — penghitung, jejak audit, dan pemberitahuan.
+     *
+     * Kesiapan ringkasan omzet (`MetricReadiness`) juga sengaja tidak di sini:
+     * penerbit massal membedakan "tertunda dan masih wajar" dari "sudah lewat
+     * tenggat", sementara penerbit atas permintaan tenant hanya perlu menolak.
+     * Keduanya harus memeriksanya SEBELUM memanggil metode ini.
+     *
+     * @return array{status: string, amount: float, attributes: array<string, mixed>, audit: array<string, mixed>, prorata: list<array<string, mixed>>}
+     */
+    private function draftSubscriptionInvoice(
+        Tenant $tenant,
+        Subscription $subscription,
+        Carbon $periodStart,
+        Carbon $today,
+    ): array {
+        $period = $periodStart->format('Y-m');
+        $resolved = $this->pricing->resolveFor($tenant, self::pricingAsOf($period));
+        $price = $resolved['price'];
+
+        if ($price === null) {
+            return ['status' => self::DRAFT_UNPRICED, 'amount' => 0.0, 'attributes' => [], 'audit' => [], 'prorata' => []];
+        }
+
+        // Komponen seat, dihitung untuk periode yang DITAGIH — bukan untuk
+        // hari ini (`[BL-053]`). Ia ditambahkan setelah penjaga tarif-null
+        // dan sebelum penjaga tarif-nol, keduanya disengaja: tenant tanpa
+        // tarif tetap tak bisa ditagih meski punya seat berbayar, sementara
+        // tenant bertarif Rp 0 yang membeli seat kini PUNYA yang harus
+        // dibayar dan karena itu berhenti terhitung `free`.
+        $seat = $this->seatChargeFor($subscription, $periodStart);
+
+        // Komponen kuota AI, dengan pertimbangan yang sama persis seperti
+        // seat di atasnya (`[BL-069]`): dihitung untuk periode yang
+        // DITAGIH, dan ikut menentukan apakah tenant terhitung `free`.
+        // Tenant di paket Rp 0 yang membeli kuota punya yang benar-benar
+        // harus dibayar; melewatinya berarti memberikan kapasitas berbayar
+        // itu cuma-cuma.
+        $aiQuota = $this->aiQuotaChargeFor($subscription, $periodStart);
+
+        // Prorata seat (`[BL-070]`): hari-hari yang sudah jadi hak tapi belum
+        // tertutup tagihan penuh mana pun. Ikut sebelum penjaga nominal-nol
+        // dengan alasan yang sama seperti seat dan kuota AI di atasnya — tenant
+        // di paket Rp 0 yang membeli seat di tengah periode punya nominal yang
+        // benar-benar harus dibayar.
+        $prorata = $this->seatProrataFor($subscription, $periodStart);
+
+        $amount = $price + $seat['amount'] + $aiQuota['amount'] + $prorata['amount'];
+
+        if ($amount <= 0.0) {
+            return ['status' => self::DRAFT_FREE, 'amount' => 0.0, 'attributes' => [], 'audit' => [], 'prorata' => []];
+        }
+
+        return [
+            'status' => self::DRAFT_OK,
+            'amount' => $amount,
+            'prorata' => $prorata['entries'],
+            'attributes' => [
+                'tenant_id' => $tenant->id,
+                'subscription_id' => $subscription->id,
+                'period' => $period,
+                'kind' => Invoice::KIND_SUBSCRIPTION,
+                'amount' => $amount,
+                // Selalu terisi bila ada aturan yang cocok: penerbit ini
+                // menagih persis tarif yang dihitung, jadi tidak ada kasus
+                // "nominal diketik ulang" seperti pada penerbit manual.
+                'pricing_rule_id' => $resolved['rule']?->id,
+                // Rincian pecahannya ikut dibekukan bersama konteks dimensi
+                // (`[BL-053]`(a)). Tagihan yang tidak bisa dijelaskan
+                // pecahannya akan jadi tiket dukungan pertama — dan
+                // menghitungnya ulang belakangan hanya mengembalikan angka
+                // hari ini, bukan angka yang benar-benar ditagihkan.
+                //
+                // Bersarang di satu kunci, bukan disebar sebagai kunci
+                // sejajar: `context` berisi nilai DIMENSI, dan rincian
+                // tagihan yang menumpang di ruang nama yang sama cepat atau
+                // lambat akan bertabrakan dengan dimensi baru.
+                'pricing_context' => $resolved['context'] + [
+                    'billing_breakdown' => [
+                        'base_price' => $price,
+                        'extra_seats' => $seat['seats'],
+                        'extra_seat_price' => $seat['unit_price'],
+                        'extra_seats_amount' => $seat['amount'],
+                        'ai_blocks' => $aiQuota['blocks'],
+                        'ai_block_size' => $aiQuota['block_size'],
+                        'ai_block_price' => $aiQuota['unit_price'],
+                        'ai_blocks_amount' => $aiQuota['amount'],
+                        // Rincian prorata WAJIB ikut dibekukan, bukan sekadar
+                        // nominalnya (`[BL-070]`). Satu baris tagihan yang
+                        // pecahannya tak bisa ditelusuri sampai ke tanggal
+                        // belinya adalah tiket dukungan pertama, dan
+                        // menghitungnya ulang belakangan hanya mengembalikan
+                        // angka hari ini karena entrinya sudah dikosongkan.
+                        'seat_prorata_days' => $prorata['days'],
+                        'seat_prorata_seats' => $prorata['seats'],
+                        'seat_prorata_amount' => $prorata['amount'],
+                        'seat_prorata_entries' => $prorata['entries'],
+                        'total' => $amount,
+                    ],
+                ],
+                'status' => Invoice::STATUS_UNPAID,
+                // Jatuh tempo = hari periode berjalan habis. Sesudah itu
+                // tenant masuk masa tenggang, bukan langsung tertutup.
+                //
+                // Tidak pernah di masa lalu. Tenant yang ditagih susulan di
+                // masa tenggang periodenya memang sudah lewat, dan tagihan
+                // yang lahir sudah lewat tempo hari itu juga membacanya
+                // seperti tunggakan yang ia abaikan — padahal hari ini
+                // barulah pertama kali ia melihat angkanya.
+                //
+                // Aturan yang sama menjawab tagihan pemulihan (`[BL-051]`):
+                // periode tenant `suspended` beku berbulan-bulan di masa lalu,
+                // jadi yang keluar dari sini selalu HARI INI. Tanggal jatuh
+                // tempo yang lahir sudah lewat akan membuat tagihan yang baru
+                // saja diminta tenant sendiri terbaca sebagai tunggakan lama.
+                'due_date' => $periodStart->max($today)->toDateString(),
+            ],
+            'audit' => [
+                'tenant_id' => $tenant->id,
+                'period' => $period,
+                'amount' => $amount,
+                'base_price' => $price,
+                'extra_seats' => $seat['seats'],
+                'ai_blocks' => $aiQuota['blocks'],
+                'pricing_rule' => $resolved['label'],
+                'source' => $resolved['source'],
+            ],
+        ];
+    }
+
+    /**
+     * Terbitkan SATU tagihan pemulihan atas permintaan tenant yang ditangguhkan
+     * — `[BL-051]`, opsi (ii); keputusan pemilik 2026-08-31.
+     *
+     * **Kenapa ini ada.** `issueDuePeriodInvoices()` sengaja tidak menagih
+     * tenant `suspended`: aksesnya sudah tertutup penuh, dan menerbitkan tagihan
+     * atas bulan yang tak bisa dipakai berarti menumbuhkan utang yang tak pernah
+     * diminta siapa pun. Aturan itu TETAP. Yang tidak terpikir saat menuliskannya
+     * adalah arah sebaliknya — tenant yang ingin KEMBALI. Sekali tertangguh tanpa
+     * tagihan terbuka (buktinya pernah ditolak lalu tak pernah diselesaikan, atau
+     * ia tertangguh sebelum tarifnya pernah ditetapkan), tak ada apa pun yang
+     * bisa ia bayar untuk pulih: `current_period_end` beku, penerbit tak
+     * menyentuhnya, dan satu-satunya pintu adalah pemilik SaaS mengetikkan
+     * tagihannya manual. Itu persis keadaan yang `[BL-044]` tutup, hanya bergeser
+     * satu status ke kanan.
+     *
+     * **Tagihannya lahir karena tenant memintanya, bukan karena kalender.** Itu
+     * seluruh perbedaannya dengan opsi (iii) yang ditolak: tenant yang memang
+     * sudah pergi tidak menerima apa-apa, dan tidak ada utang yang tumbuh di
+     * belakang punggungnya.
+     *
+     * **SATU tagihan, bukan satu per bulan yang terlewat** — `[BL-051]`(b), dan
+     * ini bukan preferensi. Periodenya diambil dari `current_period_end` yang
+     * beku, jadi kunci `(tenant_id, period, kind)`-nya sama persis dengan yang
+     * dijaga penerbit massal; penjaga di bawah menolak yang kedua. Satu
+     * pembayaran memulihkan satu periode ke depan lewat `renewPeriod()`, dan
+     * hanya pernah ada satu tagihan terbuka untuk dipulihkan. Menerbitkan tiap
+     * bulan terlewat secara terpisah akan membuat aturan "tunggakan tidak
+     * ditumpuk" mulai melompati uang sungguhan — lihat docblock `renewPeriod()`,
+     * yang menyebut penerbitan bagi tenant `suspended` sebagai salah satu dari
+     * dua hal yang bisa mematahkannya. Penjaga inilah yang membuatnya tetap
+     * tidak patah.
+     *
+     * **Pemulihannya sendiri tidak ditulis di sini.** Melunasi tagihan sudah
+     * membawa tenant ke `active` dan memajukan periodenya lewat
+     * `InvoiceSettlement::settle()` — satu-satunya pintu menuju keadaan itu.
+     * Menambahkan jalur kedua berarti tenant bisa pulih tanpa uangnya masuk.
+     *
+     * Tiga penolakan yang mengembalikan `unpriced`, `free`, dan `not_ready`
+     * adalah tempat opsi (i) tetap berlaku: bagi tenant yang tarifnya belum
+     * pernah ditetapkan atau tak bisa dihitung, yang menghalanginya bukan uang,
+     * jadi tak ada tagihan yang bisa menjawabnya. Tenant itu diarahkan menghubungi
+     * pengelola — dan itu memang percakapan, bukan tombol.
+     *
+     * `$dryRun` menjawab pertanyaan yang sama tanpa menerbitkan apa pun, dan ia
+     * ada untuk satu pemakai: halaman langganan, yang harus tahu apakah tombolnya
+     * berarti SEBELUM tenant menekannya. Formulir yang menawarkan lalu menolak
+     * membuat tenant menebak sendiri apa yang salah — dan tenant yang sedang
+     * ditangguhkan adalah yang paling tidak punya ruang untuk menebak.
+     *
+     * @return array{status: string, invoice: ?Invoice}
+     */
+    public function issueReactivationInvoice(Tenant $tenant, ?User $requestedBy = null, bool $dryRun = false): array
+    {
+        if (! $tenant->isSuspended()) {
+            return ['status' => self::REACTIVATION_NOT_SUSPENDED, 'invoice' => null];
+        }
+
+        $subscription = $this->ensureFor($tenant);
+        $periodStart = $subscription->current_period_end;
+
+        if ($periodStart === null) {
+            return ['status' => self::REACTIVATION_UNPRICED, 'invoice' => null];
+        }
+
+        $period = $periodStart->format('Y-m');
+
+        // Penjaga periode-ganda, sama persis dengan penerbit massal — `kind`
+        // ikut disaring (`[BL-058]`). Statusnya sengaja TIDAK ikut disaring:
+        // tagihan yang sudah ada untuk periode ini, termasuk yang `rejected`,
+        // masih bisa dibayar dan masih bisa diunggahi bukti baru. Tenant dengan
+        // tagihan seperti itu tidak sedang buntu — ia hanya belum
+        // menyelesaikannya, dan menerbitkan yang kedua justru membuatnya
+        // menebak mana yang harus dibayar.
+        $existing = Invoice::where('tenant_id', $tenant->id)
+            ->where('period', $period)
+            ->where('kind', Invoice::KIND_SUBSCRIPTION)
+            ->latest('id')
+            ->first();
+
+        if ($existing !== null) {
+            return ['status' => self::REACTIVATION_ALREADY_INVOICED, 'invoice' => $existing];
+        }
+
+        // Diperiksa dengan alasan yang sama seperti di penerbit massal: tanpa
+        // ringkasan omzet, penetapan harga menjatuhkan tenant Adaptif ke paket
+        // penampung, dan tagihan yang lahir di jalur itu bukan tagihan yang
+        // tertunda melainkan tagihan yang terlalu mahal. Menagih terlalu mahal
+        // seorang tenant yang baru saja meminta jalan pulang adalah arah
+        // kesalahan yang paling merugikan.
+        if (! $this->readiness->isReadyFor($tenant, self::pricingAsOf($period))) {
+            return ['status' => self::REACTIVATION_NOT_READY, 'invoice' => null];
+        }
+
+        $draft = $this->draftSubscriptionInvoice($tenant, $subscription, $periodStart, now()->startOfDay());
+
+        if ($draft['status'] !== self::DRAFT_OK) {
+            return [
+                'status' => $draft['status'] === self::DRAFT_UNPRICED
+                    ? self::REACTIVATION_UNPRICED
+                    : self::REACTIVATION_FREE,
+                'invoice' => null,
+            ];
+        }
+
+        if ($dryRun) {
+            return ['status' => self::REACTIVATION_ISSUED, 'invoice' => null];
+        }
+
+        $invoice = Invoice::create($draft['attributes']);
+
+        $this->consumeSeatProrata($subscription, $draft['prorata']);
+
+        // Dicatat sebagai kejadian sensitif, dan `requested_by` bukan hiasan:
+        // `platform_user_id` selalu null di sini — tak ada orang platform yang
+        // menekan tombolnya — sehingga tanpa baris ini jejaknya menyisakan
+        // tagihan yang seolah lahir sendiri.
+        PlatformAuditLog::record('invoices.reactivation', $invoice, $draft['audit'] + [
+            'requested_by' => $requestedBy?->id,
+        ]);
+
+        return ['status' => self::REACTIVATION_ISSUED, 'invoice' => $invoice];
+    }
+
+    /**
+     * Keadaan tombol "aktifkan kembali" bagi halaman langganan — `[BL-051]`.
+     *
+     * `null` untuk tenant yang tidak ditangguhkan: halaman itu dibaca setiap
+     * hari oleh tenant yang sehat, dan panel yang menjelaskan pemulihan kepada
+     * orang yang tidak butuh dipulihkan hanya menimbulkan kecemasan.
+     *
+     * Yang dikembalikan adalah status yang SAMA dengan yang akan diberikan
+     * penerbitannya, bukan sekadar boleh/tidak. Halaman perlu membedakan
+     * "tagihannya sudah ada di bawah" dari "tarifnya tak bisa dihitung": yang
+     * pertama diselesaikan tenant sendiri, yang kedua hanya bisa diselesaikan
+     * percakapan dengan pengelola.
+     *
+     * @return array{available: bool, status: string}|null
+     */
+    public function reactivationStateFor(Tenant $tenant): ?array
+    {
+        if (! $tenant->isSuspended()) {
+            return null;
+        }
+
+        $status = $this->issueReactivationInvoice($tenant, dryRun: true)['status'];
+
+        return [
+            'available' => $status === self::REACTIVATION_ISSUED,
+            'status' => $status,
+        ];
+    }
+
+    /**
+     * Apakah tenant masih punya sisa seat untuk satu pengguna aktif lagi.
+     *
+     * Satu-satunya tempat aturan batas seat dituliskan. Titik penegakannya ada
+     * dua — menambah staf dan mengaktifkan kembali staf — dan keduanya harus
+     * memanggil ini, bukan menyalin logikanya. Aturan yang disalin akan
+     * bercabang begitu salah satunya diperbaiki.
+     *
+     * Pendaftaran tenant baru sengaja TIDAK memanggilnya: owner pertama adalah
+     * pengguna ke-0, jadi ia selalu muat, dan memanggilnya di sana hanya
+     * menambah query tanpa menutup celah apa pun.
+     */
+    public function hasSeatFor(Tenant $tenant): bool
+    {
+        return $this->ensureFor($tenant)->hasSeatAvailable();
+    }
+
+    /**
+     * Kalimat penolakan saat seat habis — menyebut angkanya dan menunjuk jalan
+     * keluar. Penolakan tanpa jalan keluar hanya membuat orang buntu.
+     */
+    public function seatLimitMessage(Tenant $tenant): string
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        return sprintf(
+            'Paket Anda mencakup %d pengguna aktif dan semuanya sudah terpakai. '
+            .'Nonaktifkan salah satu staf, atau tingkatkan paket dari halaman Langganan.',
+            $subscription->seats,
+        );
+    }
+
+    /**
+     * Pindahkan langganan ke paket lain.
+     *
+     * Sampai sekarang `plan_id` ditulis sekali seumur hidup langganan, di
+     * `startTrial()`, dan tidak ada satu pun jalur yang mengubahnya lagi
+     * (`[BL-046]`(2)). Akibatnya paket kedua hanya bisa dibuat, tidak bisa
+     * dihuni — dan keputusan pemilik 2026-08-01 ("tenant beromset tinggi hanya
+     * bisa Premium") tidak punya cara ditegakkan sama sekali.
+     *
+     * **Seat tambahan yang sudah dibeli ikut pindah.** Batas pengguna sebuah
+     * langganan adalah jatah paketnya ditambah seat yang dibelinya sendiri.
+     * Menyalin `seats` apa adanya akan menelan jatah paket baru bagi tenant yang
+     * tak pernah membeli tambahan, sementara menyetelnya ke jatah paket baru saja
+     * akan mencabut seat yang sudah dibayar — keduanya kekeliruan yang baru
+     * terlihat berbulan-bulan kemudian, saat tenant menabrak batas yang tak
+     * pernah ia setujui.
+     *
+     * Angkanya dibaca dari `purchased_extra_seats`, bukan disimpulkan lagi dari
+     * `seats − included_seats` (`[BL-053]`). Selisih itu benar hanya selama
+     * tidak ada yang lain yang menggerakkan `seats`; sejak seat tambahan jadi
+     * komponen tagihan bulanan, angka yang jadi dasar uang tidak boleh
+     * bergantung pada pengurangan yang bisa meleset.
+     *
+     * **Tarif periode berjalan tidak disentuh.** `price_locked` sudah memegang
+     * harga yang disepakati, dan `pricingAsOf()` menetapkan harga periode
+     * berikutnya dari aturan yang berdiri saat periodenya dibuka. Pemindahan di
+     * tengah periode karena itu berlaku pada tagihan berikutnya, bukan pada
+     * tagihan yang sedang berjalan.
+     */
+    public function changePlan(Subscription $subscription, Plan $plan): void
+    {
+        $subscription->update([
+            'plan_id' => $plan->id,
+            'seats' => $plan->included_seats + $subscription->purchased_extra_seats,
+        ]);
+
+        $subscription->setRelation('plan', $plan);
+    }
+
+    /**
+     * Jarak minimum antar perpindahan jalur harga, dalam bulan.
+     */
+    public static function trackSwitchMinimumMonths(): int
+    {
+        return (int) config('subscription.track_switch_minimum_months');
+    }
+
+    /**
+     * Boleh pindah jalur sekarang?
+     *
+     * Perpindahan pertama selalu boleh — `track_changed_at` masih kosong. Jarak
+     * minimum baru berlaku setelahnya, supaya tenant tidak bolak-balik ke jalur
+     * subsidi mengikuti bulan ramai dan sepi.
+     */
+    public function canSwitchTrack(Tenant $tenant): bool
+    {
+        // Dihitung lewat `trackSwitchAvailableAt()`, bukan dengan menguranginya
+        // sendiri dari `now()`. Keduanya setara dalam aritmetika tanggal biasa,
+        // tapi TIDAK setara begitu penjaga luberan ikut bermain: 30 Nov + 3
+        // bulan dijepit ke 28 Feb, sementara 28 Feb − 3 bulan mendarat di 28
+        // Nov. Tanggal yang dipajang di layar akan menjanjikan 28 Februari
+        // sementara gerbangnya baru terbuka 2 Maret. Satu perhitungan, satu
+        // jawaban.
+        $availableAt = $this->trackSwitchAvailableAt($tenant);
+
+        return $availableAt === null || $availableAt->lte(now());
+    }
+
+    /**
+     * Tanggal paling awal tenant boleh pindah jalur lagi.
+     */
+    public function trackSwitchAvailableAt(Tenant $tenant): ?Carbon
+    {
+        $changedAt = $this->ensureFor($tenant)->track_changed_at;
+
+        // Kembaran `canSwitchTrack()` — keduanya wajib memakai penjaga luberan
+        // yang sama, kalau tidak tanggal yang dipajang di layar akan berselisih
+        // dengan tanggal yang benar-benar ditegakkan.
+        return $changedAt?->copy()->addMonthsNoOverflow(self::trackSwitchMinimumMonths());
+    }
+
+    /**
+     * Pindahkan tenant ke jalur subsidi.
+     *
+     * Dipanggil HANYA setelah persetujuan jalur subsidi tercatat. Kolom
+     * `pricing_track` di `tenants` ikut diubah karena di sanalah gerbang privasi
+     * job penghitung omset membaca — filter itu harus tanpa join, sesederhana
+     * dan semurah mungkin.
+     */
+    public function switchToSubsidized(Tenant $tenant): void
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $subscription->update([
+            'pricing_track' => Subscription::TRACK_SUBSIDIZED,
+            'track_changed_at' => now(),
+            'track_reverts_at' => null,
+            'track_revert_reason' => null,
+        ]);
+
+        $tenant->update(['pricing_track' => Subscription::TRACK_SUBSIDIZED]);
+
+        // Omzetnya dihitung SEKARANG, bukan menunggu jadwal tanggal 1
+        // (`[BL-055]`(b)). Tanpa ini, tenant yang baru menyerahkan datanya
+        // demi keringanan mendarat di halaman yang mengatakan "omzet Anda
+        // belum dihitung" — sampai empat minggu, tepat pada orang yang
+        // mengajukan karena tidak sanggup membayar bulan ini.
+        //
+        // Dipanggil sesudah kedua kolom jalur ditulis, karena gerbang privasi
+        // di `recordFor()` membaca `tenants.pricing_track`; terbalik, ia akan
+        // menolak menghitung dan diam.
+        (new ComputeTenantMonthlyRevenue)->recordFor($tenant->refresh());
+    }
+
+    /**
+     * Jadwalkan kembalinya tenant ke jalur normal setelah consent dicabut.
+     *
+     * Jalurnya BELUM berubah sekarang: harga subsidi tetap berlaku sampai
+     * periode berjalan habis, persis seperti yang dijanjikan dokumen consent.
+     * Yang berhenti seketika hanyalah pengumpulan datanya — job penghitung omset
+     * menyaring berdasarkan persetujuan yang masih aktif, bukan berdasarkan
+     * kolom jalur.
+     *
+     * Ringkasan omset yang sudah ada dihapus di sini juga. Harga yang sedang
+     * berjalan tetap bisa dipertanggungjawabkan karena angkanya sudah tersimpan
+     * di `price_locked` — jadi tak ada alasan menahan datanya lebih lama.
+     */
+    public function scheduleTrackRevert(Tenant $tenant): void
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $subscription->update([
+            'track_reverts_at' => $subscription->current_period_end ?? now()->toDateString(),
+            // Sebabnya ikut disimpan supaya pemindahan paket di
+            // `advanceLifecycle()` tidak salah sasaran: pencabutan sukarela
+            // TIDAK memindahkan paket, pemindahan ambang iya.
+            'track_revert_reason' => Subscription::REVERT_REVOKED,
+        ]);
+
+        TenantMonthlyMetric::where('tenant_id', $tenant->id)->delete();
+    }
+
+    /**
+     * Verdict pengajuan Harga Adaptif untuk satu tenant — berikut ALASANNYA.
+     *
+     * `canSwitchTrack()` menjawab boleh atau tidak, dan itu cukup untuk sebuah
+     * `if`. Yang tidak cukup adalah layarnya: tombol yang mati tanpa keterangan
+     * membuat tenant mengira aplikasinya rusak, lalu menghubungi dukungan untuk
+     * menanyakan hal yang sistem sudah tahu jawabannya (`[BL-055]`(c)). Ketiga
+     * sebab penolakan punya jalan keluar yang berbeda — menunggu, membayar
+     * penuh, atau tidak melakukan apa-apa karena sudah di dalam — dan hanya
+     * kalimat yang menyebut sebabnya bisa menunjukkan jalan itu.
+     *
+     * Urutan pemeriksaannya disengaja: keadaan lebih dulu, baru waktu, baru
+     * omzet. Yang paling murah dan paling pasti didahulukan, dan omzet —
+     * satu-satunya yang menyentuh data penjualan — hanya dihitung bila dua
+     * saringan sebelumnya lolos.
+     *
+     * @return array{eligible: bool, reason: string, available_at: string|null, ceiling: float|null, revenue: float|null}
+     */
+    public function adaptiveVerdict(Tenant $tenant): array
+    {
+        $verdict = fn (string $reason, ?float $revenue = null): array => [
+            'eligible' => $reason === AdaptiveEligibility::REASON_ELIGIBLE,
+            'reason' => $reason,
+            'available_at' => $this->trackSwitchAvailableAt($tenant)?->toDateString(),
+            'ceiling' => $this->eligibility->ceiling(),
+            'revenue' => $revenue,
+        ];
+
+        if ($this->ensureFor($tenant)->isSubsidized()) {
+            return $verdict(AdaptiveEligibility::REASON_ACTIVE);
+        }
+
+        if (! $this->canSwitchTrack($tenant)) {
+            return $verdict(AdaptiveEligibility::REASON_COOLDOWN);
+        }
+
+        $revenue = $this->eligibility->measuredRevenueFor($tenant);
+
+        return $this->eligibility->isAboveCeiling($tenant)
+            ? $verdict(AdaptiveEligibility::REASON_ABOVE_CEILING, $revenue)
+            : $verdict(AdaptiveEligibility::REASON_ELIGIBLE, $revenue);
+    }
+
+    /**
+     * Paket dan tarif yang menunggu tenant begitu masa gratisnya habis —
+     * `[BL-052]`(c).
+     *
+     * `null` untuk tiga keadaan yang sama-sama berarti "tak ada yang perlu
+     * diumumkan": tenant tidak sedang di paket gratis, langganannya tak punya
+     * tanggal akhir masa gratis, atau pemilik SaaS belum menunjuk paket tujuan
+     * mana pun. Yang terakhir sengaja tidak berbunyi apa-apa di sisi tenant —
+     * salah setel platform bukan kabar yang berguna baginya; yang menagihnya
+     * adalah peringatan di `/platform/pricing-rules` dan keluaran
+     * `subscriptions:advance-lifecycle`.
+     *
+     * **Angkanya `base_price` paket tujuan, bukan `PricingService::resolveFor()`.**
+     * Tenant masa coba masih duduk di paket gratis, jadi resolver menjawab tarif
+     * paket ITU — Rp 0 — dan menjanjikannya sebagai harga bulan depan berarti
+     * berbohong tepat pada layar yang meminta tenant memutuskan. Yang berlaku
+     * baginya nanti adalah tarif paket yang akan ia huni, dan itulah yang
+     * disebut di sini.
+     *
+     * Tinggal di service, bukan di controller, karena tiga layar menanyakannya:
+     * halaman langganan, pilihan akhir masa coba di dashboard, dan pembanding
+     * tarif jalur Adaptif. Tiga salinan pasti bercabang pada hari pertama
+     * salah satunya diperbaiki.
+     *
+     * @return array{name: string, base_price: float}|null
+     */
+    public function postTrialPlanFor(Subscription $subscription): ?array
+    {
+        $subscription->loadMissing('plan');
+
+        if ($subscription->trial_ends_at === null || $subscription->plan->slug !== Plan::SLUG_DEFAULT) {
+            return null;
+        }
+
+        $target = Plan::postTrialTarget();
+
+        if ($target === null || $target->slug === Plan::SLUG_DEFAULT) {
+            return null;
+        }
+
+        return [
+            'name' => $target->name,
+            'base_price' => (float) $target->base_price,
+        ];
+    }
+
+    /**
+     * Tarif yang dipakai sebagai PEMBANDING saat menawarkan Harga Adaptif.
+     *
+     * Bukan selalu tarif yang berlaku hari ini. Tenant masa coba membayar Rp 0,
+     * dan membandingkan tawaran keringanan terhadap nol membuat setiap tawaran
+     * terbaca "tidak lebih murah" — pada justru satu-satunya kelompok yang
+     * sedang diminta memilih jalurnya. Yang dibandingkan seharusnya dua angka
+     * yang benar-benar bersaing: tarif Harga Tetap yang menunggunya, dan tarif
+     * Adaptif yang ditawarkan sebagai gantinya.
+     */
+    public function comparisonPriceFor(Subscription $subscription): float
+    {
+        return $this->postTrialPlanFor($subscription)['base_price']
+            ?? $subscription->effectivePrice();
+    }
+
+    /**
+     * Momen pilihan jalur di akhir masa gratis — `[BL-044]`(c).
+     *
+     * `null` bila tidak ada yang perlu diputuskan sekarang; sebuah ringkasan
+     * kedua jalur bila ada. Yang membuatnya sebuah PILIHAN dan bukan sekadar
+     * peringatan: kedua jalurnya disebut berdampingan berikut angkanya, dan
+     * jalur yang tertutup menyebutkan sebabnya alih-alih menghilang.
+     *
+     * **Tenant yang tidak layak tetap melihat kartunya, dengan satu jalur.**
+     * Menyembunyikannya berarti tenant beromzet tinggi tidak pernah diberi tahu
+     * bahwa masa gratisnya berujung tagihan — dan itu persis kabar yang paling
+     * perlu ia dengar. Kelayakannya ditanyakan ke `adaptiveVerdict()`, bukan
+     * diperiksa ulang di sini; menyodorkan pilihan yang sistem tidak bisa tolak
+     * adalah keadaan yang keputusan pemilik 2026-08-01 tutup.
+     *
+     * **Jendelanya dibuka lebih awal daripada penerbitan tagihan.** Lihat
+     * `trial_choice_lead_days`: pilihan yang tiba bersamaan dengan tagihan
+     * pertama bukan pilihan.
+     *
+     * @return array{
+     *     trial_ends_at: string,
+     *     first_invoice_at: string,
+     *     first_invoice_issued: bool,
+     *     fixed: array{name: string, base_price: float},
+     *     adaptive: array{eligible: bool, reason: string, ceiling: float|null, revenue: float|null, available_at: string|null, estimate: array|null}
+     * }|null
+     */
+    public function trialChoice(Tenant $tenant): ?array
+    {
+        if ($tenant->status !== Tenant::STATUS_TRIAL) {
+            return null;
+        }
+
+        $subscription = $this->ensureFor($tenant);
+        $fixed = $this->postTrialPlanFor($subscription);
+
+        // Tanpa paket tujuan tak ada jalur untuk ditawarkan, dan menyebut
+        // "masa coba Anda akan habis" tanpa bisa menyebutkan menjadi apa hanya
+        // menakuti tanpa memberi jalan. Salah setelnya ditagih ke pemilik SaaS
+        // lewat `graduateExpiredTrials()`, bukan ke tenant.
+        if ($fixed === null) {
+            return null;
+        }
+
+        $trialEndsAt = $subscription->trial_ends_at->copy()->startOfDay();
+        $hariIni = now()->startOfDay();
+
+        if ($hariIni->lt($trialEndsAt->copy()->subDays(self::trialChoiceLeadDays()))) {
+            return null;
+        }
+
+        $verdict = $this->adaptiveVerdict($tenant);
+        $firstInvoiceAt = $trialEndsAt->copy()->subDays(self::invoiceLeadDays());
+
+        return [
+            'trial_ends_at' => $trialEndsAt->toDateString(),
+            'first_invoice_at' => $firstInvoiceAt->toDateString(),
+            // Pilihan yang diambil SESUDAH tagihan pertama terbit tidak lagi
+            // mengubah nominalnya — `issueDuePeriodInvoices()` menolak
+            // menerbitkan periode yang sama dua kali, dan itu memang penjaga
+            // yang benar. Yang salah adalah membiarkan tenant mengira
+            // keringanannya berlaku bulan ini. Dikirim sebagai keadaan, bukan
+            // dipendam: kalimat di layar berubah, tawarannya tidak.
+            'first_invoice_issued' => $hariIni->gte($firstInvoiceAt),
+            'fixed' => $fixed,
+            'adaptive' => [
+                'eligible' => $verdict['eligible'],
+                'reason' => $verdict['reason'],
+                'ceiling' => $verdict['ceiling'],
+                'revenue' => $verdict['revenue'],
+                'available_at' => $verdict['available_at'],
+                // Dihitung HANYA bila jalurnya memang terbuka. Perkiraan tarif
+                // untuk tenant yang tidak boleh mengajukannya bukan informasi,
+                // melainkan tawaran yang akan ditolak — dan ia menyeret satu
+                // agregat penjualan ke tiap pemuatan dashboard tanpa ada yang
+                // membacanya.
+                'estimate' => $verdict['eligible']
+                    ? $this->estimator->estimateFor($tenant, $this->comparisonPriceFor($subscription))
+                    : null,
+            ],
+        ];
+    }
+
+    /**
+     * Jadwalkan keluarnya tenant Adaptif yang omzetnya melewati ambang —
+     * `[BL-055]`(e).
+     *
+     * **Pada periode berikutnya, bukan hari ini.** Tarif periode berjalan sudah
+     * dibekukan di `price_locked` dan `invoices.pricing_context` supaya bisa
+     * dipertanggungjawabkan; menaikkannya di tengah periode berarti tenant
+     * membayar angka yang berbeda dari yang tertulis saat periodenya dibuka.
+     * Yang berubah hari ini hanyalah pemberitahuannya — dan justru itu intinya:
+     * tenant tahu sebelum tagihannya naik, bukan sesudah.
+     *
+     * **Consent-nya TIDAK dicabut di sini.** Tenant tidak menarik apa pun; ia
+     * hanya tumbuh. Mencabutnya atas namanya akan menghapus ringkasan omzet
+     * yang justru menjadi bukti kenapa ia dipindahkan.
+     *
+     * Tenant yang sudah punya jadwal kembali — apa pun sebabnya — dilewati.
+     * Menimpanya berarti pencabutan sukarela yang sedang berjalan berubah
+     * diam-diam jadi pemindahan paket.
+     */
+    public function reviewAdaptiveCeiling(bool $dryRun = false): int
+    {
+        $ceiling = $this->eligibility->ceiling();
+
+        // Tanpa ambang, tak ada yang bisa dilewati. Keluar lebih awal supaya
+        // tangga yang tidak berujung tidak menyeret seluruh tenant Adaptif
+        // melewati penghitungan omzet yang jawabannya sudah pasti "tidak".
+        if ($ceiling === null) {
+            return 0;
+        }
+
+        // Omzetnya dihitung SEKALI per tenant lalu dibawa terus. Menanyakannya
+        // ulang untuk jejak audit akan menggandakan query pada satu-satunya
+        // jalur yang menyentuh tiap tenant Adaptif tiap hari.
+        $melewati = Tenant::query()
+            ->where('pricing_track', Subscription::TRACK_SUBSIDIZED)
+            ->whereHas('subscription', fn ($query) => $query->whereNull('track_reverts_at'))
+            ->with('subscription')
+            ->get()
+            ->map(fn (Tenant $tenant) => [
+                'tenant' => $tenant,
+                'revenue' => $this->eligibility->measuredRevenueFor($tenant),
+            ])
+            ->filter(fn (array $baris) => $baris['revenue'] !== null && $baris['revenue'] >= $ceiling);
+
+        if ($dryRun) {
+            return $melewati->count();
+        }
+
+        foreach ($melewati as ['tenant' => $tenant, 'revenue' => $revenue]) {
+            $subscription = $tenant->subscription;
+
+            $subscription->update([
+                'track_reverts_at' => $subscription->current_period_end ?? now()->toDateString(),
+                'track_revert_reason' => Subscription::REVERT_ABOVE_CEILING,
+            ]);
+
+            PlatformAuditLog::record('subscriptions.adaptive-ceiling-exit', $tenant, [
+                'tenant_id' => $tenant->id,
+                'revenue' => $revenue,
+                'ceiling' => $ceiling,
+                'reverts_at' => $subscription->track_reverts_at?->toDateString(),
+            ]);
+        }
+
+        return $melewati->count();
+    }
+
+    /**
+     * Belikan tenant seat tambahan. Berlaku seketika, tanpa tagihan tersendiri.
+     *
+     * Menggantikan `requestSeatUpgrade()`, yang menerbitkan tagihan
+     * `KIND_UPGRADE` sekali bayar lalu menunggu bukti transfer sebelum seat-nya
+     * berlaku. Sejak seat jadi komponen bulanan (`[BL-053]`), tagihan sekali
+     * bayar itu bukan sekadar berlebihan — ia menagih DUA KALI untuk hak yang
+     * sama, sekali di muka dan sekali tiap bulan sesudahnya.
+     *
+     * **Gratis sampai periode berjalan habis** (keputusan pemilik 2026-08-07).
+     * Tagihan periode berikutnya sudah memuatnya, jadi tak ada yang lolos: yang
+     * ditiadakan hanyalah tagihan di tengah bulan, bukan uangnya. Warung yang
+     * kedatangan kasir pagi ini bisa langsung mempekerjakannya — alasan yang
+     * sama seperti pemberlakuan provisional dulu, hanya tanpa antrean
+     * pemeriksaan yang tidak memeriksa apa pun.
+     *
+     * **Pelepasan yang sedang menunggu dibatalkan.** Tenant yang menjadwalkan
+     * pengurangan lalu berubah pikiran dan membeli lagi jelas tidak sedang
+     * meminta keduanya. Membiarkan keduanya hidup berarti seat yang baru dibeli
+     * ikut lenyap di tanggal pelepasan, tanpa seorang pun memintanya.
+     */
+    public function grantSeats(Tenant $tenant, int $additionalSeats): Subscription
+    {
+        $subscription = $this->ensureFor($tenant);
+        $subscription->loadMissing('plan');
+
+        $sebelum = $subscription->purchased_extra_seats;
+
+        // Tanggal belinya dicatat di sini, dan hanya di sini (`[BL-070]`).
+        // `purchased_extra_seats` menjawab "berapa", tidak pernah "sejak
+        // kapan"; satu-satunya jejak tanggal sebelum ini ada di
+        // `platform_audit_logs`, yang tidak boleh jadi sumber kebenaran
+        // penagihan. Panjang periodenya ikut dibekukan — lihat
+        // `seatProrataFor()`.
+        $periodDays = $subscription->current_period_start !== null
+            && $subscription->current_period_end !== null
+                ? (int) $subscription->current_period_start->diffInDays($subscription->current_period_end)
+                : 0;
+
+        $pending = $subscription->pending_seat_prorata ?? [];
+        $pending[] = [
+            'on' => now()->toDateString(),
+            'seats' => $additionalSeats,
+            'period_days' => $periodDays > 0 ? $periodDays : now()->daysInMonth,
+        ];
+
+        $subscription->update([
+            'purchased_extra_seats' => $sebelum + $additionalSeats,
+            'seats' => $subscription->seats + $additionalSeats,
+            'scheduled_extra_seats' => null,
+            'seat_release_at' => null,
+            'pending_seat_prorata' => $pending,
+        ]);
+
+        PlatformAuditLog::record('subscriptions.seats-granted', $subscription, [
+            'tenant_id' => $tenant->id,
+            'added' => $additionalSeats,
+            'extra_seats_before' => $sebelum,
+            'extra_seats_after' => $subscription->purchased_extra_seats,
+            'seats' => $subscription->seats,
+            'prorata_from' => now()->toDateString(),
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Jadwalkan pelepasan seat tambahan.
+     *
+     * Wajib ada sejak tagihan seat mengikuti PEMBELIAN, bukan pemakaian
+     * (`[BL-053]`). Selama dasarnya pemakaian puncak, tenant yang mengecil ikut
+     * mengecil sendiri; begitu dasarnya pembelian, tanpa jalan keluar ia
+     * terkunci membayar selamanya.
+     *
+     * **Berlaku satu periode penuh ke depan, bukan di akhir periode berjalan.**
+     * Tagihan periode berikutnya terbit `invoice_lead_days` SEBELUM periode
+     * berjalan habis dan sudah memuat seat itu. Melepasnya di akhir periode
+     * berjalan berarti tenant membayar sebulan untuk seat yang sudah dicabut —
+     * jendela pakai dan jendela bayar harus berimpit. Sekaligus menutup celah
+     * "beli tanggal 1, lepas tanggal 2": tiap seat yang dibeli pasti tertagih
+     * sekali, tidak pernah nol kali.
+     *
+     * **Seat yang masih diduduki staf aktif tidak boleh dilepas** — itu
+     * ditegakkan pemanggilnya lewat `seatReleaseCeiling()`, bukan di sini, supaya
+     * kalimat penolakannya bisa menyebut angka yang tenant lihat di layarnya.
+     */
+    public function releaseSeats(Tenant $tenant, int $seats): Subscription
+    {
+        $subscription = $this->ensureFor($tenant);
+        $subscription->loadMissing('plan');
+
+        $target = max(0, $subscription->entitledExtraSeats() - $seats);
+
+        // Dihitung dari akhir periode berjalan, bukan dari hari ini: jangkar
+        // tanggal tagihlah yang menentukan batas periode, dan menghitungnya
+        // dengan `addMonth()` dari `now()` akan meleset di tiap bulan pendek.
+        $releaseAt = $subscription->nextAnchoredDateAfter(
+            $subscription->current_period_end ?? now(),
+        );
+
+        $subscription->update([
+            'scheduled_extra_seats' => $target,
+            'seat_release_at' => $releaseAt->toDateString(),
+        ]);
+
+        PlatformAuditLog::record('subscriptions.seats-release-scheduled', $subscription, [
+            'tenant_id' => $tenant->id,
+            'released' => $seats,
+            'extra_seats_now' => $subscription->purchased_extra_seats,
+            'extra_seats_after' => $target,
+            'effective_at' => $releaseAt->toDateString(),
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Paling banyak berapa seat tambahan yang boleh dilepas sekarang.
+     *
+     * Dua batas sekaligus, dan yang terketat menang: tenant tidak bisa melepas
+     * lebih banyak daripada yang ia beli, dan tidak bisa melepas seat yang masih
+     * diduduki staf aktif (keputusan pemilik 2026-08-07). Yang kedua ditolak,
+     * bukan dipaksakan dengan mengunci akun: pelepasan seat yang diam-diam
+     * mematikan akun kasir di tengah jam kerja adalah kerugian yang jauh lebih
+     * besar daripada sebulan tagihan yang tertunda.
+     */
+    public function seatReleaseCeiling(Subscription $subscription): int
+    {
+        $subscription->loadMissing('plan');
+
+        $dibeli = $subscription->entitledExtraSeats();
+        $ruangKosong = $subscription->seats - $subscription->activeSeatsUsed();
+
+        return max(0, min($dibeli, $ruangKosong));
+    }
+
+    /**
+     * Berlakukan pelepasan seat yang tanggalnya sudah tiba.
+     *
+     * Menumpang di `advanceLifecycle()` bersama tenggat-tenggat lain, bukan
+     * sebagai perintah terjadwal sendiri — satu jadwal yang lupa dipasang cukup
+     * untuk membuat tenant terus tertagih atas seat yang sudah ia lepas
+     * berbulan-bulan lalu.
+     *
+     * @return int berapa langganan yang seat-nya benar-benar turun
+     */
+    public function applyDueSeatReleases(bool $dryRun = false): int
+    {
+        $due = Subscription::query()
+            ->whereNotNull('seat_release_at')
+            ->whereNotNull('scheduled_extra_seats')
+            ->whereDate('seat_release_at', '<=', now()->startOfDay())
+            ->with('plan')
+            ->get();
+
+        if ($dryRun) {
+            return $due->count();
+        }
+
+        foreach ($due as $subscription) {
+            $sebelum = $subscription->purchased_extra_seats;
+            $target = (int) $subscription->scheduled_extra_seats;
+
+            $subscription->update([
+                'purchased_extra_seats' => $target,
+                // `seats` diturunkan sebanyak yang dilepas, bukan disetel ulang
+                // ke `included_seats + target`. Keduanya biasanya sama, dan
+                // berbeda persis ketika pemilik SaaS pernah menyetel `seats`
+                // manual dari panel — angka yang ia ketik tidak boleh hilang
+                // sebagai efek samping pelepasan seat oleh tenant.
+                'seats' => max(
+                    $subscription->plan?->included_seats ?? 0,
+                    $subscription->seats - ($sebelum - $target),
+                ),
+                'scheduled_extra_seats' => null,
+                'seat_release_at' => null,
+            ]);
+
+            PlatformAuditLog::record('subscriptions.seats-released', $subscription, [
+                'tenant_id' => $subscription->tenant_id,
+                'extra_seats_before' => $sebelum,
+                'extra_seats_after' => $target,
+                'seats' => $subscription->seats,
+            ]);
+        }
+
+        return $due->count();
+    }
+
+    /**
+     * Belikan tenant blok kuota AI. Berlaku seketika, tanpa tagihan tersendiri.
+     *
+     * Cerminan `grantSeats()`, dengan pertimbangan yang sama sebaris demi
+     * sebaris — termasuk yang paling mudah terlewat: **pelepasan yang sedang
+     * menunggu dibatalkan.** Tenant yang menjadwalkan pengurangan lalu berubah
+     * pikiran dan membeli lagi tidak sedang meminta keduanya; membiarkan
+     * keduanya hidup berarti blok yang baru dibeli ikut lenyap di tanggal
+     * pelepasan, tanpa seorang pun memintanya.
+     *
+     * **Gratis sampai periode berjalan habis,** sama seperti seat. Tagihan
+     * periode berikutnya sudah memuatnya, jadi tidak ada yang lolos — yang
+     * ditiadakan hanya tagihan di tengah bulan, bukan uangnya. Bedanya dengan
+     * seat justru menguntungkan tenant di sini: kuota berlaku HARIAN, jadi
+     * jatah yang lebih besar itu benar-benar bisa dipakai mulai hari ini juga.
+     *
+     * Batas atasnya ditegakkan pemanggilnya lewat `aiQuotaPurchaseCeiling()`,
+     * bukan di sini, supaya kalimat penolakannya bisa menyebut angka yang
+     * tenant lihat di layarnya.
+     */
+    public function grantAiQuota(Tenant $tenant, int $blocks): Subscription
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $sebelum = $subscription->purchased_ai_blocks;
+
+        $subscription->update([
+            'purchased_ai_blocks' => $sebelum + $blocks,
+            'scheduled_ai_blocks' => null,
+            'ai_quota_release_at' => null,
+        ]);
+
+        PlatformAuditLog::record('subscriptions.ai-quota-granted', $subscription, [
+            'tenant_id' => $tenant->id,
+            'added' => $blocks,
+            'ai_blocks_before' => $sebelum,
+            'ai_blocks_after' => $subscription->purchased_ai_blocks,
+            'daily_quota' => $subscription->purchasedAiDailyQuota(),
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Jadwalkan pelepasan blok kuota AI.
+     *
+     * **Berlaku satu periode penuh ke depan,** dengan alasan yang sama seperti
+     * `releaseSeats()`: tagihan periode berikutnya terbit `invoice_lead_days`
+     * SEBELUM periode berjalan habis dan sudah memuat blok itu, jadi melepasnya
+     * di akhir periode berjalan berarti tenant membayar sebulan untuk kuota
+     * yang sudah dicabut. Sekaligus menutup celah "beli hari ini, lepas besok,
+     * tak pernah bayar".
+     *
+     * Tidak ada padanan `seatReleaseCeiling()` di sini, dan ketiadaannya
+     * disengaja: seat yang masih diduduki staf aktif tidak boleh dilepas karena
+     * pelepasannya akan mematikan akun orang yang sedang bekerja. Kuota AI tidak
+     * diduduki siapa pun — yang terjadi paling buruk adalah jatah harian turun
+     * kembali ke angka paketnya, dan itu justru yang tenant minta. Satu-satunya
+     * batas yang berlaku adalah tidak melepas lebih banyak daripada yang
+     * dimiliki, dan itu dijepit di sini.
+     */
+    public function releaseAiQuota(Tenant $tenant, int $blocks): Subscription
+    {
+        $subscription = $this->ensureFor($tenant);
+
+        $target = max(0, $subscription->entitledAiBlocks() - $blocks);
+
+        // Dihitung dari akhir periode berjalan, bukan dari hari ini: jangkar
+        // tanggal tagihlah yang menentukan batas periode, dan `addMonth()` dari
+        // `now()` akan meleset di tiap bulan pendek.
+        $releaseAt = $subscription->nextAnchoredDateAfter(
+            $subscription->current_period_end ?? now(),
+        );
+
+        $subscription->update([
+            'scheduled_ai_blocks' => $target,
+            'ai_quota_release_at' => $releaseAt->toDateString(),
+        ]);
+
+        PlatformAuditLog::record('subscriptions.ai-quota-release-scheduled', $subscription, [
+            'tenant_id' => $tenant->id,
+            'released' => $blocks,
+            'ai_blocks_now' => $subscription->purchased_ai_blocks,
+            'ai_blocks_after' => $target,
+            'effective_at' => $releaseAt->toDateString(),
+        ]);
+
+        return $subscription;
+    }
+
+    /**
+     * Paling banyak berapa blok yang boleh DIBELI sekarang.
+     *
+     * Atapnya ada karena plafon harian yang dibeli tidak pernah ditinjau ulang
+     * oleh siapa pun sesudahnya: tanpa batas, satu salah ketik di formulir
+     * ("100" alih-alih "1") jadi tagihan Rp 1.500.000 sekaligus paparan ongkos
+     * 500 analisis/hari yang menetap sampai ada yang menyadarinya. Nol berarti
+     * tenant sudah di atapnya.
+     */
+    public function aiQuotaPurchaseCeiling(Subscription $subscription): int
+    {
+        $max = (int) config('subscription.ai_quota.max_blocks', 0);
+
+        return max(0, $max - $subscription->purchased_ai_blocks);
+    }
+
+    /**
+     * Paling banyak berapa blok yang boleh DILEPAS sekarang.
+     *
+     * Dibaca dari hak yang berlaku, bukan dari `purchased_ai_blocks` mentah:
+     * tenant yang sudah menjadwalkan pelepasan tidak boleh melepas blok yang
+     * sama dua kali.
+     */
+    public function aiQuotaReleaseCeiling(Subscription $subscription): int
+    {
+        return max(0, $subscription->entitledAiBlocks());
+    }
+
+    /**
+     * Berlakukan pelepasan kuota AI yang tanggalnya sudah tiba.
+     *
+     * Menumpang di `advanceLifecycle()` bersama tenggat-tenggat lain, dengan
+     * alasan yang sama seperti `applyDueSeatReleases()`: satu jadwal yang lupa
+     * dipasang cukup untuk membuat tenant terus tertagih atas kuota yang sudah
+     * ia lepas berbulan-bulan lalu.
+     *
+     * @return int berapa langganan yang kuotanya benar-benar turun
+     */
+    public function applyDueAiQuotaReleases(bool $dryRun = false): int
+    {
+        $due = Subscription::query()
+            ->whereNotNull('ai_quota_release_at')
+            ->whereNotNull('scheduled_ai_blocks')
+            ->whereDate('ai_quota_release_at', '<=', now()->startOfDay())
+            ->get();
+
+        if ($dryRun) {
+            return $due->count();
+        }
+
+        foreach ($due as $subscription) {
+            $sebelum = $subscription->purchased_ai_blocks;
+            $target = (int) $subscription->scheduled_ai_blocks;
+
+            $subscription->update([
+                'purchased_ai_blocks' => $target,
+                'scheduled_ai_blocks' => null,
+                'ai_quota_release_at' => null,
+            ]);
+
+            PlatformAuditLog::record('subscriptions.ai-quota-released', $subscription, [
+                'tenant_id' => $subscription->tenant_id,
+                'ai_blocks_before' => $sebelum,
+                'ai_blocks_after' => $target,
+            ]);
+        }
+
+        return $due->count();
+    }
+
+    /**
+     * Tagihan upgrade yang masih terbuka, bila ada.
+     *
+     * **Peninggalan.** Tak ada lagi yang menerbitkan `KIND_UPGRADE` sejak seat
+     * jadi komponen bulanan (`[BL-053]`); yang bisa ditemukannya hanyalah
+     * tagihan yang terbit sebelum itu dan belum selesai. Ia tetap dipakai
+     * sebagai penjaga di jalur pembelian seat: melunasi tagihan upgrade lama
+     * menulis `seats = grants_seats`, angka dari dunia lama yang akan MENURUNKAN
+     * jatah tenant yang sudah membeli seat lewat jalur baru.
+     */
+    public function openUpgradeInvoice(Tenant $tenant): ?Invoice
+    {
+        return $tenant->invoices()
+            ->where('kind', Invoice::KIND_UPGRADE)
+            ->whereIn('status', [Invoice::STATUS_UNPAID, Invoice::STATUS_AWAITING_VERIFICATION])
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * Tagihan yang masih menuntut perhatian tenant — yang paling mendesak
+     * lebih dulu.
+     *
+     * Ketiga status non-lunas ikut dihitung terbuka, masing-masing dengan
+     * alasannya sendiri. `rejected` justru yang paling perlu terlihat: buktinya
+     * ditolak, jadi tagihannya kembali menunggu tindakan. `awaiting_verification`
+     * memang tidak menuntut apa-apa dari tenant, tapi menyembunyikannya membuat
+     * ia mengira tak ada tagihan sama sekali sampai buktinya ternyata ditolak.
+     *
+     * Diurut menurut jatuh tempo, bukan menurut id: tagihan upgrade terbit di
+     * tengah periode dan bisa jatuh tempo lebih dulu daripada tagihan bulanan
+     * yang nomornya lebih kecil.
+     */
+    public function outstandingInvoice(Tenant $tenant): ?Invoice
+    {
+        return $tenant->invoices()
+            ->whereIn('status', [
+                Invoice::STATUS_UNPAID,
+                Invoice::STATUS_REJECTED,
+                Invoice::STATUS_AWAITING_VERIFICATION,
+            ])
+            ->orderBy('due_date')
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
+     * Berlakukan upgrade sebelum buktinya diperiksa.
+     *
+     * Fasilitas ini dicabut untuk tenant yang buktinya pernah ditolak — mereka
+     * tetap boleh naik paket, hanya saja seat-nya baru berlaku setelah
+     * diperiksa.
+     */
+    public function applyProvisionalUpgrade(Invoice $invoice): bool
+    {
+        $subscription = $invoice->subscription;
+
+        if (! $invoice->isUpgrade() || $subscription->provisional_blocked) {
+            return false;
+        }
+
+        $subscription->update(['seats' => $invoice->grants_seats]);
+
+        return true;
+    }
+
+    /**
+     * Kembalikan seat ke angka semula setelah bukti bayar ditolak.
+     *
+     * Akun staf yang terlanjur dibuat sengaja TIDAK disentuh. Akibatnya jumlah
+     * pengguna aktif bisa melampaui seat — dan justru itu yang diinginkan:
+     * penambahan berikutnya tertutup sendirinya, tanpa mengusir siapa pun dari
+     * pekerjaannya.
+     */
+    public function revertUpgrade(Invoice $invoice): void
+    {
+        if (! $invoice->isUpgrade() || $invoice->previous_seats === null) {
+            return;
+        }
+
+        $invoice->subscription->update([
+            'seats' => $invoice->previous_seats,
+            'provisional_blocked' => true,
+        ]);
+    }
+
+    /**
+     * Pindahkan tenant ke keadaan berikutnya bila tenggatnya sudah lewat.
+     *
+     * Dua perpindahan, keduanya digerakkan oleh `current_period_end` — kolom
+     * yang sama dipakai baik untuk akhir masa coba maupun akhir periode
+     * berbayar, jadi tidak ada dua sumber tanggal yang bisa saling berselisih:
+     *
+     *   trial|active  → grace      begitu periodenya lewat
+     *   grace         → suspended  setelah masa tenggang habis
+     *
+     * Sekalian memproses kembalinya tenant ke jalur normal setelah consent
+     * subsidinya dicabut — keduanya sama-sama "tenggat yang sudah lewat", dan
+     * memisahkannya jadi dua perintah terjadwal hanya menambah satu hal lagi
+     * yang bisa lupa dipasang.
+     *
+     * Penerbitan tagihan menumpang di sini karena alasan yang sama, dan lebih
+     * kuat: ia harus berjalan SEBELUM tenant dipindahkan ke masa tenggang
+     * (`[BL-044]`). Sebagai perintah terjadwal sendiri, urutan itu bersandar
+     * pada dua baris jadwal yang kebetulan ditulis berurutan — dan jadwal yang
+     * kebetulan benar akan salah pada hari seseorang menggesernya. Di sini
+     * keduanya tak terpisahkan.
+     *
+     * Penerbitan tagihan TIDAK mengubah siapa yang berpindah keadaan. Tenant
+     * yang tak bisa ditagih tetap menempuh masa tenggang dan penangguhan seperti
+     * biasa — keputusan pemilik 2026-08-05, supaya tidak ada jaminan lama yang
+     * diam-diam tercabut oleh tarif yang kebetulan belum ditetapkan.
+     *
+     * Perpindahan paket akhir masa gratis (`[BL-052]`) menumpang di sini dengan
+     * alasan yang sama sekali lagi, dan lebih keras: ia harus berjalan SEBELUM
+     * penerbitan tagihan. Terbalik, tagihan periode berbayar pertama dihitung
+     * dari paket gratis seharga Rp 0, dilewati sebagai "tidak ada yang perlu
+     * ditagih", dan tenantnya turun ke masa tenggang tanpa pernah melihat
+     * angka — persis keadaan yang perpindahan ini tutup.
+     *
+     * Pelepasan seat (`[BL-053]`) ikut di sini, dan urutannya juga mengikat: ia
+     * berjalan SESUDAH penerbitan tagihan. Terbalik, seat yang tanggal
+     * lepasnya jatuh tepat di hari penerbitan akan hilang lebih dulu, dan
+     * tagihan periode itu — periode yang seat-nya masih sah dipakai — terbit
+     * tanpa memuatnya. Tenant mendapat sebulan gratis, tiap kali tanggalnya
+     * kebetulan berimpit.
+     *
+     * Penandaan tenant Adaptif yang melewati ambang (`[BL-055]`(e)) menutup
+     * barisan, dan urutannya juga mengikat — alasannya di tempatnya dipanggil.
+     *
+     * @return array{expired: int, suspended: int, reverted: int, invoiced: int, free: int, unpriced: int, skipped: int, graduated: int, stranded: int, seats_released: int, ai_quota_released: int, ceiling_exits: int}
+     */
+    public function advanceLifecycle(bool $dryRun = false): array
+    {
+        $today = now()->startOfDay();
+        $graceCutoff = $today->copy()->subDays(self::graceDays());
+
+        $graduation = $this->graduateExpiredTrials($dryRun);
+        $billing = $this->issueDuePeriodInvoices($dryRun);
+        $seatsReleased = $this->applyDueSeatReleases($dryRun);
+
+        // Sesudah penerbitan, dengan alasan yang sama persis seperti pelepasan
+        // seat di baris atasnya (`[BL-069]`): dibalik urutannya, kuota yang
+        // tanggal lepasnya jatuh tepat di hari penerbitan akan hilang lebih
+        // dulu, dan tagihan periode itu — periode yang kuotanya masih sah
+        // dipakai — terbit tanpa memuatnya.
+        $aiQuotaReleased = $this->applyDueAiQuotaReleases($dryRun);
+
+        $expiring = fn () => Tenant::query()
+            ->whereIn('status', [Tenant::STATUS_TRIAL, Tenant::STATUS_ACTIVE])
+            ->whereHas('subscription', fn ($query) => $query->whereDate('current_period_end', '<', $today));
+
+        $suspending = fn () => Tenant::query()
+            ->where('status', Tenant::STATUS_GRACE)
+            ->whereHas('subscription', fn ($query) => $query->whereDate('current_period_end', '<', $graceCutoff));
+
+        $reverting = fn () => Subscription::query()
+            ->whereNotNull('track_reverts_at')
+            ->whereDate('track_reverts_at', '<=', $today);
+
+        $expiredCount = $expiring()->count();
+        $suspendedCount = $suspending()->count();
+        $revertedCount = $reverting()->count();
+
+        if (! $dryRun) {
+            foreach ($reverting()->get() as $subscription) {
+                $karenaAmbang = $subscription->track_revert_reason === Subscription::REVERT_ABOVE_CEILING;
+
+                $subscription->update([
+                    'pricing_track' => Subscription::TRACK_NORMAL,
+                    'track_reverts_at' => null,
+                    'track_revert_reason' => null,
+                    // `track_changed_at` sengaja TIDAK disetel ulang di sini.
+                    // Jarak minimum dihitung dari perpindahan yang dipilih
+                    // tenant, bukan dari kembalinya otomatis — kalau tidak,
+                    // mencabut consent malah memperpanjang masa tunggunya.
+                ]);
+
+                $subscription->tenant->update(['pricing_track' => Subscription::TRACK_NORMAL]);
+
+                // Hanya pemindahan ambang yang ikut memindahkan paket
+                // (`[BL-055]`(e)). Tenant Adaptif lazimnya masih memegang paket
+                // `free` seharga Rp 0 — mengembalikannya ke jalur normal tanpa
+                // memindahkan paketnya berarti tenant yang omzetnya justru
+                // PALING besar mendarat di tarif nol, kebalikan dari yang
+                // diputuskan.
+                //
+                // Tujuannya paket penampung Adaptif, bukan paket termahal dan
+                // bukan tebakan: penampung itulah yang sudah ditunjuk pemilik
+                // SaaS sebagai rumah tenant yang keluar dari tangga bracket.
+                // Tanpa penunjukan, paketnya dibiarkan apa adanya — sama seperti
+                // `fallbackPlanFor()`, memilih tarif untuk orang tanpa seorang
+                // pun memutuskannya adalah kegagalan yang lebih buruk.
+                $penampung = $karenaAmbang ? Plan::adaptiveFallback() : null;
+
+                if ($penampung !== null && ! $subscription->plan->is($penampung)) {
+                    $this->changePlan($subscription, $penampung);
+
+                    PlatformAuditLog::record('subscriptions.adaptive-ceiling-moved', $subscription->tenant, [
+                        'tenant_id' => $subscription->tenant_id,
+                        'to_plan' => $penampung->slug,
+                        'seats' => $subscription->seats,
+                    ]);
+                }
+            }
+        }
+
+        if (! $dryRun) {
+            // Penangguhan dijalankan LEBIH DULU. Dengan urutan sebaliknya, tenant
+            // yang baru saja dipindah ke `grace` di baris atas akan langsung ikut
+            // tersaring penangguhan di jalan yang sama — trial yang terbengkalai
+            // dua bulan melompat ke `suspended` tanpa pernah melewati masa
+            // tenggang yang dijanjikan kepadanya.
+            $suspending()->update(['status' => Tenant::STATUS_SUSPENDED]);
+            $expiring()->update(['status' => Tenant::STATUS_GRACE]);
+        }
+
+        // Penandaan tenant yang melewati ambang dijalankan PALING AKHIR, dan
+        // urutan itu mengikat sama seperti yang lain. Lebih dulu, tenant yang
+        // baru ditandai hari ini — yang `track_reverts_at`-nya jatuh di masa
+        // lalu karena periodenya sudah lewat — akan ikut tersapu loop
+        // pengembalian di atas pada jalan yang sama, dan pindah paket di detik
+        // yang sama ia diberitahu. Yang dijanjikan `[BL-055]`(e) adalah
+        // pemberitahuan LEBIH DULU, pemindahan pada periode berikutnya.
+        $ceilingExits = $this->reviewAdaptiveCeiling($dryRun);
+
+        return [
+            'expired' => $expiredCount,
+            'suspended' => $suspendedCount,
+            'reverted' => $revertedCount,
+            'invoiced' => $billing['issued'],
+            'free' => $billing['free'],
+            'unpriced' => $billing['unpriced'],
+            'skipped' => $billing['skipped'],
+            'postponed' => $billing['postponed'],
+            'overdue' => $billing['overdue'],
+            'graduated' => $graduation['graduated'],
+            'stranded' => $graduation['stranded'],
+            'seats_released' => $seatsReleased,
+            'ai_quota_released' => $aiQuotaReleased,
+            'ceiling_exits' => $ceilingExits,
+        ];
+    }
+}

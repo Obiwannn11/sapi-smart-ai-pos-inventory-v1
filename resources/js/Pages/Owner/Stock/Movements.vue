@@ -1,13 +1,18 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import DatePicker from '@/Components/DatePicker.vue';
+import Pagination from '@/Components/Pagination.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    movements: Object,
+    // Ditunda ([BL-037]) — null selama daftar mutasinya masih dimuat.
+    movements: { type: Object, default: null },
     products: Array,
     filters: Object,
 });
@@ -22,7 +27,9 @@ const typeOptions = [
     { value: '', label: 'Semua Tipe' },
     { value: 'sale', label: 'Penjualan' },
     { value: 'restock', label: 'Restock' },
-    { value: 'adjustment', label: 'Adjustment' },
+    { value: 'adjustment', label: 'Koreksi' },
+    { value: 'void', label: 'Void' },
+    { value: 'edit', label: 'Edit transaksi' },
 ];
 
 const productOptions = computed(() => [
@@ -62,16 +69,24 @@ const hasFilters = () => {
 const formatDate = (date) => {
     if (!date) return '-';
     return new Date(date).toLocaleDateString('id-ID', {
+        timeZone: BUSINESS_TZ,
         year: 'numeric', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit',
     });
 };
 
+/** Tanggal kedaluwarsa batch: "2026-09-18" jadi "18 Sep 2026", tanpa bergeser zona. */
+const formatDay = (value) => new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', {
+    day: 'numeric', month: 'short', year: 'numeric',
+});
+
 const typeLabel = (type) => {
     const labels = {
         sale: 'Penjualan',
         restock: 'Restock',
-        adjustment: 'Adjustment',
+        adjustment: 'Koreksi',
+        void: 'Void',
+        edit: 'Edit transaksi',
     };
     return labels[type] || type;
 };
@@ -81,6 +96,8 @@ const typeBadgeClass = (type) => {
         sale: 'bg-primary/10 text-primary',
         restock: 'bg-success/10 text-success',
         adjustment: 'bg-warning/10 text-warning-foreground',
+        void: 'bg-gray-100 text-gray-700',
+        edit: 'bg-gray-100 text-gray-700',
     };
     return classes[type] || 'bg-gray-100 text-gray-800';
 };
@@ -110,7 +127,7 @@ const qtyClass = (qty) => {
                 Kembali ke Stok
             </Link>
             <h1 class="text-2xl font-bold text-gray-900">Semua Pergerakan Stok</h1>
-            <p class="text-sm text-gray-500 mt-1">Riwayat seluruh pergerakan stok (penjualan, restock, adjustment)</p>
+            <p class="text-sm text-gray-500 mt-1">Riwayat seluruh pergerakan stok: penjualan, restock, dan koreksi</p>
         </div>
 
         <!-- Filters -->
@@ -140,21 +157,13 @@ const qtyClass = (qty) => {
                 <!-- Date from -->
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Dari Tanggal</label>
-                    <input
-                        v-model="filterDateFrom"
-                        type="date"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    <DatePicker v-model="filterDateFrom" block clearable />
                 </div>
 
                 <!-- Date to -->
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Sampai Tanggal</label>
-                    <input
-                        v-model="filterDateTo"
-                        type="date"
-                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    <DatePicker v-model="filterDateTo" block clearable />
                 </div>
 
                 <!-- Buttons -->
@@ -176,7 +185,15 @@ const qtyClass = (qty) => {
             </div>
         </div>
 
-        <!-- Movements Table -->
+        <!-- Movements Table. Ditunda ([BL-037]): filternya sudah bisa dipakai,
+             dan kerangka ini muncul lagi setiap filter diubah. -->
+        <Deferred data="movements">
+            <template #fallback>
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <SkeletonTable :rows="8" :columns="7" label="Memuat riwayat pergerakan stok…" />
+                </div>
+            </template>
+
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <table v-if="movements.data.length > 0" class="w-full">
                 <thead>
@@ -186,6 +203,7 @@ const qtyClass = (qty) => {
                         <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Varian</th>
                         <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipe</th>
                         <th class="px-5 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Batch</th>
                         <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Catatan</th>
                     </tr>
                 </thead>
@@ -204,6 +222,18 @@ const qtyClass = (qty) => {
                                 {{ formatQty(movement.qty) }}
                             </span>
                         </td>
+                        <!-- Batch yang disentuh mutasi ini ([BL-111]). -->
+                        <td class="px-5 py-3 text-xs text-gray-600">
+                            <span v-if="!movement.batches?.length" class="text-gray-300">-</span>
+                            <span
+                                v-for="(part, index) in movement.batches"
+                                :key="index"
+                                class="block whitespace-nowrap tabular-nums"
+                            >
+                                <span class="font-semibold" :class="qtyClass(part.qty)">{{ formatQty(part.qty) }}</span>
+                                · {{ part.expiry_date ? formatDay(part.expiry_date) : 'tanpa tanggal' }}
+                            </span>
+                        </td>
                         <td class="px-5 py-3 text-sm text-gray-600 max-w-xs truncate">{{ movement.notes || '-' }}</td>
                     </tr>
                 </tbody>
@@ -215,33 +245,12 @@ const qtyClass = (qty) => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
                 <p class="mt-3 text-sm text-gray-500">
-                    {{ hasFilters() ? 'Tidak ada data yang cocok dengan filter' : 'Belum ada riwayat pergerakan stok' }}
+                    {{ hasFilters() ? 'Tidak ada riwayat yang cocok dengan penyaring ini' : 'Belum ada riwayat pergerakan stok' }}
                 </p>
             </div>
         </div>
 
-        <!-- Pagination -->
-        <div v-if="movements.links && movements.last_page > 1" class="mt-4 flex items-center justify-between">
-            <p class="text-sm text-gray-500">
-                Menampilkan {{ movements.from }}–{{ movements.to }} dari {{ movements.total }} data
-            </p>
-            <div class="flex gap-1">
-                <Link
-                    v-for="link in movements.links"
-                    :key="link.label"
-                    :href="link.url || '#'"
-                    :class="[
-                        'px-3 py-1.5 text-sm rounded-lg border transition-colors',
-                        link.active
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : link.url
-                                ? 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                    ]"
-                    v-html="link.label"
-                    preserve-scroll
-                />
-            </div>
-        </div>
+        <Pagination :paginator="movements" unit="pergerakan" />
+        </Deferred>
     </div>
 </template>

@@ -14,16 +14,16 @@ class ModifierController extends Controller
 {
     public function index(): Response
     {
-        $modifierGroups = ModifierGroup::with([
-            'modifiers:id,modifier_group_id,name,extra_price',
-            'products:id,name',
-        ])
-            ->withCount('products')
-            ->latest()
-            ->get();
-
         return Inertia::render('Owner/Modifiers/Index', [
-            'modifierGroups' => $modifierGroups,
+            // Ditunda ([BL-037]): daftarnya menyusul sementara tombol tambah dan
+            // formulirnya sudah bisa dipakai sejak cat pertama.
+            'modifierGroups' => Inertia::defer(fn () => ModifierGroup::with([
+                'modifiers:id,modifier_group_id,name,extra_price',
+                'products:id,name',
+            ])
+                ->withCount('products')
+                ->latest()
+                ->get()),
         ]);
     }
 
@@ -75,7 +75,7 @@ class ModifierController extends Controller
 
         // Delete modifiers yang tidak ada di incoming
         $toDelete = array_diff($existingIds, $incomingIds);
-        if (!empty($toDelete)) {
+        if (! empty($toDelete)) {
             $modifierGroup->modifiers()->whereIn('id', $toDelete)->delete(); // soft delete
         }
 

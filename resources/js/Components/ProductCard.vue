@@ -1,4 +1,6 @@
 <script setup>
+import ProductImage from '@/Components/ProductImage.vue';
+
 const props = defineProps({
     product: Object,
     disabled: { type: Boolean, default: false },
@@ -14,6 +16,16 @@ const formatCurrency = (value) => {
 const hasStock = () => {
     return props.product.variants?.some(v => v.stock > 0);
 };
+
+// Unit yang sudah kedaluwarsa di seluruh varian ([BL-108]). Snapshot katalog
+// offline yang lebih tua dari kolom ini tidak punya angkanya: dianggap nol, dan
+// server tetap menjaga penjualannya.
+const expiredUnits = () => (props.product.variants || [])
+    .reduce((sum, v) => sum + Number(v.expired_stock ?? 0), 0);
+
+// Semua stok yang tersisa sudah kedaluwarsa, bukan hanya sebagian.
+const onlyExpiredLeft = () => hasStock()
+    && (props.product.variants || []).every(v => Number(v.stock) <= Number(v.expired_stock ?? 0));
 
 // Price range
 const priceRange = () => {
@@ -47,16 +59,19 @@ const handleClick = () => {
             Habis
         </span>
 
+        <!-- Barang kedaluwarsa terlihat SEBELUM disentuh ([BL-108]). Kartunya
+             tetap bisa ditekan: penjualannya tidak dilarang, hanya ditanya. -->
+        <span v-else-if="expiredUnits() > 0"
+              :class="[
+                  'absolute top-2 right-2 inline-flex px-2 py-0.5 rounded text-xs font-semibold',
+                  onlyExpiredLeft() ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800',
+              ]">
+            {{ onlyExpiredLeft() ? 'Kedaluwarsa' : `${expiredUnits()} kedaluwarsa` }}
+        </span>
+
         <!-- Product Image -->
-        <div class="w-full aspect-square bg-gray-100 rounded-lg mb-2 overflow-hidden flex items-center justify-center">
-            <img v-if="product.image"
-                 :src="`/storage/${product.image}`"
-                 :alt="product.name"
-                 class="w-full h-full object-cover" />
-            <svg v-else class="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
+        <div class="w-full aspect-square bg-gray-100 rounded-lg mb-2 overflow-hidden">
+            <ProductImage :src="product.image_thumb_url" :name="product.name" />
         </div>
 
         <!-- Info -->

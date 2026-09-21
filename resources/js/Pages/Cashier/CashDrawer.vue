@@ -1,32 +1,124 @@
 <script setup>
-import { router, Head } from '@inertiajs/vue3';
+import { router, Head, Link } from '@inertiajs/vue3';
 import FlashMessage from '@/Components/FlashMessage.vue';
 import CashierTopbar from '@/Components/CashierTopbar.vue';
-import { ref, computed, nextTick } from 'vue';
+import Modal from '@/Components/Modal.vue';
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
 
 const props = defineProps({
     openDrawer: Object,
+    // Rekonsiliasi sesi berjalan dari CashDrawerReconciliation — null saat
+    // belum ada sesi terbuka.
+    reconciliation: { type: Object, default: null },
+    // Umur sesi ([BL-088]) — null saat belum ada sesi terbuka.
+    sessionLimit: { type: Object, default: null },
+    // Mutasi kas sesi ini ([BL-087]).
+    movements: { type: Array, default: () => [] },
+    payoutThreshold: { type: Number, default: 0 },
 });
 
 const openingAmount = ref(0);
 const openingAmountDisplay = ref('0');
-const closingAmount = ref(0);
-const closingAmountDisplay = ref('');
-const notes = ref('');
 const processing = ref(false);
-const step = ref(1); // 1 = form, 2 = summary
 
-const selisih = computed(() => {
-    return closingAmount.value - Number(props.openDrawer?.opening_amount || 0);
+// Uang yang seharusnya ada di laci = modal + tunai masuk − kembalian keluar.
+// Sebelumnya halaman ini membandingkan uang fisik dengan modal awal saja,
+// sehingga seluruh penjualan tunai shift itu terbaca sebagai "kelebihan".
+const expectedAmount = computed(() => Number(props.reconciliation?.expected_amount ?? 0));
+
+/**
+ * Penghitungan buta selama sesi berjalan ([BL-086]).
+ *
+ * Sebelum ini panel sesi aktif memajang "Seharusnya di laci" sepanjang shift,
+ * dan kasir tinggal mengetik ulang angka itu di kolom uang fisik: selisihnya
+ * selalu nol, dan laci yang benar-benar kurang tidak pernah ketahuan. Angka
+ * yang menjadi JAWABAN tidak boleh terbaca sebelum hitungannya disetorkan.
+ *
+ * Yang disembunyikan bukan cuma totalnya, melainkan **ketiga angka yang
+ * membentuknya** — modal + tunai masuk − kembalian keluar. Menyembunyikan
+ * total sambil memajang penjumlahnya bukan penghitungan buta, itu soal
+ * hitungan.
+ *
+ * **Ini penyembunyian di sisi klien, dan itu diakui:** `reconciliation` tetap
+ * ikut props Inertia dan terbaca dari devtools. Untuk peragaan dan untuk
+ * menghilangkan godaan sehari-hari, ini cukup; penegakan sungguhan menuntut
+ * `index()` berhenti mengirimkannya sampai hitungan fisik disetorkan, dan itu
+ * tercatat sebagai butir yang belum dikerjakan di `[BL-086]`.
+ */
+/**
+ * Peringatan sebelum sesi ditutup paksa ([BL-088]).
+ *
+ * Sengaja dihitung dari jam DINDING yang berdetak, bukan sekali saat halaman
+ * dirender: tab kasir dibiarkan terbuka semalaman, dan justru tab itulah yang
+ * paling butuh peringatan ini. Satu menit sekali sudah cukup halus untuk
+ * hitungan berjam-jam, dan tidak menyalakan layar tiap detik.
+ */
+const now = ref(new Date());
+let clock = null;
+onMounted(() => { clock = setInterval(() => { now.value = new Date(); }, 60_000); });
+onUnmounted(() => { if (clock) clearInterval(clock); });
+
+const sessionWarning = computed(() => {
+    if (!props.sessionLimit) return null;
+
+    const expiresAt = new Date(props.sessionLimit.expires_at);
+    const warnFrom = new Date(props.sessionLimit.warn_from);
+
+    if (now.value < warnFrom) return null;
+
+    // Sudah lewat batas tapi sapuan per jam belum menyentuhnya. Keadaan ini
+    // nyata dan berumur paling lama satu jam — mendiamkannya berarti kasir
+    // menghitung uang untuk sesi yang akan ditutup sistem beberapa menit lagi.
+    if (now.value >= expiresAt) {
+        return { overdue: true, minutes: 0 };
+    }
+
+    return { overdue: false, minutes: Math.round((expiresAt - now.value) / 60_000) };
 });
 
-const previewClose = () => {
-    step.value = 2;
+const formatCountdown = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+
+    if (hours > 0) return `${hours} jam ${rest} menit`;
+
+    return `${rest} menit`;
 };
 
-const backToForm = () => {
-    step.value = 1;
+const showExpected = ref(false);
+
+/**
+ * Membukanya sah, dan ia meninggalkan jejak ([BL-090]).
+ *
+ * Pemilik memilih mencatat alih-alih mencegah, jadi tombolnya tetap hidup dan
+ * yang berubah hanya: pemakaiannya terlihat. Kalimat di layar mengatakannya
+ * sebelum tombolnya ditekan — jejak yang baru diketahui belakangan terasa
+ * seperti jebakan, dan kasir yang merasa dijebak berhenti mempercayai
+ * seluruh layar ini.
+ *
+ * Dicatat sekali per pemuatan halaman, bukan sekali per klik: menyalakan dan
+ * mematikan bergantian akan menumpuk baris yang menjawab hal yang sama, dan
+ * yang ditanyakan pemilik adalah "apakah ia sudah melihat angkanya", bukan
+ * "berapa kali ia menekan tombolnya".
+ */
+const revealLogged = ref(false);
+
+const toggleExpected = () => {
+    showExpected.value = !showExpected.value;
+
+    if (showExpected.value && !revealLogged.value) {
+        revealLogged.value = true;
+        // `preserveState` supaya angkanya tidak berkedip tertutup lagi begitu
+        // jawabannya sampai, dan `only: []` supaya tidak ada prop yang ditarik
+        // ulang untuk sebuah permintaan yang tidak mengubah apa pun di layar.
+        router.post('/cashier/cash-drawer/reveal', {}, {
+            preserveState: true,
+            preserveScroll: true,
+            only: [],
+        });
+    }
 };
+
 
 const formatCurrency = (value) => {
     return 'Rp ' + Number(value).toLocaleString('id-ID');
@@ -56,24 +148,6 @@ const onOpeningBlur = (event) => {
     event.target.value = openingAmountDisplay.value;
 };
 
-const onClosingInput = (event) => {
-    const raw = event.target.value.replace(/\D/g, '');
-    const num = Number(raw) || 0;
-    closingAmount.value = num;
-    closingAmountDisplay.value = num > 0 ? formatNumber(num) : '';
-    nextTick(() => { event.target.value = closingAmountDisplay.value; });
-};
-
-const onClosingFocus = (event) => {
-    event.target.value = closingAmount.value > 0 ? String(closingAmount.value) : '';
-    event.target.select();
-};
-
-const onClosingBlur = (event) => {
-    closingAmountDisplay.value = closingAmount.value > 0 ? formatNumber(closingAmount.value) : '';
-    event.target.value = closingAmountDisplay.value;
-};
-
 const openCashDrawer = () => {
     if (processing.value) return;
     processing.value = true;
@@ -84,19 +158,111 @@ const openCashDrawer = () => {
     });
 };
 
-const closeCashDrawer = () => {
-    if (processing.value) return;
-    processing.value = true;
-    router.post('/cashier/cash-drawer/close', {
-        closing_amount: closingAmount.value,
-        notes: notes.value || null,
+const goToPOS = () => {
+    router.get('/cashier/pos');
+};
+
+/* ── Mutasi kas ([BL-087]) ──────────────────────────────────────────────── */
+
+const movementOpen = ref(false);
+const movementType = ref('payout');
+const movementAmount = ref(0);
+const movementAmountDisplay = ref('');
+const movementReason = ref('');
+const movementErrors = ref({});
+const savingMovement = ref(false);
+
+/* Foto struk ([BL-093]) — OPSIONAL. Sebagian pengeluaran memang tidak
+   berstruk; mewajibkannya hanya akan menghentikan pencatatannya sama sekali,
+   dan yang hilang bukan fotonya melainkan seluruh keterangan uangnya.
+
+   Berkasnya ikut permintaan yang sama, bukan diunggah lebih dulu: formulir ini
+   datar, jadi Inertia boleh mengirimnya sebagai multipart tanpa merusak apa
+   pun. Alasan lengkapnya di CashMovementProofService. */
+const movementProof = ref(null);
+const movementProofPreview = ref('');
+
+const releaseMovementProof = () => {
+    if (movementProofPreview.value) {
+        URL.revokeObjectURL(movementProofPreview.value);
+    }
+    movementProof.value = null;
+    movementProofPreview.value = '';
+};
+
+const onMovementProofPicked = (event) => {
+    const file = event.target.files?.[0];
+    // Input-nya dikosongkan supaya memilih berkas yang SAMA dua kali tetap
+    // memicu `change` — kalau tidak, mengganti lalu memilih ulang foto yang
+    // sama terlihat seperti tombol yang tidak berbuat apa-apa.
+    event.target.value = '';
+
+    if (!file) return;
+
+    releaseMovementProof();
+    movementProof.value = file;
+    movementProofPreview.value = URL.createObjectURL(file);
+};
+
+const openMovement = (type) => {
+    movementType.value = type;
+    movementAmount.value = 0;
+    movementAmountDisplay.value = '';
+    movementReason.value = '';
+    movementErrors.value = {};
+    releaseMovementProof();
+    movementOpen.value = true;
+};
+
+const onMovementInput = (event) => {
+    const raw = event.target.value.replace(/\D/g, '');
+    const num = Number(raw) || 0;
+    movementAmount.value = num;
+    movementAmountDisplay.value = num > 0 ? formatNumber(num) : '';
+    nextTick(() => { event.target.value = movementAmountDisplay.value; });
+};
+
+/**
+ * Apakah nominal yang sedang diketik akan menunggu persetujuan.
+ *
+ * Ditampilkan SELAGI mengetik, bukan sesudah menyimpan: aturan yang baru
+ * diketahui setelah tombol ditekan terbaca sebagai penolakan, bukan sebagai
+ * aturan — dan kasir akan menyimpulkan fiturnya rusak.
+ */
+const willWaitApproval = computed(() =>
+    movementType.value === 'payout' && movementAmount.value > props.payoutThreshold
+);
+
+const submitMovement = () => {
+    if (savingMovement.value) return;
+    savingMovement.value = true;
+    movementErrors.value = {};
+
+    router.post('/cashier/cash-drawer/movements', {
+        type: movementType.value,
+        amount: movementAmount.value,
+        reason: movementReason.value,
+        // Inertia beralih sendiri ke multipart begitu ada File di sini, dan
+        // tetap JSON biasa kalau tidak ada.
+        proof: movementProof.value,
     }, {
-        onFinish: () => processing.value = false,
+        preserveScroll: true,
+        onSuccess: () => {
+            movementOpen.value = false;
+            releaseMovementProof();
+        },
+        onError: (errors) => { movementErrors.value = errors; },
+        onFinish: () => { savingMovement.value = false; },
     });
 };
 
-const goToPOS = () => {
-    router.get('/cashier/pos');
+const movementLabel = (movement) => movement.type === 'payout' ? 'Uang keluar' : 'Setoran masuk';
+
+const movementStatusLabel = (movement) => {
+    if (movement.status === 'pending') return 'Menunggu persetujuan';
+    if (movement.status === 'rejected') return 'Ditolak pemilik';
+
+    return movement.reviewed_by ? 'Disetujui pemilik' : 'Berlaku';
 };
 </script>
 
@@ -160,6 +326,29 @@ const goToPOS = () => {
                     <h2 class="text-2xl font-semibold text-gray-800">Sesi Kas Aktif</h2>
                 </div>
 
+                <!-- Umur sesi ([BL-088]). Muncul empat jam sebelum batas, bukan
+                     sesudahnya: sesi yang terlanjur ditutup sistem tidak bisa
+                     lagi dihitung uangnya. -->
+                <div
+                    v-if="sessionWarning"
+                    class="mb-6 rounded-lg border px-4 py-3 text-sm leading-relaxed"
+                    :class="sessionWarning.overdue
+                        ? 'border-destructive/40 bg-destructive/10 text-foreground'
+                        : 'border-warning/40 bg-warning/10 text-foreground'"
+                    role="status"
+                >
+                    <template v-if="sessionWarning.overdue">
+                        <span class="font-semibold">Sesi ini sudah lewat {{ sessionLimit.hours }} jam.</span>
+                        Sistem akan menutupnya sendiri dalam waktu dekat, dan sesi yang ditutup sistem tercatat
+                        <span class="font-medium">tanpa hitungan uang fisik</span>. Tutup kas sekarang selagi masih bisa dihitung.
+                    </template>
+                    <template v-else>
+                        <span class="font-semibold">Sesi kas akan ditutup otomatis dalam {{ formatCountdown(sessionWarning.minutes) }}.</span>
+                        Sesi kas hanya berlaku {{ sessionLimit.hours }} jam. Kalau ditutup sistem, uang fisiknya tidak pernah tercatat
+                        dan selisihnya tidak bisa dipertanggungjawabkan siapa pun.
+                    </template>
+                </div>
+
                 <!-- Info Sesi -->
                 <div class="bg-gray-50 rounded-lg p-4 mb-6 space-y-2">
                     <div class="flex justify-between text-sm">
@@ -169,6 +358,43 @@ const goToPOS = () => {
                     <div class="flex justify-between text-sm">
                         <span class="text-gray-500">Modal awal</span>
                         <span class="font-medium text-gray-800">{{ formatCurrency(openDrawer.opening_amount) }}</span>
+                    </div>
+                    <template v-if="reconciliation && showExpected">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Penjualan tunai</span>
+                            <span class="font-medium text-gray-800 font-mono">+{{ formatCurrency(reconciliation.cash_in) }}</span>
+                        </div>
+                        <div v-if="Number(reconciliation.change_out) > 0" class="flex justify-between text-sm">
+                            <span class="text-gray-500">Kembalian keluar</span>
+                            <span class="font-medium text-gray-800 font-mono">−{{ formatCurrency(reconciliation.change_out) }}</span>
+                        </div>
+                    </template>
+
+                    <!-- Tersembunyi secara bawaan ([BL-086]). Yang dipajang saat
+                         tertutup adalah ALASANNYA, bukan sekadar titik-titik:
+                         kasir yang tidak tahu kenapa angkanya hilang akan
+                         mengira halamannya rusak. -->
+                    <div v-if="reconciliation" class="border-t border-border pt-2">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="text-sm text-gray-500">
+                                Seharusnya di laci
+                                <span
+                                    :class="showExpected ? 'font-semibold text-gray-800 font-mono' : 'font-mono text-gray-400'"
+                                >{{ showExpected ? formatCurrency(expectedAmount) : '••••••' }}</span>
+                            </span>
+                            <button
+                                type="button"
+                                @click="toggleExpected"
+                                :aria-expanded="showExpected"
+                                class="text-xs font-medium text-primary hover:underline shrink-0"
+                            >
+                                {{ showExpected ? 'Sembunyikan' : 'Tampilkan uang seharusnya' }}
+                            </button>
+                        </div>
+                        <p v-if="!showExpected" class="text-xs text-muted-foreground mt-1 leading-relaxed">
+                            Disembunyikan supaya hitungan uang fisik Anda jujur. Hitung dulu isi laci, masukkan angkanya, dan ringkasan tutup kas akan membandingkannya sendiri.
+                            <span class="block mt-1">Boleh dibuka kalau memang perlu. Pemilik akan melihat catatan bahwa angkanya dibuka.</span>
+                        </p>
                     </div>
                 </div>
 
@@ -180,101 +406,202 @@ const goToPOS = () => {
                     Lanjut ke POS
                 </button>
 
-                <!-- Tutup Kas: dua langkah (form → ringkasan) -->
-                <div class="border-t border-border pt-6 mt-6">
-                    <!-- Langkah 1: Input -->
-                    <template v-if="step === 1">
-                        <h3 class="text-base font-semibold text-foreground mb-4">Tutup Kas</h3>
-                        <form @submit.prevent="previewClose" class="space-y-4">
-                            <div>
-                                <label for="closing_amount" class="block text-sm font-medium text-foreground mb-1">
-                                    Uang fisik di laci (Rp)
-                                </label>
-                                <input
-                                    id="closing_amount"
-                                    type="text"
-                                    inputmode="numeric"
-                                    :value="closingAmountDisplay"
-                                    @input="onClosingInput"
-                                    @focus="onClosingFocus"
-                                    @blur="onClosingBlur"
-                                    placeholder="Hitung uang fisik, lalu masukkan"
-                                    class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground placeholder:text-muted-foreground"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label for="notes" class="block text-sm font-medium text-foreground mb-1">
-                                    Catatan (opsional)
-                                </label>
-                                <textarea
-                                    id="notes"
-                                    v-model="notes"
-                                    rows="2"
-                                    placeholder="Catatan akhir shift..."
-                                    class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground placeholder:text-muted-foreground resize-none"
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                class="w-full py-3 bg-secondary text-secondary-foreground font-semibold rounded-lg hover:bg-secondary/80 transition text-sm"
-                            >
-                                Lihat Ringkasan
-                            </button>
-                        </form>
-                    </template>
+                <!-- Uang keluar-masuk laci ([BL-087]) -->
+                <div class="border-t border-border pt-4 mt-4 mb-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-foreground">Uang Keluar / Masuk Laci</h3>
+                        <span class="text-xs text-muted-foreground">
+                            Di atas {{ formatCurrency(payoutThreshold) }} perlu persetujuan
+                        </span>
+                    </div>
 
-                    <!-- Langkah 2: Ringkasan rekonsiliasi -->
-                    <template v-else>
-                        <div class="flex items-center gap-2 mb-4">
-                            <button @click="backToForm" class="text-muted-foreground hover:text-foreground transition" aria-label="Kembali">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                                </svg>
-                            </button>
-                            <h3 class="text-base font-semibold text-foreground">Ringkasan Tutup Kas</h3>
-                        </div>
-
-                        <div class="bg-muted rounded-lg p-4 space-y-3 mb-4">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Modal awal</span>
-                                <span class="font-medium text-foreground font-mono">{{ formatCurrency(openDrawer.opening_amount) }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Uang fisik aktual</span>
-                                <span class="font-medium text-foreground font-mono">{{ formatCurrency(Number(closingAmount) || 0) }}</span>
-                            </div>
-                            <div class="border-t border-border pt-3 flex justify-between text-sm">
-                                <span class="text-muted-foreground">Selisih</span>
-                                <span
-                                    :class="[
-                                        'font-semibold font-mono',
-                                        selisih > 0  && 'text-success',
-                                        selisih < 0  && 'text-destructive',
-                                        selisih === 0 && 'text-muted-foreground',
-                                    ]"
-                                >
-                                    <template v-if="selisih === 0">Sesuai</template>
-                                    <template v-else-if="selisih > 0">+{{ formatCurrency(selisih) }}</template>
-                                    <template v-else>{{ formatCurrency(selisih) }}</template>
-                                </span>
-                            </div>
-                            <div v-if="notes" class="border-t border-border pt-3 text-sm">
-                                <span class="text-muted-foreground">Catatan: </span>
-                                <span class="text-foreground">{{ notes }}</span>
-                            </div>
-                        </div>
-
+                    <div class="flex gap-2 mb-3">
                         <button
-                            @click="closeCashDrawer"
-                            :disabled="processing"
-                            class="w-full py-3 bg-destructive text-destructive-foreground font-semibold rounded-lg hover:bg-destructive/90 transition disabled:opacity-50 text-sm"
+                            type="button"
+                            @click="openMovement('payout')"
+                            class="flex-1 py-2 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition"
                         >
-                            {{ processing ? 'Memproses...' : 'Konfirmasi & Tutup Kas' }}
+                            Catat Uang Keluar
                         </button>
-                    </template>
+                        <button
+                            type="button"
+                            @click="openMovement('deposit')"
+                            class="flex-1 py-2 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition"
+                        >
+                            Catat Setoran Masuk
+                        </button>
+                    </div>
+
+                    <!-- Termasuk yang ditolak: kasir harus melihat penolakannya
+                         di layar tempat ia mencatat, bukan menemukannya sebagai
+                         selisih tak terjelaskan saat tutup kas. -->
+                    <ul v-if="movements.length" class="space-y-1.5">
+                        <li
+                            v-for="movement in movements"
+                            :key="movement.id"
+                            class="flex items-start justify-between gap-3 text-xs"
+                        >
+                            <span class="text-muted-foreground">
+                                {{ movementLabel(movement) }} · {{ movement.reason }}
+                                <span
+                                    class="block"
+                                    :class="{
+                                        'text-warning-foreground': movement.status === 'pending',
+                                        'text-destructive': movement.status === 'rejected',
+                                        'text-muted-foreground/60': movement.status === 'approved',
+                                    }"
+                                >{{ movementStatusLabel(movement) }}</span>
+                            </span>
+
+                            <!-- Fotonya bisa dibuka kembali oleh yang mencatatnya
+                                 ([BL-093]). Tanpa ini kasir tidak punya cara
+                                 memastikan yang terkirim benar foto yang ia
+                                 maksud, dan salah foto baru ketahuan dari mulut
+                                 pemilik. -->
+                            <a
+                                v-if="movement.proof_path"
+                                :href="`/media/bukti-kas/${movement.id}/full`"
+                                target="_blank"
+                                rel="noopener"
+                                class="shrink-0"
+                                title="Lihat foto struk"
+                            >
+                                <img
+                                    :src="`/media/bukti-kas/${movement.id}/thumb`"
+                                    alt="Foto struk"
+                                    class="h-8 w-8 rounded object-cover border border-border bg-card"
+                                />
+                            </a>
+                            <span
+                                class="font-mono shrink-0"
+                                :class="[
+                                    movement.status === 'rejected' ? 'line-through text-muted-foreground/50' : '',
+                                    movement.type === 'payout' ? 'text-destructive' : 'text-success',
+                                ]"
+                            >{{ movement.type === 'payout' ? '−' : '+' }}{{ formatCurrency(movement.amount) }}</span>
+                        </li>
+                    </ul>
+                    <p v-else class="text-xs text-muted-foreground">
+                        Belum ada uang keluar atau masuk di luar penjualan pada sesi ini.
+                    </p>
                 </div>
+
+                <!-- Tutup kas punya halamannya sendiri ([BL-086] butir 2).
+                     Sengaja tautan sekunder, bukan tombol sebesar "Lanjut ke
+                     POS": memeriksa sesi adalah hal yang dilakukan berkali-kali
+                     sehari, menutupnya sekali. -->
+                <Link
+                    href="/cashier/cash-drawer/close"
+                    class="block w-full py-3 text-center border border-border text-foreground font-semibold rounded-lg hover:bg-muted transition text-sm"
+                >
+                    Tutup Kas
+                </Link>
+
             </div>
         </main>
+
+        <!-- Pencatatan mutasi kas ([BL-087]) -->
+        <Modal
+            :show="movementOpen"
+            :title="movementType === 'payout' ? 'Catat Uang Keluar' : 'Catat Setoran Masuk'"
+            :description="movementType === 'payout'
+                ? 'Uang yang keluar dari laci dan bukan kembalian. Contoh: setoran ke pemilik, beli galon, tukar uang kecil.'
+                : 'Uang yang masuk ke laci di luar penjualan. Misalnya tambahan uang kecil.'"
+            @close="movementOpen = false"
+        >
+                <form @submit.prevent="submitMovement" class="space-y-4">
+                    <div>
+                        <label for="movement_amount" class="block text-sm font-medium text-foreground mb-1">Nominal (Rp)</label>
+                        <input
+                            id="movement_amount"
+                            type="text"
+                            inputmode="numeric"
+                            :value="movementAmountDisplay"
+                            @input="onMovementInput"
+                            placeholder="0"
+                            class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground"
+                            required
+                        />
+                        <p v-if="movementErrors.amount" class="mt-1 text-xs text-destructive">{{ movementErrors.amount }}</p>
+                    </div>
+
+                    <div>
+                        <label for="movement_reason" class="block text-sm font-medium text-foreground mb-1">Alasan</label>
+                        <input
+                            id="movement_reason"
+                            v-model="movementReason"
+                            type="text"
+                            maxlength="200"
+                            placeholder="Contoh: beli galon air"
+                            class="w-full px-4 py-3 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-card text-foreground placeholder:text-muted-foreground"
+                            required
+                        />
+                        <p v-if="movementErrors.reason" class="mt-1 text-xs text-destructive">{{ movementErrors.reason }}</p>
+                    </div>
+
+                    <!-- Foto struk ([BL-093]), opsional. `capture="environment"`
+                         membuka kamera belakang langsung di ponsel, tanpa mampir
+                         ke galeri — struknya biasanya masih di tangan kasir. -->
+                    <div class="space-y-2">
+                        <input
+                            id="movement_proof"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            class="hidden"
+                            @change="onMovementProofPicked"
+                        />
+
+                        <div v-if="movementProofPreview" class="flex items-center gap-3 rounded-lg border border-success/30 bg-success/5 p-2">
+                            <img :src="movementProofPreview" alt="Pratinjau foto struk" class="h-14 w-14 rounded object-cover border border-border bg-card" />
+                            <span class="flex-1 text-xs font-medium text-success">Foto struk terlampir</span>
+                            <button type="button" class="text-xs text-destructive hover:opacity-80" @click="releaseMovementProof">
+                                Hapus
+                            </button>
+                        </div>
+
+                        <label
+                            v-else
+                            for="movement_proof"
+                            class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-3 py-2.5 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary"
+                        >
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Foto struk (opsional)
+                        </label>
+
+                        <p v-if="movementErrors.proof" class="text-xs text-destructive">{{ movementErrors.proof }}</p>
+                    </div>
+
+                    <!-- Diberitahukan SELAGI mengetik. Aturan yang baru diketahui
+                         sesudah tombol simpan ditekan terbaca sebagai penolakan. -->
+                    <p
+                        v-if="willWaitApproval"
+                        class="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-foreground"
+                    >
+                        Nominal ini di atas {{ formatCurrency(payoutThreshold) }}, jadi akan <strong>menunggu persetujuan pemilik</strong>.
+                        Catatannya tetap tersimpan dan terlihat, tapi uang yang seharusnya ada di laci belum berubah sampai disetujui.
+                    </p>
+
+                    <div class="flex gap-3 pt-1">
+                        <button
+                            type="button"
+                            @click="movementOpen = false"
+                            class="flex-1 py-2.5 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-muted transition"
+                        >
+                            Batal
+                        </button>
+                        <button
+                            type="submit"
+                            :disabled="savingMovement"
+                            class="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition disabled:opacity-50"
+                        >
+                            {{ savingMovement ? 'Menyimpan...' : 'Simpan Catatan' }}
+                        </button>
+                    </div>
+                </form>
+        </Modal>
     </div>
 </template>

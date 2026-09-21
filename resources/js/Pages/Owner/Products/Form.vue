@@ -6,6 +6,7 @@ import ImageUpload from '@/Components/ImageUpload.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
 import Button from '@/Components/Button.vue';
 import Checkbox from '@/Components/Checkbox.vue';
+import DatePicker from '@/Components/DatePicker.vue';
 import VariantFormModal from '@/Components/VariantFormModal.vue';
 
 defineOptions({ layout: OwnerLayout });
@@ -124,11 +125,20 @@ const closeEditVariant = () => {
 };
 
 const updateVariant = () => {
-    editVariantForm.put(`/owner/products/${props.product.id}/variants/${editingVariantId.value}`, {
-        preserveScroll: true,
-        onSuccess: () => closeEditVariant(),
-    });
+    // Stok dan tanggal hanya ditampilkan, tidak dikirim ([BL-111]); server
+    // juga tidak menerimanya lagi.
+    editVariantForm
+        .transform(({ stock, expiry_date, ...editable }) => editable)
+        .put(`/owner/products/${props.product.id}/variants/${editingVariantId.value}`, {
+            preserveScroll: true,
+            onSuccess: () => closeEditVariant(),
+        });
 };
+
+/** Halaman Stok, tersaring ke produk ini, untuk mengubah stok variannya. */
+const stockPageHref = computed(() => (
+    props.product ? `/owner/stock?q=${encodeURIComponent(props.product.name)}` : null
+));
 
 // --- Currency formatting (CREATE mode inline variants) ---
 const formatNumber = (value) => {
@@ -320,9 +330,8 @@ const deleteVariant = (variantId) => {
                                 <p v-if="form.errors[`variants.${i}.stock`]" class="mt-1 text-xs text-red-600">{{ form.errors[`variants.${i}.stock`] }}</p>
                             </div>
                             <div>
-                                <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Expired</label>
-                                <input v-model="variant.expiry_date" type="date"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+                                <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal Kedaluwarsa</label>
+                                <DatePicker v-model="variant.expiry_date" block clearable />
                             </div>
                         </div>
                     </div>
@@ -383,15 +392,15 @@ const deleteVariant = (variantId) => {
                     </div>
 
                     <div v-if="!product.variants?.length" class="py-8 text-center text-sm text-gray-500">
-                        Belum ada varian. Tambahkan varian menggunakan tombol di atas.
+                        Belum ada varian. Tambahkan lewat tombol di atas.
                     </div>
                 </div>
             </div>
 
-            <!-- Section 3: Modifier Groups -->
+            <!-- Section 3: Grup Modifier -->
             <div v-if="modifierGroups?.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 class="text-lg font-semibold text-gray-800 mb-4">Modifier Groups</h2>
-                <p class="text-sm text-gray-500 mb-3">Pilih modifier group yang tersedia untuk produk ini</p>
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Grup Modifier</h2>
+                <p class="text-sm text-gray-500 mb-3">Pilih grup modifier yang tersedia untuk produk ini</p>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     <Checkbox
@@ -437,6 +446,8 @@ const deleteVariant = (variantId) => {
         :show="showEditVariant"
         title="Edit Varian"
         :form="editVariantForm"
+        stock-locked
+        :stock-href="stockPageHref"
         submit-label="Perbarui Varian"
         @submit="updateVariant"
         @close="closeEditVariant"

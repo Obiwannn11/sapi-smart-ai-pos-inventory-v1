@@ -1,9 +1,12 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Deferred, Head, Link, router } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
+import Pagination from '@/Components/Pagination.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 import SelectDropdown from '@/Components/SelectDropdown.vue';
-import DatePicker from '@/Components/DatePicker.vue';
+import DateRangePicker from '@/Components/DateRangePicker.vue';
+import { BUSINESS_TZ } from '@/support/date';
 
 defineOptions({ layout: OwnerLayout });
 
@@ -17,6 +20,11 @@ const statusOptions = [
     { value: 'completed', label: 'Selesai' },
     { value: 'voided', label: 'Void' },
     { value: 'pending', label: 'Pending' },
+    // Tagihan terbuka yang lewat 24 jam ([BL-031]). Punya filternya sendiri
+    // karena inilah satu-satunya tempat ia bisa dibereskan — mencampurnya ke
+    // "Pending" berarti pemilik harus mencarinya di antara tagihan yang masih
+    // hidup dan bukan urusannya.
+    { value: 'unsettled', label: 'Kas Negatif' },
 ];
 
 const filterStatus = ref(props.filters?.status || '');
@@ -29,6 +37,7 @@ const formatCurrency = (value) => {
 
 const formatDateTime = (datetime) => {
     return new Date(datetime).toLocaleString('id-ID', {
+        timeZone: BUSINESS_TZ,
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -63,6 +72,7 @@ const statusBadge = (status) => {
         case 'completed': return 'bg-success/10 text-success';
         case 'voided': return 'bg-destructive/10 text-destructive';
         case 'pending': return 'bg-warning/10 text-warning-foreground';
+        case 'unsettled': return 'bg-destructive/10 text-destructive ring-1 ring-destructive/30';
         default: return 'bg-gray-100 text-gray-800';
     }
 };
@@ -72,6 +82,7 @@ const statusLabel = (status) => {
         case 'completed': return 'Selesai';
         case 'voided': return 'Void';
         case 'pending': return 'Pending';
+        case 'unsettled': return 'Kas Negatif';
         default: return status;
     }
 };
@@ -103,12 +114,8 @@ const statusLabel = (status) => {
                     />
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Dari</label>
-                    <DatePicker v-model="filterFrom" />
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Sampai</label>
-                    <DatePicker v-model="filterTo" />
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Periode</label>
+                    <DateRangePicker v-model:from="filterFrom" v-model:to="filterTo" />
                 </div>
                 <div class="flex gap-2 items-end">
                     <button
@@ -127,8 +134,15 @@ const statusLabel = (status) => {
             </div>
         </div>
 
-        <!-- Transaction Table -->
+        <!-- Transaction Table. Ditunda: filternya sudah bisa dipakai sementara
+             satu halaman transaksi masih dimuat, dan kerangka ini juga yang
+             muncul setiap filter diubah. -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred data="transactions">
+                <template #fallback>
+                    <SkeletonTable :rows="8" :columns="6" label="Memuat transaksi…" />
+                </template>
+
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <thead class="bg-gray-50">
@@ -177,28 +191,10 @@ const statusLabel = (status) => {
                 Tidak ada transaksi ditemukan
             </div>
 
-            <!-- Pagination -->
-            <div v-if="transactions.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                <p class="text-xs text-gray-500">
-                    Menampilkan {{ transactions.from }}–{{ transactions.to }} dari {{ transactions.total }}
-                </p>
-                <div class="flex gap-1">
-                    <Link
-                        v-for="link in transactions.links"
-                        :key="link.label"
-                        :href="link.url || '#'"
-                        :class="[
-                            'px-3 py-1.5 text-xs rounded-lg transition-colors',
-                            link.active
-                                ? 'bg-primary text-primary-foreground'
-                                : link.url
-                                    ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                    : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-                        ]"
-                        v-html="link.label"
-                    />
-                </div>
+            <div v-if="transactions.last_page > 1" class="px-4 pb-3 border-t border-gray-100">
+                <Pagination :paginator="transactions" unit="transaksi" />
             </div>
+            </Deferred>
         </div>
     </div>
 </template>

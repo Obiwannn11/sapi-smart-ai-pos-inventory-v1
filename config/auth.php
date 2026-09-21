@@ -40,6 +40,17 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Pemilik SaaS — akun di atas semua tenant, tabel & model terpisah.
+        // Perhatikan: middleware `auth:platform` memanggil Auth::shouldUse(),
+        // sehingga guard ini menjadi guard default untuk sisa request. Efeknya
+        // TenantScope membaca `tenant_id` dari PlatformUser (tidak ada → null)
+        // lalu memfilter `where tenant_id = null` → nol baris. Itu perilaku yang
+        // diinginkan: gagal menutup, bukan gagal membuka.
+        'platform' => [
+            'driver' => 'session',
+            'provider' => 'platform_users',
+        ],
     ],
 
     /*
@@ -63,6 +74,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', App\Models\User::class),
+        ],
+
+        'platform_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\PlatformUser::class,
         ],
 
         // 'users' => [
@@ -94,6 +110,16 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+
+        // Broker terpisah untuk akun platform. Tabel tokennya sendiri: alamat
+        // email yang sama bisa terdaftar di kedua dunia, dan token satu sisi
+        // tidak boleh berlaku di sisi lain.
+        'platform_users' => [
+            'provider' => 'platform_users',
+            'table' => 'platform_password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

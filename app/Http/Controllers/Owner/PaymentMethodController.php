@@ -13,10 +13,10 @@ class PaymentMethodController extends Controller
 {
     public function index(): Response
     {
-        $paymentMethods = PaymentMethod::latest()->get();
-
         return Inertia::render('Owner/PaymentMethods/Index', [
-            'paymentMethods' => $paymentMethods,
+            // Ditunda ([BL-037]): daftarnya menyusul sementara tombol tambah dan
+            // formulirnya sudah bisa dipakai sejak cat pertama.
+            'paymentMethods' => Inertia::defer(fn () => PaymentMethod::latest()->get()),
         ]);
     }
 

@@ -1,14 +1,16 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { useForm, Head } from '@inertiajs/vue3';
+import { Deferred, useForm, Head } from '@inertiajs/vue3';
 import OwnerLayout from '@/Layouts/OwnerLayout.vue';
 import ConfirmDialog from '@/Components/ConfirmDialog.vue';
 import Modal from '@/Components/Modal.vue';
+import SkeletonTable from '@/Components/Skeleton/SkeletonTable.vue';
 
 defineOptions({ layout: OwnerLayout });
 
 const props = defineProps({
-    categories: Array,
+    // Ditunda ([BL-037]) — null selama daftarnya masih dimuat.
+    categories: { type: Array, default: null },
 });
 
 // --- State ---
@@ -97,8 +99,14 @@ const cancelDelete = () => {
             </button>
         </div>
 
-        <!-- Table -->
+        <!-- Table. Ditunda ([BL-037]) — kerangkanya memakai jumlah kolom
+             yang sama supaya lebar kolom tidak berubah saat barisnya tiba. -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <Deferred data="categories">
+                <template #fallback>
+                    <SkeletonTable :rows="6" :columns="3" label="Memuat daftar kategori…" />
+                </template>
+
             <table class="w-full">
                 <thead>
                     <tr class="bg-gray-50 border-b border-gray-200">
@@ -153,6 +161,7 @@ const cancelDelete = () => {
                     </tr>
                 </tbody>
             </table>
+            </Deferred>
         </div>
     </div>
 
@@ -200,7 +209,7 @@ const cancelDelete = () => {
     <ConfirmDialog
         :show="!!deleteTarget"
         title="Hapus Kategori"
-        :message="`Apakah Anda yakin ingin menghapus kategori '${deleteTarget?.name}'? Produk di kategori ini akan dipindahkan ke 'Tanpa Kategori'.`"
+        :message="`Produk di kategori “${deleteTarget?.name}” dipindahkan ke “Tanpa Kategori”.`"
         confirmText="Hapus"
         @confirm="doDelete"
         @cancel="cancelDelete"
